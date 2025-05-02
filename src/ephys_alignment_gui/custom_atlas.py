@@ -235,8 +235,12 @@ class CustomAtlas(BrainAtlas):
         self.atlas_image_file = atlas_image_file
         self.atlas_labels_file = atlas_labels_file
         if force_um is None:
-            dxyz = np.array(self.read_atlas_image())*np.array([1, -1, -1])*1e-6
-            self.res_um = dxyz[0]/1e-6
+            #dxyz = np.array(self.read_atlas_image())*np.array([1, -1, -1])*1e-6
+            dxyz = np.array(self.read_atlas_image()) * 1000
+            print('Atlas scaling', dxyz)
+            self.res_um = dxyz[0] 
+            dxyz = self.res_um * 1e-6 * np.array([1, 1, 1]) * scaling
+            print('Resolution', self.res_um)
         else:
             _  = self.read_atlas_image()
             self.res_um = force_um
@@ -249,13 +253,13 @@ class CustomAtlas(BrainAtlas):
         self.label = self.label.astype(np.uint16)
 
         
-        xyz2dims = np.array([1, 0, 2])  # this is the c-contiguous ordering
-        dims2xyz = np.array([1, 0, 2])
+        xyz2dims = np.array([0, 1, 2])  # this is the c-contiguous ordering
+        dims2xyz = np.array([0, 1, 2])
         if bregma is None:
             bregma = [0,0,0]
         elif isinstance(bregma,str) and (bregma.lower() == 'allen'):
             bregma = (ALLEN_CCF_LANDMARKS_MLAPDV_UM['bregma'] / self.res_um)
-        super().__init__(self.image, self.label, dxyz, regions, bregma, dims2xyz=dims2xyz, xyz2dims=xyz2dims)
+        super().__init__(self.image, self.label, dxyz, regions, iorigin=list(self.offset), dims2xyz=dims2xyz, xyz2dims=xyz2dims)
         self.label[~np.isin(self.label,regions.id)]=997
 
     
@@ -263,13 +267,16 @@ class CustomAtlas(BrainAtlas):
         # Reads the 
         IMG = sitk.ReadImage(self.atlas_image_file)
         # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
-        IMG2 = sitk.DICOMOrient(IMG,self.read_string) 
-        self.image = sitk.GetArrayFromImage(IMG2)
-        self.offset = IMG2.GetOrigin()
-        return IMG2.GetSpacing()
+        #IMG2 = sitk.DICOMOrient(IMG,self.read_string) 
+        self.original_image = IMG
+        self.image = np.flip(sitk.GetArrayFromImage(IMG).T, axis=(0, 2))
+        print('Shape', self.image.shape)
+        self.offset = IMG.GetOrigin()
+        self.spacing = IMG.GetSpacing()[0] * 1000
+        return IMG.GetSpacing()
         
     def read_atlas_labels(self):
         IMG = sitk.ReadImage(self.atlas_labels_file)
         # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
-        IMG2 = sitk.DICOMOrient(IMG,self.read_string)
-        self.label = sitk.GetArrayFromImage(IMG2).astype(np.int32)
+        #IMG2 = sitk.DICOMOrient(IMG,self.read_string)
+        self.label = np.flip(sitk.GetArrayFromImage(IMG).astype(np.int32).T, axis=(0, 2))
