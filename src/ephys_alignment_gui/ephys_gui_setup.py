@@ -76,6 +76,14 @@ class Setup():
         img_LFP = QtWidgets.QAction('LFP Spectrum', self, checkable=True, checked=False)
         img_LFP.triggered.connect(lambda: self.plot_image(self.img_lfp_data))
 
+        img_rmsAP_main = QtWidgets.QAction('RMS AP Main Rec', self, checkable=True, checked=False)
+        img_rmsAP_main.triggered.connect(lambda: self.plot_image(self.img_rms_APdata_main))
+        img_rmsLFP_main = QtWidgets.QAction('RMS LFP Main Rec', self, checkable=True, checked=False)
+        img_rmsLFP_main.triggered.connect(lambda: self.plot_image(self.img_rms_LFPdata_main))
+        img_LFP_main = QtWidgets.QAction('LFP Spectrum Main Rec', self, checkable=True, checked=False)
+        img_LFP_main.triggered.connect(lambda: self.plot_image(self.img_lfp_data_main))
+
+
         # Initialise with firing rate 2D plot
         self.img_init = img_fr
 
@@ -93,10 +101,16 @@ class Setup():
         self.img_options_group.addAction(img_corr)
         img_options.addAction(img_rmsAP)
         self.img_options_group.addAction(img_rmsAP)
+        img_options.addAction(img_rmsAP_main)
+        self.img_options_group.addAction(img_rmsAP_main)
         img_options.addAction(img_rmsLFP)
         self.img_options_group.addAction(img_rmsLFP)
+        img_options.addAction(img_rmsLFP_main)
+        self.img_options_group.addAction(img_rmsLFP_main)
         img_options.addAction(img_LFP)
         self.img_options_group.addAction(img_LFP)
+        img_options.addAction(img_LFP_main)
+        self.img_options_group.addAction(img_LFP_main)
         img_options.addAction(scatter_fr)
         self.img_options_group.addAction(scatter_fr)
         img_options.addAction(scatter_p2t)
@@ -497,7 +511,12 @@ class Setup():
             self.input_folder_line = QtWidgets.QLineEdit()
             self.input_folder_button = QtWidgets.QToolButton()
             self.input_folder_button.setText('Input Directory')
-            self.input_folder_button.clicked.connect(self.on_input_folder_selected)
+            self.input_folder_button.clicked.connect(self.on_folder_selected)
+
+            self.reload_folder_line = QtWidgets.QLineEdit()
+            self.reload_folder_button = QtWidgets.QToolButton()
+            self.reload_folder_button.setText('Load Existing Alignment Directory')
+            self.reload_folder_button.clicked.connect(self.load_existing_alignments)
 
         # Button to load Histology 
         self.histology_folder_button = QtWidgets.QToolButton()
@@ -551,10 +570,12 @@ class Setup():
             self.interaction_layout3.addWidget(self.input_folder_button, stretch=1)
             self.interaction_layout3.addWidget(self.input_folder_line, stretch=2)
             self.interaction_layout3.addWidget(self.shank_combobox, stretch=1)
+            self.interaction_layout3.addWidget(self.reload_folder_button, stretch=1)
+            self.interaction_layout3.addWidget(self.reload_folder_line, stretch=2)
 
         # # Group 3 -- Histology location
         # self.interaction_layout3 = QtWidgets.QHBoxLayout()
-        self.interaction_layout3.addWidget(self.histology_folder_button, stretch=1)
+        #self.interaction_layout3.addWidget(self.histology_folder_button, stretch=1)
         # self.interaction_layout3.addWidget(self.histology_folder_line, stretch=2)
 
         # Pop up dialog for qc results to datajoint, only for online mode
@@ -661,6 +682,7 @@ class Setup():
         self.fig_img = pg.PlotItem()
         self.fig_img.setYRange(min=self.probe_tip - self.probe_extra, max=self.probe_top +
                                self.probe_extra, padding=self.pad)
+        self.fig_img.setMouseEnabled(x=False, y=True)
         self.probe_tip_lines.append(self.fig_img.addLine(y=self.probe_tip, pen=self.kpen_dot,
                                                          z=50))
         self.probe_top_lines.append(self.fig_img.addLine(y=self.probe_top, pen=self.kpen_dot,
@@ -678,7 +700,7 @@ class Setup():
 
         # 1D line plot
         self.fig_line = pg.PlotItem()
-        self.fig_line.setMouseEnabled(x=False, y=False)
+        self.fig_line.setMouseEnabled(x=False, y=True)
         self.fig_line.setYRange(min=self.probe_tip - self.probe_extra, max=self.probe_top +
                                 self.probe_extra, padding=self.pad)
         self.probe_tip_lines.append(self.fig_line.addLine(y=self.probe_tip, pen=self.kpen_dot,
@@ -737,6 +759,9 @@ class Setup():
                                 self.probe_extra, padding=self.pad)
         self.set_axis(self.fig_hist, 'bottom', pen='w')
 
+        self.fig_img.setYLink(self.fig_line)
+        self.fig_img.setYLink(self.fig_hist)
+        self.fig_line.setYLink(self.fig_hist)
         # This is the solution from pyqtgraph people, but doesn't show ticks
         # self.fig_hist.showGrid(False, True, 0)
 

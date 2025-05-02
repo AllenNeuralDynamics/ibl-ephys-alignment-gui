@@ -10,7 +10,11 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
 
 import numpy as np
+import numpy.typing as npt
 from random import randrange
+
+import pandas
+import ants
 
 import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.plot_elements import ColorBar
@@ -24,8 +28,10 @@ from ephys_alignment_gui.windows.features_across_region import RegionFeatureWind
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
+import json
 
-
+ANTS_DIMENSION = 3
+DATA_PATH = Path('/data')
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     @staticmethod
@@ -66,6 +72,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         # Line styles and fonts
         self.kpen_dot = pg.mkPen(color='k', style=QtCore.Qt.DotLine, width=2)
+        self.reference_line_kpen = pg.mkPen(color='k', style=QtCore.Qt.DotLine, width=10)
         self.rpen_dot = pg.mkPen(color='r', style=QtCore.Qt.DotLine, width=2)
         self.kpen_solid = pg.mkPen(color='k', style=QtCore.Qt.SolidLine, width=2)
         self.bpen_solid = pg.mkPen(color='b', style=QtCore.Qt.SolidLine, width=3)
@@ -581,9 +588,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.hist_regions = np.empty((0, 1))
         axis = fig.getAxis(ax)
         axis.setTicks([self.hist_data['axis_label']])
+        axis.setTickFont(QtGui.QFont('Arial', 8))
         axis.setZValue(10)
         self.set_axis(self.fig_hist, 'bottom', pen='w', label='blank')
-
+ 
         # Plot each histology region
         for ir, reg in enumerate(self.hist_data['region']):
             colour = QtGui.QColor(*self.hist_data['colour'][ir])
@@ -907,7 +915,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.fig_slice.addItem(img)
         self.traj_line = pg.PlotCurveItem()
-        self.traj_line.setData(x=self.xyz_track[:, 0], y=self.xyz_track[:, 2], pen=self.kpen_solid)
+
+        self.traj_line.setData(x=self.xyz_track[:, 0] * 1e6 / self.loaddata.brain_atlas.spacing, 
+                               y=self.xyz_track[:, 2] * 1e6 / self.loaddata.brain_atlas.spacing, pen=self.kpen_solid)
         self.fig_slice.addItem(self.traj_line)
         self.plot_channels()
 
@@ -920,6 +930,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.channel_status = True
         self.xyz_channels = self.ephysalign.get_channel_locations(self.features[self.idx],
                                                                   self.track[self.idx])
+
         if not self.slice_chns:
             self.slice_lines = []
             self.slice_chns = pg.ScatterPlotItem()
@@ -929,9 +940,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_lines = self.ephysalign.get_perp_vector(self.features[self.idx],
                                                           self.track[self.idx])
 
+            print('Reference lines', track_lines)
             for ref_line in track_lines:
                 line = pg.PlotCurveItem()
-                line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.kpen_dot)
+                line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.reference_line_kpen)
                 self.fig_slice.addItem(line)
                 self.slice_lines.append(line)
 
@@ -942,9 +954,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_lines = self.ephysalign.get_perp_vector(self.features[self.idx],
                                                           self.track[self.idx])
 
+            print('Reference lines', track_lines)
             for ref_line in track_lines:
                 line = pg.PlotCurveItem()
-                line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.kpen_dot)
+                line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.reference_line_kpen)
                 self.fig_slice.addItem(line)
                 self.slice_lines.append(line)
             self.slice_chns.setData(x=self.xyz_channels[:, 0], y=self.xyz_channels[:, 2], pen='r',
@@ -1150,27 +1163,76 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.data_plot = image
             self.xrange = data['xrange']
 
+
     """
     Interaction functions
     """
+    def _update_ephys_alignments(self, folder_path: Path, skip_shanks=False):
+        if hasattr(self, 'current_shank_idx'):
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, skip_shanks=skip_shanks)
+        else:
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, skip_shanks=skip_shanks)
 
-    def on_input_folder_selected(self):
+        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0)
+        if shank_options is not None:
+            self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
+
+        #if shank_options is None:
+        #    self.data_status = True
+        
+        self.current_shank_idx = 0
+
+        self.data_button_pressed(folder_path)
+        print('Feature prev', self.feature_prev)
+
+    def load_existing_alignments(self):
+        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
+        self.reload_folder_line.setText(str(folder_path))
+        self._update_ephys_alignments(folder_path, skip_shanks=True)
+
+    def on_folder_selected(self):
         """
         Triggered in offline mode when folder button is clicked
         """
         self.data_status = False
-        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
+        #folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
+        
+        if Path('/data/').is_dir():
+            # Default For code ocean.
+            we_are_in_code_ocean = True
+            folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory", directory='/data/'))
+        else:
+            # If not code ocean, will default to current directory
+            we_are_in_code_ocean = False
+            folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
+        # Set the output default based on the selected folder path
+        if we_are_in_code_ocean:
+            out_folder = Path('/results/').joinpath(folder_path.parent.stem)
+            string_folder_path = folder_path.parent.stem
+            subject_id_path = string_folder_path[string_folder_path.index('_')+1:]
+            subject_id = subject_id_path[0:subject_id_path.index('_')]
+
+            out_folder = Path('/results').joinpath(subject_id)
+            print('Output folder', out_folder)
+            
+        else:
+            out_folder = folder_path.parent/'out'
+            
+        self.input_path = folder_path
+        # Create the output folder if it doesn't exist
+        os.makedirs(out_folder, exist_ok=True)
+        # Set the output directory based on input name.
+        self.output_directory = out_folder/folder_path.parent.stem/folder_path.stem
+        print('Output dir', self.output_directory)
+        self.loaddata.output_directory = self.output_directory
+        self.output_folder_line.setText(str(self.output_directory))
 
         if folder_path:
             self.input_folder_line.setText(str(folder_path))
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path)
-            self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
-            self.on_shank_selected(0)
-            self.data_button_pressed()
+            self._update_ephys_alignments(folder_path)
             return True
         else:
             return False
-    
 
     def on_histology_folder_selected(self):
         """
@@ -1191,6 +1253,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return True
         else:
             return False
+        
+
 
     def on_output_folder_selected(self):
         """
@@ -1204,20 +1268,35 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return True
         else:
             return False
+        
+    # def on_load_existing_button_pressed(self):
+    #     if self.loaddata.output_directory is not None:
+    #         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Annotation Directory"),self.loaddata.output_directory)
+    #     else:
+    #         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Annotation Directory"))
+    #     self.prev_alignments, shank_options = self.loaddata.get_previous_info(folder_path)
+    #     self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
 
+        
     def on_shank_selected(self, idx):
         """
         Triggered in offline mode for selecting shank when using NP2.0
         """
-        self.data_status = False
-        self.current_shank_idx = idx
+        #self.data_status = False
         # Update prev_alignments
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0)
+        shank_text = self.shank_combobox.currentText()
+        shank_id = int(shank_text.split('/')[0])
+        self.current_shank_idx = shank_id - 1
+        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx)
+
+        if self.data_status:
+            #if self.current_shank_idx != 0:
+            self.data_button_pressed(self.input_path, load_new_shank=True)
 
     def on_alignment_selected(self, idx):
         self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(idx)
 
-    def data_button_pressed(self):
+    def data_button_pressed(self, folder_path: Path, load_new_shank: bool = False):
         """
         Triggered when Get Data button pressed, uses subject and session info to find eid and
         downloads and computes data needed for GUI display
@@ -1244,13 +1323,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.data_status:
             self.probe_path, self.chn_depths, self.sess_notes, data = \
                 self.loaddata.get_data()
+            self.data = data
+            if not self.probe_path:
+                return
+        if self.data_status and load_new_shank:
+            self.probe_path, self.chn_depths, self.sess_notes, data = \
+                self.loaddata.get_data(reload_data=False)
+            self.data = data
             if not self.probe_path:
                 return
 
-
         # Only get histology specific stuff if the histology tracing exists
         if self.histology_exists:
-            self.xyz_picks = self.loaddata.get_xyzpicks()
+            self.xyz_picks = self.loaddata.get_xyzpicks(folder_path, self.current_shank_idx)
 
             if np.any(self.feature_prev):
                 self.ephysalign = EphysAlignment(self.xyz_picks, self.chn_depths,
@@ -1270,8 +1355,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.get_scaled_histology()
         # If we have not loaded in the data before then we load eveything we need
-        if not self.data_status:
-            self.plotdata = pd.PlotData(self.probe_path, data,
+        if not self.data_status or load_new_shank:
+            print('Shank index', self.current_shank_idx)
+            self.plotdata = pd.PlotData(self.probe_path, self.data,
                                         self.current_shank_idx)
             self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
             self.scat_drift_data = self.plotdata.get_depth_data_scatter()
@@ -1282,7 +1368,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.img_rms_APdata, self.probe_rms_APdata = self.plotdata.get_rms_data_img_probe('AP')
             self.img_rms_LFPdata, self.probe_rms_LFPdata = self.plotdata.get_rms_data_img_probe(
                 'LF')
-            self.img_lfp_data, self.probe_lfp_data = self.plotdata.get_lfp_spectrum_data()
+            self.img_rms_APdata_main, self.probe_rms_APdata_main = self.plotdata.get_rms_data_img_probe('AP_main')
+            self.img_rms_LFPdata_main, self.probe_rms_LFPdata_main = self.plotdata.get_rms_data_img_probe('LF_main')
+            self.img_lfp_data, self.probe_lfp_data = self.plotdata.get_lfp_spectrum_data('lf')
+            self.img_lfp_data_main, self.probe_lfp_data_main = self.plotdata.get_lfp_spectrum_data('lf_main')
             self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
             self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
             self.img_stim_data = self.plotdata.get_passive_events()
@@ -1311,7 +1400,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Initialise ephys plots
         self.plot_image(self.img_fr_data)
-        self.plot_probe(self.probe_rms_APdata)
+        self.plot_probe(self.probe_rms_LFPdata)
         self.plot_line(self.line_fr_data)
 
         # Initialise histology plots
@@ -1388,7 +1477,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.line_init.setChecked(True)
         self.probe_init.setChecked(True)
         self.plot_image(self.img_fr_data)
-        self.plot_probe(self.probe_rms_APdata)
+        self.plot_probe(self.probe_rms_LFPdata)
         self.plot_line(self.line_fr_data)
 
     def fit_button_pressed(self):
@@ -1715,6 +1804,44 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                 max=self.probe_top + self.probe_extra, padding=self.pad)
         self.update_string()
 
+    def _transform_to_ccf(self, image_physical_space_coordinates: npt.NDArray) -> pandas.DataFrame:
+        this_probe_df = pandas.DataFrame({'x': image_physical_space_coordinates[:, 0], 
+                                      'y': image_physical_space_coordinates[:, 1], 
+                                      'z': image_physical_space_coordinates[:, 2]})
+        
+        smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        if not smartspim_template_affine_transform:
+            # try legacy way
+            smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            if not smartspim_template_affine_transform:
+                raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
+
+        smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        if not smartspim_template_warp_transform:
+            smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            if not smartspim_template_warp_transform:
+                raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
+        
+        probe_template = ants.apply_transforms_to_points(ANTS_DIMENSION, this_probe_df, 
+                                    [smartspim_template_affine_transform[0].as_posix(),
+                                    smartspim_template_warp_transform[0].as_posix()],
+                                    whichtoinvert=[True, False])
+
+        template_to_ccf_affine_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        if not template_to_ccf_affine_transform:
+            raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
+        
+        template_to_ccf_warp_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        if not template_to_ccf_warp_transform:
+            raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
+        
+        probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, probe_template, 
+                                            [template_to_ccf_affine_transform[0].as_posix(),
+                                            template_to_ccf_warp_transform[0].as_posix()],
+                                            whichtoinvert=[True, False])
+        
+        return probe_ccf
+
     def complete_button_pressed_offline(self):
         """
         Triggered when save button or Shift+S keys are pressed. 
@@ -1726,9 +1853,58 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 return
 
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
-                                    self.xyz_channels)
+                                    self.xyz_channels, self.current_shank_idx + 1)
         self.loaddata.get_starting_alignment(0)
-        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved")
+        
+        if self.loaddata.n_shanks > 1:
+            with open(self.output_directory / f'channel_locations_shank{self.current_shank_idx + 1}.json', 'r') as f:
+                channel_results = json.load(f)
+        else:
+            with open(self.output_directory / 'channel_locations.json', 'r') as f:
+                channel_results = json.load(f)
+        
+        channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
+        channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
+        for i in range(len(channel_ids)):
+            channel_coords[i] = (self.loaddata.brain_atlas.image.shape[0] - int(np.round(channel_results[channel_ids[i]]['x'])), 
+                                int(np.round(channel_results[channel_ids[i]]['y'])), 
+                                self.loaddata.brain_atlas.image.shape[2] - int(np.round(channel_results[channel_ids[i]]['z'])))
+        
+        ants_physical_points = []
+        for point in channel_coords:
+            ants_physical_points.append(self.loaddata.brain_atlas.original_image.TransformIndexToPhysicalPoint(point.tolist()))
+
+        ants_physical_points_array = np.array(ants_physical_points)
+        ccf_coordinates_dataframe = self._transform_to_ccf(ants_physical_points_array)
+        ccf_result_json = {}
+
+        for channel in self.loaddata.channel_dict:
+            if channel == 'origin':
+                continue
+
+            channel_dict_info = self.loaddata.channel_dict[channel]
+
+            channel_index = int(channel[channel.index('_')+1:])
+            ccf_channel_info = ccf_coordinates_dataframe.iloc[channel_index]
+            ccf_result_json[channel] = {
+                "x": ccf_channel_info['x'].astype(np.float64),
+                "y": ccf_channel_info['y'].astype(np.float64),
+                "z": ccf_channel_info['z'].astype(np.float64),
+                "axial": channel_dict_info['axial'],
+                "lateral": channel_dict_info['lateral'],
+                "brain_region_id": channel_dict_info['brain_region_id'],
+                "brain_region": channel_dict_info['brain_region']
+            }
+        
+        if self.loaddata.n_shanks > 1:
+            with open(self.output_directory / f'ccf_channel_locations_shank{self.current_shank_idx + 1}.json', "w") as f:
+                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
+        else:
+            with open(self.output_directory / 'ccf_channel_locations.json', "w") as f:
+                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
+
+
+        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved, and ccf coordinates saved")
 
 
     def display_qc_options(self):
