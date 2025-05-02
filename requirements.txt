@@ -1,3 +1,4 @@
 iblatlas
 PyQt5
 pyqtgraph
+antspyx

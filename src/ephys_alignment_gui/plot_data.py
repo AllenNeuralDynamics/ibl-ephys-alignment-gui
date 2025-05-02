@@ -62,14 +62,25 @@ class PlotData:
             self.max_spike_time = np.max(self.data['spikes']['times'])
 
         if self.data['clusters']['exists']:
+            shank_spikes_subset = np.where(self.data['spike_shanks'] == shank_idx)
+            """
+            shank_spikes_clusters = self.data['spikes'].clusters[shank_spikes_subset]
+            shank_units_subset = np.where(self.data['unit_shank_indices'] == shank_idx)
+
+            shank_cluster_channels = self.data['clusters'].channels[shank_units_subset]
+            shank_spike_channels = shank_cluster_channels[shank_spikes_clusters]
             shank_spikes = np.isin(self.chn_ind_all[self.data['clusters'].channels[self.data['spikes'].clusters]],
-                                   self.chn_ind)
+                                  self.chn_ind)"
+            """
             for key in self.data['spikes'].keys():
                 if key == 'exists':
                     continue
-                self.data['spikes'][key] = self.data['spikes'][key][shank_spikes]
+                self.data['spikes'][key] = self.data['spikes'][key][shank_spikes_subset]
             self.filter_units('all')
             self.compute_timescales()
+        
+        print('Spike idx', self.spike_idx)
+        print('Keep idx', self.kp_idx)
 
     def filter_units(self, type):
 
@@ -242,7 +253,7 @@ class PlotData:
                 'img': img,
                 'scale': np.array([xscale, yscale]),
                 'levels': np.quantile(np.mean(img, axis=0), [0, 1]),
-                'offset': np.array([0, self.chn_min]),
+                'offset': np.array([0, np.min(depths)]),
                 'xrange': np.array([times[0], times[-1]]),
                 'xaxis': 'Time (s)',
                 'cmap': 'binary',
@@ -330,7 +341,7 @@ class PlotData:
             data_probe = None
             return data_img, data_probe
 
-        _rms = np.take(self.data[f'rms_{format}']['rms'], self.chn_ind, axis=1)
+        _rms = np.take(self.data[f'rms_{format}']['rms'], self.chn_ind, axis=1, mode='clip')
         _, self.chn_depth, chn_count = np.unique(self.chn_coords[:, 1], return_index=True,
                                                  return_counts=True)
         self.chn_depth_eq = np.copy(self.chn_depth)
@@ -374,7 +385,7 @@ class PlotData:
         }
 
         # Probe data
-        rms_avg = (np.mean(self.data[f'rms_{format}']['rms'], axis=0)[self.chn_ind]) * 1e6
+        rms_avg = (np.take(np.mean(self.data[f'rms_{format}']['rms'], axis=0), indices=self.chn_ind, mode='clip')) * 1e6
         probe_levels = np.quantile(rms_avg, [0.1, 0.9])
         probe_img, probe_scale, probe_offset = self.arrange_channels2banks(rms_avg)
 
@@ -438,11 +449,11 @@ class PlotData:
 
         return data_img
 
-    def get_lfp_spectrum_data(self):
+    def get_lfp_spectrum_data(self, format: str):
         freq_bands = np.vstack(([0, 4], [4, 10], [10, 30], [30, 80], [80, 200]))
         data_probe = {}
 
-        if not self.data['psd_lf']['exists']:
+        if not self.data[f'psd_{format}']['exists']:
             data_img = None
             for freq in freq_bands:
                 lfp_band_data = {f"{freq[0]} - {freq[1]} Hz": None}
