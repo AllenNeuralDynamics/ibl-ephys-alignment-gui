@@ -250,7 +250,7 @@ class CustomAtlas(BrainAtlas):
         #_, im = ismember(self.label, regions.id)
         #label = np.reshape(im.astype(np.uint16), self.label.shape)
         self.label[~np.isin(self.label,regions.id)]=997
-        self.label = self.label.astype(np.uint64)
+        self.label = self.label.astype(np.uint16)
 
         
         xyz2dims = np.array([0, 1, 2])  # this is the c-contiguous ordering
