@@ -2,3 +2,7 @@ iblatlas
 PyQt5
 pyqtgraph
 antspyx
+aind-qcportal-schema
+aind-data-schema
+aind-data-access-api
+aws-requests-auth
