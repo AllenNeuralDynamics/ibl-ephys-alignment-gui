@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import numpy as np
 from datetime import datetime
@@ -14,6 +15,8 @@ import iblatlas.atlas as atlas
 
 from .custom_atlas import CustomAtlas
 
+from docdb import query_docdb_id
+from aind_qcportal_schema.metric_value import CurationMetric
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
@@ -48,7 +51,7 @@ class LoadDataLocal:
         if not skip_shanks:
             shank_list = self.get_nshanks()
 
-        prev_aligns = self.get_previous_alignments(shank_idx=shank_idx)
+        prev_aligns = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)
         return prev_aligns, shank_list
 
 
@@ -60,11 +63,33 @@ class LoadDataLocal:
         prev_aligns = self.get_previous_alignments(folder_path=folder_path)
         return prev_aligns, shank_list
 
-    def get_previous_alignments(self, shank_idx=0,folder_path = None):
+    def get_previous_alignments(self, shank_idx=0,folder_path: Path | None = None):
         if folder_path is None:
             folder_path = self.folder_path
 
         self.shank_idx = shank_idx
+        docdb_record = query_docdb_id(folder_path.parent.stem)[1]
+        quality_control = docdb_record['quality_control']
+        evaluations = quality_control['evaluations']
+        
+        evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
+        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation['name'] == f'IBL Alignment for {evaluation_name}']
+
+        if len(alignment_evaluations) > 0:
+            latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x['created']) # pull latest alignment evaluation
+            curation_metric: CurationMetric = latest_alignment_evaluation['metrics'][0]
+            curations = curation_metric.curations
+            self.alignments = json.loads(curations[1]) # load in the previous alignment
+            self.prev_align = []
+            if self.alignments:
+                self.prev_align = [*self.alignments.keys()]
+            self.prev_align = sorted(self.prev_align, reverse=True)
+            self.prev_align.append("original")
+        else:
+            self.alignments = []
+            self.prev_align = ["original"]
+
+        """
         # If previous alignment json file exists, read in previous alignments
         prev_align_filename = (
             "prev_alignments.json"
@@ -85,14 +110,15 @@ class LoadDataLocal:
         else:
             self.alignments = []
             self.prev_align = ["original"]
+        """
 
         return self.prev_align
 
-    def get_starting_alignment(self, idx, shank_idx=0):
+    def get_starting_alignment(self, idx, shank_idx=0, folder_path: Path | None = None):
         """
         Find out the starting alignmnet
         """
-        align = self.get_previous_alignments(shank_idx=shank_idx)[idx]
+        align = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)[idx]
 
         if align == "original":
             feature = None

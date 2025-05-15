@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 from pathlib import Path
@@ -28,111 +29,11 @@ from ephys_alignment_gui.windows.features_across_region import RegionFeatureWind
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
-import json
 
-from aind_data_access_api.document_db import MetadataDbClient
-from aind_data_schema_models.modalities import Modality
-from aind_data_schema.core.quality_control import QCEvaluation, Stage, QCMetric, QCStatus, Status
-from aind_qcportal_schema.metric_value import CurationMetric, CurationHistory
-from datetime import datetime
-import requests
-import boto3
-from aws_requests_auth.aws_auth import AWSRequestsAuth
-
+from docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
 DATA_PATH = Path('/data')
-
-def query_docdb_id(session_name: str) -> str:
-    """
-    Returns docdb_id for asset_name.
-    Returns empty string if asset is not found.
-    """
-
-    # Resolve DocDB id of data asset
-    API_GATEWAY_HOST = "api.allenneuraldynamics.org"
-    DATABASE = "metadata_index"
-    COLLECTION = "data_assets"
-
-    docdb_api_client = MetadataDbClient(
-        host=API_GATEWAY_HOST,
-        database=DATABASE,
-        collection=COLLECTION,
-    )
-
-    response = docdb_api_client.retrieve_docdb_records(
-        filter_query={"name": {"$regex": f"^{session_name}_sorted*"}}
-    )
-    if len(response) == 0:
-        raise ValueError(f"No ephys sorted record found in docdb for {session_name}")
-    
-    latest_record = max(response, key=lambda x: x['created']) # pull the most recent ephys sorting record
-
-    docdb_id = latest_record["_id"]
-    return docdb_id
-
-def write_output_to_docdb(session_name: str, probe: str,
-                          channel_results: dict, previous_alignments: dict, ccf_channel_results: dict) -> None:
-    """
-    writes the output of the IBL gui to docdb. Pulls the latest ephys sorted record and appends qc evaluation
-
-    Parameters
-    ----------
-    session_name: str
-        The name of the session for the probe
-
-    probe: str
-        The probe for which the alignment is being done
-
-    channel_results : dict
-        Dictionary containing the current channel results from the IBL GUI.
-    
-    previous_alignments : dict
-        Dictionary containing previously stored alignment information, used for comparison or update.
-
-    ccf_channel_results : dict
-        Dictionary containing the results aligned to the common coordinate framework (CCF).
-    """
-    docdb_id = query_docdb_id(session_name)
-    # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
-    curation_history = CurationHistory(curator='GET FROM CODEOCEAN', timestamp=datetime.now())
-    curations = [json.dumps(channel_results), json.dumps(previous_alignments), json.dumps(ccf_channel_results)]
-    curation_metric = CurationMetric(curations=curations, curation_history=[curation_history])
-    evaluation_name = f'IBL Alignment for {session_name}_{probe}'
-    description = 'IBL Probe Alignment of Ephys with Histology'
-    qc_metric = QCMetric(name=evaluation_name, description=description, 
-                         value=curation_metric, 
-                         status_history=[QCStatus(evaluator=curation_history.curator, status=Status.PASS, timestamp=datetime.now())])
-    
-    evaluation = QCEvaluation(
-        modality=Modality.ECEPHYS,
-        stage=Stage.PROCESSING,
-        name=evaluation_name,
-        description=description,
-        metrics=[qc_metric]
-    )
-
-    session = boto3.Session()
-    credentials = session.get_credentials()
-    host = "api.allenneuraldynamics.org"
-
-    auth = AWSRequestsAuth(
-        aws_access_key=credentials.access_key,
-        aws_secret_access_key=credentials.secret_key,
-        aws_token=credentials.token,
-        aws_host="api.allenneuraldynamics.org",
-        aws_region='us-west-2',
-        aws_service='execute-api'
-    )
-    url = f"https://{host}/v1/add_qc_evaluation"
-    post_request_content = {"data_asset_id": docdb_id,
-                            "qc_evaluation": evaluation.model_dump(mode='json')}
-    response = requests.post(url=url, auth=auth, 
-                            json=post_request_content)
-
-    if response.status_code != 200:
-        print(response.status_code)
-        print(response.text)
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -1275,7 +1176,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, skip_shanks=skip_shanks)
 
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0)
+        if hasattr(self, 'current_shank_idx'):
+            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=folder_path)
+        else: 
+            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, folder_path=folder_path)
+
         if shank_options is not None:
             self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
 
@@ -1389,7 +1294,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         shank_text = self.shank_combobox.currentText()
         shank_id = int(shank_text.split('/')[0])
         self.current_shank_idx = shank_id - 1
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx)
+        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=self.output_directory)
 
         if self.data_status:
             #if self.current_shank_idx != 0:
@@ -2010,10 +1915,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             with open(self.output_directory / 'ccf_channel_locations.json', "w") as f:
                 json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
 
-        if self.loaddata.n_shanks > 1:
-            probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx + 1}'
-        else:
-            probe_name_for_docdb = self.output_directory.stem
+
+        probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
 
         write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
                               channel_results, prev_alignments, ccf_result_json)
