@@ -17,6 +17,8 @@ from .custom_atlas import CustomAtlas
 
 from docdb import query_docdb_id
 from aind_qcportal_schema.metric_value import CurationMetric
+from docdb import docdb_api_client
+from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
@@ -67,25 +69,27 @@ class LoadDataLocal:
         if folder_path is None:
             folder_path = self.folder_path
 
+        print('Checking docdb for existing records')
         self.shank_idx = shank_idx
-        docdb_record = query_docdb_id(folder_path.parent.stem)[1]
-        quality_control = docdb_record['quality_control']
-        evaluations = quality_control['evaluations']
+        docdb_id = query_docdb_id(folder_path.parent.stem)[0]
+        quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
+        evaluations = quality_control.evaluations
         
         evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
-        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation['name'] == f'IBL Alignment for {evaluation_name}']
+        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'IBL Alignment for {evaluation_name}']
 
         if len(alignment_evaluations) > 0:
-            latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x['created']) # pull latest alignment evaluation
-            curation_metric: CurationMetric = latest_alignment_evaluation['metrics'][0]
-            curations = curation_metric.curations
-            self.alignments = json.loads(curations[1]) # load in the previous alignment
+            print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
+            latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
+            curation_metric: dict = latest_alignment_evaluation.metrics[0].value['value']
+            self.alignments = json.loads(curation_metric['previous_alignments']) # load in the previous alignment
             self.prev_align = []
             if self.alignments:
                 self.prev_align = [*self.alignments.keys()]
             self.prev_align = sorted(self.prev_align, reverse=True)
             self.prev_align.append("original")
         else:
+            print(f'No alignment found in docdb for {evaluation_name}')
             self.alignments = []
             self.prev_align = ["original"]
 

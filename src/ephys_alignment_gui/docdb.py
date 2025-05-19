@@ -9,21 +9,21 @@ import requests
 import boto3
 from aws_requests_auth.aws_auth import AWSRequestsAuth
 
+# Resolve DocDB id of data asset
+API_GATEWAY_HOST = "api.allenneuraldynamics.org"
+DATABASE = "metadata_index"
+COLLECTION = "data_assets"
+
+docdb_api_client = MetadataDbClient(
+    host=API_GATEWAY_HOST,
+    database=DATABASE,
+    collection=COLLECTION,
+)
+
 def query_docdb_id(session_name: str) -> tuple[str, dict]:
     """
     Returns docdb_id and record for asset_name.
     """
-
-    # Resolve DocDB id of data asset
-    API_GATEWAY_HOST = "api.allenneuraldynamics.org"
-    DATABASE = "metadata_index"
-    COLLECTION = "data_assets"
-
-    docdb_api_client = MetadataDbClient(
-        host=API_GATEWAY_HOST,
-        database=DATABASE,
-        collection=COLLECTION,
-    )
 
     response = docdb_api_client.retrieve_docdb_records(
         filter_query={"name": {"$regex": f"^{session_name}_sorted*"}}
@@ -61,8 +61,11 @@ def write_output_to_docdb(session_name: str, probe: str,
     docdb_id = query_docdb_id(session_name)[0]
     # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
     curation_history = CurationHistory(curator='GET FROM CODEOCEAN', timestamp=datetime.now())
-    curations = [json.dumps(channel_results), json.dumps(previous_alignments), json.dumps(ccf_channel_results)]
-    curation_metric = CurationMetric(curations=curations, curation_history=[curation_history])
+    # use dict
+    curations = {'channel_results': channel_results, 'previous_alignments': previous_alignments, 
+                 'ccf_channel_results': ccf_channel_results}
+    
+    curation_metric = CurationMetric(curations=[json.dumps(curations)], curation_history=[curation_history])
     evaluation_name = f'IBL Alignment for {session_name}_{probe}'
     description = 'IBL Probe Alignment of Ephys with Histology'
     qc_metric = QCMetric(name=evaluation_name, description=description, 
