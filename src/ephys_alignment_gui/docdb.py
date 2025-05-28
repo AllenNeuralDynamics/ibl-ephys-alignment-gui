@@ -26,7 +26,8 @@ def query_docdb_id(session_name: str) -> tuple[str, dict]:
     """
 
     response = docdb_api_client.retrieve_docdb_records(
-        filter_query={"name": {"$regex": f"^{session_name}_sorted*"}}
+        filter_query={"data_description.data_level": "derived", "data_description.input_data_name": session_name,
+                      "data_description.process_name": "sorted"}
     )
     if len(response) == 0:
         raise ValueError(f"No ephys sorted record found in docdb for {session_name}")
