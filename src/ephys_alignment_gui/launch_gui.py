@@ -30,7 +30,7 @@ from ephys_alignment_gui.ephys_alignment import EphysAlignment
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
 
-from docdb import write_output_to_docdb
+from ephys_alignment_gui.docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
 DATA_PATH = Path('/data')
