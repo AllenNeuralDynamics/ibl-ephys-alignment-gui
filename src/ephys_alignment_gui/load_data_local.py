@@ -15,9 +15,8 @@ import iblatlas.atlas as atlas
 
 from .custom_atlas import CustomAtlas
 
-from docdb import query_docdb_id
+from ephys_alignment_gui.docdb import query_docdb_id, docdb_api_client
 from aind_qcportal_schema.metric_value import CurationMetric
-from docdb import docdb_api_client
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 
 # temporarily add this in for neuropixel course
