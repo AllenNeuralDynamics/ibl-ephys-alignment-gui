@@ -122,6 +122,7 @@ class LoadDataLocal:
         Find out the starting alignmnet
         """
         align = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)[idx]
+        print('Debug alignments', self.alignments, align)
 
         if align == "original":
             feature = None
