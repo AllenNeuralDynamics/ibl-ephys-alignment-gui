@@ -80,8 +80,8 @@ class LoadDataLocal:
         if len(alignment_evaluations) > 0:
             print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
             latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
-            curation_metric: dict = latest_alignment_evaluation.metrics[0].value['value']
-            self.alignments = json.loads(curation_metric['previous_alignments']) # load in the previous alignment
+            curation_metric = latest_alignment_evaluation.metrics[0].value['curations'][0]
+            self.alignments = json.loads(curation_metric)['previous_alignments'] # load in the previous alignment
             self.prev_align = []
             if self.alignments:
                 self.prev_align = [*self.alignments.keys()]
