@@ -1,4 +1,5 @@
 import json
+import os
 
 from aind_data_access_api.document_db import MetadataDbClient
 from aind_data_schema_models.modalities import Modality
@@ -61,7 +62,7 @@ def write_output_to_docdb(session_name: str, probe: str,
     """
     docdb_id = query_docdb_id(session_name)[0]
     # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
-    curation_history = CurationHistory(curator='GET FROM CODEOCEAN', timestamp=datetime.now())
+    curation_history = CurationHistory(curator=os.getenv("username"), timestamp=datetime.now())
     # use dict
     curations = {'channel_results': channel_results, 'previous_alignments': previous_alignments, 
                  'ccf_channel_results': ccf_channel_results}
