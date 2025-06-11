@@ -85,14 +85,18 @@ def write_output_to_docdb(session_name: str, probe: str,
     credentials = session.get_credentials()
     host = "api.allenneuraldynamics.org"
 
-    auth = AWSRequestsAuth(
-        aws_access_key=credentials.access_key,
-        aws_secret_access_key=credentials.secret_key,
-        aws_token=credentials.token,
-        aws_host="api.allenneuraldynamics.org",
-        aws_region='us-west-2',
-        aws_service='execute-api'
-    )
+    kwargs = {
+        'aws_access_key': credentials.access_key,
+        'aws_secret_access_key': credentials.secret_key,
+        'aws_host': host,
+        'aws_region': 'us-west-2',
+        'aws_service': 'execute-api',
+    }
+
+    if credentials.token:
+        kwargs['aws_token'] = credentials.token
+
+    auth = AWSRequestsAuth(**kwargs)
     url = f"https://{host}/v1/add_qc_evaluation"
     post_request_content = {"data_asset_id": docdb_id,
                             "qc_evaluation": evaluation.model_dump(mode='json')}
