@@ -915,9 +915,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.fig_slice.addItem(img)
         self.traj_line = pg.PlotCurveItem()
-
-        self.traj_line.setData(x=self.xyz_track[:, 0] * 1e6 / self.loaddata.brain_atlas.spacing, 
-                               y=self.xyz_track[:, 2] * 1e6 / self.loaddata.brain_atlas.spacing, pen=self.kpen_solid)
+        self.traj_line.setData(x=self.xyz_track[:, 0], y=self.xyz_track[:, 2], pen=self.kpen_solid)
         self.fig_slice.addItem(self.traj_line)
         self.plot_channels()
 
@@ -1853,58 +1851,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 return
 
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
-                                    self.xyz_channels, self.current_shank_idx + 1)
+                                    self.xyz_channels)
         self.loaddata.get_starting_alignment(0)
-        
-        if self.loaddata.n_shanks > 1:
-            with open(self.output_directory / f'channel_locations_shank{self.current_shank_idx + 1}.json', 'r') as f:
-                channel_results = json.load(f)
-        else:
-            with open(self.output_directory / 'channel_locations.json', 'r') as f:
-                channel_results = json.load(f)
-        
-        channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
-        channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
-        for i in range(len(channel_ids)):
-            channel_coords[i] = (self.loaddata.brain_atlas.image.shape[0] - int(np.round(channel_results[channel_ids[i]]['x'])), 
-                                int(np.round(channel_results[channel_ids[i]]['y'])), 
-                                self.loaddata.brain_atlas.image.shape[2] - int(np.round(channel_results[channel_ids[i]]['z'])))
-        
-        ants_physical_points = []
-        for point in channel_coords:
-            ants_physical_points.append(self.loaddata.brain_atlas.original_image.TransformIndexToPhysicalPoint(point.tolist()))
-
-        ants_physical_points_array = np.array(ants_physical_points)
-        ccf_coordinates_dataframe = self._transform_to_ccf(ants_physical_points_array)
-        ccf_result_json = {}
-
-        for channel in self.loaddata.channel_dict:
-            if channel == 'origin':
-                continue
-
-            channel_dict_info = self.loaddata.channel_dict[channel]
-
-            channel_index = int(channel[channel.index('_')+1:])
-            ccf_channel_info = ccf_coordinates_dataframe.iloc[channel_index]
-            ccf_result_json[channel] = {
-                "x": ccf_channel_info['x'].astype(np.float64),
-                "y": ccf_channel_info['y'].astype(np.float64),
-                "z": ccf_channel_info['z'].astype(np.float64),
-                "axial": channel_dict_info['axial'],
-                "lateral": channel_dict_info['lateral'],
-                "brain_region_id": channel_dict_info['brain_region_id'],
-                "brain_region": channel_dict_info['brain_region']
-            }
-        
-        if self.loaddata.n_shanks > 1:
-            with open(self.output_directory / f'ccf_channel_locations_shank{self.current_shank_idx + 1}.json', "w") as f:
-                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
-        else:
-            with open(self.output_directory / 'ccf_channel_locations.json', "w") as f:
-                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
-
-
-        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved, and ccf coordinates saved")
+        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved")
 
 
     def display_qc_options(self):

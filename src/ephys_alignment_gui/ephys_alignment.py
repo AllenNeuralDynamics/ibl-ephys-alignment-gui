@@ -40,15 +40,14 @@ class EphysAlignment:
         self.xyz_samples = histology.interpolate_along_track(self.xyz_track,
                                                              self.sampling_trk -
                                                              self.sampling_trk[0])
-        print('Xyz samples', self.xyz_samples)
         # ensure none of the track is outside the y or x lim of atlas
-        xlim = np.bitwise_and((self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[0])
-        ylim = np.bitwise_and((self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[2])
+        xlim = np.bitwise_and(self.xyz_samples[:, 0] > self.brain_atlas.bc.xlim[0],
+                              self.xyz_samples[:, 0] < self.brain_atlas.bc.xlim[1])
+        ylim = np.bitwise_and(self.xyz_samples[:, 1] < self.brain_atlas.bc.ylim[0],
+                              self.xyz_samples[:, 1] > self.brain_atlas.bc.ylim[1])
         rem = np.bitwise_and(xlim, ylim)
         self.xyz_samples = self.xyz_samples[rem]
-        
+
         self.region, self.region_label, self.region_colour, self.region_id\
             = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
 
@@ -66,39 +65,29 @@ class EphysAlignment:
         # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
         n_picks = np.max([4, round(xyz_picks.shape[0] / 4)])
         traj_entry = atlas.Trajectory.fit(xyz_picks[:n_picks, :])
-        traj_exit= atlas.Trajectory.fit(xyz_picks[-1 * n_picks:, :])
+        traj_exit = atlas.Trajectory.fit(xyz_picks[-1 * n_picks:, :])
 
         # Force the entry to be on the upper z lim of the atlas to account for cases where channels
         # may be located above the surface of the brain
         entry = (traj_entry.eval_z(self.brain_atlas.bc.zlim))[0, :]
-        
-        """
         if speedy:
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
         else:
             exit = atlas.Insertion.get_brain_exit(traj_exit, self.brain_atlas)
             # The exit is just below the bottom surfacce of the brain
             exit[2] = exit[2] - 200 / 1e6
-  
+
         # Catch cases where the exit
         if any(np.isnan(exit)):
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
-        """
-        exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
-        print('Entry', entry)
-        print('Exit', exit)
-
         xyz_track = np.r_[exit[np.newaxis, :], xyz_picks, entry[np.newaxis, :]]
-        print('track', xyz_track)
-        indices = np.argsort(xyz_track[:, 2])
         # Sort so that most ventral coordinate is first
-        xyz_track = xyz_track[indices, :]
-      
+        xyz_track = xyz_track[np.argsort(xyz_track[:, 2]), :]
+
         # Compute distance to first electrode from bottom coordinate
-        tip_distance = _cumulative_distance(xyz_track)[1] - TIP_SIZE_UM / 1e6
+        tip_distance = _cumulative_distance(xyz_track)[1] + TIP_SIZE_UM / 1e6
         track_length = _cumulative_distance(xyz_track)[-1]
         track_extent = np.array([0, track_length]) - tip_distance
-        print('Extent', track_extent)
         return xyz_track, track_extent
 
     def get_track_and_feature(self):
@@ -220,7 +209,6 @@ class EphysAlignment:
         region = self.track2feature(region, feature, track) * 1e6
         region_label[:, 0] = (self.track2feature(np.float64(region_label[:, 0]), feature,
                               track) * 1e6)
-
         return region, region_label
 
     @staticmethod
@@ -243,22 +231,13 @@ class EphysAlignment:
         if not brain_atlas:
             brain_atlas = atlas.AllenAtlas(25)
 
-        #region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
-        region_ids = []
-        xyz_indices = np.round(xyz_coords * 1e6 / brain_atlas.spacing).astype(np.int64)
-        xyz_indices = xyz_indices[(xyz_indices[:, 0] < brain_atlas.image.shape[0]) & (xyz_indices[:, 1] < brain_atlas.image.shape[1])
-                                  & (xyz_indices[:, 2] < brain_atlas.image.shape[2])]
-        for coord in xyz_indices:
-            region_ids.append(brain_atlas.label[coord[0], coord[1], coord[2]])
-
+        region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
         region_info = brain_atlas.regions.get(region_ids)
         boundaries = np.where(np.diff(region_info.id))[0]
-  
         region = np.empty((boundaries.size + 1, 2))
         region_label = np.empty((boundaries.size + 1, 2), dtype=object)
         region_id = np.empty((boundaries.size + 1, 1), dtype=int)
         region_colour = np.empty((boundaries.size + 1, 3), dtype=int)
-        
         for bound in np.arange(boundaries.size + 1):
             if bound == 0:
                 _region = np.array([0, boundaries[bound]])
@@ -266,7 +245,6 @@ class EphysAlignment:
                 _region = np.array([boundaries[bound - 1], region_info.id.size - 1])
             else:
                 _region = np.array([boundaries[bound - 1], boundaries[bound]])
-
             _region_colour = region_info.rgb[_region[1]]
             _region_label = region_info.acronym[_region[1]]
             _region_id = region_info.id[_region[1]]
@@ -461,11 +439,7 @@ class EphysAlignment:
             depths = self.chn_depths / 1e6
         # nb using scipy here so we can change to cubic spline if needed
         channel_depths_track = self.feature2track(depths, feature, track) - self.track_extent[0]
-        
         xyz_channels = histology.interpolate_along_track(self.xyz_track, channel_depths_track)
-        xyz_channels = xyz_channels * 1e6 / self.brain_atlas.spacing
-        print('xyz channels length', len(xyz_channels))
-        print('xyz channels', xyz_channels)
         return xyz_channels
 
     def get_brain_locations(self, xyz_channels):
@@ -495,7 +469,7 @@ class EphysAlignment:
             depths = np.array([line, line + 10 / 1e6])
             xyz = self.get_channel_locations(feature, track, depths)
 
-            extent = 20
+            extent = 500e-6
             vector = np.diff(xyz, axis=0)[0]
             point = xyz[0, :]
             vector_perp = np.array([1, 0, -1 * vector[0] / vector[2]])

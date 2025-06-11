@@ -13,6 +13,7 @@ from one import alf
 import iblatlas.atlas as atlas
 
 from .custom_atlas import CustomAtlas
+from .custom_atlas import CustomAllenAtlas
 
 
 # temporarily add this in for neuropixel course
@@ -131,21 +132,25 @@ class LoadDataLocal:
         #    template_path=self.atlas_path, label_path=self.atlas_path
         # )
 
+        """
+        self.atlas_image_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
+        if not self.atlas_image_path:
+            raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
+        
+        self.atlas_labels_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
+        if not self.atlas_labels_path:
+            raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
+
+        self.histology_path = self.atlas_image_path[0].parent
+
+        self.brain_atlas = CustomAtlas(
+        atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
+        atlas_labels_file=self.atlas_labels_path[0].as_posix(),
+        )
+        """
         if reload_data:
-            self.atlas_image_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
-            if not self.atlas_image_path:
-                raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
-            
-            self.atlas_labels_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
-            if not self.atlas_labels_path:
-                raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
+            self.brain_atlas = CustomAllenAtlas(template_path=self.atlas_path, label_path=self.atlas_path)
 
-            self.histology_path = self.atlas_image_path[0].parent
-
-            self.brain_atlas = CustomAtlas(
-            atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
-            atlas_labels_file=self.atlas_labels_path[0].as_posix(),
-            )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
@@ -233,64 +238,39 @@ class LoadDataLocal:
         # Read in local xyz_picks file
         # This file must exist, otherwise we don't know where probe was
         xyz_file_name = (
-            "*xyz_picks_image_space.json"
+            "*xyz_picks.json"
             if self.n_shanks == 1
-            else f"*xyz_picks_shank{shank_idx + 1}_image_space.json"
+            else f"*xyz_picks_shank{self.shank_idx + 1}.json"
         )
-        xyz_file = sorted(folder_path.glob(xyz_file_name))
+        xyz_file = sorted(self.folder_path.glob(xyz_file_name))
 
         assert len(xyz_file) == 1
         with open(xyz_file[0], "r") as f:
             user_picks = json.load(f)
 
-        xyz_picks = np.array(user_picks["xyz_picks"]) / self.brain_atlas.spacing
-        xyz_picks[:, 0] = self.brain_atlas.image.shape[0] - xyz_picks[:, 0]
-        xyz_picks[:, 2] = self.brain_atlas.image.shape[2] - xyz_picks[:, 2]
-        xyz_picks = xyz_picks * self.brain_atlas.spacing / 1e6
-
-        print('xyz_picks', xyz_picks)
+        xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6
         return xyz_picks
 
     def get_slice_images(self, xyz_channels):
+
         # Load the CCF images
-        """
         index = self.brain_atlas.bc.xyz2i(xyz_channels)[
             :, self.brain_atlas.xyz2dims
         ]
-        """
-        index = np.round(xyz_channels * 1e6 / self.brain_atlas.spacing).astype(np.int64)
-        index = index[(index[:, 0] < self.brain_atlas.image.shape[0]) & (index[:, 1] < self.brain_atlas.image.shape[1])
-                                  & (index[:, 2] < self.brain_atlas.image.shape[2])]
-        ccf_slice = self.brain_atlas.image[:, index[:, 1], index[:, 2]]
-        print('Ccf slice', ccf_slice.shape)
-
-        #ccf_slice = np.swapaxes(ccf_slice, 0, 1)
-
-        label_indices = self.brain_atlas.label[:, index[:, 1], index[:, 2]]
-
-        #IBL function requires the label ids to the the row indices of the structure tree rather than the atlas id
-        structure_tree = self.get_allen_csv()
-        structure_tree['row_id'] = structure_tree.index.values
-        unique_labels = np.unique(label_indices)
-        new_labels = structure_tree.set_index('id').loc[unique_labels]['row_id']
-
-        mapping = {old:new for old, new in zip(unique_labels, new_labels)}
-        vectorized_map = np.vectorize(mapping.get)
-
-        label_indices = vectorized_map(label_indices)
+        ccf_slice = self.brain_atlas.image[index[:, 0], :, index[:, 2]]
+        ccf_slice = np.swapaxes(ccf_slice, 0, 1)
 
         label_slice = self.brain_atlas._label2rgb(
-            label_indices
+            self.brain_atlas.label[index[:, 0], :, index[:, 2]]
         )
-        #label_slice = np.swapaxes(label_slice, 0, 1)
+        label_slice = np.swapaxes(label_slice, 0, 1)
 
-        width = [0, self.brain_atlas.image.shape[0]]
+        width = [self.brain_atlas.bc.i2x(0), self.brain_atlas.bc.i2x(456)]
         height = [
-            index[0, 2],
-            index[-1, 2],
+            self.brain_atlas.bc.i2z(index[0, 2]),
+            self.brain_atlas.bc.i2z(index[-1, 2]),
         ]
 
-        print('Ccf slice', ccf_slice.shape)
         slice_data = {
             "ccf": ccf_slice,
             "label": label_slice,
@@ -308,7 +288,7 @@ class LoadDataLocal:
             histology_images = [
                 ii.name
                 for ii in list(Path(self.histology_path).iterdir())
-                if ".nii.gz" in ii.name
+                if ".nrrd" in ii.name
             ]
             for image in histology_images:
                 path_to_image = glob.glob(
@@ -321,12 +301,12 @@ class LoadDataLocal:
 
                 if hist_path:
                     # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
-                    hist_atlas = CustomAtlas(
-                        atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
+                    hist_atlas = CustomAllenAtlas(
+                        template_path=hist_path, label_path=self.atlas_path
                     )
-                    hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]]
-                    #hist_slice = np.swapaxes(hist_slice, 0, 1)
-                    slice_data[image.split(".nii.gz")[0]] = hist_slice
+                    hist_slice = hist_atlas.image[index[:, 0], :, index[:, 2]]
+                    hist_slice = np.swapaxes(hist_slice, 0, 1)
+                    slice_data[image.split(".nrrd")[0]] = hist_slice
 
         return slice_data, None
 
@@ -353,7 +333,7 @@ class LoadDataLocal:
 
         return description, region_lookup
 
-    def upload_data(self, feature, track, xyz_channels, shank_idx):
+    def upload_data(self, feature, track, xyz_channels):
         print('Channels', xyz_channels)
         region_ids = []
         index = np.round(xyz_channels).astype(np.int64)
@@ -382,7 +362,7 @@ class LoadDataLocal:
         chan_loc_filename = (
             "channel_locations.json"
             if self.n_shanks == 1
-            else f"channel_locations_shank{shank_idx}.json"
+            else f"channel_locations_shank{self.shank_idx + 1}.json"
         )
         
         os.makedirs(self.output_directory, exist_ok=True)
