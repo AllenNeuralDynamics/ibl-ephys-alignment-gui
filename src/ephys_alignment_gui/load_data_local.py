@@ -418,7 +418,9 @@ class LoadDataLocal:
         os.makedirs(self.output_directory, exist_ok=True)
         with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
             json.dump(channel_dict, f, indent=2, separators=(",", ": "))
-        original_json = self.alignments
+        original_json = self.
+        
+        print('Feature and track', feature, track)
         date = datetime.now().replace(microsecond=0).isoformat()
         data = {date: [feature.tolist(), track.tolist()]}
         if original_json:
