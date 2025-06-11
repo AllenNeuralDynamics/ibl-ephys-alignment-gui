@@ -419,14 +419,19 @@ class LoadDataLocal:
         with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
             json.dump(channel_dict, f, indent=2, separators=(",", ": "))
         original_json = self.alignments
+        print("Original json before", original_json)
         
         print('Feature and track', feature, track)
         date = datetime.now().replace(microsecond=0).isoformat()
         data = {date: [feature.tolist(), track.tolist()]}
+        print('New alignment data', data)
         if original_json:
             original_json.update(data)
+            print("Original json after updating", original_json)
         else:
             original_json = data
+        
+        print("Original json after", original_json)
         # Save the new alignment
         prev_align_filename = (
             "prev_alignments.json"
