@@ -122,7 +122,7 @@ class LoadDataLocal:
         Find out the starting alignmnet
         """
         align = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)[idx]
-        print('Debug alignments', self.alignments, align)
+        print('Previous Alignments from docdb and most recent one to use', self.alignments, align)
 
         if align == "original":
             feature = None
@@ -418,20 +418,16 @@ class LoadDataLocal:
         os.makedirs(self.output_directory, exist_ok=True)
         with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
             json.dump(channel_dict, f, indent=2, separators=(",", ": "))
+
         original_json = self.alignments
-        print("Original json before", original_json)
-        
-        print('Feature and track', feature, track)
         date = datetime.now().replace(microsecond=0).isoformat()
         data = {date: [feature.tolist(), track.tolist()]}
-        print('New alignment data', data)
+
         if original_json:
             original_json.update(data)
-            print("Original json after updating", original_json)
         else:
             original_json = data
-        
-        print("Original json after", original_json)
+
         # Save the new alignment
         prev_align_filename = (
             "prev_alignments.json"
