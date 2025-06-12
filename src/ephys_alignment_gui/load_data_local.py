@@ -42,6 +42,7 @@ class LoadDataLocal:
         self.n_shanks = 1
         self.output_directory = None
         self.previous_directory = None
+        self.slice_images = {}
 
     def get_info(self, folder_path, shank_idx: int, skip_shanks=False):
         """
@@ -80,8 +81,8 @@ class LoadDataLocal:
         if len(alignment_evaluations) > 0:
             print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
             latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
-            curation_metric = latest_alignment_evaluation.metrics[0].value['curations'][0]
-            self.alignments = json.loads(curation_metric)['previous_alignments'] # load in the previous alignment
+            curation_metric: dict = latest_alignment_evaluation.metrics[0].value['value']
+            self.alignments = json.loads(curation_metric['previous_alignments']) # load in the previous alignment
             self.prev_align = []
             if self.alignments:
                 self.prev_align = [*self.alignments.keys()]
@@ -122,7 +123,6 @@ class LoadDataLocal:
         Find out the starting alignmnet
         """
         align = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)[idx]
-        print('Previous Alignments from docdb and most recent one to use', self.alignments, align)
 
         if align == "original":
             feature = None
@@ -351,9 +351,14 @@ class LoadDataLocal:
 
                 if hist_path:
                     # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
-                    hist_atlas = CustomAtlas(
-                        atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
-                    )
+                    if image.split(".nii.gz")[0] not in self.slice_images:
+                        hist_atlas = CustomAtlas(
+                            atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
+                        )
+                        self.slice_images[image.split(".nii.gz")[0]] = hist_atlas
+                    else:
+                        hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
+
                     hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]]
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
@@ -418,16 +423,13 @@ class LoadDataLocal:
         os.makedirs(self.output_directory, exist_ok=True)
         with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
             json.dump(channel_dict, f, indent=2, separators=(",", ": "))
-
         original_json = self.alignments
         date = datetime.now().replace(microsecond=0).isoformat()
         data = {date: [feature.tolist(), track.tolist()]}
-
         if original_json:
             original_json.update(data)
         else:
             original_json = data
-
         # Save the new alignment
         prev_align_filename = (
             "prev_alignments.json"

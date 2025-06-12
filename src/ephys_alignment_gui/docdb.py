@@ -104,3 +104,4 @@ def write_output_to_docdb(session_name: str, probe: str,
     if response.status_code != 200:
         print(response.status_code)
         print(response.text)
+        print(f"Failed to write {session_name} with {probe} to docdb")

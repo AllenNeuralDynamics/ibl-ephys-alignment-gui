@@ -8,6 +8,8 @@ if platform.system() == 'Darwin':
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import QThread, QObject
+from ephys_alignment_gui.thread_worker import Worker
 import pyqtgraph as pg
 
 import numpy as np
@@ -1850,6 +1852,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         
         return probe_ccf
 
+    def run_complete_button_in_thread(self):
+        self.thread = QThread()
+        self.worker = Worker(self.complete_button_pressed_offline)
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.run)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.start()
+
     def complete_button_pressed_offline(self):
         """
         Triggered when save button or Shift+S keys are pressed. 
@@ -1857,7 +1868,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.loaddata.output_directory:
             if not self.on_output_folder_selected():
-                QtWidgets.QMessageBox.information(self, 'Status', "Channels locations not saved")
+                print("Channels locations not saved")
                 return
 
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
@@ -1921,7 +1932,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
                               channel_results, prev_alignments, ccf_result_json)
-        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved, and ccf coordinates saved")
+        print(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
 
 
     def display_qc_options(self):
