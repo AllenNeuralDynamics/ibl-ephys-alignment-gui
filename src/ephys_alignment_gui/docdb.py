@@ -68,8 +68,8 @@ def write_output_to_docdb(session_name: str, probe: str,
                  'ccf_channel_results': ccf_channel_results}
     
     curation_metric = CurationMetric(curations=[json.dumps(curations)], curation_history=[curation_history])
-    evaluation_name = f'IBL Alignment for {session_name}_{probe}'
-    description = 'IBL Probe Alignment of Ephys with Histology'
+    evaluation_name = f'Probe Alignment for {session_name}_{probe}'
+    description = 'Probe Alignment of Ephys with Histology'
     qc_metric = QCMetric(name=evaluation_name, description=description, 
                          value=curation_metric, 
                          status_history=[QCStatus(evaluator=curation_history.curator, status=Status.PASS, timestamp=datetime.now())])

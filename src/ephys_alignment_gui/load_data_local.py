@@ -76,7 +76,7 @@ class LoadDataLocal:
         evaluations = quality_control.evaluations
         
         evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
-        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'IBL Alignment for {evaluation_name}']
+        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'Probe Alignment for {evaluation_name}']
 
         if len(alignment_evaluations) > 0:
             print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
