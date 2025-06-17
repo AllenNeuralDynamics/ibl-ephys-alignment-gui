@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import numpy as np
 from datetime import datetime
@@ -14,6 +15,9 @@ import iblatlas.atlas as atlas
 
 from .custom_atlas import CustomAtlas
 
+from ephys_alignment_gui.docdb import query_docdb_id, docdb_api_client
+from aind_qcportal_schema.metric_value import CurationMetric
+from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
@@ -38,6 +42,7 @@ class LoadDataLocal:
         self.n_shanks = 1
         self.output_directory = None
         self.previous_directory = None
+        self.slice_images = {}
 
     def get_info(self, folder_path, shank_idx: int, skip_shanks=False):
         """
@@ -48,7 +53,7 @@ class LoadDataLocal:
         if not skip_shanks:
             shank_list = self.get_nshanks()
 
-        prev_aligns = self.get_previous_alignments(shank_idx=shank_idx)
+        prev_aligns = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)
         return prev_aligns, shank_list
 
 
@@ -60,11 +65,35 @@ class LoadDataLocal:
         prev_aligns = self.get_previous_alignments(folder_path=folder_path)
         return prev_aligns, shank_list
 
-    def get_previous_alignments(self, shank_idx=0,folder_path = None):
+    def get_previous_alignments(self, shank_idx=0,folder_path: Path | None = None):
         if folder_path is None:
             folder_path = self.folder_path
 
+        print('Checking docdb for existing records')
         self.shank_idx = shank_idx
+        docdb_id = query_docdb_id(folder_path.parent.stem)[0]
+        quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
+        evaluations = quality_control.evaluations
+        
+        evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
+        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'Probe Alignment for {evaluation_name}']
+
+        if len(alignment_evaluations) > 0:
+            print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
+            latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
+            curation_metric = latest_alignment_evaluation.metrics[0].value['curations']
+            self.alignments = json.loads(curation_metric[0])['previous_alignments'] # load in the previous alignment
+            self.prev_align = []
+            if self.alignments:
+                self.prev_align = [*self.alignments.keys()]
+            self.prev_align = sorted(self.prev_align, reverse=True)
+            self.prev_align.append("original")
+        else:
+            print(f'No alignment found in docdb for {evaluation_name}')
+            self.alignments = []
+            self.prev_align = ["original"]
+
+        """
         # If previous alignment json file exists, read in previous alignments
         prev_align_filename = (
             "prev_alignments.json"
@@ -85,14 +114,15 @@ class LoadDataLocal:
         else:
             self.alignments = []
             self.prev_align = ["original"]
+        """
 
         return self.prev_align
 
-    def get_starting_alignment(self, idx, shank_idx=0):
+    def get_starting_alignment(self, idx, shank_idx=0, folder_path: Path | None = None):
         """
         Find out the starting alignmnet
         """
-        align = self.get_previous_alignments(shank_idx=shank_idx)[idx]
+        align = self.get_previous_alignments(shank_idx=shank_idx, folder_path=folder_path)[idx]
 
         if align == "original":
             feature = None
@@ -132,20 +162,21 @@ class LoadDataLocal:
         # )
 
         if reload_data:
-            self.atlas_image_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
-            if not self.atlas_image_path:
-                raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
-            
-            self.atlas_labels_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
-            if not self.atlas_labels_path:
-                raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
+            if not hasattr(self, "atlas_image_path"):
+                self.atlas_image_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
+                if not self.atlas_image_path:
+                    raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
+                
+                self.atlas_labels_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
+                if not self.atlas_labels_path:
+                    raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
 
-            self.histology_path = self.atlas_image_path[0].parent
+                self.histology_path = self.atlas_image_path[0].parent
 
-            self.brain_atlas = CustomAtlas(
-            atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
-            atlas_labels_file=self.atlas_labels_path[0].as_posix(),
-            )
+                self.brain_atlas = CustomAtlas(
+                atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
+                atlas_labels_file=self.atlas_labels_path[0].as_posix(),
+                )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
@@ -321,9 +352,14 @@ class LoadDataLocal:
 
                 if hist_path:
                     # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
-                    hist_atlas = CustomAtlas(
-                        atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
-                    )
+                    if image.split(".nii.gz")[0] not in self.slice_images:
+                        hist_atlas = CustomAtlas(
+                            atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
+                        )
+                        self.slice_images[image.split(".nii.gz")[0]] = hist_atlas
+                    else:
+                        hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
+
                     hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]]
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice

@@ -1,3 +1,4 @@
+import json
 import os
 import platform
 from pathlib import Path
@@ -7,6 +8,8 @@ if platform.system() == 'Darwin':
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import QThread, QObject
+from ephys_alignment_gui.thread_worker import Worker
 import pyqtgraph as pg
 
 import numpy as np
@@ -28,10 +31,12 @@ from ephys_alignment_gui.windows.features_across_region import RegionFeatureWind
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
-import json
+
+from ephys_alignment_gui.docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
 DATA_PATH = Path('/data')
+
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     @staticmethod
@@ -1173,14 +1178,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, skip_shanks=skip_shanks)
 
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0)
+        if hasattr(self, 'current_shank_idx'):
+            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=folder_path)
+        else: 
+            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, folder_path=folder_path)
+
         if shank_options is not None:
             self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
 
         #if shank_options is None:
         #    self.data_status = True
         
-        self.current_shank_idx = 0
+        if not hasattr(self, 'current_shank_idx'):
+            self.current_shank_idx = 0
 
         self.data_button_pressed(folder_path)
         print('Feature prev', self.feature_prev)
@@ -1287,7 +1297,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         shank_text = self.shank_combobox.currentText()
         shank_id = int(shank_text.split('/')[0])
         self.current_shank_idx = shank_id - 1
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx)
+        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=self.output_directory)
 
         if self.data_status:
             #if self.current_shank_idx != 0:
@@ -1842,6 +1852,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         
         return probe_ccf
 
+    def run_complete_button_in_thread(self):
+        self.thread = QThread()
+        self.worker = Worker(self.complete_button_pressed_offline)
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.run)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.start()
+
     def complete_button_pressed_offline(self):
         """
         Triggered when save button or Shift+S keys are pressed. 
@@ -1849,7 +1868,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.loaddata.output_directory:
             if not self.on_output_folder_selected():
-                QtWidgets.QMessageBox.information(self, 'Status', "Channels locations not saved")
+                print("Channels locations not saved")
                 return
 
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
@@ -1859,9 +1878,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.loaddata.n_shanks > 1:
             with open(self.output_directory / f'channel_locations_shank{self.current_shank_idx + 1}.json', 'r') as f:
                 channel_results = json.load(f)
+            
+            with open(self.output_directory / f'prev_alignments_shank{self.current_shank_idx + 1}.json', 'r') as f:
+                prev_alignments = json.load(f)
         else:
             with open(self.output_directory / 'channel_locations.json', 'r') as f:
                 channel_results = json.load(f)
+            with open(self.output_directory / 'prev_alignments.json', 'r') as f:
+                prev_alignments = json.load(f)
         
         channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
         channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
@@ -1904,7 +1928,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
 
 
-        QtWidgets.QMessageBox.information(self, 'Status', "Channels locations saved, and ccf coordinates saved")
+        probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
+
+        write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
+                              channel_results, prev_alignments, ccf_result_json)
+        print(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
 
 
     def display_qc_options(self):
