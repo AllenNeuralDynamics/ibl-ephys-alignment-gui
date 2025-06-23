@@ -388,7 +388,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             if self.loaddata.output_directory == None:
                 self.on_output_folder_selected()
-            image_path_overview = Path(self.loaddata.output_directory)
+            image_path_overview = Path(self.loaddata.output_directory / f"Plots_Shank_{self.current_shank_idx}")
 
         os.makedirs(image_path_overview, exist_ok=True)
         os.makedirs(image_path_overview, exist_ok=True)
@@ -1858,7 +1858,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.thread.deleteLater)
+        self.worker.finished.connect(self.thread.quit)           # Gracefully stop thread
+        self.worker.finished.connect(self.worker.deleteLater)    # Clean up worker
+        self.thread.finished.connect(self.thread.deleteLater)    # Clean up thread
+ 
         self.thread.start()
 
     def complete_button_pressed_offline(self):

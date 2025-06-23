@@ -71,25 +71,34 @@ class LoadDataLocal:
 
         print('Checking docdb for existing records')
         self.shank_idx = shank_idx
-        docdb_id = query_docdb_id(folder_path.parent.stem)[0]
-        quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
-        evaluations = quality_control.evaluations
+        quality_control = None
+        try:
+            docdb_id = query_docdb_id(folder_path.parent.stem)[0]
+            quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
+        except ValueError as e:
+            print(f"Failed to get record from docdb with exception {e}. Proceeding to load from scratch")
         
-        evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
-        alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'Probe Alignment for {evaluation_name}']
+        if quality_control is not None:
+            evaluations = quality_control.evaluations
+            
+            evaluation_name = f'{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}'
+            alignment_evaluations = [evaluation for evaluation in evaluations if evaluation.name == f'Probe Alignment for {evaluation_name}']
 
-        if len(alignment_evaluations) > 0:
-            print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
-            latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
-            curation_metric = latest_alignment_evaluation.metrics[0].value['curations']
-            self.alignments = json.loads(curation_metric[0])['previous_alignments'] # load in the previous alignment
-            self.prev_align = []
-            if self.alignments:
-                self.prev_align = [*self.alignments.keys()]
-            self.prev_align = sorted(self.prev_align, reverse=True)
-            self.prev_align.append("original")
+            if len(alignment_evaluations) > 0:
+                print(f'Found exisitng record for {evaluation_name}. Loading alignment now')
+                latest_alignment_evaluation = max(alignment_evaluations, key=lambda x: x.created) # pull latest alignment evaluation
+                curation_metric = latest_alignment_evaluation.metrics[0].value['curations']
+                self.alignments = json.loads(curation_metric[0])['previous_alignments'] # load in the previous alignment
+                self.prev_align = []
+                if self.alignments:
+                    self.prev_align = [*self.alignments.keys()]
+                self.prev_align = sorted(self.prev_align, reverse=True)
+                self.prev_align.append("original")
+            else:
+                print(f'No alignment found in docdb for {evaluation_name}')
+                self.alignments = []
+                self.prev_align = ["original"]
         else:
-            print(f'No alignment found in docdb for {evaluation_name}')
             self.alignments = []
             self.prev_align = ["original"]
 
