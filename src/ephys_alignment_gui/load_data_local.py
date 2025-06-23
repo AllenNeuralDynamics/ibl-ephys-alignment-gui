@@ -71,6 +71,7 @@ class LoadDataLocal:
 
         print('Checking docdb for existing records')
         self.shank_idx = shank_idx
+        
         quality_control = None
         try:
             docdb_id = query_docdb_id(folder_path.parent.stem)[0]

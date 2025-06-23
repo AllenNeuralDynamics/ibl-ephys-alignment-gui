@@ -1861,8 +1861,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.worker.finished.connect(self.thread.quit)           # Gracefully stop thread
         self.worker.finished.connect(self.worker.deleteLater)    # Clean up worker
         self.thread.finished.connect(self.thread.deleteLater)    # Clean up thread
- 
-        self.thread.start()
 
     def complete_button_pressed_offline(self):
         """
