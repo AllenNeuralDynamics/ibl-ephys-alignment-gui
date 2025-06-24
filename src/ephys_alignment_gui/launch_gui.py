@@ -388,7 +388,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             if self.loaddata.output_directory == None:
                 self.on_output_folder_selected()
-            image_path_overview = Path(self.loaddata.output_directory)
+            image_path_overview = Path(self.loaddata.output_directory / f"Plots_Shank_{self.current_shank_idx + 1}")
 
         os.makedirs(image_path_overview, exist_ok=True)
         os.makedirs(image_path_overview, exist_ok=True)
@@ -1858,8 +1858,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.start()
+        self.worker.finished.connect(self.thread.quit)           # Gracefully stop thread
+        self.worker.finished.connect(self.worker.deleteLater)    # Clean up worker
+        self.thread.finished.connect(self.thread.deleteLater)    # Clean up thread
 
     def complete_button_pressed_offline(self):
         """
@@ -1930,8 +1931,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
 
-        write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
-                              channel_results, prev_alignments, ccf_result_json)
+        try:
+            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
+                                channel_results, prev_alignments, ccf_result_json)
+        except ValueError as e:
+            print(f"Failed to write to docdb with error {e}. Output saved to results folder")
+
         print(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
 
 
