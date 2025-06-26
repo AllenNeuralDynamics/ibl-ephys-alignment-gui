@@ -485,7 +485,7 @@ class Setup():
         if not self.offline:
             self.complete_button.clicked.connect(self.display_qc_options)
         else:
-            self.complete_button.clicked.connect(self.run_complete_button_in_thread)
+            self.complete_button.clicked.connect(self.complete_button_pressed_offline)
 
         if not self.offline:
             # If offline mode is False, read in Subject and Session options from Alyx
