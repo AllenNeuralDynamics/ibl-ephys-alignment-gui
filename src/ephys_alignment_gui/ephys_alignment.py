@@ -52,6 +52,24 @@ class EphysAlignment:
         self.region, self.region_label, self.region_colour, self.region_id\
             = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
 
+    def vertically_even_points(self, xyz, num_points=20, dv_col=2):
+        """Subsample points that are evenly spaced along the DV (depth) axis."""
+        xyz = np.array(xyz)
+        # Sort by DV (depth), assuming increasing DV = deeper
+        xyz_sorted = xyz[np.argsort(xyz[:, dv_col])]
+
+        # Compute distances along the probe (cumulative 3D distance)
+        deltas = np.diff(xyz_sorted, axis=0)
+        dists = np.insert(np.cumsum(np.linalg.norm(deltas, axis=1)), 0, 0)
+        
+        # Sample at evenly spaced intervals along cumulative distance
+        interp_dists = np.linspace(dists[0], dists[-1], num_points)
+        xyz_even = np.array([
+            np.interp(interp_dists, dists, xyz_sorted[:, dim]) for dim in range(3)
+        ]).T
+        
+        return xyz_even
+
     def get_insertion_track(self, xyz_picks, speedy=False):
         """
         Extends probe trajectory from bottom of brain to upper bound of allen atlas
@@ -64,9 +82,16 @@ class EphysAlignment:
         :type track_extent: np.array((2))
         """
         # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
-        n_picks = np.max([4, round(xyz_picks.shape[0] / 4)])
-        traj_entry = atlas.Trajectory.fit(xyz_picks[:n_picks, :])
-        traj_exit= atlas.Trajectory.fit(xyz_picks[-1 * n_picks:, :])
+        xyz_even = self.vertically_even_points(xyz_picks, num_points=20)
+
+        # Fit entry/exit using first and last few vertically spaced points
+        n_picks = min(4, xyz_even.shape[0] // 2)
+        traj_entry = atlas.Trajectory.fit(xyz_even[:n_picks, :])
+        traj_exit = atlas.Trajectory.fit(xyz_even[-n_picks:, :])
+
+        # n_picks = np.max([4, round(xyz_picks.shape[0] / 4)])
+        # traj_entry = atlas.Trajectory.fit(xyz_picks[:n_picks, :])
+        # traj_exit= atlas.Trajectory.fit(xyz_picks[-1 * n_picks:, :])
 
         # Force the entry to be on the upper z lim of the atlas to account for cases where channels
         # may be located above the surface of the brain
