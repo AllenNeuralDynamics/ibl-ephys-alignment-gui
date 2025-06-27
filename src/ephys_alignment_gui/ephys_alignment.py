@@ -60,9 +60,10 @@ class EphysAlignment:
         # Compute distances along the probe (cumulative 3D distance)
         deltas = np.diff(xyz_sorted, axis=0)
         dists = np.insert(np.cumsum(np.linalg.norm(deltas, axis=1)), 0, 0)
-        
+        print("Dists", dists)
         # Sample at evenly spaced intervals along cumulative distance
         interp_dists = np.linspace(dists[0], dists[-1], num_points)
+        print("Interp dists", interp_dists)
         xyz_even = np.array([
             np.interp(interp_dists, dists, xyz_sorted[:, dim]) for dim in range(3)
         ]).T
