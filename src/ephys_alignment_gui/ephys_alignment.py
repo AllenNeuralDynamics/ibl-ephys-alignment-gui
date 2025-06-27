@@ -165,7 +165,7 @@ class EphysAlignment:
         """
         # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
         print("Length of xyz_picks", len(xyz_picks))
-        xyz_even = self.simple_thin_points(xyz_picks)
+        xyz_even = self.fit_plane_then_line(xyz_picks)[0]
         print("Length of xyz_picks after subsampling", len(xyz_even))
         # Fit entry/exit using first and last few vertically spaced points
         n_picks = min(4, xyz_even.shape[0] // 4)
