@@ -2,7 +2,8 @@ import scipy
 import numpy as np
 import ephys_alignment_gui.histology as histology
 import iblatlas.atlas as atlas
-from scipy import interpolate
+from scipy.optimize import optimize
+from sklearn.decomposition import PCA
 
 TIP_SIZE_UM = 200
 
@@ -53,43 +54,103 @@ class EphysAlignment:
         self.region, self.region_label, self.region_colour, self.region_id\
             = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
 
-    def vertically_even_points(self, xyz, target_spacing=25.0, dv_col=2):
-        """Alternative approach: resample based on target spacing rather than fixed number of points."""
+    def fit_plane_then_line(self, xyz, dv_col=2, num_output_points=50):
+        """
+        Fit a plane to clustered points, then project to get a clean line fit.
         
-        # Sort by DV (depth)
-        xyz_sorted = xyz[np.argsort(xyz[:, dv_col])]
+        Args:
+            xyz: Nx3 array of probe points
+            dv_col: column index for depth dimension (usually 2 for Z)
+            num_output_points: number of evenly spaced points to return
         
-        # Remove near-duplicate points
-        xyz_clean = [xyz_sorted[0]]
-        for i in range(1, len(xyz_sorted)):
-            if np.linalg.norm(xyz_sorted[i] - xyz_clean[-1]) > target_spacing/10:
-                xyz_clean.append(xyz_sorted[i])
-        xyz_clean = np.array(xyz_clean)
+        Returns:
+            xyz_fitted: Clean line fit points
+            plane_normal: Normal vector of fitted plane
+            fit_quality: Dictionary with quality metrics
+        """
         
-        # Compute cumulative distance
-        deltas = np.diff(xyz_clean, axis=0)
-        dists = np.insert(np.cumsum(np.linalg.norm(deltas, axis=1)), 0, 0)
+        print(f"Fitting plane to {len(xyz)} points...")
         
-        # Calculate number of points based on target spacing
-        total_length = dists[-1]
-        num_points = int(total_length / target_spacing) + 1
+        # Step 1: Fit plane using PCA (most robust method)
+        # Center the data
+        centroid = np.mean(xyz, axis=0)
+        xyz_centered = xyz - centroid
         
-        print(f"Total length: {total_length:.2f}")
-        print(f"Target spacing: {target_spacing}")
-        print(f"Calculated points needed: {num_points}")
+        # PCA to find principal components
+        pca = PCA(n_components=3)
+        pca.fit(xyz_centered)
         
-        # Resample at target spacing
-        interp_dists = np.linspace(0, total_length, num_points)
+        # The plane is defined by the first two principal components
+        # The normal vector is the third component (smallest variance)
+        plane_normal = pca.components_[2]  # Normal to the plane
+        pc1 = pca.components_[0]  # Main direction along probe
+        pc2 = pca.components_[1]  # Secondary direction
         
-        xyz_even = np.zeros((num_points, 3))
-        for dim in range(3):
-            f = interpolate.interp1d(dists, xyz_clean[:, dim], 
-                                kind='linear', 
-                                bounds_error=False, 
-                                fill_value='extrapolate')
-            xyz_even[:, dim] = f(interp_dists)
+        print(f"Explained variance ratios: {pca.explained_variance_ratio_}")
+        print(f"Plane normal: {plane_normal}")
         
-        return xyz_even
+        # Step 2: Project all points onto the fitted plane
+        # Project each point onto the plane
+        xyz_projected = np.zeros_like(xyz)
+        for i, point in enumerate(xyz):
+            # Vector from centroid to point
+            v = point - centroid
+            # Remove component normal to plane
+            v_projected = v - np.dot(v, plane_normal) * plane_normal
+            # Add back centroid
+            xyz_projected[i] = centroid + v_projected
+        
+        # Step 3: Find the main axis along the projected points
+        # Use the first principal component as the probe direction
+        probe_direction = pc1
+        
+        # Step 4: Parameterize points along the main axis
+        # Project all points onto the main axis
+        t_values = np.dot(xyz_projected - centroid, probe_direction)
+        
+        # Sort by parameter t (position along probe)
+        sort_indices = np.argsort(t_values)
+        t_sorted = t_values[sort_indices]
+        xyz_sorted = xyz_projected[sort_indices]
+        
+        # Step 5: Create evenly spaced points along the fitted line
+        t_min, t_max = t_sorted[0], t_sorted[-1]
+        t_even = np.linspace(t_min, t_max, num_output_points)
+        
+        # Generate points along the fitted line
+        xyz_fitted = np.array([centroid + t * probe_direction for t in t_even])
+        
+        # Step 6: Quality metrics
+        # Calculate how well points fit the plane
+        distances_to_plane = []
+        for point in xyz:
+            dist = abs(np.dot(point - centroid, plane_normal))
+            distances_to_plane.append(dist)
+        
+        # Calculate how well points fit the line
+        distances_to_line = []
+        for point in xyz_projected:
+            # Distance from point to fitted line
+            v = point - centroid
+            projection_length = np.dot(v, probe_direction)
+            closest_point_on_line = centroid + projection_length * probe_direction
+            dist = np.linalg.norm(point - closest_point_on_line)
+            distances_to_line.append(dist)
+        
+        fit_quality = {
+            'plane_fit_rms': np.sqrt(np.mean(np.array(distances_to_plane)**2)),
+            'line_fit_rms': np.sqrt(np.mean(np.array(distances_to_line)**2)),
+            'explained_variance_ratio': pca.explained_variance_ratio_,
+            'total_length': t_max - t_min,
+            'avg_spacing': (t_max - t_min) / (num_output_points - 1)
+        }
+        
+        print(f"Plane fit RMS error: {fit_quality['plane_fit_rms']:.2f}")
+        print(f"Line fit RMS error: {fit_quality['line_fit_rms']:.2f}")
+        print(f"Total probe length: {fit_quality['total_length']:.2f}")
+        print(f"Average point spacing: {fit_quality['avg_spacing']:.2f}")
+        
+        return xyz_fitted, plane_normal, fit_quality
 
     def get_insertion_track(self, xyz_picks, speedy=False):
         """
@@ -104,7 +165,7 @@ class EphysAlignment:
         """
         # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
         print("Length of xyz_picks", len(xyz_picks))
-        xyz_even = self.vertically_even_points(xyz_picks)
+        xyz_even = self.simple_thin_points(xyz_picks)
         print("Length of xyz_picks after subsampling", len(xyz_even))
         # Fit entry/exit using first and last few vertically spaced points
         n_picks = min(4, xyz_even.shape[0] // 4)
