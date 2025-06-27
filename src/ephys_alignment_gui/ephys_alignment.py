@@ -2,6 +2,7 @@ import scipy
 import numpy as np
 import ephys_alignment_gui.histology as histology
 import iblatlas.atlas as atlas
+from scipy import interpolate
 
 TIP_SIZE_UM = 200
 
@@ -52,21 +53,41 @@ class EphysAlignment:
         self.region, self.region_label, self.region_colour, self.region_id\
             = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
 
-    def vertically_even_points(self, xyz, num_points=20, dv_col=2):
-        """Subsample points that are evenly spaced along the DV (depth) axis."""
-        # Sort by DV (depth), assuming increasing DV = deeper
+    def vertically_even_points(self, xyz, target_spacing=25.0, dv_col=2):
+        """Alternative approach: resample based on target spacing rather than fixed number of points."""
+        
+        # Sort by DV (depth)
         xyz_sorted = xyz[np.argsort(xyz[:, dv_col])]
-
-        # Compute distances along the probe (cumulative 3D distance)
-        deltas = np.diff(xyz_sorted, axis=0)
+        
+        # Remove near-duplicate points
+        xyz_clean = [xyz_sorted[0]]
+        for i in range(1, len(xyz_sorted)):
+            if np.linalg.norm(xyz_sorted[i] - xyz_clean[-1]) > target_spacing/10:
+                xyz_clean.append(xyz_sorted[i])
+        xyz_clean = np.array(xyz_clean)
+        
+        # Compute cumulative distance
+        deltas = np.diff(xyz_clean, axis=0)
         dists = np.insert(np.cumsum(np.linalg.norm(deltas, axis=1)), 0, 0)
-        print("Dists", dists)
-        # Sample at evenly spaced intervals along cumulative distance
-        interp_dists = np.linspace(dists[0], dists[-1], num_points)
-        print("Interp dists", interp_dists)
-        xyz_even = np.array([
-            np.interp(interp_dists, dists, xyz_sorted[:, dim]) for dim in range(3)
-        ]).T
+        
+        # Calculate number of points based on target spacing
+        total_length = dists[-1]
+        num_points = int(total_length / target_spacing) + 1
+        
+        print(f"Total length: {total_length:.2f}")
+        print(f"Target spacing: {target_spacing}")
+        print(f"Calculated points needed: {num_points}")
+        
+        # Resample at target spacing
+        interp_dists = np.linspace(0, total_length, num_points)
+        
+        xyz_even = np.zeros((num_points, 3))
+        for dim in range(3):
+            f = interpolate.interp1d(dists, xyz_clean[:, dim], 
+                                kind='linear', 
+                                bounds_error=False, 
+                                fill_value='extrapolate')
+            xyz_even[:, dim] = f(interp_dists)
         
         return xyz_even
 
