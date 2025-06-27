@@ -52,7 +52,7 @@ class EphysAlignment:
         self.region, self.region_label, self.region_colour, self.region_id\
             = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
 
-    def vertically_even_points(self, xyz, num_points=20, dv_col=2):
+    def vertically_even_points(self, xyz, num_points=100, dv_col=2):
         """Subsample points that are evenly spaced along the DV (depth) axis."""
         xyz = np.array(xyz)
         # Sort by DV (depth), assuming increasing DV = deeper
@@ -85,7 +85,7 @@ class EphysAlignment:
         xyz_even = self.vertically_even_points(xyz_picks, num_points=20)
 
         # Fit entry/exit using first and last few vertically spaced points
-        n_picks = min(4, xyz_even.shape[0] // 2)
+        n_picks = min(4, xyz_even.shape[0] // 4)
         traj_entry = atlas.Trajectory.fit(xyz_even[:n_picks, :])
         traj_exit = atlas.Trajectory.fit(xyz_even[-n_picks:, :])
 
