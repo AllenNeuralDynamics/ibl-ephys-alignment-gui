@@ -283,7 +283,15 @@ class ColorBar(pg.GraphicsWidget):
         if levels is None:
             levels = [np.min(data), np.max(data)]
         
-        brush_rgb, _ = makeARGB(data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True)
+        # Assuming `data` is a list of QColor objects
+        rgba = np.array([[
+            c.red(),
+            c.green(),
+            c.blue(),
+            c.alpha()
+        ] for c in data], dtype=np.uint8)  # or float if needed
+        #brush_rgb, _ = makeARGB(data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True)
+        brush_rgb, _ = makeARGB(rgba, levels=levels, lut=self.lut, useRGBA=True)
         brush = [QtGui.QColor(*col) for col in np.squeeze(brush_rgb)]
         return brush
 
