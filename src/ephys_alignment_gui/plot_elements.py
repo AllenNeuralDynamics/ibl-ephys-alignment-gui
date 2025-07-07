@@ -293,7 +293,11 @@ class ColorBar(pg.GraphicsWidget):
         #brush_rgb, _ = makeARGB(data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True)
         brush_rgb, _ = makeARGB(rgba, levels=levels, lut=self.lut, useRGBA=True)
         print("Brush rgb", brush_rgb)
-        brush = [QtGui.QColor(*col) for col in np.squeeze(brush_rgb)]
+        brush = []
+        for rgb_colors in brush_rgb:
+            for col in rgb_colors:
+                brush.append(QtGui.QColor(*col))
+                
         return brush
 
     def getColourMap(self):
