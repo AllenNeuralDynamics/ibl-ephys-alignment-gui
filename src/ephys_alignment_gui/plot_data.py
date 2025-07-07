@@ -192,7 +192,11 @@ class PlotData:
             }
 
             p2t = self.data['clusters']['peakToTrough'][clu]
-            print(self.data['clusters'].keys())
+            p2t = np.asarray(p2t)
+
+            # Convert to ms if needed
+            if np.all(p2t < 0.01): 
+                p2t = p2t * 1000
 
             # Define the p2t levels so always same colourbar across sessions
             p2t_levels = [-1.5, 1.5]
