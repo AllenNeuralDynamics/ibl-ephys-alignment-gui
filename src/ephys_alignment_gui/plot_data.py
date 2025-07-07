@@ -192,6 +192,7 @@ class PlotData:
             }
 
             p2t = self.data['clusters']['peakToTrough'][clu]
+            print(self.data['clusters'].keys())
 
             # Define the p2t levels so always same colourbar across sessions
             p2t_levels = [-1.5, 1.5]
