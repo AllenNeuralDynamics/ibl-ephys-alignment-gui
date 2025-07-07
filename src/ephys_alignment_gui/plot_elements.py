@@ -279,8 +279,10 @@ class ColorBar(pg.GraphicsWidget):
         self.grad = self.map.getGradient()
 
     def getBrush(self, data, levels=None):
+        data = np.asarray(data, dtype=np.float32)
         if levels is None:
             levels = [np.min(data), np.max(data)]
+        
         brush_rgb, _ = makeARGB(data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True)
         brush = [QtGui.QColor(*col) for col in np.squeeze(brush_rgb)]
         return brush
