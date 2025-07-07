@@ -279,7 +279,7 @@ class ColorBar(pg.GraphicsWidget):
         self.grad = self.map.getGradient()
 
     def getBrush(self, data, levels=None):
-        data = np.asarray(data, dtype=np.float32)
+        print("Amplitude plot data", data)
         if levels is None:
             levels = [np.min(data), np.max(data)]
         
