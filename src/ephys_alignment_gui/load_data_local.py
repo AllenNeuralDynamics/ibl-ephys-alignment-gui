@@ -26,8 +26,6 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger("ibllib")
 
-DATA_PATH = Path('/root/capsule/data')
-
 class LoadDataLocal:
     def __init__(self):
         self.brain_atlas = None
@@ -40,6 +38,7 @@ class LoadDataLocal:
         self.sess_path = None
         self.shank_idx = 0
         self.n_shanks = 1
+        self.data_root = None
         self.output_directory = None
         self.previous_directory = None
         self.slice_images = {}
@@ -173,11 +172,11 @@ class LoadDataLocal:
 
         if reload_data:
             if not hasattr(self, "atlas_image_path"):
-                self.atlas_image_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
+                self.atlas_image_path = tuple(self.data_root.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
                 if not self.atlas_image_path:
                     raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
-                
-                self.atlas_labels_path = tuple(DATA_PATH.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
+
+                self.atlas_labels_path = tuple(self.data_root.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
                 if not self.atlas_labels_path:
                     raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
 

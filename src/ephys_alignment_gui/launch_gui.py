@@ -35,7 +35,6 @@ import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show proper
 from ephys_alignment_gui.docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
-DATA_PATH = Path('/data')
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -67,6 +66,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.histology_exists = True
         self.data_status = False
         self.output_directory = None
+        self.data_root = None
 
         self.allen = self.loaddata.get_allen_csv()
         self.init_region_lookup(self.allen)
@@ -1229,6 +1229,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             out_folder = folder_path.parent/'out'
             
         self.input_path = folder_path
+
+        # Make it compatible with path outside of code ocean
+        self.loaddata.data_root = folder_path.parents[3]
+        self.data_root = self.loaddata.data_root
+
         # Create the output folder if it doesn't exist
         os.makedirs(out_folder, exist_ok=True)
         # Set the output directory based on input name.
@@ -1819,16 +1824,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                       'y': image_physical_space_coordinates[:, 1], 
                                       'z': image_physical_space_coordinates[:, 2]})
         
-        smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        smartspim_template_affine_transform = tuple(self.data_root.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
         if not smartspim_template_affine_transform:
             # try legacy way
-            smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            smartspim_template_affine_transform = tuple(self.data_root.glob('*/registration/ls_to_template_SyN_0GenericAffine.mat'))
             if not smartspim_template_affine_transform:
                 raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
 
-        smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        smartspim_template_warp_transform = tuple(self.data_root.glob('*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
         if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            smartspim_template_warp_transform = tuple(self.data_root.glob('*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
             if not smartspim_template_warp_transform:
                 raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
         
@@ -1837,11 +1842,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                     smartspim_template_warp_transform[0].as_posix()],
                                     whichtoinvert=[True, False])
 
-        template_to_ccf_affine_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
         if not template_to_ccf_affine_transform:
             raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
         
-        template_to_ccf_warp_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
         if not template_to_ccf_warp_transform:
             raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
         
