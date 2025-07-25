@@ -1184,12 +1184,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not hasattr(self, 'current_shank_idx'):
             self.current_shank_idx = 0
 
-        self.data_button_pressed(self.input_path)
+        if Path('/data').is_dir():
+            input_data_path = Path('/data') / Path(*folder_path.parts[2:])
+
+        self.data_button_pressed(input_data_path)
         print('Feature prev', self.feature_prev)
 
     def load_existing_alignments(self):
         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
         self.reload_folder_line.setText(str(folder_path))
+            
         self._update_ephys_alignments(folder_path, skip_shanks=True)
 
     def on_folder_selected(self):
