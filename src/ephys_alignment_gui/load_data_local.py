@@ -148,6 +148,7 @@ class LoadDataLocal:
         self.chn_coords_all = np.load(
             self.folder_path.joinpath("channels.localCoordinates.npy")
         )
+        print("Coords", self.chn_coords_all)
         chn_x = np.unique(self.chn_coords_all[:, 0])
         chn_x_diff = np.diff(chn_x)
         self.n_shanks = np.sum(chn_x_diff > 100) + 1
