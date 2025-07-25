@@ -1864,6 +1864,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 print("Channels locations not saved")
                 return
 
+        print("Warping to ccf and saving output files to results folder and docdb")
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
                                     self.xyz_channels, self.current_shank_idx + 1)
         self.loaddata.get_starting_alignment(0)
