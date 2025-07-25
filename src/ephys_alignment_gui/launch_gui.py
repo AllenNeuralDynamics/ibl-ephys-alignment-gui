@@ -1187,6 +1187,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if Path('/data').is_dir():
             input_data_path = Path('/data') / Path(*folder_path.parts[2:])
 
+        print('Input data path', input_data_path)
         self.data_button_pressed(input_data_path)
         print('Feature prev', self.feature_prev)
 
