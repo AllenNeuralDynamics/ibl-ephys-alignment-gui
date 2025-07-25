@@ -1184,7 +1184,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not hasattr(self, 'current_shank_idx'):
             self.current_shank_idx = 0
 
-        self.data_button_pressed(folder_path)
+        self.data_button_pressed(self.input_path)
         print('Feature prev', self.feature_prev)
 
     def load_existing_alignments(self):

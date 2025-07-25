@@ -100,31 +100,27 @@ class LoadDataLocal:
                 self.alignments = []
                 self.prev_align = ["original"]
         else:
-            self.alignments = []
-            self.prev_align = ["original"]
+            # If previous alignment json file exists, read in previous alignments
+            prev_align_filename = (
+                "prev_alignments.json"
+                if self.n_shanks == 1
+                else f"prev_alignments_shank{self.shank_idx + 1}.json"
+            )
 
-        """
-        # If previous alignment json file exists, read in previous alignments
-        prev_align_filename = (
-            "prev_alignments.json"
-            if self.n_shanks == 1
-            else f"prev_alignments_shank{self.shank_idx + 1}.json"
-        )
-
-        if self.folder_path.joinpath(prev_align_filename).exists():
-            with open(
-                self.folder_path.joinpath(prev_align_filename), "r"
-            ) as f:
-                self.alignments = json.load(f)
-                self.prev_align = []
-                if self.alignments:
-                    self.prev_align = [*self.alignments.keys()]
-                self.prev_align = sorted(self.prev_align, reverse=True)
-                self.prev_align.append("original")
-        else:
-            self.alignments = []
-            self.prev_align = ["original"]
-        """
+            if self.folder_path.joinpath(prev_align_filename).exists():
+                with open(
+                    self.folder_path.joinpath(prev_align_filename), "r"
+                ) as f:
+                    self.alignments = json.load(f)
+                    self.prev_align = []
+                    if self.alignments:
+                        self.prev_align = [*self.alignments.keys()]
+                    self.prev_align = sorted(self.prev_align, reverse=True)
+                    self.prev_align.append("original")
+            else:
+                self.alignments = []
+                self.prev_align = ["original"]
+        
 
         return self.prev_align
 
