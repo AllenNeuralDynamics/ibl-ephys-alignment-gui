@@ -1186,6 +1186,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if Path('/data').is_dir():
             data_string =  f"{folder_path.parent.parent.stem} / {folder_path.parent.stem} / {folder_path.stem}"
+            print("Data string", data_string)
             input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
 
         print('Input data path', input_data_path)
