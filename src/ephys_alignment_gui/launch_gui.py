@@ -1000,18 +1000,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img_cb.addItem(cbar)
             self.img_cbars.append(cbar)
 
-            if type(np.any(data['colours'])) == QtGui.QColor:
-                brush = data['colours'].tolist()
-                plot = pg.ScatterPlotItem()
-                plot.setData(x=data['x'], y=data['y'],
-                             symbol=symbol, size=size, brush=brush, pen=data['pen'])
-
-            else:
-                brush = color_bar.getBrush(data['colours'],
-                                           levels=[data['levels'][0], data['levels'][1]])
-                plot = pg.ScatterPlotItem()
-                plot.setData(x=data['x'], y=data['y'],
-                             symbol=symbol, size=size, brush=brush, pen=data['pen'])
+            brush = data['colours'].tolist()
+            plot = pg.ScatterPlotItem()
+            plot.setData(x=data['x'], y=data['y'],
+                            symbol=symbol, size=size, brush=brush, pen=data['pen'])
 
             self.fig_img.addItem(plot)
             self.fig_img.setXRange(min=data['xrange'][0], max=data['xrange'][1],
