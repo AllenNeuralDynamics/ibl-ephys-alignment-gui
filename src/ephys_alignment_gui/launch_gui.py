@@ -1165,10 +1165,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     Interaction functions
     """
     def _update_ephys_alignments(self, folder_path: Path, skip_shanks=False):
+        if Path('/data').is_dir():
+            data_string =  f"{folder_path.parent.parent.stem}/{folder_path.parent.stem}/{folder_path.stem}"
+            input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
+
         if hasattr(self, 'current_shank_idx'):
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, skip_shanks=skip_shanks)
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, input_path=input_data_path, skip_shanks=skip_shanks)
         else:
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, skip_shanks=skip_shanks)
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, input_path=input_data_path, skip_shanks=skip_shanks)
 
         if hasattr(self, 'current_shank_idx'):
             self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=folder_path)
@@ -1183,10 +1187,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         
         if not hasattr(self, 'current_shank_idx'):
             self.current_shank_idx = 0
-
-        if Path('/data').is_dir():
-            data_string =  f"{folder_path.parent.parent.stem}/{folder_path.parent.stem}/{folder_path.stem}"
-            input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
 
         print('Input data path', input_data_path)
         self.data_button_pressed(input_data_path)

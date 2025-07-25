@@ -44,12 +44,13 @@ class LoadDataLocal:
         self.previous_directory = None
         self.slice_images = {}
 
-    def get_info(self, folder_path, shank_idx: int, skip_shanks=False):
+    def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
         """
         Read in the local json file to see if any previous alignments exist
         """
         shank_list = None
-        self.folder_path = Path(folder_path)
+
+        self.folder_path = input_path
         if not skip_shanks:
             shank_list = self.get_nshanks()
 
@@ -107,9 +108,9 @@ class LoadDataLocal:
                 else f"prev_alignments_shank{self.shank_idx + 1}.json"
             )
 
-            if self.folder_path.joinpath(prev_align_filename).exists():
+            if folder_path.joinpath(prev_align_filename).exists():
                 with open(
-                    self.folder_path.joinpath(prev_align_filename), "r"
+                    folder_path.joinpath(prev_align_filename), "r"
                 ) as f:
                     self.alignments = json.load(f)
                     self.prev_align = []
