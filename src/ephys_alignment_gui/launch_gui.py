@@ -1168,6 +1168,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if Path('/data').is_dir():
             data_string =  f"{folder_path.parent.parent.stem}/{folder_path.parent.stem}/{folder_path.stem}"
             input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
+        else:
+            input_data_path = folder_path
 
         if hasattr(self, 'current_shank_idx'):
             self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, input_path=input_data_path, skip_shanks=skip_shanks)
