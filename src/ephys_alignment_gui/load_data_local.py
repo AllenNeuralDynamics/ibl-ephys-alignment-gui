@@ -52,6 +52,7 @@ class LoadDataLocal:
 
         self.folder_path = input_path
         print("Folder path", self.folder_path)
+        print("Skip shanks", skip_shanks)
         if not skip_shanks:
             shank_list = self.get_nshanks()
 
