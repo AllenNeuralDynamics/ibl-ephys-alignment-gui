@@ -556,18 +556,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.add_lines_points()
 
-    def toggle_plots(self, options_group):
+    def toggle_plots(self, options_group, reverse=False):
         """
         Allows user to toggle through image, line, probe and slice plots using keyboard shortcuts
         Alt+1, Alt+2, Alt+3 and Alt+4 respectively
         :param options_group: Set of plots to toggle through
+        :param reverse: if True, goes backward
         :type options_group: QtGui.QActionGroup
         """
 
         current_act = options_group.checkedAction()
         actions = options_group.actions()
         current_idx = [iA for iA, act in enumerate(actions) if act == current_act][0]
-        next_idx = np.mod(current_idx + 1, len(actions))
+        next_idx = np.mod(current_idx + (-1 if reverse else 1), len(actions))
         actions[next_idx].setChecked(True)
         actions[next_idx].trigger()
 
