@@ -305,7 +305,7 @@ class PlotData:
 
             return data_fr_line, data_amp_line
 
-    def get_correlation_data_img(self):
+    def get_spike_correlation_data_img(self):
         if not self.data['spikes']['exists']:
             data_img = None
             return data_img
@@ -515,6 +515,77 @@ class PlotData:
                 data_probe.update(lfp_band_data)
 
             return data_img, data_probe
+        
+    def _get_lfp_correlation_folder(self):
+        # ---- Temporary workground for locating LFP correlation data ----
+        # Sue generated LFP correlation for all her sessions manually and put them in a data asset.
+        # Here I assume that this data asset is attached to the current capsule together with the ephys data:
+        # |- {CO data folder}
+        #    |- {data asset for LFP correlation}
+        #       |- behavior_{subject_id}_{date}_{lfp_time}
+        #           |- band_corr
+        #              |- spont_theta_mean_corr.npy
+        #              |- spont_gamma_mean_corr.npy
+        #                ....
+        #       |- behavior_{subject_id}_{date}_{lfp_time}
+        #           |- band_corr
+        #              ....
+        #    |- {data asset for extracted ephys data by IBL pipeline}
+        #       |- {subject_id}
+        #          |- behavior_{subject_id}_{date}_{ephys_time}
+        #              |- {Probe name}        <----- self.probe_path
+        #
+        # TODO: Generate LFP correlation data, together with other custom metrics like spike waveform statistics,
+        #   automatically in the IBL pipeline, and use a json file to specify what we want to add as plugins to the GUI.
+
+        # Locate the CO /data folder (or couterpart outside of CO)
+        co_data_folder = self.probe_path.parents[3]
+        # Get the session prefix (subject + date). We should exclude the session time since LFP typically 
+        # has different time stamps as ephys session
+        subject_date = self.probe_path.parts[-2].rsplit('_', 1)[0]
+        # Looking for "band_corr" folder recursively in
+        this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
+        # Inside each this_session_folders, looking for a folder named "band_corr"
+        for session_folder in this_session_folders:
+            lfp_corr_folder = session_folder.joinpath("band_corr")
+            if lfp_corr_folder.exists():
+                return lfp_corr_folder
+        else:
+            print(f"No band_corr folder found for {subject_date}.")
+            return None
+
+    def get_lfp_correlation_data_img(self):
+        '''Load LFP correlation data from the band_corr folder.'''
+
+        # Locate the LFP correlation folder
+        lfp_corr_folder = self._get_lfp_correlation_folder()
+        if lfp_corr_folder is None:
+            return None
+
+        # Load all npy files in the folder into the data dictionary
+        lfp_corr_files = list(lfp_corr_folder.glob('*.npy'))
+        if not lfp_corr_files:
+            print(f"No LFP correlation files found in {lfp_corr_folder}.")
+            return None
+        
+        all_data = {}
+        for file in lfp_corr_files:
+            # Extract the band name from the file name
+            band_name = file.stem.replace('_mean_corr', '')
+            this_corr = np.load(file)
+            scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
+            all_data[band_name] = {
+                'img': this_corr,
+                'scale': np.array([scale, scale]),
+                'levels': np.array([np.min(this_corr), np.max(this_corr[this_corr < 0.99])]),
+                'offset': np.array([0, 0]),
+                'xrange': np.array([self.chn_min, self.chn_max]),
+                'cmap': 'RdBu',
+                'title': f'LFP correlation ({band_name})',
+                'xaxis': 'Distance from probe tip (um)'
+            }
+            
+        return all_data
 
     def get_rfmap_data(self):
         data_img = dict()

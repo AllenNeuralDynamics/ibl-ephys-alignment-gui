@@ -1378,7 +1378,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.scat_drift_data = self.plotdata.get_depth_data_scatter()
             (self.scat_fr_data, self.scat_p2t_data,
              self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
-            self.img_corr_data = self.plotdata.get_correlation_data_img()
+            self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
             self.img_fr_data = self.plotdata.get_fr_img()
             self.img_rms_APdata, self.probe_rms_APdata = self.plotdata.get_rms_data_img_probe('AP')
             self.img_rms_LFPdata, self.probe_rms_LFPdata = self.plotdata.get_rms_data_img_probe(
@@ -1387,6 +1387,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.img_rms_LFPdata_main, self.probe_rms_LFPdata_main = self.plotdata.get_rms_data_img_probe('LF_main')
             self.img_lfp_data, self.probe_lfp_data = self.plotdata.get_lfp_spectrum_data('lf')
             self.img_lfp_data_main, self.probe_lfp_data_main = self.plotdata.get_lfp_spectrum_data('lf_main')
+
+            self.img_lfp_corr_data = self.plotdata.get_lfp_correlation_data_img()
+
             self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
             self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
             self.img_stim_data = self.plotdata.get_passive_events()
@@ -1483,7 +1486,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.scat_drift_data = self.plotdata.get_depth_data_scatter()
         (self.scat_fr_data, self.scat_p2t_data,
          self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
-        self.img_corr_data = self.plotdata.get_correlation_data_img()
+        self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
         self.img_fr_data = self.plotdata.get_fr_img()
         self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
         self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
