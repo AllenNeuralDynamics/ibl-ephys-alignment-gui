@@ -584,8 +584,34 @@ class PlotData:
                 'title': f'LFP correlation ({band_name})',
                 'xaxis': 'Distance from probe tip (um)'
             }
+
+        def _sort_lfp_correlation_keys(all_data):
+            """Sort LFP correlation data keys by epoch and frequency band."""
+            # Sort keys by [from and band]
+            epoch_order = ['spont', 'opto', 'diff']
+            band_order = ['delta', 'theta', 'alpha', 'beta', 'gamma']
             
-        return all_data
+            # Sort keys according to expected sequence
+            expected_keys = []
+            other_keys = []
+
+            for epoch in epoch_order:
+                for band in band_order:
+                    expected_key = f"{epoch}_{band}"
+                    if expected_key in all_data:
+                        expected_keys.append(expected_key)
+            
+            # Add remaining keys that don't match the expected pattern
+            for key in all_data.keys():
+                if key not in expected_keys:
+                    other_keys.append(key)
+            
+            # Combine in order: expected sequence first, then others unsorted
+            sorted_keys = expected_keys + other_keys
+                
+            return {key: all_data[key] for key in sorted_keys}
+
+        return _sort_lfp_correlation_keys(all_data)
 
     def get_rfmap_data(self):
         data_img = dict()
