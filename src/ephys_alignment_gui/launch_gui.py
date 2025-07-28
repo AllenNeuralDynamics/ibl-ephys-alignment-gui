@@ -395,7 +395,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Reset all axis, put view back to 1 and remove any reference lines
         self.reset_axis_button_pressed()
         self.set_view(view=1, configure=False)
-        self.remove_lines_points()
+        # self.remove_lines_points()
 
         xlabel_img = self.fig_img.getAxis('bottom').label.toPlainText()
         xlabel_line = self.fig_line.getAxis('bottom').label.toPlainText()
@@ -425,8 +425,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'img_' +
                                                     self.img_options_group.checkedAction()
                                                     .text() + '.png')))
+            self.add_lines_points()  # Add reference lines
             self.toggle_plots(self.img_options_group)
-            self.remove_lines_points()
+            # self.remove_lines_points()
             plot = self.img_options_group.checkedAction()
 
         self.set_font(self.fig_img, 'left', ptsize=8, width=ax_width)
@@ -454,6 +455,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'probe_' +
                                                     self.probe_options_group.checkedAction().
                                                     text() + '.png')))
+            self.add_lines_points()  # Add reference line
             self.toggle_plots(self.probe_options_group)
             plot = self.probe_options_group.checkedAction()
 
@@ -483,6 +485,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'line_' +
                                                     self.line_options_group.checkedAction().
                                                     text() + '.png')))
+            self.add_lines_points()  # Add reference line
             self.toggle_plots(self.line_options_group)
             plot = self.line_options_group.checkedAction()
 
