@@ -581,7 +581,7 @@ class PlotData:
                 'levels': np.array([-max_corr, max_corr]),
                 'offset': np.array([0, 0]),
                 'xrange': np.array([self.chn_min, self.chn_max]),
-                'cmap': 'RdBu',
+                'cmap': 'RdBu_r',
                 'title': f'LFP correlation ({band_name})',
                 'xaxis': 'Distance from probe tip (um)'
             }
