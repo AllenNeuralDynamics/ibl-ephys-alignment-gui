@@ -76,7 +76,11 @@ class Setup():
         img_LFP = QtWidgets.QAction('LFP Spectrum', self, checkable=True, checked=False)
         img_LFP.triggered.connect(lambda: self.plot_image(self.img_lfp_data))
 
-        
+        img_lfp_corr_dict = {}
+        for lfp_corr_key, img_data in self.img_lfp_corr_data.items():
+            img_lfp_corr = QtWidgets.QAction(f'LFP Correlation ({lfp_corr_key})', self, checkable=True, checked=False)
+            img_lfp_corr.triggered.connect(lambda: self.plot_image(img_data))
+            img_lfp_corr_dict[lfp_corr_key] = img_lfp_corr
 
         img_rmsAP_main = QtWidgets.QAction('RMS AP Main Rec', self, checkable=True, checked=False)
         img_rmsAP_main.triggered.connect(lambda: self.plot_image(self.img_rms_APdata_main))
@@ -107,6 +111,11 @@ class Setup():
         self.img_options_group.addAction(img_rmsAP_main)
         img_options.addAction(img_rmsLFP)
         self.img_options_group.addAction(img_rmsLFP)
+
+        for lfp_corr_key, img_lfp_corr in img_lfp_corr_dict.items():
+            img_options.addAction(img_lfp_corr)
+            self.img_options_group.addAction(img_lfp_corr)
+
         img_options.addAction(img_rmsLFP_main)
         self.img_options_group.addAction(img_rmsLFP_main)
         img_options.addAction(img_LFP)
