@@ -522,17 +522,18 @@ class PlotData:
         # Here I assume that this data asset is attached to the current capsule together with the ephys data:
         # |- {CO data folder}
         #    |- {data asset for LFP correlation of ALL sessions}
-        #       |- behavior_{subject_id}_{date}_{lfp_time}
-        #           |- band_corr
-        #              |- spont_theta_mean_corr.npy
-        #              |- spont_gamma_mean_corr.npy
+        #       |- behavior_{subject_id}_{date}_{time'}
+        #          |- {Probe name}
+        #             |- band_corr
+        #                |- spont_theta_mean_corr.npy
+        #                |- spont_gamma_mean_corr.npy
         #                ....
-        #       |- behavior_{subject_id}_{date}_{lfp_time}
+        #       |- behavior_{subject_id}_{date}_{time'}
         #           |- band_corr
         #              ....
         #    |- {data asset for extracted ephys data by IBL pipeline}
         #       |- {subject_id}
-        #          |- behavior_{subject_id}_{date}_{ephys_time}
+        #          |- behavior_{subject_id}_{date}_{time}
         #              |- {Probe name}        <----- self.probe_path
         #
         # TODO: Generate LFP correlation data, together with other custom metrics like spike waveform statistics,
@@ -540,14 +541,19 @@ class PlotData:
 
         # Locate the CO /data folder (or couterpart outside of CO)
         co_data_folder = self.probe_path.parents[3]
-        # Get the session prefix (subject + date). We should exclude the session time since LFP typically 
-        # has different time stamps as ephys session
+        probe_name = self.probe_path.parts[-1]
+        
+        # Get the session prefix (subject + date). We should exclude the session time since in some cases LFP (ephys PC) 
+        # has different time stamps as the ephys session (metadata from behavior PC)
         subject_date = self.probe_path.parts[-2].rsplit('_', 1)[0]
-        # Looking for "band_corr" folder recursively in
+        
+        # Looking for all folders that match the subject_date in the CO data folder
+        # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder
         this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
-        # Inside each this_session_folders, looking for a folder named "band_corr"
+
+        # Inside each this_session_folders, looking for a folder named "band_corr" under the {probe name}
         for session_folder in this_session_folders:
-            lfp_corr_folder = session_folder.joinpath("band_corr")
+            lfp_corr_folder = session_folder.joinpath(probe_name, "band_corr")
             if lfp_corr_folder.exists():
                 return lfp_corr_folder
         else:
