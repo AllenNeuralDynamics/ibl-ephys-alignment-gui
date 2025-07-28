@@ -521,7 +521,7 @@ class PlotData:
         # Sue generated LFP correlation for all her sessions manually and put them in a data asset.
         # Here I assume that this data asset is attached to the current capsule together with the ephys data:
         # |- {CO data folder}
-        #    |- {data asset for LFP correlation}
+        #    |- {data asset for LFP correlation of ALL sessions}
         #       |- behavior_{subject_id}_{date}_{lfp_time}
         #           |- band_corr
         #              |- spont_theta_mean_corr.npy
@@ -560,24 +560,25 @@ class PlotData:
         # Locate the LFP correlation folder
         lfp_corr_folder = self._get_lfp_correlation_folder()
         if lfp_corr_folder is None:
-            return None
+            return {}
 
         # Load all npy files in the folder into the data dictionary
         lfp_corr_files = list(lfp_corr_folder.glob('*.npy'))
         if not lfp_corr_files:
             print(f"No LFP correlation files found in {lfp_corr_folder}.")
-            return None
-        
+            return {}
+
         all_data = {}
         for file in lfp_corr_files:
             # Extract the band name from the file name
             band_name = file.stem.replace('_mean_corr', '')
             this_corr = np.load(file)
             scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
+            max_corr = np.max(np.abs(this_corr))
             all_data[band_name] = {
                 'img': this_corr,
                 'scale': np.array([scale, scale]),
-                'levels': np.array([np.min(this_corr), np.max(this_corr[this_corr < 0.99])]),
+                'levels': np.array([-max_corr, max_corr]),
                 'offset': np.array([0, 0]),
                 'xrange': np.array([self.chn_min, self.chn_max]),
                 'cmap': 'RdBu',
@@ -611,7 +612,9 @@ class PlotData:
                 
             return {key: all_data[key] for key in sorted_keys}
 
-        return _sort_lfp_correlation_keys(all_data)
+        data_img_lfp_corr = _sort_lfp_correlation_keys(all_data)
+        print(f"LFP correlation data loaded with {len(data_img_lfp_corr)} epoch_bands.")
+        return data_img_lfp_corr
 
     def get_rfmap_data(self):
         data_img = dict()
