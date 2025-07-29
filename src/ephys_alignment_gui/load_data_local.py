@@ -43,12 +43,13 @@ class LoadDataLocal:
         self.previous_directory = None
         self.slice_images = {}
 
-    def get_info(self, folder_path, shank_idx: int, skip_shanks=False):
+    def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
         """
         Read in the local json file to see if any previous alignments exist
         """
         shank_list = None
-        self.folder_path = Path(folder_path)
+
+        self.folder_path = input_path
         if not skip_shanks:
             shank_list = self.get_nshanks()
 
@@ -99,31 +100,27 @@ class LoadDataLocal:
                 self.alignments = []
                 self.prev_align = ["original"]
         else:
-            self.alignments = []
-            self.prev_align = ["original"]
+            # If previous alignment json file exists, read in previous alignments
+            prev_align_filename = (
+                "prev_alignments.json"
+                if self.n_shanks == 1
+                else f"prev_alignments_shank{self.shank_idx + 1}.json"
+            )
 
-        """
-        # If previous alignment json file exists, read in previous alignments
-        prev_align_filename = (
-            "prev_alignments.json"
-            if self.n_shanks == 1
-            else f"prev_alignments_shank{self.shank_idx + 1}.json"
-        )
-
-        if self.folder_path.joinpath(prev_align_filename).exists():
-            with open(
-                self.folder_path.joinpath(prev_align_filename), "r"
-            ) as f:
-                self.alignments = json.load(f)
-                self.prev_align = []
-                if self.alignments:
-                    self.prev_align = [*self.alignments.keys()]
-                self.prev_align = sorted(self.prev_align, reverse=True)
-                self.prev_align.append("original")
-        else:
-            self.alignments = []
-            self.prev_align = ["original"]
-        """
+            if folder_path.joinpath(prev_align_filename).exists():
+                with open(
+                    folder_path.joinpath(prev_align_filename), "r"
+                ) as f:
+                    self.alignments = json.load(f)
+                    self.prev_align = []
+                    if self.alignments:
+                        self.prev_align = [*self.alignments.keys()]
+                    self.prev_align = sorted(self.prev_align, reverse=True)
+                    self.prev_align.append("original")
+            else:
+                self.alignments = []
+                self.prev_align = ["original"]
+        
 
         return self.prev_align
 
@@ -149,6 +146,7 @@ class LoadDataLocal:
         self.chn_coords_all = np.load(
             self.folder_path.joinpath("channels.localCoordinates.npy")
         )
+
         chn_x = np.unique(self.chn_coords_all[:, 0])
         chn_x_diff = np.diff(chn_x)
         self.n_shanks = np.sum(chn_x_diff > 100) + 1
