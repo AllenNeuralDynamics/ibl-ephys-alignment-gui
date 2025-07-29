@@ -840,6 +840,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         cbar = color_bar.makeColourBar(20, 5, self.fig_scale_cb, min=0.5, max=1.5,
                                        label='Scale Factor')
         colours = color_bar.map.mapToQColor(scale_factor)
+        y_min, y_max = self.fig_img.viewRange()[1]
 
         for ir, reg in enumerate(self.scale_data['region']):
             region = pg.LinearRegionItem(values=(reg[0], reg[1]),
@@ -850,6 +851,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_scale.addItem(region)
             self.fig_scale.addItem(bound)
             self.scale_regions = np.vstack([self.scale_regions, region])
+
+            # Add text label showing the scale factor
+            text_y = (max(y_min, reg[0]) + min(y_max, reg[1])) / 2  # Center of the region
+            text_item = pg.TextItem(text=f"{self.scale_data['scale'][ir]:.2f}",
+                                    anchor=(0.5, 0.5),
+                                    color='black')
+            text_item.setPos(-0.05, text_y)  # Position at minimum x axis
+            self.fig_scale.addItem(text_item)
 
         bound = pg.InfiniteLine(pos=self.scale_data['region'][-1][1], angle=0,
                                 pen=colours[-1])
