@@ -372,6 +372,7 @@ class Setup():
 
         # Option to save all plots
         save_plots = QtWidgets.QAction('Save Plots', self)
+        save_plots.setShortcut('Ctrl+Shift+S')
         save_plots.triggered.connect(self.save_plots)
 
         # Add menu bar with all possible display options
