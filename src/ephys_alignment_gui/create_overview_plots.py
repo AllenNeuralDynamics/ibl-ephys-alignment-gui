@@ -10,7 +10,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
     if not save_folder:
         save_folder = image_folder
 
-    def load_image(image_name, ax):
+    def load_image(image_name, ax, equal_aspect=True):
         with image_name as ifile:
             image = plt.imread(ifile)
 
@@ -19,68 +19,99 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         ax.spines['left'].set_visible(False)
         ax.spines['bottom'].set_visible(False)
         ax.set_axis_off()
-        ax.set_aspect('equal')
-        ax.imshow(image)
+        if equal_aspect: ax.set_aspect('equal')
+        ax.imshow(image, aspect='equal' if equal_aspect else None)
         return image
 
-    fig = plt.figure(constrained_layout=True, figsize=(18, 9))
-    gs = fig.add_gridspec(3, 18)
-    gs.update(wspace=0.025, hspace=0.05)
+    fig = plt.figure(figsize=(8, 6), dpi=500)
+    gs = fig.add_gridspec(4, 18, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
+    plt.figtext(0.02, 0.9, '/'.join(folder.parts[-3:]), fontsize=5)
 
-    ignore_img_plots = ['leftGabor', 'rightGabor', 'noiseOn', 'valveOn', 'toneOn']
-    img_row_order = [0, 0, 0, 0, 0, 0, 1, 1, 1]
-    img_column_order = [0, 3, 6, 9, 12, 15, 0, 3, 6]
-    img_idx = [0, 5, 4, 6, 7, 8, 1, 2, 3]
+    # --- Image view ---
     img_files = glob.glob(str(image_folder.joinpath(image_info + 'img_*.png')))
-    img_files = [img for img in img_files if not any([ig in img for ig in ignore_img_plots])]
-    img_files_sort = [img_files[idx] for idx in img_idx]
+    img_row_order = [0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3]
+    img_column_order = [0, 3, 0, 3, 6, 9, 12, 0, 3, 6, 9, 12, 0, 3, 6, 9, 12]
+    img_lfp_bands = [f'{epoch}_{band}' for epoch in ['spont', 'opto', 'diff'] for band in ['delta', 'theta', 'alpha', 'beta', 'gamma']]
+    img_keywords = [
+        'Cluster Amp vs Depth vs FR',
+        'Spike Correlation',
+        *img_lfp_bands
+    ]
+    img_files_sort = [next((file for file in img_files if keyword in file), None) for keyword in img_keywords]
 
     for iF, file in enumerate(img_files_sort):
+        if file is None:
+            continue
         ax = fig.add_subplot(gs[img_row_order[iF], img_column_order[iF]:img_column_order[iF] + 3])
-        load_image(Path(file), ax)
+        load_image(Path(file), ax, equal_aspect=True)
+        ax.set_title(img_keywords[iF], fontsize=2, pad=0.5)
 
-    ignore_probe_plots = ['RF Map']
-    probe_row_order = [1, 1, 1, 1, 1, 1, 2, 2, 2]
-    probe_column_order = [9, 10, 11, 12, 13, 14, 12, 13, 14]
-    probe_idx = [0, 3, 1, 2, 4, 5, 6]
+    # --- Probe and line view ---
+    probe_line_row_order = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    probe_line_column_order = [6, 7, 8, 9, 10, 11, 12, 13, 14]
+    probe_line_keywords = [
+        'line_Amplitude',
+        'line_Firing Rate',
+        'RMS AP',
+        'RMS LFP',
+        '0 - 4 Hz',
+        '4 - 10 Hz',
+        '10 - 30 Hz',
+        '30 - 80 Hz',
+        '80 - 200 Hz'
+    ]
     probe_files = glob.glob(str(image_folder.joinpath(image_info + 'probe_*.png')))
-    probe_files = [probe for probe in probe_files if not any([pr in probe for pr in
-                                                              ignore_probe_plots])]
-    probe_files_sort = [probe_files[idx] for idx in probe_idx]
     line_files = glob.glob(str(image_folder.joinpath(image_info + 'line_*.png')))
+    probe_line_files = probe_files + line_files
+    probe_line_files_sort = [next((file for file in probe_line_files if keyword in file), None) for keyword in probe_line_keywords]
 
-    for iF, file in enumerate(probe_files_sort + line_files):
-        ax = fig.add_subplot(gs[probe_row_order[iF], probe_column_order[iF]])
-        load_image(Path(file), ax)
-
+    for iF, file in enumerate(probe_line_files_sort):
+        if file is None:
+            continue
+        ax = fig.add_subplot(gs[probe_line_row_order[iF], probe_line_column_order[iF]])
+        load_image(Path(file), ax, equal_aspect=False)
+        ax.set_title(probe_line_keywords[iF], fontsize=2, pad=0.5)
+        
+    # --- Slice view ---
     slice_files = glob.glob(str(image_folder.joinpath(image_info + 'slice_*.png')))
-    slice_row_order = [2, 2, 2, 2]
-    slice_idx = [0, 1, 2, 3]
-    slice_column_order = [0, 3, 6, 9]
-    slice_files_sort = [slice_files[idx] for idx in slice_idx]
+    slice_row_order = [2, 3]
+    slice_column_order = [15, 15]
+    slice_keywords = [
+        'CCF',
+        'histology_registration',
+    ]
+    slice_files_sort = [next((file for file in slice_files if keyword in file), None) for keyword in slice_keywords]
 
     for iF, file in enumerate(slice_files_sort):
+        if file is None:
+            continue
         ax = fig.add_subplot(gs[slice_row_order[iF],
-                                slice_column_order[iF]:slice_column_order[iF] + 3])
-        load_image(Path(file), ax)
+                                slice_column_order[iF]:slice_column_order[iF] + 2])
+        load_image(Path(file), ax, equal_aspect=True)
 
-    slice_files = glob.glob(str(image_folder.joinpath(image_info + 'slice_zoom*.png')))
-    slice_row_order = [2, 2, 2, 2]
-    slice_idx = [0, 1, 2, 3]
-    slice_column_order = [2, 5, 8, 11]
-    slice_files_sort = [slice_files[idx] for idx in slice_idx]
+    slice_files_zoom = glob.glob(str(image_folder.joinpath(image_info + 'slice_zoom*.png')))
+    slice_row_order = [2, 3, 1]
+    slice_column_order = [17, 17, 17]
+    slice_keywords = [
+        'zoom_CCF',
+        'zoom_histology_registration',
+        'zoom_Annotation'
+    ]
+    slice_files_sort = [next((file for file in slice_files_zoom if keyword in file), None) for keyword in slice_keywords]
 
     for iF, file in enumerate(slice_files_sort):
+        if file is None:
+            continue
         ax = fig.add_subplot(gs[slice_row_order[iF], slice_column_order[iF]])
-        load_image(Path(file), ax)
+        load_image(Path(file), ax, equal_aspect=True)
 
-    hist_files = glob.glob(str(image_folder.joinpath(image_info + 'hist*.png')))
-    for iF, file in enumerate(hist_files):
-        ax = fig.add_subplot(gs[1:3, 15:18])
-        load_image(Path(file), ax)
+    # --- Histology view ---
+    hist_file = glob.glob(str(image_folder.joinpath(image_info + 'hist*.png')))[0]
+    ax = fig.add_subplot(gs[0:2, 15:17])
+    load_image(Path(hist_file), ax, equal_aspect=False)
 
     ax.text(0.5, 0, image_info[:-1], va="center", ha="center", transform=ax.transAxes)
-    plt.savefig(save_folder.joinpath(image_info + "overview.png"),
-                bbox_inches='tight', pad_inches=0)
-    # plt.close()
-    # plt.show()
+
+    fig.savefig(save_folder.joinpath(image_info + "overview.png"),
+                pad_inches=0.1, dpi=fig.dpi, bbox_inches='tight')
+    plt.show()

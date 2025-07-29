@@ -67,14 +67,20 @@ class Setup():
         scatter_amp.triggered.connect(lambda: self.plot_scatter(self.scat_amp_data))
         img_fr = QtWidgets.QAction('Firing Rate', self, checkable=True, checked=True)
         img_fr.triggered.connect(lambda: self.plot_image(self.img_fr_data))
-        img_corr = QtWidgets.QAction('Correlation', self, checkable=True, checked=False)
-        img_corr.triggered.connect(lambda: self.plot_image(self.img_corr_data))
+        img_spike_corr = QtWidgets.QAction('Spike Correlation', self, checkable=True, checked=False)
+        img_spike_corr.triggered.connect(lambda: self.plot_image(self.img_spike_corr_data))
         img_rmsAP = QtWidgets.QAction('RMS AP', self, checkable=True, checked=False)
         img_rmsAP.triggered.connect(lambda: self.plot_image(self.img_rms_APdata))
         img_rmsLFP = QtWidgets.QAction('RMS LFP', self, checkable=True, checked=False)
         img_rmsLFP.triggered.connect(lambda: self.plot_image(self.img_rms_LFPdata))
         img_LFP = QtWidgets.QAction('LFP Spectrum', self, checkable=True, checked=False)
         img_LFP.triggered.connect(lambda: self.plot_image(self.img_lfp_data))
+
+        img_lfp_corr_list = []
+        for lfp_corr_key, img_data in self.img_lfp_corr_data.items():
+            img_lfp_corr = QtWidgets.QAction(f'LFP Correlation ({lfp_corr_key})', self, checkable=True, checked=False)
+            img_lfp_corr.triggered.connect(lambda checked, img_data=img_data: self.plot_image(img_data))
+            img_lfp_corr_list.append(img_lfp_corr)
 
         img_rmsAP_main = QtWidgets.QAction('RMS AP Main Rec', self, checkable=True, checked=False)
         img_rmsAP_main.triggered.connect(lambda: self.plot_image(self.img_rms_APdata_main))
@@ -97,14 +103,19 @@ class Setup():
         self.img_options_group.addAction(img_fr)
         img_options.addAction(scatter_drift)
         self.img_options_group.addAction(scatter_drift)
-        img_options.addAction(img_corr)
-        self.img_options_group.addAction(img_corr)
+        img_options.addAction(img_spike_corr)
+        self.img_options_group.addAction(img_spike_corr)
         img_options.addAction(img_rmsAP)
         self.img_options_group.addAction(img_rmsAP)
         img_options.addAction(img_rmsAP_main)
         self.img_options_group.addAction(img_rmsAP_main)
         img_options.addAction(img_rmsLFP)
         self.img_options_group.addAction(img_rmsLFP)
+
+        for img_lfp_corr in img_lfp_corr_list:
+            img_options.addAction(img_lfp_corr)
+            self.img_options_group.addAction(img_lfp_corr)
+
         img_options.addAction(img_rmsLFP_main)
         self.img_options_group.addAction(img_rmsLFP_main)
         img_options.addAction(img_LFP)
@@ -297,6 +308,19 @@ class Setup():
         toggle4_option.setShortcut('Alt+4')
         toggle4_option.triggered.connect(lambda: self.toggle_plots(self.slice_options_group))
 
+        toggle5_option = QtWidgets.QAction('Toggle Previous Image Plots', self)
+        toggle5_option.setShortcut('Alt+Ctrl+1')
+        toggle5_option.triggered.connect(lambda: self.toggle_plots(self.img_options_group, reverse=True))
+        toggle6_option = QtWidgets.QAction('Toggle Previous Line Plots', self)
+        toggle6_option.setShortcut('Alt+Ctrl+2')
+        toggle6_option.triggered.connect(lambda: self.toggle_plots(self.line_options_group, reverse=True))
+        toggle7_option = QtWidgets.QAction('Toggle Previous Probe Plots', self)
+        toggle7_option.setShortcut('Alt+Ctrl+3')
+        toggle7_option.triggered.connect(lambda: self.toggle_plots(self.probe_options_group, reverse=True))
+        toggle8_option = QtWidgets.QAction('Toggle Previous Slice Plots', self)
+        toggle8_option.setShortcut('Alt+Ctrl+4')
+        toggle8_option.triggered.connect(lambda: self.toggle_plots(self.slice_options_group, reverse=True))
+
         # Shortcuts to switch order of 3 panels in ephys plot
         view1_option = QtWidgets.QAction('View 1', self)
         view1_option.setShortcut('Shift+1')
@@ -348,6 +372,7 @@ class Setup():
 
         # Option to save all plots
         save_plots = QtWidgets.QAction('Save Plots', self)
+        save_plots.setShortcut('Ctrl+Shift+S')
         save_plots.triggered.connect(self.save_plots)
 
         # Add menu bar with all possible display options
@@ -356,6 +381,10 @@ class Setup():
         display_options.addAction(toggle2_option)
         display_options.addAction(toggle3_option)
         display_options.addAction(toggle4_option)
+        display_options.addAction(toggle5_option)
+        display_options.addAction(toggle6_option)
+        display_options.addAction(toggle7_option)
+        display_options.addAction(toggle8_option)
         display_options.addAction(view1_option)
         display_options.addAction(view2_option)
         display_options.addAction(view3_option)

@@ -35,7 +35,6 @@ import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show proper
 from ephys_alignment_gui.docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
-DATA_PATH = Path('/data')
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -67,6 +66,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.histology_exists = True
         self.data_status = False
         self.output_directory = None
+        self.data_root = None
 
         self.allen = self.loaddata.get_allen_csv()
         self.init_region_lookup(self.allen)
@@ -395,7 +395,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Reset all axis, put view back to 1 and remove any reference lines
         self.reset_axis_button_pressed()
         self.set_view(view=1, configure=False)
-        self.remove_lines_points()
+        # self.remove_lines_points()
 
         xlabel_img = self.fig_img.getAxis('bottom').label.toPlainText()
         xlabel_line = self.fig_line.getAxis('bottom').label.toPlainText()
@@ -425,8 +425,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'img_' +
                                                     self.img_options_group.checkedAction()
                                                     .text() + '.png')))
+            self.add_lines_points()  # Add reference lines
             self.toggle_plots(self.img_options_group)
-            self.remove_lines_points()
+            # self.remove_lines_points()
             plot = self.img_options_group.checkedAction()
 
         self.set_font(self.fig_img, 'left', ptsize=8, width=ax_width)
@@ -454,6 +455,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'probe_' +
                                                     self.probe_options_group.checkedAction().
                                                     text() + '.png')))
+            self.add_lines_points()  # Add reference line
             self.toggle_plots(self.probe_options_group)
             plot = self.probe_options_group.checkedAction()
 
@@ -483,6 +485,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             exporter.export(str(image_path_overview.joinpath(sess_info + 'line_' +
                                                     self.line_options_group.checkedAction().
                                                     text() + '.png')))
+            self.add_lines_points()  # Add reference line
             self.toggle_plots(self.line_options_group)
             plot = self.line_options_group.checkedAction()
 
@@ -556,18 +559,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.add_lines_points()
 
-    def toggle_plots(self, options_group):
+    def toggle_plots(self, options_group, reverse=False):
         """
         Allows user to toggle through image, line, probe and slice plots using keyboard shortcuts
         Alt+1, Alt+2, Alt+3 and Alt+4 respectively
         :param options_group: Set of plots to toggle through
+        :param reverse: if True, goes backward
         :type options_group: QtGui.QActionGroup
         """
 
         current_act = options_group.checkedAction()
         actions = options_group.actions()
         current_idx = [iA for iA, act in enumerate(actions) if act == current_act][0]
-        next_idx = np.mod(current_idx + 1, len(actions))
+        next_idx = np.mod(current_idx + (-1 if reverse else 1), len(actions))
         actions[next_idx].setChecked(True)
         actions[next_idx].trigger()
 
@@ -836,6 +840,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         cbar = color_bar.makeColourBar(20, 5, self.fig_scale_cb, min=0.5, max=1.5,
                                        label='Scale Factor')
         colours = color_bar.map.mapToQColor(scale_factor)
+        y_min, y_max = self.fig_img.viewRange()[1]
 
         for ir, reg in enumerate(self.scale_data['region']):
             region = pg.LinearRegionItem(values=(reg[0], reg[1]),
@@ -846,6 +851,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_scale.addItem(region)
             self.fig_scale.addItem(bound)
             self.scale_regions = np.vstack([self.scale_regions, region])
+
+            # Add text label showing the scale factor
+            text_y = (max(y_min, reg[0]) + min(y_max, reg[1])) / 2  # Center of the region
+            text_item = pg.TextItem(text=f"{self.scale_data['scale'][ir]:.2f}",
+                                    anchor=(0.5, 0.5),
+                                    color='black')
+            text_item.setPos(-0.05, text_y)  # Position at minimum x axis
+            self.fig_scale.addItem(text_item)
 
         bound = pg.InfiniteLine(pos=self.scale_data['region'][-1][1], angle=0,
                                 pen=colours[-1])
@@ -1229,6 +1242,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             out_folder = folder_path.parent/'out'
             
         self.input_path = folder_path
+
+        # Make it compatible with path outside of code ocean
+        self.loaddata.data_root = folder_path.parents[3]
+        self.data_root = self.loaddata.data_root
+
         # Create the output folder if it doesn't exist
         os.makedirs(out_folder, exist_ok=True)
         # Set the output directory based on input name.
@@ -1373,7 +1391,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.scat_drift_data = self.plotdata.get_depth_data_scatter()
             (self.scat_fr_data, self.scat_p2t_data,
              self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
-            self.img_corr_data = self.plotdata.get_correlation_data_img()
+            self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
             self.img_fr_data = self.plotdata.get_fr_img()
             self.img_rms_APdata, self.probe_rms_APdata = self.plotdata.get_rms_data_img_probe('AP')
             self.img_rms_LFPdata, self.probe_rms_LFPdata = self.plotdata.get_rms_data_img_probe(
@@ -1382,6 +1400,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.img_rms_LFPdata_main, self.probe_rms_LFPdata_main = self.plotdata.get_rms_data_img_probe('LF_main')
             self.img_lfp_data, self.probe_lfp_data = self.plotdata.get_lfp_spectrum_data('lf')
             self.img_lfp_data_main, self.probe_lfp_data_main = self.plotdata.get_lfp_spectrum_data('lf_main')
+
+            self.img_lfp_corr_data = self.plotdata.get_lfp_correlation_data_img()
+
             self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
             self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
             self.img_stim_data = self.plotdata.get_passive_events()
@@ -1478,7 +1499,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.scat_drift_data = self.plotdata.get_depth_data_scatter()
         (self.scat_fr_data, self.scat_p2t_data,
          self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
-        self.img_corr_data = self.plotdata.get_correlation_data_img()
+        self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
         self.img_fr_data = self.plotdata.get_fr_img()
         self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
         self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
@@ -1819,16 +1840,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                       'y': image_physical_space_coordinates[:, 1], 
                                       'z': image_physical_space_coordinates[:, 2]})
         
-        smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        smartspim_template_affine_transform = tuple(self.data_root.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
         if not smartspim_template_affine_transform:
             # try legacy way
-            smartspim_template_affine_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            smartspim_template_affine_transform = tuple(self.data_root.glob('*/registration/ls_to_template_SyN_0GenericAffine.mat'))
             if not smartspim_template_affine_transform:
                 raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
 
-        smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        smartspim_template_warp_transform = tuple(self.data_root.glob('*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
         if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(DATA_PATH.glob('*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            smartspim_template_warp_transform = tuple(self.data_root.glob('*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
             if not smartspim_template_warp_transform:
                 raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
         
@@ -1837,11 +1858,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                     smartspim_template_warp_transform[0].as_posix()],
                                     whichtoinvert=[True, False])
 
-        template_to_ccf_affine_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
         if not template_to_ccf_affine_transform:
             raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
         
-        template_to_ccf_warp_transform = tuple(DATA_PATH.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
         if not template_to_ccf_warp_transform:
             raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
         
@@ -2285,11 +2306,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :return brush: colour use for the line
         :type brush: pyqtgraph Brush
         """
-        colours = ['#000000', '#cc0000', '#6aa84f', '#1155cc', '#a64d79']
+        colours = ['#cc0000', '#6aa84f', '#ff8d00', '#00FFF7', 
+                   "#03fc84", '#fc03e7', "#1c03fc", "#000000"]
         style = [QtCore.Qt.SolidLine, QtCore.Qt.DashLine, QtCore.Qt.DashDotLine]
         col = QtGui.QColor(colours[randrange(len(colours))])
         sty = style[randrange(len(style))]
-        pen = pg.mkPen(color=col, style=sty, width=3)
+        pen = pg.mkPen(color=col, style=sty, width=7)
         brush = pg.mkBrush(color=col)
         return pen, brush
 
