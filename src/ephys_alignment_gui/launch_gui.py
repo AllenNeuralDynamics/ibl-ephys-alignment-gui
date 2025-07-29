@@ -1000,18 +1000,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img_cb.addItem(cbar)
             self.img_cbars.append(cbar)
 
-            if type(np.any(data['colours'])) == QtGui.QColor:
-                brush = data['colours'].tolist()
-                plot = pg.ScatterPlotItem()
-                plot.setData(x=data['x'], y=data['y'],
-                             symbol=symbol, size=size, brush=brush, pen=data['pen'])
-
-            else:
-                brush = color_bar.getBrush(data['colours'],
-                                           levels=[data['levels'][0], data['levels'][1]])
-                plot = pg.ScatterPlotItem()
-                plot.setData(x=data['x'], y=data['y'],
-                             symbol=symbol, size=size, brush=brush, pen=data['pen'])
+            brush = data['colours'].tolist()
+            plot = pg.ScatterPlotItem()
+            plot.setData(x=data['x'], y=data['y'],
+                            symbol=symbol, size=size, brush=brush, pen=data['pen'])
 
             self.fig_img.addItem(plot)
             self.fig_img.setXRange(min=data['xrange'][0], max=data['xrange'][1],
@@ -1173,10 +1165,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     Interaction functions
     """
     def _update_ephys_alignments(self, folder_path: Path, skip_shanks=False):
-        if hasattr(self, 'current_shank_idx'):
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, skip_shanks=skip_shanks)
+        if Path('/data').is_dir():
+            data_string =  f"{folder_path.parent.parent.stem}/{folder_path.parent.stem}/{folder_path.stem}"
+            input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
         else:
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, skip_shanks=skip_shanks)
+            input_data_path = folder_path
+
+        if hasattr(self, 'current_shank_idx'):
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, input_path=input_data_path, skip_shanks=skip_shanks)
+        else:
+            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, input_path=input_data_path, skip_shanks=skip_shanks)
 
         if hasattr(self, 'current_shank_idx'):
             self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=folder_path)
@@ -1192,13 +1190,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not hasattr(self, 'current_shank_idx'):
             self.current_shank_idx = 0
 
-        self.data_button_pressed(folder_path)
+        print('Input data path', input_data_path)
+        self.data_button_pressed(input_data_path)
         print('Feature prev', self.feature_prev)
 
     def load_existing_alignments(self):
         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
         self.reload_folder_line.setText(str(folder_path))
-        self._update_ephys_alignments(folder_path, skip_shanks=True)
+            
+        self._update_ephys_alignments(folder_path)
 
     def on_folder_selected(self):
         """
@@ -1872,6 +1872,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 print("Channels locations not saved")
                 return
 
+        print("Warping to ccf and saving output files to results folder and docdb")
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
                                     self.xyz_channels, self.current_shank_idx + 1)
         self.loaddata.get_starting_alignment(0)
