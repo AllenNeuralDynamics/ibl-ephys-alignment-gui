@@ -23,9 +23,9 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         ax.imshow(image, aspect='equal' if equal_aspect else None)
         return image
 
-    fig = plt.figure(figsize=(6, 13), dpi=500)
+    fig = plt.figure(figsize=(8, 6), dpi=500)
     gs = fig.add_gridspec(4, 18, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
-    plt.figtext(0.02, 0.9, '/'.join(folder.parts[-3:]), fontsize=3)
+    plt.figtext(0.02, 0.9, '/'.join(folder.parts[-3:]), fontsize=5)
 
     # --- Image view ---
     img_files = glob.glob(str(image_folder.joinpath(image_info + 'img_*.png')))
@@ -112,5 +112,6 @@ def make_overview_plot(folder, sess_info, save_folder=None):
 
     ax.text(0.5, 0, image_info[:-1], va="center", ha="center", transform=ax.transAxes)
 
-    plt.savefig(save_folder.joinpath(image_info + "overview.png"),
-                pad_inches=0.1, dpi=1000)
+    fig.savefig(save_folder.joinpath(image_info + "overview.png"),
+                pad_inches=0.1, dpi=fig.dpi, bbox_inches='tight')
+    plt.show()
