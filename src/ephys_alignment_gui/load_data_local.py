@@ -371,14 +371,14 @@ class LoadDataLocal:
 
                     # Transform into proxy orientation
                     proxy_index = index[:, [2, 0, 1]] # transpose (x,y,z) → (z,x,y)
-                    proxy_index[:, 0] = shape[0] - 1 - proxy_index[:, 0] # flip axis 0
-                    proxy_index[:, 2] = shape[2] - 1 - proxy_index[:, 2] # flip axis 2
+                    proxy_index[:, 0] = hist_atlas.image.shape[0] - 1 - proxy_index[:, 0] # flip axis 0
+                    proxy_index[:, 2] = hist_atlas.image.shape[2] - 1 - proxy_index[:, 2] # flip axis 2
 
                     # Clip to valid bounds
                     mask = (
-                        (proxy_index[:, 0] >= 0) & (proxy_index[:, 0] < shape[0]) &
-                        (proxy_index[:, 1] >= 0) & (proxy_index[:, 1] < shape[1]) &
-                        (proxy_index[:, 2] >= 0) & (proxy_index[:, 2] < shape[2])
+                        (proxy_index[:, 0] >= 0) & (proxy_index[:, 0] < hist_atlas.image.shape[0]) &
+                        (proxy_index[:, 1] >= 0) & (proxy_index[:, 1] < hist_atlas.image.shape[1]) &
+                        (proxy_index[:, 2] >= 0) & (proxy_index[:, 2] < hist_atlas.image.shape[2])
                     )
                     proxy_index = proxy_index[mask]
 
