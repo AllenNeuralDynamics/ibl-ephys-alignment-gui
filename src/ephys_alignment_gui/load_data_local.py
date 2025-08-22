@@ -371,7 +371,6 @@ class LoadDataLocal:
 
                     # Transform into proxy orientation
                     proxy_index = index.copy()
-                    proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
 
                     # Clip to valid bounds
                     mask = (
@@ -389,7 +388,7 @@ class LoadDataLocal:
                     subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1]  # still lazy
 
                     # Relative coordinates of probe points inside the subvolume
-                    y_rel = proxy_index[:, 1] - ymin
+                    y_rel = ymax - proxy_index[:, 1]
                     z_rel = proxy_index[:, 2] - zmin
 
                     # Gather the slice corresponding to the probe points
