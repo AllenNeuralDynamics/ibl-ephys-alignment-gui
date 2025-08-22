@@ -374,7 +374,10 @@ class LoadDataLocal:
                     # Grab only the subvolume lazily
                     subvol = np.array(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
                     subvol = np.transpose(subvol, axes=(2, 1, 0))
-                    hist_slice = np.flip(subvol, axis=(0, 2))
+                    subvol = np.flip(subvol, axis=(0, 2))
+                    y_rel = index[:, 1] - ymin
+                    z_rel = index[:, 2] - zmin
+                    hist_slice = subvol[:, y_rel, z_rel]
                     #hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
