@@ -367,13 +367,19 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
-                    vals = []
-                    for y, z in zip(index[:, 1], index[:, 2]):
-                        # grab a lazy 1D slice along x
-                        arr = hist_atlas.image[:, y, z].compute()
-                        vals.append(arr)
+                    # Find bounding box around the voxels you need
+                    ymin, ymax = index[:, 1].min(), index[:, 1].max()
+                    zmin, zmax = index[:, 2].min(), index[:, 2].max()
 
-                    hist_slice = np.stack(vals, axis=1)  # shape: (X, N_points)
+                    # Grab only the subvolume lazily
+                    subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1].compute()  # one compute call
+
+                    # Adjust indices relative to subvolume
+                    y_rel = index[:, 1] - ymin
+                    z_rel = index[:, 2] - zmin
+
+                    # Gather the desired voxels
+                    hist_slice = subvol[:, y_rel, z_rel]  # shape: (X, N_coords)
                     #hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
