@@ -181,8 +181,8 @@ class LoadDataLocal:
                 self.histology_path = self.atlas_image_path[0].parent
 
                 self.brain_atlas = CustomAtlas(
-                atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
-                atlas_labels_file=self.atlas_labels_path[0].as_posix(),
+                atlas_image_file=self.atlas_image_path[0],#ccf_in_713506.nrrd',
+                atlas_labels_file=self.atlas_labels_path[0],
                 )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
