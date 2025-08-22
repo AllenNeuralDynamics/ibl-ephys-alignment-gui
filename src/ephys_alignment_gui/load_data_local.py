@@ -387,7 +387,7 @@ class LoadDataLocal:
                     subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1]  # still lazy
 
                     # Relative coordinates of probe points inside the subvolume
-                    y_rel = ymax - proxy_index[:, 1]
+                    y_rel = proxy_index[:, 1]
                     z_rel = zmax - proxy_index[:, 2]
                     
                     # Gather the slice corresponding to the probe points
