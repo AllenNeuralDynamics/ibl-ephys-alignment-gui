@@ -370,7 +370,7 @@ class LoadDataLocal:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
                     # Transform into proxy orientation
-                    proxy_index = index[:, [2, 0, 1]] # transpose (x,y,z) → (z,x,y)
+                    proxy_index = index[:, [1, 2, 0]] # transpose
                     proxy_index[:, 0] = hist_atlas.image.shape[0] - 1 - proxy_index[:, 0] # flip axis 0
                     proxy_index[:, 2] = hist_atlas.image.shape[2] - 1 - proxy_index[:, 2] # flip axis 2
 
