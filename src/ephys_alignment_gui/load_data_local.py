@@ -367,7 +367,14 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
-                    hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
+                    vals = []
+                    for y, z in zip(index[:, 1], index[:, 2]):
+                        # grab a lazy 1D slice along x
+                        arr = hist_atlas.image[:, y, z].compute()
+                        vals.append(arr)
+
+                    hist_slice = np.stack(vals, axis=1)  # shape: (X, N_points)
+                    #hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
