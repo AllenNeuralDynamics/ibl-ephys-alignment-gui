@@ -370,7 +370,7 @@ class LoadDataLocal:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
                     proxy_index = np.round(xyz_channels * 1e6 / hist_atlas.spacing).astype(np.int64)
-                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0]
+                    proxy_index[:, 1] = hist_atlas.image.shape[1] - proxy_index[:, 1]
                     proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
 
                     # Clip to valid bounds
