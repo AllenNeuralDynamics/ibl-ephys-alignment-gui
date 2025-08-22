@@ -277,6 +277,7 @@ class CustomAtlas(BrainAtlas):
 
     
     def read_atlas_image(self):
+        print("Image file", self.atlas_image_file)
         if self.atlas_image_file.suffix == ".nrrd":
             # Reads the 
             IMG = sitk.ReadImage(self.atlas_image_file)
