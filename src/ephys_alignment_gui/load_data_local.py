@@ -391,7 +391,7 @@ class LoadDataLocal:
                     z_rel = zmax - proxy_index[:, 2]
                     
                     # Gather the slice corresponding to the probe points
-                    hist_slice = np.asanyarray(hist_atlas.image[:, y_rel, z_rel])  # materialize only this small chunk
+                    hist_slice = np.asanyarray(subvol[:, y_rel, z_rel])  # materialize only this small chunk
 
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
