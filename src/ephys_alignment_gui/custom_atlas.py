@@ -294,7 +294,8 @@ class CustomAtlas(BrainAtlas):
             image_lazy_loaded = nib.load(self.atlas_image_file)
             self.image = da.from_array(image_lazy_loaded.dataobj, chunks=(64, 64, 64))
             self.image = self.image.transpose(2, 1, 0)
-            self.image = self.image[::-1, :, ::-1]
+            self.image = self.image[::-1, :, :]
+            self.image = self.image[:, :, ::-1]
             print('Shape', self.image.shape)
             self.spacing = image_lazy_loaded.header.get_zooms()[0]
             self.offset = tuple(image_lazy_loaded.affine[:3, 3])

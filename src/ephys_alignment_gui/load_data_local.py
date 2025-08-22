@@ -367,7 +367,7 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
-                    hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]]
+                    hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
                     #hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
