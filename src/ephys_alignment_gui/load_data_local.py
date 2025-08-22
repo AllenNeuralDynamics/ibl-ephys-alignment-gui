@@ -369,6 +369,7 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
+                    """
                     # Transform into proxy orientation
                     proxy_index = index.copy()
 
@@ -390,9 +391,9 @@ class LoadDataLocal:
                     # Relative coordinates of probe points inside the subvolume
                     y_rel = proxy_index[:, 1] - ymin
                     z_rel = zmax - proxy_index[:, 2]
-
+                    """
                     # Gather the slice corresponding to the probe points
-                    hist_slice = np.asanyarray(subvol[:, y_rel, z_rel])  # materialize only this small chunk
+                    hist_slice = np.asanyarray(hist_atlas.image[:, index[:, 1], index[:, 2]])  # materialize only this small chunk
 
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
