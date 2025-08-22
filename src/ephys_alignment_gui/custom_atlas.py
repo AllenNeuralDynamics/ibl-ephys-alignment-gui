@@ -10,6 +10,8 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import nrrd
+import nibabel as nib
+import dask.array as da
 
 import one.params
 import logging
@@ -249,8 +251,19 @@ class CustomAtlas(BrainAtlas):
         regions = BrainRegions()
         #_, im = ismember(self.label, regions.id)
         #label = np.reshape(im.astype(np.uint16), self.label.shape)
-        self.label[~np.isin(self.label,regions.id)]=997
-        self.label = self.label.astype(np.uint16)
+        # Make sure we're in uint16 already (avoid extra copies)
+        if self.label.dtype != np.uint16:
+            self.label = self.label.astype(np.uint16, copy=False)
+
+        # Sort region IDs (only once)
+        valid = np.sort(np.asarray(regions.id, dtype=self.label.dtype))
+
+        # Binary search lookup for all labels
+        idx = np.searchsorted(valid, self.label)
+        mask = (idx < len(valid)) & (valid[idx] == self.label)
+
+        # Apply replacement in-place
+        self.label[~mask] = np.uint16(997)
 
         
         xyz2dims = np.array([0, 1, 2])  # this is the c-contiguous ordering
@@ -264,16 +277,26 @@ class CustomAtlas(BrainAtlas):
 
     
     def read_atlas_image(self):
-        # Reads the 
-        IMG = sitk.ReadImage(self.atlas_image_file)
-        # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
-        #IMG2 = sitk.DICOMOrient(IMG,self.read_string) 
-        self.original_image = IMG
-        self.image = np.flip(sitk.GetArrayFromImage(IMG).T, axis=(0, 2))
-        print('Shape', self.image.shape)
-        self.offset = IMG.GetOrigin()
-        self.spacing = IMG.GetSpacing()[0] * 1000
-        return IMG.GetSpacing()
+        if self.atlas_image_file.suffix == ".nrrd":
+            # Reads the 
+            IMG = sitk.ReadImage(self.atlas_image_file)
+            # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
+            #IMG2 = sitk.DICOMOrient(IMG,self.read_string) 
+            self.original_image = IMG
+            self.image = np.flip(sitk.GetArrayFromImage(IMG).T, axis=(0, 2))
+            print('Shape', self.image.shape)
+            self.offset = IMG.GetOrigin()
+            self.spacing = IMG.GetSpacing()[0] * 1000
+        else: # nii.gz file
+            image_lazy_loaded = nib.load(self.atlas_image_file)
+            self.image = da.from_array(image_lazy_loaded.dataobj, chunks=(64, 64, 64))
+            self.image = self.image.transpose(2, 1, 0)
+            self.image = self.image.flip(self.image, axis=(0, 2))
+            print('Shape', self.image.shape)
+            self.spacing = image_lazy_loaded.header.get_zooms()[0] * 1000
+            self.offset = tuple(image_lazy_loaded.affine[:3, 3])
+
+        return self.spacing
         
     def read_atlas_labels(self):
         IMG = sitk.ReadImage(self.atlas_labels_file)
