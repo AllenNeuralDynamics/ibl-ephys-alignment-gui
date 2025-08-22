@@ -371,6 +371,7 @@ class LoadDataLocal:
 
                     # Transform into proxy orientation
                     proxy_index = index.copy()
+                    proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
 
                     # Clip to valid bounds
                     mask = (
