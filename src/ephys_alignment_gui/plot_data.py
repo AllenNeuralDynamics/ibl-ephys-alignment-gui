@@ -548,7 +548,6 @@ class PlotData:
         # Get the session prefix (subject + date). We should exclude the session time since in some cases LFP (ephys PC) 
         # has different time stamps as the ephys session (metadata from behavior PC)
         subject_date = self.probe_path.parts[-2].rsplit('_', 1)[0]
-        print(co_data_folder, probe_name, subject_date)
         
         # Looking for all folders that match the subject_date in the CO data folder
         # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder

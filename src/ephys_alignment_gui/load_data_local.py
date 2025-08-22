@@ -297,8 +297,10 @@ class LoadDataLocal:
         ]
         """
         index = np.round(xyz_channels * 1e6 / self.brain_atlas.spacing).astype(np.int64)
-        index = index[(index[:, 0] < self.brain_atlas.image.shape[0]) & (index[:, 1] < self.brain_atlas.image.shape[1])
-                                  & (index[:, 2] < self.brain_atlas.image.shape[2])]
+        shape = self.brain_atlas.image.shape
+        index = index[(index[:, 0] < shape[0]) & (index[:, 1] < shape[1])
+                                  & (index[:, 2] < shape[2])]
+  
         ccf_slice = self.brain_atlas.image[:, index[:, 1], index[:, 2]]
         print('Ccf slice', ccf_slice.shape)
 
@@ -367,19 +369,33 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
+                    # Transform into proxy orientation
+                    proxy_index = index[:, [2, 0, 1]] # transpose (x,y,z) → (z,x,y)
+                    proxy_index[:, 0] = shape[0] - 1 - proxy_index[:, 0] # flip axis 0
+                    proxy_index[:, 2] = shape[2] - 1 - proxy_index[:, 2] # flip axis 2
+
+                    # Clip to valid bounds
+                    mask = (
+                        (proxy_index[:, 0] >= 0) & (proxy_index[:, 0] < shape[0]) &
+                        (proxy_index[:, 1] >= 0) & (proxy_index[:, 1] < shape[1]) &
+                        (proxy_index[:, 2] >= 0) & (proxy_index[:, 2] < shape[2])
+                    )
+                    proxy_index = proxy_index[mask]
+
                     # Find bounding box around the voxels you need
-                    ymin, ymax = index[:, 1].min(), index[:, 1].max()
-                    zmin, zmax = index[:, 2].min(), index[:, 2].max()
+                    ymin, ymax = proxy_index[:, 1].min(), proxy_index[:, 1].max()
+                    zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
 
                     # Grab only the subvolume lazily
-                    subvol = np.array(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
-                    subvol = np.transpose(subvol, axes=(2, 1, 0))
-                    subvol = np.flip(subvol, axis=(0, 2))
-                    y_rel = index[:, 1] - ymin
-                    z_rel = index[:, 2] - zmin
-                    hist_slice = subvol[:, y_rel, z_rel]
-                    #hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]].compute()
-                    #hist_slice = np.swapaxes(hist_slice, 0, 1)
+                    subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1]  # still lazy
+
+                    # Relative coordinates of probe points inside the subvolume
+                    y_rel = proxy_index[:, 1] - ymin
+                    z_rel = proxy_index[:, 2] - zmin
+
+                    # Gather the slice corresponding to the probe points
+                    hist_slice = np.asanyarray(subvol[:, y_rel, z_rel])  # materialize only this small chunk
+
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
         return slice_data, None
