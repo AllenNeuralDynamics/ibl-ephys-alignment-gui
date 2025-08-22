@@ -550,7 +550,8 @@ class PlotData:
         # Looking for all folders that match the subject_date in the CO data folder
         # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder
         this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
-
+        return None
+        """
         # Inside each this_session_folders, looking for a folder named "band_corr" under the {probe name}
         for session_folder in this_session_folders:
             lfp_corr_folder = session_folder.joinpath(probe_name, "band_corr")
@@ -559,6 +560,7 @@ class PlotData:
         else:
             print(f"No band_corr folder found for {subject_date}.")
             return None
+        """
 
     def get_lfp_correlation_data_img(self):
         '''Load LFP correlation data from the band_corr folder.'''
