@@ -549,7 +549,7 @@ class PlotData:
         
         # Looking for all folders that match the subject_date in the CO data folder
         # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder
-        this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
+        #this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
         return None
         """
         # Inside each this_session_folders, looking for a folder named "band_corr" under the {probe name}
