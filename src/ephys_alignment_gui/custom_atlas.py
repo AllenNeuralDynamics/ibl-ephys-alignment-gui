@@ -290,7 +290,7 @@ class CustomAtlas(BrainAtlas):
             self.spacing = IMG.GetSpacing()[0] * 1000
             return IMG.GetSpacing()
         else: # nii.gz file
-            print(f"Loading nii.gz file: {self.atlas_image_file.as_posix()}}")
+            print(f"Loading nii.gz file: {self.atlas_image_file.as_posix()}")
             image_lazy_loaded = nib.load(self.atlas_image_file)
             self.image = da.from_array(image_lazy_loaded.dataobj, chunks=(64, 64, 64))
             self.image = self.image.transpose(2, 1, 0)
