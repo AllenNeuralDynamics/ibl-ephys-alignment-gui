@@ -277,8 +277,8 @@ class CustomAtlas(BrainAtlas):
 
     
     def read_atlas_image(self):
-        print("Image file", self.atlas_image_file.suffix)
         if self.atlas_image_file.suffix == ".nrrd":
+            print(f"Loading nrrd file: {self.atlas_image_file.as_posix()}")
             # Reads the 
             IMG = sitk.ReadImage(self.atlas_image_file)
             # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
@@ -288,7 +288,9 @@ class CustomAtlas(BrainAtlas):
             print('Shape', self.image.shape)
             self.offset = IMG.GetOrigin()
             self.spacing = IMG.GetSpacing()[0] * 1000
+            return IMG.GetSpacing()
         else: # nii.gz file
+            print(f"Loading nii.gz file: {self.atlas_image_file.as_posix()}}")
             image_lazy_loaded = nib.load(self.atlas_image_file)
             self.image = da.from_array(image_lazy_loaded.dataobj, chunks=(64, 64, 64))
             self.image = self.image.transpose(2, 1, 0)
@@ -296,8 +298,7 @@ class CustomAtlas(BrainAtlas):
             print('Shape', self.image.shape)
             self.spacing = image_lazy_loaded.header.get_zooms()[0]
             self.offset = tuple(image_lazy_loaded.affine[:3, 3])
-
-        return self.spacing
+            return tuple(image_lazy_loaded.header.get_zooms())
         
     def read_atlas_labels(self):
         IMG = sitk.ReadImage(self.atlas_labels_file)
