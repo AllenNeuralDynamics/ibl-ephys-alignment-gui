@@ -391,7 +391,7 @@ class LoadDataLocal:
 
                     y_rel = proxy_index[:, 1] - ymin  # AP axis, not flipped
                     z_rel = proxy_index[:, 2] - zmin  # DV axis, **flipped**, so need to adjust
-                    z_rel_flipped = subvol.shape[2] - z_rel
+                    z_rel_flipped = subvol.shape[2] - z_rel - 1
 
                     # Gather slice values
                     hist_slice = subvol[:, y_rel, z_rel_flipped]
