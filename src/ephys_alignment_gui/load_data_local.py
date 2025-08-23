@@ -385,15 +385,15 @@ class LoadDataLocal:
                     ymin, ymax = proxy_index[:, 1].min(), proxy_index[:, 1].max()
                     zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
 
-                    # Grab only the subvolume lazily
-                    subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1]  # still lazy
+                    # Extract minimal subvolume lazily
+                    subvol = np.array(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
 
-                    # Relative coordinates of probe points inside the subvolume
-                    y_rel = ymax - proxy_index[:, 1]
+                    # Relative indices inside bounding box
+                    y_rel = proxy_index[:, 1] - ymin
                     z_rel = proxy_index[:, 2] - zmin
-                    
-                    # Gather the slice corresponding to the probe points
-                    hist_slice = np.asanyarray(subvol[:, y_rel, z_rel])  # materialize only this small chunk
+
+                    # Gather slice values
+                    hist_slice = subvol[proxy_index[:, 0], y_rel, z_rel]
 
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
