@@ -369,8 +369,8 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
-                    proxy_index = np.round(xyz_channels * 1e6 / hist_atlas.spacing).astype(np.int64)
-                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0]
+                    proxy_index = np.round(xyz_channels * 1e6 / hist_atlas.spacing).astype(np.int64)    
+                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0] 
                     proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
 
                     # Clip to valid bounds
@@ -386,14 +386,15 @@ class LoadDataLocal:
                     zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
 
                     # Extract minimal subvolume lazily
-                    subvol = np.array(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
+                    subvol = np.asanyarray(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
+                    subvol = np.flip(subvol, axis=(0, 2))
 
-                    # Relative indices inside bounding box
-                    y_rel = proxy_index[:, 1] - ymin
-                    z_rel = proxy_index[:, 2] - zmin
+                    y_rel = proxy_index[:, 1] - ymin  # AP axis, not flipped
+                    z_rel = proxy_index[:, 2] - zmin  # DV axis, **flipped**, so need to adjust
+                    z_rel_flipped = subvol.shape[2] - z_rel
 
                     # Gather slice values
-                    hist_slice = subvol[proxy_index[:, 0], y_rel, z_rel]
+                    hist_slice = subvol[:, y_rel, z_rel_flipped]
 
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
