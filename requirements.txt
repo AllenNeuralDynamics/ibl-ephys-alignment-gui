@@ -7,4 +7,3 @@ aind-data-schema<2.0
 aind-data-access-api
 aws-requests-auth
 nibabel
-dask[array]

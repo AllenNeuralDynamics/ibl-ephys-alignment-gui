@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import nrrd
 import nibabel as nib
-import dask.array as da
 
 import one.params
 import logging
