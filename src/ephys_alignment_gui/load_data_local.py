@@ -370,7 +370,7 @@ class LoadDataLocal:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
                     proxy_index = np.round(xyz_channels * 1e6 / hist_atlas.spacing).astype(np.int64)
-                    proxy_index[:, 1] = hist_atlas.image.shape[1] - proxy_index[:, 1]
+                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0]
                     proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
 
                     # Clip to valid bounds
@@ -389,7 +389,7 @@ class LoadDataLocal:
                     subvol = hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1]  # still lazy
 
                     # Relative coordinates of probe points inside the subvolume
-                    y_rel = proxy_index[:, 1] - ymin
+                    y_rel = ymax - proxy_index[:, 1]
                     z_rel = proxy_index[:, 2] - zmin
                     
                     # Gather the slice corresponding to the probe points
