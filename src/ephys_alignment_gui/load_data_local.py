@@ -181,8 +181,8 @@ class LoadDataLocal:
                 self.histology_path = self.atlas_image_path[0].parent
 
                 self.brain_atlas = CustomAtlas(
-                atlas_image_file=self.atlas_image_path[0].as_posix(),#ccf_in_713506.nrrd',
-                atlas_labels_file=self.atlas_labels_path[0].as_posix(),
+                atlas_image_file=self.atlas_image_path[0],#ccf_in_713506.nrrd',
+                atlas_labels_file=self.atlas_labels_path[0],
                 )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
@@ -297,8 +297,10 @@ class LoadDataLocal:
         ]
         """
         index = np.round(xyz_channels * 1e6 / self.brain_atlas.spacing).astype(np.int64)
-        index = index[(index[:, 0] < self.brain_atlas.image.shape[0]) & (index[:, 1] < self.brain_atlas.image.shape[1])
-                                  & (index[:, 2] < self.brain_atlas.image.shape[2])]
+        shape = self.brain_atlas.image.shape
+        index = index[(index[:, 0] < shape[0]) & (index[:, 1] < shape[1])
+                                  & (index[:, 2] < shape[2])]
+  
         ccf_slice = self.brain_atlas.image[:, index[:, 1], index[:, 2]]
         print('Ccf slice', ccf_slice.shape)
 
@@ -346,7 +348,7 @@ class LoadDataLocal:
             histology_images = [
                 ii.name
                 for ii in list(Path(self.histology_path).iterdir())
-                if ".nii.gz" in ii.name
+                if "histology_registration.nii.gz" in ii.name
             ]
             for image in histology_images:
                 path_to_image = glob.glob(
@@ -367,8 +369,33 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
 
-                    hist_slice = hist_atlas.image[:, index[:, 1], index[:, 2]]
-                    #hist_slice = np.swapaxes(hist_slice, 0, 1)
+                    proxy_index = np.round(xyz_channels * 1e6 / hist_atlas.spacing).astype(np.int64)    
+                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0] 
+                    proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
+
+                    # Clip to valid bounds
+                    mask = (
+                        (proxy_index[:, 0] >= 0) & (proxy_index[:, 0] < hist_atlas.image.shape[0]) &
+                        (proxy_index[:, 1] >= 0) & (proxy_index[:, 1] < hist_atlas.image.shape[1]) &
+                        (proxy_index[:, 2] >= 0) & (proxy_index[:, 2] < hist_atlas.image.shape[2])
+                    )
+                    proxy_index = proxy_index[mask]
+
+                    # Find bounding box around the voxels you need
+                    ymin, ymax = proxy_index[:, 1].min(), proxy_index[:, 1].max()
+                    zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
+
+                    # Extract minimal subvolume lazily
+                    subvol = np.asanyarray(hist_atlas.image[:, ymin:ymax+1, zmin:zmax+1])
+                    subvol = np.flip(subvol, axis=(0, 2))
+
+                    y_rel = proxy_index[:, 1] - ymin  # AP axis, not flipped
+                    z_rel = proxy_index[:, 2] - zmin  # DV axis, **flipped**, so need to adjust
+                    z_rel_flipped = subvol.shape[2] - z_rel - 1
+
+                    # Gather slice values
+                    hist_slice = subvol[:, y_rel, z_rel_flipped]
+
                     slice_data[image.split(".nii.gz")[0]] = hist_slice
 
         return slice_data, None

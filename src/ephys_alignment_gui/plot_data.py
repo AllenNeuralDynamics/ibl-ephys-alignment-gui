@@ -11,6 +11,8 @@ from ephys_alignment_gui.utils import bincount2D
 import scipy
 from PyQt5 import QtGui
 
+import os
+from pathlib import Path
 BNK_SIZE = 10
 AUTOCORR_BIN_SIZE = 0.25 / 1000
 AUTOCORR_WIN_SIZE = 10 / 1000
@@ -549,16 +551,17 @@ class PlotData:
         
         # Looking for all folders that match the subject_date in the CO data folder
         # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder
-        this_session_folders = list(co_data_folder.rglob(f"{subject_date}*"))
-
+        this_session_same_folder = tuple(co_data_folder.glob(f"*/*/{subject_date}*"))
+        this_session_seperate_asset = tuple(co_data_folder.glob(f"*/{subject_date}*"))
+        this_session_folders = this_session_same_folder + this_session_seperate_asset
+        
         # Inside each this_session_folders, looking for a folder named "band_corr" under the {probe name}
         for session_folder in this_session_folders:
             lfp_corr_folder = session_folder.joinpath(probe_name, "band_corr")
             if lfp_corr_folder.exists():
                 return lfp_corr_folder
-        else:
-            print(f"No band_corr folder found for {subject_date}.")
-            return None
+        
+        
 
     def get_lfp_correlation_data_img(self):
         '''Load LFP correlation data from the band_corr folder.'''
