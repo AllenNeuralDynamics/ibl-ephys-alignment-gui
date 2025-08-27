@@ -1230,12 +1230,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
         # Set the output default based on the selected folder path
         if we_are_in_code_ocean:
-            out_folder = Path('/results/').joinpath(folder_path.parent.stem)
+            out_folder = Path('/scratch/').joinpath(folder_path.parent.stem)
             string_folder_path = folder_path.parent.stem
             subject_id_path = string_folder_path[string_folder_path.index('_')+1:]
             subject_id = subject_id_path[0:subject_id_path.index('_')]
 
-            out_folder = Path('/results').joinpath(subject_id)
+            out_folder = Path('/scratch').joinpath(subject_id)
             print('Output folder', out_folder)
             
         else:
