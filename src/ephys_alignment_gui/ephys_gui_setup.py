@@ -218,6 +218,12 @@ class Setup():
         mua_units.triggered.connect(lambda: self.filter_unit_pressed('KS mua'))
         ibl_units = QtWidgets.QAction('IBL good', self, checkable=True, checked=False)
         ibl_units.triggered.connect(lambda: self.filter_unit_pressed('IBL good'))
+        aind_qc_units = QtWidgets.QAction('aind_qc', self, checkable=True, checked=False)
+        aind_qc_units.triggered.connect(lambda: self.filter_unit_pressed('aind_qc'))
+        sua_refine_units = QtWidgets.QAction('unitrefine_sua', self, checkable=True, checked=False)
+        sua_refine_units.triggered.connect(lambda: self.filter_unit_pressed('unitrefine_sua'))
+        neural_refine_units = QtWidgets.QAction('unitrefine_neural', self, checkable=True, checked=False)
+        neural_refine_units.triggered.connect(lambda: self.filter_unit_pressed('unitrefine_neural'))
         # Initialise with all units being shown
         self.unit_init = all_units
 
@@ -234,6 +240,12 @@ class Setup():
         unit_filter_options_group.addAction(mua_units)
         unit_filter_options.addAction(ibl_units)
         unit_filter_options_group.addAction(ibl_units)
+        unit_filter_options.addAction(aind_qc_units)
+        unit_filter_options_group.addAction(aind_qc_units)
+        unit_filter_options.addAction(sua_refine_units)
+        unit_filter_options_group.addAction(sua_refine_units)
+        unit_filter_options.addAction(neural_refine_units)
+        unit_filter_options_group.addAction(neural_refine_units)
 
         # FIT OPTIONS MENU BAR
         # Define all possible keyboard shortcut interactions for GUI

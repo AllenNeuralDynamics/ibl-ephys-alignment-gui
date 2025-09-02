@@ -101,6 +101,18 @@ class PlotData:
             elif type == 'IBL good':
                 clust = np.where(self.data['clusters'].metrics.label == 1)
                 self.spike_idx = np.where(np.isin(self.data['spikes']['clusters'], clust))[0]
+
+            elif type == "aind_qc":
+                clust = np.where(self.data['clusters'].metrics["default_qc"])
+                self.spike_idx = np.where(np.isin(self.data['spikes']['clusters'], clust))[0]
+
+            elif type == "unitrefine_sua":
+                clust = np.where(self.data['clusters'].metrics["unitrefine_label"] == "sua")
+                self.spike_idx = np.where(np.isin(self.data['spikes']['clusters'], clust))[0]
+                
+            elif type == "unitrefine_neural":
+                clust = np.where(self.data['clusters'].metrics["unitrefine_label"] != "noise")
+                self.spike_idx = np.where(np.isin(self.data['spikes']['clusters'], clust))[0]
         except Exception:
             print(f'{type} metrics not found will return all units instead')
             self.spike_idx = np.arange(self.data['spikes']['clusters'].size)
