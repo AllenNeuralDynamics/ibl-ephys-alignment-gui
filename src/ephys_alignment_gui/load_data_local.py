@@ -170,11 +170,11 @@ class LoadDataLocal:
 
         if reload_data:
             if not hasattr(self, "atlas_image_path"):
-                self.atlas_image_path = tuple(self.data_root.glob(f'*/*/image_space_histology/ccf_in_*.nrrd'))
+                self.atlas_image_path = tuple(self.folder_path.parent.parent.glob(f'image_space_histology/ccf_in_*.nrrd'))
                 if not self.atlas_image_path:
                     raise FileNotFoundError('Could not find path to atlas image in data asset attached. Looking for folder image space histology')
 
-                self.atlas_labels_path = tuple(self.data_root.glob(f'*/*/image_space_histology/labels_in_*.nrrd'))
+                self.atlas_labels_path = tuple(self.folder_path.parent.parent.glob(f'image_space_histology/labels_in_*.nrrd'))
                 if not self.atlas_labels_path:
                     raise FileNotFoundError('Could not find path to atlas labels in data asset attached. Looking for folder image space histology')
 
