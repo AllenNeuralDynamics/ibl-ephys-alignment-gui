@@ -145,6 +145,10 @@ class Setup():
             img_options.addAction(img)
             self.img_options_group.addAction(img)
 
+        self.img_options_group.triggered.connect(self._on_img_action_triggered)
+        self.current_img_action = self.img_init
+        self.current_img_action.setChecked(True)  # makes sure menu reflects initial plot
+
         # LINE PLOTS MENU BAR
         # Define all 1D line plot options
         line_fr = QtWidgets.QAction('Firing Rate', self, checkable=True, checked=True)
@@ -163,6 +167,10 @@ class Setup():
         self.line_options_group.addAction(line_fr)
         line_options.addAction(line_amp)
         self.line_options_group.addAction(line_amp)
+
+        self.line_options_group.triggered.connect(self._on_line_action_triggered)
+        self.line_img_action = self.line_init
+        self.line_img_action.setChecked(True)  # makes sure menu reflects initial plot
 
         # PROBE PLOTS MENU BAR
         # Define all 2D probe plot options
@@ -184,6 +192,10 @@ class Setup():
         self.probe_options_group.addAction(probe_rmsAP)
         probe_options.addAction(probe_rmsLFP)
         self.probe_options_group.addAction(probe_rmsLFP)
+
+        self.probe_options_group.triggered.connect(self._on_probe_action_triggered)
+        self.probe_img_action = self.probe_init
+        self.probe_img_action.setChecked(True)  # makes sure menu reflects initial plot
 
         # Add the different frequency band options in a loop. These bands must be the same as
         # defined in plot_data
