@@ -1494,6 +1494,30 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.remove_lines_points()
         self.add_lines_points()
 
+    def _on_img_action_triggered(self, action):
+        self.current_img_action = action
+    
+    def _on_line_action_triggered(self, action):
+        self.line_img_action = action
+    
+    def _on_probe_action_triggered(self, action):
+        self.probe_img_action = action
+    
+    def update_plot(self):
+        """Re-run the plotting function for the current menu selection."""
+        if self.current_img_action is not None:
+            # directly invoke the same slot as if the user clicked
+            self.current_img_action.trigger()
+        
+        if self.line_img_action is not None:
+            # directly invoke the same slot as if the user clicked
+            self.line_img_action.trigger()
+
+        if self.probe_img_action is not None:
+            # directly invoke the same slot as if the user clicked
+            self.probe_img_action.trigger()
+
+
     def filter_unit_pressed(self, type):
         self.plotdata.filter_units(type)
         self.scat_drift_data = self.plotdata.get_depth_data_scatter()
@@ -1507,9 +1531,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.img_init.setChecked(True)
         self.line_init.setChecked(True)
         self.probe_init.setChecked(True)
-        self.plot_image(self.img_fr_data)
-        self.plot_probe(self.probe_rms_LFPdata)
-        self.plot_line(self.line_fr_data)
+
+        self.update_plot()
 
     def fit_button_pressed(self):
         """
