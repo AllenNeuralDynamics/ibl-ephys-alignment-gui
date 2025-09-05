@@ -24,7 +24,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         return image
 
     fig = plt.figure(figsize=(8, 6), dpi=500)
-    gs = fig.add_gridspec(4, 18, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
+    gs = fig.add_gridspec(4, 20, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
     plt.figtext(0.02, 0.9, '/'.join(folder.parts[-3:]), fontsize=5)
 
     # --- Image view ---
@@ -74,11 +74,12 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         
     # --- Slice view ---
     slice_files = glob.glob(str(image_folder.joinpath(image_info + 'slice_*.png')))
-    slice_row_order = [2, 3]
-    slice_column_order = [15, 15]
+    slice_row_order = [0, 1, 2]
+    slice_column_order = [17, 17, 17]
     slice_keywords = [
-        'CCF',
-        'histology_registration',
+        'slice_Annotation',  # To explicitly exclude "zoom"
+        'slice_CCF',
+        'slice_histology_registration',
     ]
     slice_files_sort = [next((file for file in slice_files if keyword in file), None) for keyword in slice_keywords]
 
@@ -86,16 +87,16 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         if file is None:
             continue
         ax = fig.add_subplot(gs[slice_row_order[iF],
-                                slice_column_order[iF]:slice_column_order[iF] + 2])
+                                slice_column_order[iF]:slice_column_order[iF] + 3])
         load_image(Path(file), ax, equal_aspect=True)
 
     slice_files_zoom = glob.glob(str(image_folder.joinpath(image_info + 'slice_zoom*.png')))
-    slice_row_order = [2, 3, 1]
-    slice_column_order = [17, 17, 17]
+    slice_row_order = [0, 1, 2]
+    slice_column_order = [19, 19, 19]
     slice_keywords = [
-        'zoom_CCF',
-        'zoom_histology_registration',
-        'zoom_Annotation'
+        'slice_zoom_Annotation',
+        'slice_zoom_CCF',
+        'slice_zoom_histology_registration',
     ]
     slice_files_sort = [next((file for file in slice_files_zoom if keyword in file), None) for keyword in slice_keywords]
 
