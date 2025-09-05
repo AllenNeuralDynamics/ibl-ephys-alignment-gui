@@ -276,7 +276,7 @@ class CustomAtlas(BrainAtlas):
 
     
     def read_atlas_image(self):
-        print(f"Loading image: {self.atlas_image_file.as_posix()}")
+        print(f"Loading image: {self.atlas_image_file}")
         arr, spacing_mm, origin_mm, img = self._read_image_file(
             self.atlas_image_file, orient="LPS", as_xyz=True, out_dtype=None,
             assert_isotropic=False  # set True if you really want to enforce
@@ -289,7 +289,7 @@ class CustomAtlas(BrainAtlas):
         return spacing_mm                   # in mm
     
     def read_atlas_labels(self):
-        print(f"Loading labels: {self.atlas_labels_file.as_posix()}")
+        print(f"Loading labels: {self.atlas_labels_file}")
         arr, _, _, _ = self._read_image_file(
             self.atlas_labels_file, orient="LPS", as_xyz=True, out_dtype=np.uint16
         )
