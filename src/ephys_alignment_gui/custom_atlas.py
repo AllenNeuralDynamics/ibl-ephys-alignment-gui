@@ -276,29 +276,80 @@ class CustomAtlas(BrainAtlas):
 
     
     def read_atlas_image(self):
-        if self.atlas_image_file.suffix == ".nrrd":
-            print(f"Loading nrrd file: {self.atlas_image_file.as_posix()}")
-            # Reads the 
-            IMG = sitk.ReadImage(self.atlas_image_file)
-            # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
-            #IMG2 = sitk.DICOMOrient(IMG,self.read_string) 
-            self.original_image = IMG
-            self.image = np.flip(sitk.GetArrayFromImage(IMG).T, axis=(0, 2))
-            print('Shape', self.image.shape)
-            self.offset = IMG.GetOrigin()
-            self.spacing = IMG.GetSpacing()[0] * 1000
-            return IMG.GetSpacing()
-        else: # nii.gz file
-            print(f"Loading nii.gz file: {self.atlas_image_file.as_posix()}")
-            image_lazy_loaded = nib.load(self.atlas_image_file)
-            self.image = image_lazy_loaded.dataobj
-            print('Shape', self.image.shape)
-            self.spacing = image_lazy_loaded.header.get_zooms()[0] * 1000
-            self.offset = tuple(image_lazy_loaded.affine[:3, 3])
-            return tuple(image_lazy_loaded.header.get_zooms())
-        
+        print(f"Loading image: {self.atlas_image_file.as_posix()}")
+        arr, spacing_mm, origin_mm, img = self._read_image_file(
+            self.atlas_image_file, orient="LPS", as_xyz=True, out_dtype=None,
+            assert_isotropic=False  # set True if you really want to enforce
+        )
+        self.original_image = img
+        self.image  = arr                   # (x, y, z)
+        self.offset = origin_mm             # mm
+        self.spacing = spacing_mm[0] * 1000 # keep your existing scalar-in-µm convention
+        print("Shape", self.image.shape)
+        return spacing_mm                   # in mm
+    
     def read_atlas_labels(self):
-        IMG = sitk.ReadImage(self.atlas_labels_file)
-        # Convert sitk to the (ap, ml, dv) np array needed by BrainAtlas
-        #IMG2 = sitk.DICOMOrient(IMG,self.read_string)
-        self.label = np.flip(sitk.GetArrayFromImage(IMG).astype(np.int32).T, axis=(0, 2))
+        print(f"Loading labels: {self.atlas_labels_file.as_posix()}")
+        arr, _, _, _ = self._read_image_file(
+            self.atlas_labels_file, orient="LPS", as_xyz=True, out_dtype=np.uint16
+        )
+        self.label = arr                    # (x, y, z); aligns voxel-wise to self.image
+
+    def _read_image_file(self, file_path: Path, *, orient: str = "LPS",
+                         as_xyz: bool = True, out_dtype=None,
+                         assert_isotropic: bool = False, atol: float = 1e-6):
+        """
+        Read an image (NRRD or NIfTI) with SimpleITK, reorient to a known frame,
+        and return a consistent ndarray and geometry.
+    
+        Parameters
+        ----------
+        file_path : Path
+            Path to .nrrd or .nii(.gz) file.
+        orient : {"LPS", "RAS", ...}, default "LPS"
+            Target DICOM orientation labels for the axes. "LPS" matches SimpleITK's native frame.
+            (Stick to one choice across image+labels.)
+        as_xyz : bool, default True
+            If True, return array as (x, y, z). SimpleITK yields (z, y, x); we transpose.
+        out_dtype : numpy dtype or None
+            If set, cast the array (e.g., np.uint16 for labels).
+        assert_isotropic : bool, default False
+            If True, raise if voxel spacings are not (nearly) equal.
+        atol : float, default 1e-6
+            Tolerance for isotropy check (in mm).
+    
+        Returns
+        -------
+        arr : np.ndarray
+            Image data in (x, y, z) if as_xyz else (z, y, x).
+        spacing_xyz_mm : tuple[float, float, float]
+            Voxel size along x, y, z in millimeters.
+        origin_xyz_mm : tuple[float, float, float]
+            World origin (voxel index 0,0,0) in the chosen orientation, in millimeters.
+        img_oriented : sitk.Image
+            The oriented SimpleITK image (keep if you need metadata).
+        """
+        img = sitk.ReadImage(str(file_path))
+    
+        # Use the direction matrix to reformat the image to a canonical axis labeling
+        img = sitk.DICOMOrient(img, orient)
+    
+        # Geometry (mm)
+        spacing_xyz_mm = img.GetSpacing()          # (sx, sy, sz)
+        origin_xyz_mm  = img.GetOrigin()           # (ox, oy, oz)
+    
+        if assert_isotropic:
+            if not (abs(spacing_xyz_mm[0] - spacing_xyz_mm[1]) <= atol and
+                    abs(spacing_xyz_mm[1] - spacing_xyz_mm[2]) <= atol):
+                raise ValueError(f"Image is not isotropic: spacing={spacing_xyz_mm}")
+    
+        # Array: SITK -> numpy is (z, y, x); transpose if requested
+        arr_zyx = sitk.GetArrayFromImage(img)
+        arr = np.transpose(arr_zyx, (2, 1, 0)) if as_xyz else arr_zyx
+    
+        if out_dtype is not None:
+            arr = arr.astype(out_dtype, copy=False)
+    
+        return arr, tuple(spacing_xyz_mm), tuple(origin_xyz_mm), img
+
+    
