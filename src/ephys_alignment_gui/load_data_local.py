@@ -363,7 +363,7 @@ class LoadDataLocal:
                     # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
                     if image.split(".nii.gz")[0] not in self.slice_images:
                         hist_atlas = CustomAtlas(
-                            atlas_image_file=hist_path, atlas_labels_file=self.atlas_labels_path
+                            atlas_image_file=hist_path, atlas_labels=self.brain_atlas.label
                         )
                         self.slice_images[image.split(".nii.gz")[0]] = hist_atlas
                     else:

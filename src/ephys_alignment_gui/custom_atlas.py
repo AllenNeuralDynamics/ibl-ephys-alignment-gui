@@ -232,6 +232,7 @@ class CustomAtlas(BrainAtlas):
                  atlas_labels_file = None,
                  bregma = None,
                  force_um = None,
+                 atlas_labels=None,
                  scaling = np.array([1,1,1])):
         self.atlas_image_file = atlas_image_file
         self.atlas_labels_file = atlas_labels_file
@@ -247,8 +248,12 @@ class CustomAtlas(BrainAtlas):
             self.res_um = force_um
             dxyz = self.res_um * 1e-6 * np.array([1, -1, -1]) * scaling   
         
-             
-        self.read_atlas_labels()
+        if atlas_labels_file is not None:
+            self.read_atlas_labels()
+        
+        if atlas_labels is not None:
+            self.label = atlas_labels
+            
         regions = BrainRegions()
         #_, im = ismember(self.label, regions.id)
         #label = np.reshape(im.astype(np.uint16), self.label.shape)
