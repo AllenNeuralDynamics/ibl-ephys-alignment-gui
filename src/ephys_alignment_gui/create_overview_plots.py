@@ -77,8 +77,8 @@ def make_overview_plot(folder, sess_info, save_folder=None):
     slice_row_order = [2, 3]
     slice_column_order = [15, 15]
     slice_keywords = [
-        'CCF',
-        'histology_registration',
+        'slice_CCF',
+        'slice_histology_registration',
     ]
     slice_files_sort = [next((file for file in slice_files if keyword in file), None) for keyword in slice_keywords]
 
@@ -93,9 +93,9 @@ def make_overview_plot(folder, sess_info, save_folder=None):
     slice_row_order = [2, 3, 1]
     slice_column_order = [17, 17, 17]
     slice_keywords = [
-        'zoom_CCF',
-        'zoom_histology_registration',
-        'zoom_Annotation'
+        'slice_zoom_CCF',
+        'slice_zoom_histology_registration',
+        'slice_zoom_Annotation'
     ]
     slice_files_sort = [next((file for file in slice_files_zoom if keyword in file), None) for keyword in slice_keywords]
 
