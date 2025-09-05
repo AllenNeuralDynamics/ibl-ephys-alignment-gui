@@ -513,6 +513,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.traj_line.setData(x=self.xyz_channels[:, 0], y=self.xyz_channels[:, 2],
                                    pen=self.rpen_dot)
             self.fig_slice.addItem(self.traj_line)
+            self.plot_channels()
+
             slice_name = self.slice_options_group.checkedAction().text()
             exporter = pg.exporters.ImageExporter(self.fig_slice)
             exporter.export(str(image_path_overview.joinpath(sess_info + 'slice_' + slice_name + '.png')))
@@ -526,6 +528,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.traj_line.setData(x=self.xyz_channels[:, 0], y=self.xyz_channels[:, 2],
                                    pen=self.rpen_dot)
             self.fig_slice.addItem(self.traj_line)
+            self.plot_channels()
+
             slice_name = self.slice_options_group.checkedAction().text()
             self.fig_slice.setXRange(min=np.min(self.xyz_channels[:, 0]) - 200 / 1e6,
                                      max=np.max(self.xyz_channels[:, 0]) + 200 / 1e6)
