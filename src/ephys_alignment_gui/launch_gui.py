@@ -1936,7 +1936,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
         channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
         for i in range(len(channel_ids)):
-            channel_coords[i] = (self.loaddata.brain_atlas.image.shape[0] - int(np.round(channel_results[channel_ids[i]]['x'])), 
+            channel_coords[i] = (int(np.round(channel_results[channel_ids[i]]['x'])), 
                                 int(np.round(channel_results[channel_ids[i]]['y'])), 
                                 self.loaddata.brain_atlas.image.shape[2] - int(np.round(channel_results[channel_ids[i]]['z'])))
         
