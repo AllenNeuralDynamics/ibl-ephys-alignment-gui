@@ -291,11 +291,13 @@ class CustomAtlas(BrainAtlas):
     def read_atlas_labels(self):
         if isinstance(self.atlas_labels_file, (tuple, list)) and len(self.atlas_labels_file) == 1:
             self.atlas_labels_file = self.atlas_labels_file[0]
-        print(f"Loading labels: {self.atlas_labels_file}")
-        arr, _, _, _ = self._read_image_file(
-            self.atlas_labels_file, orient="LPS", as_xyz=True, out_dtype=np.uint16
-        )
-        self.label = arr                    # (x, y, z); aligns voxel-wise to self.image
+        
+        if not hasattr(self, "label"):
+            print(f"Loading labels: {self.atlas_labels_file}")
+            arr, _, _, _ = self._read_image_file(
+                self.atlas_labels_file, orient="LPS", as_xyz=True, out_dtype=np.uint16
+            )
+            self.label = arr                    # (x, y, z); aligns voxel-wise to self.image
 
     def _read_image_file(self, file_path: Path, *, orient: str = "RAS",
                          as_xyz: bool = True, out_dtype=None,
