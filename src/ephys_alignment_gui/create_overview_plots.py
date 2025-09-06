@@ -24,7 +24,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
         return image
 
     fig = plt.figure(figsize=(8, 6), dpi=500)
-    gs = fig.add_gridspec(4, 20, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
+    gs = fig.add_gridspec(4, 21, wspace=-0.1, hspace=0.05, top=0.88, bottom=0.05, left=0.01, right=0.99)
     plt.figtext(0.02, 0.9, '/'.join(folder.parts[-3:]), fontsize=5)
 
     # --- Image view ---
@@ -75,7 +75,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
     # --- Slice view ---
     slice_files = glob.glob(str(image_folder.joinpath(image_info + 'slice_*.png')))
     slice_row_order = [0, 1, 2]
-    slice_column_order = [17, 17, 17]
+    slice_column_order = [18, 18, 18]
     slice_keywords = [
         'slice_Annotation',  # To explicitly exclude "zoom"
         'slice_CCF',
@@ -92,7 +92,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
 
     slice_files_zoom = glob.glob(str(image_folder.joinpath(image_info + 'slice_zoom*.png')))
     slice_row_order = [0, 1, 2]
-    slice_column_order = [19, 19, 19]
+    slice_column_order = [20, 20, 20]
     slice_keywords = [
         'slice_zoom_Annotation',
         'slice_zoom_CCF',
@@ -108,7 +108,7 @@ def make_overview_plot(folder, sess_info, save_folder=None):
 
     # --- Histology view ---
     hist_file = glob.glob(str(image_folder.joinpath(image_info + 'hist*.png')))[0]
-    ax = fig.add_subplot(gs[0:2, 15:17])
+    ax = fig.add_subplot(gs[0:3, 15:18])
     load_image(Path(hist_file), ax, equal_aspect=False)
 
     ax.text(0.5, 0, image_info[:-1], va="center", ha="center", transform=ax.transAxes)
