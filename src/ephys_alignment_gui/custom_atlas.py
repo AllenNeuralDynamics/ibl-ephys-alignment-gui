@@ -305,7 +305,7 @@ class CustomAtlas(BrainAtlas):
         )
         self.label = arr                    # (x, y, z); aligns voxel-wise to self.image
 
-    def _read_image_file(self, file_path: Path, *, orient: str = "RAS",
+    def _read_image_file(self, file_path: Path, *, orient: str = "LAS",
                          as_xyz: bool = True, out_dtype=None,
                          assert_isotropic: bool = False, atol: float = 1e-6):
         """
