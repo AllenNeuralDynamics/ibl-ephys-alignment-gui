@@ -1863,6 +1863,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                       'y': image_physical_space_coordinates[:, 1], 
                                       'z': image_physical_space_coordinates[:, 2]})
         
+        print("Loading transforms from stitched smartspim asset ...")
         smartspim_template_affine_transform = tuple(self.data_root.glob('*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
         if not smartspim_template_affine_transform:
             # try legacy way
@@ -1889,6 +1890,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not template_to_ccf_warp_transform:
             raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
         
+        print("applying transforms ...")
         probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, probe_template, 
                                             [template_to_ccf_affine_transform[0].as_posix(),
                                             template_to_ccf_warp_transform[0].as_posix()],
