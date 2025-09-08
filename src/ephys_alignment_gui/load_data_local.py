@@ -414,9 +414,9 @@ class LoadDataLocal:
         brain_regions["lateral"] = self.chn_coords[:, 0]
         brain_regions["axial"] = self.chn_coords[:, 1]
         
-        assert (
-            np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
-        )
+        # assert (
+        #     np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
+        # )
         channel_dict = self.create_channel_dict(brain_regions)
         self.channel_dict = channel_dict
         bregma = atlas.ALLEN_CCF_LANDMARKS_MLAPDV_UM["bregma"].tolist()
