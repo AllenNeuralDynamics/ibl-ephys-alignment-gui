@@ -357,7 +357,7 @@ class CustomAtlas(BrainAtlas):
         arr_zyx = sitk.GetArrayFromImage(img)
         arr = np.transpose(arr_zyx, (2, 1, 0)) if as_xyz else arr_zyx
         if as_xyz:
-            arr = np.flip(arr, axis=(0, 2)) # we flip to prevent mirror
+            arr = np.flip(arr, axis=0) # we flip to prevent mirror
     
         if out_dtype is not None:
             arr = arr.astype(out_dtype, copy=False)
