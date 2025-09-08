@@ -356,6 +356,9 @@ class CustomAtlas(BrainAtlas):
         # Array: SITK -> numpy is (z, y, x); transpose if requested
         arr_zyx = sitk.GetArrayFromImage(img)
         arr = np.transpose(arr_zyx, (2, 1, 0)) if as_xyz else arr_zyx
+
+        if as_xyz: # need to flip?
+            arr = np.flip(arr, axis=0)
     
         if out_dtype is not None:
             arr = arr.astype(out_dtype, copy=False)
