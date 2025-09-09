@@ -188,20 +188,16 @@ class PlotData:
                                                     [self.kp_idx]))
             spike_amps = spike_amps * 1e6
             fr = n_spikes / np.max(self.data['spikes']['times'])
-            # normalize for color mapping
-            levels = np.quantile(fr, [0.01, 0.99])   # clip extremes
-            cmap = pg.colormap.get('viridis')  # or whatever cmap you use
-            norm = (fr - levels[0]) / (levels[1] - levels[0])
-            norm = np.clip(norm, 0, 1)
+            fr_levels = np.quantile(fr, [0, 1])
 
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': cmap.getBrushes(norm),
+                'colours': fr,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
-                'levels': levels,
+                'levels': fr_levels,
                 'xrange': np.array([0.9 * np.min(spike_amps),
                                     1.1 * np.max(spike_amps)]),
                 'xaxis': 'Amplitude (uV)',
