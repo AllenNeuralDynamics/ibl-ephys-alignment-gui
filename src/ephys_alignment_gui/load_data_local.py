@@ -273,7 +273,7 @@ class LoadDataLocal:
         xyz_file_name = (
             "*xyz_picks_image_space.json"
             if self.n_shanks == 1
-            else f"*xyz_picks_shank{shank_idx + 1}_image_space.json"
+            else f"*xyz_picks_shank{float(shank_idx) + 1}_image_space.json"
         )
         xyz_file = sorted(folder_path.glob(xyz_file_name))
 
