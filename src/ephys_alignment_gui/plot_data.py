@@ -192,7 +192,7 @@ class PlotData:
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': fr,
+                'colours': fr * 1000,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
