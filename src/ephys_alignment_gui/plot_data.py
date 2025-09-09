@@ -189,7 +189,7 @@ class PlotData:
             spike_amps = spike_amps * 1e6
             fr = n_spikes / np.max(self.data['spikes']['times'])
             fr_levels = np.quantile(fr, [0, 1])
-            fr = fr * 100
+            fr = fr * 1000000
 
 
             data_fr_scatter = {
