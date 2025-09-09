@@ -195,6 +195,8 @@ class PlotData:
             # set colorbar levels to 1st–99th percentile of log values
             fr_levels = np.quantile(fr_log, [0.01, 0.99])
 
+            print("Cluster debug", spike_amps.shape, spike_depths.shape, fr.shape)
+
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
