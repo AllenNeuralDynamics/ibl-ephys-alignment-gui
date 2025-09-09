@@ -191,10 +191,13 @@ class PlotData:
             print("Firing rate", fr)
             fr_levels = np.quantile(fr, [0, 1])
 
+            cmap = pg.colormap.get('viridis')
+            colors = cmap.getColors(fr)
+
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': fr,
+                'colours': colors,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
