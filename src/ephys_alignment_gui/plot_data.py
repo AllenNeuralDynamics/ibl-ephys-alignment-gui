@@ -10,6 +10,7 @@ from ephys_alignment_gui.utils import bincount2D
 
 import scipy
 from PyQt5 import QtGui
+import pyqtgraph as pg
 
 import os
 from pathlib import Path
@@ -189,13 +190,14 @@ class PlotData:
             fr = n_spikes / np.max(self.data['spikes']['times'])
             # normalize for color mapping
             levels = np.quantile(fr, [0.01, 0.99])   # clip extremes
+            cmap = pg.colormap.get('viridis')  # or whatever cmap you use
             norm = (fr - levels[0]) / (levels[1] - levels[0])
             norm = np.clip(norm, 0, 1)
 
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': norm,
+                'colours': cmap.getBrushes(norm),
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
