@@ -186,18 +186,20 @@ class PlotData:
                                                     (self.data['spikes']['amps'][self.spike_idx]
                                                     [self.kp_idx]))
             spike_amps = spike_amps * 1e6
-            print('Times', self.data['spikes']['times'])
             fr = n_spikes / np.max(self.data['spikes']['times'])
-            fr_levels = np.quantile(fr, [0, 1])
+            # normalize for color mapping
+            levels = np.quantile(fr, [0.01, 0.99])   # clip extremes
+            norm = (fr - levels[0]) / (levels[1] - levels[0])
+            norm = np.clip(norm, 0, 1)
 
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': fr,
+                'colours': norm,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
-                'levels': fr_levels,
+                'levels': levels,
                 'xrange': np.array([0.9 * np.min(spike_amps),
                                     1.1 * np.max(spike_amps)]),
                 'xaxis': 'Amplitude (uV)',
