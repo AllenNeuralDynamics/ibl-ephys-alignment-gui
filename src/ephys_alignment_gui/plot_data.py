@@ -186,21 +186,14 @@ class PlotData:
                                                     (self.data['spikes']['amps'][self.spike_idx]
                                                     [self.kp_idx]))
             spike_amps = spike_amps * 1e6
+            print('Times', self.data['spikes']['times'])
             fr = n_spikes / np.max(self.data['spikes']['times'])
             fr_levels = np.quantile(fr, [0, 1])
-
-            # add small offset so log(0) doesn't blow up
-            fr_log = np.log10(fr + 1e-2)  
-
-            # set colorbar levels to 1st–99th percentile of log values
-            fr_levels = np.quantile(fr_log, [0.01, 0.99])
-
-            print("Cluster debug", spike_amps.shape, spike_depths.shape, fr.shape)
 
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': fr_log,
+                'colours': fr,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
