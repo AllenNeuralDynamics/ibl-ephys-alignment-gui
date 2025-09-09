@@ -275,6 +275,7 @@ class LoadDataLocal:
             if self.n_shanks == 1
             else f"*xyz_picks_shank{float(shank_idx) + 1}_image_space.json"
         )
+        print(f"Filename {xyz_file_name}")
         xyz_file = sorted(folder_path.glob(xyz_file_name))
 
         assert len(xyz_file) == 1
