@@ -1017,16 +1017,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img_cb.addItem(cbar)
             self.img_cbars.append(cbar)
 
-            # get the colormap
-            cmap = pg.colormap.get(data['cmap'])
-            # map normalized values to brushes
-            brushes = cmap.getBrushes(data['colours'])
-            # replace 'colours' in the dict with brushes
-            data['colours'] = brushes
-     
+            brush = data['colours'].tolist()
             plot = pg.ScatterPlotItem()
             plot.setData(x=data['x'], y=data['y'],
-                            symbol=symbol, size=size, brush=brushes, pen=data['pen'])
+                            symbol=symbol, size=size, brush=brush, pen=data['pen'])
 
             self.fig_img.addItem(plot)
             self.fig_img.setXRange(min=data['xrange'][0], max=data['xrange'][1],
