@@ -188,16 +188,14 @@ class PlotData:
                                                     [self.kp_idx]))
             spike_amps = spike_amps * 1e6
             fr = n_spikes / np.max(self.data['spikes']['times'])
-            print("Firing rate", fr)
             fr_levels = np.quantile(fr, [0, 1])
+            fr = fr * 100
 
-            cmap = pg.colormap.get('viridis')
-            colors = cmap.getColors(fr)
 
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': colors,
+                'colours': fr,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
