@@ -210,7 +210,7 @@ class PlotData:
             p2t = self.data['clusters']['peakToTrough'][clu] * 1000
 
             # Define the p2t levels so always same colourbar across sessions
-            p2t_levels = [-1.5, 1.5]
+            p2t_levels = [-1.5*1000, 1.5*1000]
             data_p2t_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
