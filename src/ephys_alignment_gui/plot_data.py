@@ -207,7 +207,7 @@ class PlotData:
                 'cluster': True
             }
 
-            p2t = self.data['clusters']['peakToTrough'][clu]
+            p2t = self.data['clusters']['peakToTrough'][clu] * 1000
 
             # Define the p2t levels so always same colourbar across sessions
             p2t_levels = [-1.5, 1.5]
