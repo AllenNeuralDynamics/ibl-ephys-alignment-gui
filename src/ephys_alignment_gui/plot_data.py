@@ -189,11 +189,16 @@ class PlotData:
             fr = n_spikes / np.max(self.data['spikes']['times'])
             fr_levels = np.quantile(fr, [0, 1])
 
-            print("Firing rate scatter", fr)
+            # add small offset so log(0) doesn't blow up
+            fr_log = np.log10(fr + 1e-2)  
+
+            # set colorbar levels to 1st–99th percentile of log values
+            fr_levels = np.quantile(fr_log, [0.01, 0.99])
+
             data_fr_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
-                'colours': fr,
+                'colours': fr_log,
                 'pen': 'k',
                 'size': np.array(8),
                 'symbol': np.array('o'),
