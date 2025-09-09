@@ -1138,6 +1138,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             print('data for this plot not available')
             return
         else:
+            print("Image title")
             [self.fig_img.removeItem(plot) for plot in self.img_plots]
             [self.fig_img_cb.removeItem(cbar) for cbar in self.img_cbars]
             self.set_axis(self.fig_img_cb, 'top', pen='w')
