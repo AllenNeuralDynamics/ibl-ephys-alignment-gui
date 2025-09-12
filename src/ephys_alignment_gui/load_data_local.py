@@ -224,6 +224,8 @@ class LoadDataLocal:
         else:
             sess_notes = "No notes for this session"
         
+        self.histology_path = self.folder_path.parent.parent / "ccf_space_histology"
+        
         return self.folder_path, chn_depths, sess_notes, data
 
     def get_allen_csv(self):
