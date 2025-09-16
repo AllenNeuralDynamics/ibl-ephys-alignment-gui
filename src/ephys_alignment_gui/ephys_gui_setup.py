@@ -65,6 +65,13 @@ class Setup():
         scatter_amp = QtWidgets.QAction('Cluster FR vs Depth vs Amp', self, checkable=True,
                                         checked=False)
         scatter_amp.triggered.connect(lambda: self.plot_scatter(self.scat_amp_data))
+
+        custom_metrics = []
+        for metrics_key, scatter_data in self.scat_custom_metrics.items():
+            scatter_metric = QtWidgets.QAction(f'Cluster Amp vs Depth vs Custom Metric {metrics_key}', self, checkable=True, checked=False)
+            scatter_metric.triggered.connect(lambda checked, data=scatter_data: self.plot_scatter(scatter_data))
+            custom_metrics.append(scatter_metric)
+
         img_fr = QtWidgets.QAction('Firing Rate', self, checkable=True, checked=True)
         img_fr.triggered.connect(lambda: self.plot_image(self.img_fr_data))
         img_spike_corr = QtWidgets.QAction('Spike Correlation', self, checkable=True, checked=False)
@@ -128,6 +135,10 @@ class Setup():
         self.img_options_group.addAction(scatter_p2t)
         img_options.addAction(scatter_amp)
         self.img_options_group.addAction(scatter_amp)
+
+        for scatter_metric in custom_metrics:
+            img_options.addAction(scatter_metric)
+            self.img_options_group.addAction(scatter_metric)
 
         raw_type = list(self.img_raw_data.keys())
         for raw in raw_type:

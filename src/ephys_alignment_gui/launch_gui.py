@@ -1394,7 +1394,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
             self.scat_drift_data = self.plotdata.get_depth_data_scatter()
             (self.scat_fr_data, self.scat_p2t_data,
-             self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
+             self.scat_amp_data, self.scat_custom_metrics) = self.plotdata.get_fr_p2t_data_scatter()
             self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
             self.img_fr_data = self.plotdata.get_fr_img()
             self.img_rms_APdata, self.probe_rms_APdata = self.plotdata.get_rms_data_img_probe('AP')

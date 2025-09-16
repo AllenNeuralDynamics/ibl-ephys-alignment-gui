@@ -1,5 +1,6 @@
 from matplotlib import cm
 import numpy as np
+import pandas as pd
 from ephys_alignment_gui.utils import bincount2D
 
 #from brainbox.io.spikeglx import Streamer
@@ -205,10 +206,10 @@ class PlotData:
                 'cluster': True
             }
 
-            p2t = self.data['clusters']['peakToTrough'][clu]
+            p2t = self.data['clusters']['peakToTrough'][clu] * 1000
 
             # Define the p2t levels so always same colourbar across sessions
-            p2t_levels = [-1.5, 1.5]
+            p2t_levels = [-1.5*1000, 1.5*1000]
             data_p2t_scatter = {
                 'x': spike_amps,
                 'y': spike_depths,
@@ -245,7 +246,34 @@ class PlotData:
                 'cluster': True
             }
 
-            return data_fr_scatter, data_p2t_scatter, data_amp_scatter
+            columns = ["p_response"] # update when needed. TODO: pull this dynamically
+            custom_metrics_folder = self._get_custom_metrics_folder()
+            custom_metrics_scatter = {}
+            
+            if custom_metrics_folder is not None:
+                data_custom_metrics = pd.read_csv(custom_metrics_folder)
+                for column in columns:
+                    data_custom_scatter = {
+                        'x': spike_amps,
+                        'y': spike_depths,
+                        'colours': data_custom_metrics[column],
+                        'pen': 'k',
+                        'size': np.array(8),
+                        'symbol': np.array('o'),
+                        'levels': fr_levels,
+                        'xrange': np.array([0.9 * np.min(spike_amps),
+                                            1.1 * np.max(spike_amps)]),
+                        'xaxis': 'Amplitude (uV)',
+                        'title': f'{column}',
+                        'cmap': 'hot',
+                        'cluster': True
+                    }
+
+                    custom_metrics_scatter[column] = data_custom_scatter
+            else:
+                print(f"No custom metrics file.")
+
+            return data_fr_scatter, data_p2t_scatter, data_amp_scatter, custom_metrics_scatter
 
     def get_fr_img(self):
         if not self.data['spikes']['exists']:
@@ -529,7 +557,29 @@ class PlotData:
                 data_probe.update(lfp_band_data)
 
             return data_img, data_probe
+    
+    # same as get lfp correlation
+    def _get_custom_metrics_folder(self):
+        # Locate the CO /data folder (or couterpart outside of CO)
+        co_data_folder = self.probe_path.parents[3]
+        probe_name = self.probe_path.parts[-1]
         
+        # Get the session prefix (subject + date). We should exclude the session time since in some cases LFP (ephys PC) 
+        # has different time stamps as the ephys session (metadata from behavior PC)
+        subject_date = self.probe_path.parts[-2].rsplit('_', 1)[0]
+        
+        # Looking for all folders that match the subject_date in the CO data folder
+        # This will capture data either in a separate attached asset or in the same spike sorting folder
+        this_session_same_folder = tuple(co_data_folder.glob(f"*/*/{subject_date}*"))
+        this_session_seperate_asset = tuple(co_data_folder.glob(f"*/{subject_date}*"))
+        this_session_folders = this_session_same_folder + this_session_seperate_asset
+        
+        # Inside each this_session_folders, looking for a folder named "custom_metrics" under the {probe name}
+        for session_folder in this_session_folders:
+            custom_metrics_folder = session_folder.joinpath(probe_name, "custom_metrics")
+            if custom_metrics_folder.exists():
+                return custom_metrics_folder
+
     def _get_lfp_correlation_folder(self):
         # ---- Temporary workground for locating LFP correlation data ----
         # Sue generated LFP correlation for all her sessions manually and put them in a data asset.
@@ -572,7 +622,6 @@ class PlotData:
             lfp_corr_folder = session_folder.joinpath(probe_name, "band_corr")
             if lfp_corr_folder.exists():
                 return lfp_corr_folder
-        
         
 
     def get_lfp_correlation_data_img(self):
