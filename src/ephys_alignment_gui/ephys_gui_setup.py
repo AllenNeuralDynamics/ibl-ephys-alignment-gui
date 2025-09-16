@@ -67,9 +67,10 @@ class Setup():
         scatter_amp.triggered.connect(lambda: self.plot_scatter(self.scat_amp_data))
 
         custom_metrics = []
-        for metrics_key, scatter_data in self.scat_custom_metrics.items():
+        for metrics_key in self.scat_custom_metrics:
             scatter_metric = QtWidgets.QAction(f'Cluster Amp vs Depth vs Custom Metric {metrics_key}', self, checkable=True, checked=False)
-            scatter_metric.triggered.connect(lambda: self.plot_scatter(scatter_data))
+            scatter_metric.triggered.connect(lambda checked=False, key=metrics_key: 
+                                             self.plot_scatter(self.scat_custom_metrics[key]))
             custom_metrics.append(scatter_metric)
 
         img_fr = QtWidgets.QAction('Firing Rate', self, checkable=True, checked=True)
