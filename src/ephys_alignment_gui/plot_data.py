@@ -251,27 +251,31 @@ class PlotData:
             custom_metrics_scatter = {}
             
             if custom_metrics_folder is not None:
-                data_custom_metrics = pd.read_csv(custom_metrics_folder)
-                for column in columns:
-                    data_custom_scatter = {
-                        'x': spike_amps,
-                        'y': spike_depths,
-                        'colours': data_custom_metrics[column],
-                        'pen': 'k',
-                        'size': np.array(8),
-                        'symbol': np.array('o'),
-                        'levels': fr_levels,
-                        'xrange': np.array([0.9 * np.min(spike_amps),
-                                            1.1 * np.max(spike_amps)]),
-                        'xaxis': 'Amplitude (uV)',
-                        'title': f'{column}',
-                        'cmap': 'hot',
-                        'cluster': True
-                    }
+                csv_file = tuple(custom_metrics_folder.glob("*.csv"))
+                if csv_file:
+                    data_custom_metrics = pd.read_csv(csv_file[0])
+                    for column in columns:
+                        data_custom_scatter = {
+                            'x': spike_amps,
+                            'y': spike_depths,
+                            'colours': data_custom_metrics[column],
+                            'pen': 'k',
+                            'size': np.array(8),
+                            'symbol': np.array('o'),
+                            'levels': fr_levels,
+                            'xrange': np.array([0.9 * np.min(spike_amps),
+                                                1.1 * np.max(spike_amps)]),
+                            'xaxis': 'Amplitude (uV)',
+                            'title': f'{column}',
+                            'cmap': 'hot',
+                            'cluster': True
+                        }
 
-                    custom_metrics_scatter[column] = data_custom_scatter
+                        custom_metrics_scatter[column] = data_custom_scatter
+                    else:
+                        print("No custom metrics file.")
             else:
-                print(f"No custom metrics file.")
+                print("No custom metrics file.")
 
             return data_fr_scatter, data_p2t_scatter, data_amp_scatter, custom_metrics_scatter
 
