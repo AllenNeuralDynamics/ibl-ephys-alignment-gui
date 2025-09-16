@@ -260,7 +260,7 @@ class PlotData:
                         data_custom_scatter = {
                             'x': spike_amps,
                             'y': spike_depths,
-                            'colours': data_custom_metrics[column],
+                            'colours': data_custom_metrics[column][self.spike_idx],
                             'pen': 'k',
                             'size': np.array(8),
                             'symbol': np.array('o'),
