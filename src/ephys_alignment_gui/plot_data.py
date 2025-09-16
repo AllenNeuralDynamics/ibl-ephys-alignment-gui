@@ -248,6 +248,7 @@ class PlotData:
 
             columns = ["p_response"] # update when needed. TODO: pull this dynamically
             custom_metrics_folder = self._get_custom_metrics_folder()
+            print("Custom metrics folder", custom_metrics_folder)
             custom_metrics_scatter = {}
             
             if custom_metrics_folder is not None:
