@@ -583,7 +583,7 @@ class PlotData:
         # Inside each this_session_folders, looking for a folder named "custom_metrics" under the {probe name}
         for session_folder in this_session_folders:
             custom_metrics_folder = session_folder.joinpath(probe_name, "custom_metrics")
-            if custom_metrics_folder.exists():
+            if custom_metrics_folder.exists() and "band_corr" not in str(custom_metrics_folder): # hack for now
                 return custom_metrics_folder
 
     def _get_lfp_correlation_folder(self):
