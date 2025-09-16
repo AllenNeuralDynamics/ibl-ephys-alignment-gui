@@ -1520,6 +1520,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.probe_img_action is not None:
             # directly invoke the same slot as if the user clicked
             self.probe_img_action.trigger()
+        
+        # Handle custom metrics scatter updates
+        if hasattr(self, "scat_custom_metrics") and self.scat_custom_metrics:
+            for metric, scatter_data in self.scat_custom_metrics.items():
+                # You probably have a plotting routine like self.plot_scatter()
+                self.plot_scatter(scatter_data)
 
 
     def filter_unit_pressed(self, type):
