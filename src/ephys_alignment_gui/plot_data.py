@@ -254,6 +254,7 @@ class PlotData:
             if custom_metrics_folder is not None:
                 csv_file = tuple(custom_metrics_folder.glob("*.csv"))
                 if csv_file:
+                    print("Custom metrics file", csv_file[0])
                     data_custom_metrics = pd.read_csv(csv_file[0])
                     for column in columns:
                         data_custom_scatter = {
@@ -273,8 +274,8 @@ class PlotData:
                         }
 
                         custom_metrics_scatter[column] = data_custom_scatter
-                    else:
-                        print("No custom metrics file.")
+                else:
+                    print("No custom metrics file.")
             else:
                 print("No custom metrics file.")
 
@@ -578,7 +579,6 @@ class PlotData:
         this_session_same_folder = tuple(co_data_folder.glob(f"*/*/{subject_date}*"))
         this_session_seperate_asset = tuple(co_data_folder.glob(f"*/{subject_date}*"))
         this_session_folders = this_session_same_folder + this_session_seperate_asset
-        print(this_session_folders)
         
         # Inside each this_session_folders, looking for a folder named "custom_metrics" under the {probe name}
         for session_folder in this_session_folders:
