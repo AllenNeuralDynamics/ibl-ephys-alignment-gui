@@ -578,6 +578,7 @@ class PlotData:
         this_session_same_folder = tuple(co_data_folder.glob(f"*/*/{subject_date}*"))
         this_session_seperate_asset = tuple(co_data_folder.glob(f"*/{subject_date}*"))
         this_session_folders = this_session_same_folder + this_session_seperate_asset
+        print(this_session_folders)
         
         # Inside each this_session_folders, looking for a folder named "custom_metrics" under the {probe name}
         for session_folder in this_session_folders:
