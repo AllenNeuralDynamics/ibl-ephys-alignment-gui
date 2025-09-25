@@ -10,6 +10,8 @@ from datetime import datetime
 import requests
 import boto3
 from aws_requests_auth.aws_auth import AWSRequestsAuth
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,32 @@ API_GATEWAY_HOST = "api.allenneuraldynamics.org"
 DATABASE = "metadata_index"
 COLLECTION = "data_assets"
 
+# Configure robust session with timeout and retry logic
+retry_strategy = Retry(
+    total=3,                           # 3 retry attempts
+    connect=3,                         # 3 connection retries
+    read=3,                           # 3 read retries
+    backoff_factor=1,                 # Exponential backoff (1s, 2s, 4s)
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
+)
+
+adapter = HTTPAdapter(
+    max_retries=retry_strategy,
+    pool_connections=10,              # Connection pool size
+    pool_maxsize=10,                  # Max connections in pool
+)
+
+session = requests.Session()
+session.timeout = 30                 # 30 second timeout per request
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
 docdb_api_client = MetadataDbClient(
     host=API_GATEWAY_HOST,
     database=DATABASE,
     collection=COLLECTION,
+    session=session,                  # Use custom session with timeout/retry
 )
 
 def query_docdb_id(session_name: str) -> tuple[str, dict]:
