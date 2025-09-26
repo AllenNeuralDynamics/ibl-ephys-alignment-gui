@@ -277,7 +277,14 @@ class LoadDataLocal:
         )
         xyz_file = sorted(folder_path.glob(xyz_file_name))
 
-        assert len(xyz_file) == 1
+        if len(xyz_file) == 0:
+            raise FileNotFoundError(
+                f"Missing required probe trajectory file: {xyz_file_name}\n"
+                f"Expected location: {folder_path}\n"
+                "This file must contain probe insertion coordinates in image space."
+            )
+        elif len(xyz_file) > 1:
+            raise ValueError(f"Multiple trajectory files found: {[f.name for f in xyz_file]}. Please ensure only one exists.")
         with open(xyz_file[0], "r") as f:
             user_picks = json.load(f)
 
