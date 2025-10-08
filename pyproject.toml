@@ -1,30 +1,32 @@
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ibl-ephys-alignment-gui"
 description = "Tool for aligning electrophysiological features to anatomical landmarks."
-license = {text = "MIT"}
-requires-python = ">=3.7"
-authors = [
-    {name = "International Brain Laboratory"}
-]
-classifiers = [
-    "Programming Language :: Python :: 3"
-]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "International Brain Laboratory" }]
+classifiers = ["Programming Language :: Python :: 3"]
 readme = "README.md"
 
-dynamic = ["dependencies", "version"]
+dependencies = [
+    "iblatlas",
+    "PyQt5",
+    "pyqtgraph",
+    "antspyx",
+    "aind-qcportal-schema",
+    "aind-data-schema<2.0",
+    "aind-data-access-api",
+    "aws-requests-auth",
+    "nibabel",
+]
+
+dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = [
-    'black',
-    'coverage',
-    'flake8',
-    'interrogate',
-    'isort'
-]
+dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort']
 
 [project.scripts]
 launch = 'ephys_alignment_gui.launch_gui:main'
@@ -33,8 +35,7 @@ launch = 'ephys_alignment_gui.launch_gui:main'
 where = ["src"]
 
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-version = {attr = "ephys_alignment_gui.__version__"}
+version = { attr = "ephys_alignment_gui.__version__" }
 
 [tool.black]
 line-length = 79
@@ -66,7 +67,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "from",
     "import",
-    "pragma: no cover"
+    "pragma: no cover",
 ]
 fail_under = 100
 
