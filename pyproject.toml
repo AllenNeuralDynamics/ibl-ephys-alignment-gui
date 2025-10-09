@@ -12,15 +12,17 @@ classifiers = ["Programming Language :: Python :: 3"]
 readme = "README.md"
 
 dependencies = [
-    "iblatlas",
-    "PyQt5",
-    "pyqtgraph",
-    "antspyx",
-    "aind-qcportal-schema",
-    "aind-data-schema<2.0",
-    "aind-data-access-api",
-    "aws-requests-auth",
-    "nibabel",
+  "aind-data-schema<2.0",
+  "aind-data-access-api",
+  "aind-qcportal-schema",
+  "aind-registration-utils",
+  "antspyx",
+  "aws-requests-auth",
+  "iblatlas",
+  "nibabel",
+  "PyQt5",
+  "pyqtgraph",
+  "SimpleITK",
 ]
 
 dynamic = ["version"]
@@ -64,10 +66,10 @@ source = ["ephys_alignment_gui", "tests"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "if __name__ == .__main__.:",
-    "from",
-    "import",
-    "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "from",
+  "import",
+  "pragma: no cover",
 ]
 fail_under = 100
 
