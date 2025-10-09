@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+from dataclasses import dataclass
 from pathlib import Path
 
 if platform.system() == 'Darwin':
@@ -35,6 +36,24 @@ import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show proper
 from ephys_alignment_gui.docdb import write_output_to_docdb
 
 ANTS_DIMENSION = 3
+
+@dataclass(frozen=True)
+class AntsTransformChainFiles:
+    smartspim_template_affine_transform: Path
+    smartspim_template_warp_transform: Path
+    template_to_ccf_affine_transform: Path
+    template_to_ccf_warp_transform: Path
+
+    def as_list(self) -> list[str]:
+        return [
+            self.smartspim_template_affine_transform.as_posix(),
+            self.smartspim_template_warp_transform.as_posix(),
+            self.template_to_ccf_affine_transform.as_posix(),
+            self.template_to_ccf_warp_transform.as_posix(),
+        ]
+
+    def which_to_invert(self) -> list[bool]:
+        return [True, False, True, False]
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -1862,11 +1881,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                 max=self.probe_top + self.probe_extra, padding=self.pad)
         self.update_string()
 
-    def _transform_to_ccf(self, image_physical_space_coordinates: npt.NDArray) -> pandas.DataFrame:
-        this_probe_df = pandas.DataFrame({'x': image_physical_space_coordinates[:, 0], 
-                                      'y': image_physical_space_coordinates[:, 1], 
-                                      'z': image_physical_space_coordinates[:, 2]})
-        
+    def _find_transform_files(self) -> AntsTransformChainFiles:
         print("Loading transforms from stitched smartspim asset ...")
         subject_id = self.input_path.parent.parent.stem
         smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
@@ -1881,26 +1896,33 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
             if not smartspim_template_warp_transform:
                 raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
-        
-        probe_template = ants.apply_transforms_to_points(ANTS_DIMENSION, this_probe_df, 
-                                    [smartspim_template_affine_transform[0].as_posix(),
-                                    smartspim_template_warp_transform[0].as_posix()],
-                                    whichtoinvert=[True, False])
 
         template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
         if not template_to_ccf_affine_transform:
             raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
-        
+
         template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
         if not template_to_ccf_warp_transform:
             raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
-        
+
+        return AntsTransformChainFiles(
+            smartspim_template_affine_transform=smartspim_template_affine_transform[0],
+            smartspim_template_warp_transform=smartspim_template_warp_transform[0],
+            template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
+            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0]
+        )
+
+    def _transform_to_ccf(self, image_physical_space_coordinates: npt.NDArray) -> pandas.DataFrame:
+        this_probe_df = pandas.DataFrame(image_physical_space_coordinates, columns = list("xyz"))
+
+        tx_chain_files = self._find_transform_files()
+
         print("applying transforms ...")
-        probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, probe_template, 
-                                            [template_to_ccf_affine_transform[0].as_posix(),
-                                            template_to_ccf_warp_transform[0].as_posix()],
-                                            whichtoinvert=[True, False])
-        
+        probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, this_probe_df,
+                                    tx_chain_files.as_list(),
+                                    whichtoinvert = tx_chain_files.which_to_invert()
+        )
+
         return probe_ccf
 
     def run_complete_button_in_thread(self):
@@ -1943,13 +1965,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
         channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
         for i in range(len(channel_ids)):
-            channel_coords[i] = (self.loaddata.brain_atlas.image.shape[0] - int(np.round(channel_results[channel_ids[i]]['x'])), 
-                                int(np.round(channel_results[channel_ids[i]]['y'])), 
-                                self.loaddata.brain_atlas.image.shape[2] - int(np.round(channel_results[channel_ids[i]]['z'])))
+            channel_coords[i] = (
+                channel_results[channel_ids[i]]['x'],
+                channel_results[channel_ids[i]]['y'],
+                channel_results[channel_ids[i]]['z'],
+            )
         
         ants_physical_points = []
-        for point in channel_coords:
-            ants_physical_points.append(self.loaddata.brain_atlas.original_image.TransformIndexToPhysicalPoint(point.tolist()))
+        if self.loaddata.brain_atlas is None:
+            raise ValueError("Brain atlas not loaded, cannot transform to CCF coordinates")
+        else:
+            pipeline_img = self.loaddata.brain_atlas.pipeline_image
+            for point in channel_coords:
+                ants_physical_points.append(pipeline_img.TransformContinuousIndexToPhysicalPoint(point.tolist()))
 
         ants_physical_points_array = np.array(ants_physical_points)
         ccf_coordinates_dataframe = self._transform_to_ccf(ants_physical_points_array)
@@ -2380,4 +2408,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
