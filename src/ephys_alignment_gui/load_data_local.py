@@ -76,7 +76,7 @@ class LoadDataLocal:
         try:
             docdb_id = query_docdb_id(folder_path.parent.stem)[0]
             quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
-        except (ValueError, AttributeError) as e:
+        except (ValueError) as e:
             print(f"Failed to get record from docdb with exception {e}. Proceeding to load from scratch")
         
         if quality_control is not None:
