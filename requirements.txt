@@ -4,6 +4,6 @@ pyqtgraph
 antspyx
 aind-qcportal-schema
 aind-data-schema<2.0
-aind-data-access-api
+aind-data-access-api<1.6.0
 aws-requests-auth
 nibabel
