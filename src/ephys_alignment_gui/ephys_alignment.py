@@ -84,10 +84,7 @@ class EphysAlignment:
         if any(np.isnan(exit)):
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
         """
-        #exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
-        exit = atlas.Insertion.get_brain_exit(traj_exit, self.brain_atlas)
-        # The exit is just below the bottom surfacce of the brain
-        exit[2] = exit[2] - 200 / 1e6
+        exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
         print('Entry', entry)
         print('Exit', exit)
 
