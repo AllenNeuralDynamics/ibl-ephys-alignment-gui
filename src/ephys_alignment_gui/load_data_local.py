@@ -76,7 +76,7 @@ class LoadDataLocal:
         try:
             docdb_id = query_docdb_id(folder_path.parent.stem)[0]
             quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
-        except (ValueError) as e:
+        except (ValueError, AttributeError) as e:
             print(f"Failed to get record from docdb with exception {e}. Proceeding to load from scratch")
         
         if quality_control is not None:
@@ -273,7 +273,7 @@ class LoadDataLocal:
         xyz_file_name = (
             "*xyz_picks_image_space.json"
             if self.n_shanks == 1
-            else f"*xyz_picks_shank{float(shank_idx) + 1}_image_space.json"
+            else f"*xyz_picks_shank{shank_idx + 1}_image_space.json"
         )
         print(f"Filename {xyz_file_name}")
         xyz_file = sorted(folder_path.glob(xyz_file_name))
