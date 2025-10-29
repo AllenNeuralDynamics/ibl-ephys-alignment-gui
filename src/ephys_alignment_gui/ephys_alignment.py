@@ -1,7 +1,8 @@
-import scipy
-import numpy as np
-import ephys_alignment_gui.histology as histology
 import iblatlas.atlas as atlas
+import numpy as np
+import scipy
+
+import ephys_alignment_gui.histology as histology
 
 TIP_SIZE_UM = 200
 
@@ -11,21 +12,27 @@ def _cumulative_distance(xyz):
 
 
 class EphysAlignment:
-
-    def __init__(self, xyz_picks, chn_depths=None, track_prev=None,
-                 feature_prev=None, brain_atlas=None, speedy=False,):
-
+    def __init__(
+        self,
+        xyz_picks,
+        chn_depths=None,
+        track_prev=None,
+        feature_prev=None,
+        brain_atlas=None,
+        speedy=False,
+    ):
         if not brain_atlas:
             self.brain_atlas = atlas.AllenAtlas(25)
         else:
             self.brain_atlas = brain_atlas
 
+        self.xyz_track, self.track_extent = self.get_insertion_track(
+            xyz_picks, speedy=speedy
+        )
+
         # Initial depth estimate.
         # If not provided, end of track will be used.
         self.chn_depths = chn_depths
-
-        self.xyz_track, self.track_extent = self.get_insertion_track(xyz_picks, speedy=speedy)
-
         if np.any(track_prev):
             self.track_init = track_prev
             self.feature_init = feature_prev
@@ -34,23 +41,30 @@ class EphysAlignment:
             self.track_init = np.array([-1 * start_lims, start_lims])
             self.feature_init = np.array([-1 * start_lims, start_lims])
 
-        self.sampling_trk = np.arange(self.track_extent[0],
-                                      self.track_extent[-1] - 10 * 1e-6, 10 * 1e-6)
-        
-        self.xyz_samples = histology.interpolate_along_track(self.xyz_track,
-                                                             self.sampling_trk -
-                                                             self.sampling_trk[0])
-        print('Xyz samples', self.xyz_samples)
+        self.sampling_trk = np.arange(
+            self.track_extent[0], self.track_extent[-1] - 10 * 1e-6, 10 * 1e-6
+        )
+
+        self.xyz_samples = histology.interpolate_along_track(
+            self.xyz_track, self.sampling_trk - self.sampling_trk[0]
+        )
         # ensure none of the track is outside the y or x lim of atlas
-        xlim = np.bitwise_and((self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[0])
-        ylim = np.bitwise_and((self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[2])
+        xlim = np.bitwise_and(
+            self.xyz_samples[:, 0] >= self.brain_atlas.bc.xlim[0],
+            self.xyz_samples[:, 0] <= self.brain_atlas.bc.xlim[1],
+        )
+        ylim = np.bitwise_and(
+            (self.xyz_samples[:, 1] >= self.brain_atlas.bc.ylim[0]),
+            (self.xyz_samples[:, 1] <= self.brain_atlas.bc.ylim[1]),
+        )
         rem = np.bitwise_and(xlim, ylim)
         self.xyz_samples = self.xyz_samples[rem]
-        
-        self.region, self.region_label, self.region_colour, self.region_id\
-            = self.get_histology_regions(self.xyz_samples, self.sampling_trk, self.brain_atlas)
+
+        self.region, self.region_label, self.region_colour, self.region_id = (
+            self.get_histology_regions(
+                self.xyz_samples, self.sampling_trk, self.brain_atlas
+            )
+        )
 
     def get_insertion_track(self, xyz_picks, speedy=False):
         """
@@ -66,39 +80,33 @@ class EphysAlignment:
         # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
         n_picks = np.max([4, round(xyz_picks.shape[0] / 4)])
         traj_entry = atlas.Trajectory.fit(xyz_picks[:n_picks, :])
-        traj_exit= atlas.Trajectory.fit(xyz_picks[-1 * n_picks:, :])
+        traj_exit = atlas.Trajectory.fit(xyz_picks[-1 * n_picks :, :])
 
         # Force the entry to be on the upper z lim of the atlas to account for cases where channels
         # may be located above the surface of the brain
         entry = (traj_entry.eval_z(self.brain_atlas.bc.zlim))[0, :]
-        
-        """
+
         if speedy:
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
         else:
             exit = atlas.Insertion.get_brain_exit(traj_exit, self.brain_atlas)
             # The exit is just below the bottom surfacce of the brain
             exit[2] = exit[2] - 200 / 1e6
-  
+
         # Catch cases where the exit
         if any(np.isnan(exit)):
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
-        """
-        exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
-        print('Entry', entry)
-        print('Exit', exit)
 
         xyz_track = np.r_[exit[np.newaxis, :], xyz_picks, entry[np.newaxis, :]]
-        print('track', xyz_track)
-        indices = np.argsort(xyz_track[:, 2])
         # Sort so that most ventral coordinate is first
+        indices = np.argsort(xyz_track[:, 2])
         xyz_track = xyz_track[indices, :]
-      
+
         # Compute distance to first electrode from bottom coordinate
-        tip_distance = _cumulative_distance(xyz_track)[1] - TIP_SIZE_UM / 1e6
+        tip_distance = _cumulative_distance(xyz_track)[1] + TIP_SIZE_UM / 1e6
         track_length = _cumulative_distance(xyz_track)[-1]
         track_extent = np.array([0, track_length]) - tip_distance
-        print('Extent', track_extent)
+        print("Extent", track_extent)
         return xyz_track, track_extent
 
     def get_track_and_feature(self):
@@ -216,15 +224,20 @@ class EphysAlignment:
         :type region_label: np.array((n_bound)) of tuples (coordinate - float, label - str)
         """
         region = np.copy(region) if region is not None else np.copy(self.region)
-        region_label = np.copy(region_label) if region_label is not None else np.copy(self.region_label)
+        region_label = (
+            np.copy(region_label)
+            if region_label is not None
+            else np.copy(self.region_label)
+        )
         region = self.track2feature(region, feature, track) * 1e6
-        region_label[:, 0] = (self.track2feature(np.float64(region_label[:, 0]), feature,
-                              track) * 1e6)
+        region_label[:, 0] = (
+            self.track2feature(np.float64(region_label[:, 0]), feature, track) * 1e6
+        )
 
         return region, region_label
 
     @staticmethod
-    def get_histology_regions(xyz_coords, depth_coords, brain_atlas=None, mapping=None):
+    def get_histology_regions(xyz_coords, depth_coords, brain_atlas, mapping=None):
         """
         Find all brain regions and their boundaries along the depth of probe or track
         :param xyz_coords: 3D coordinates of points along probe or track
@@ -245,70 +258,52 @@ class EphysAlignment:
             raise ValueError("Empty coordinate array provided")
 
         if xyz_coords.ndim != 2 or xyz_coords.shape[1] != 3:
-            raise ValueError(f"Coordinates must be Nx3 array, got shape {xyz_coords.shape}")
+            raise ValueError(
+                f"Coordinates must be Nx3 array, got shape {xyz_coords.shape}"
+            )
 
         if len(depth_coords) != len(xyz_coords):
-            raise ValueError(f"Coordinate and depth arrays must have same length: {len(xyz_coords)} vs {len(depth_coords)}")
+            raise ValueError(
+                f"Coordinate and depth arrays must have same length: {len(xyz_coords)} vs {len(depth_coords)}"
+            )
 
         if np.any(~np.isfinite(xyz_coords)) or np.any(~np.isfinite(depth_coords)):
             raise ValueError("Coordinates contain NaN or infinite values")
 
         if len(xyz_coords) < 2:
-            raise ValueError(f"Need at least 2 trajectory points, got {len(xyz_coords)}")
+            raise ValueError(
+                f"Need at least 2 trajectory points, got {len(xyz_coords)}"
+            )
 
         # Check for degenerate trajectory (all points at same location)
         coord_range = np.ptp(xyz_coords, axis=0)  # peak-to-peak range
         if np.all(coord_range < 1e-9):  # less than 1 nanometer variation
-            raise ValueError("Degenerate trajectory: all coordinates are at the same location")
+            raise ValueError(
+                "Degenerate trajectory: all coordinates are at the same location"
+            )
 
         # Check for unreasonably large coordinates (likely unit errors)
         max_coord = np.abs(xyz_coords).max()
         if max_coord > 1.0:  # larger than 1 meter
-            print(f"WARNING: Very large coordinates detected (max: {max_coord:.3f}m). Check coordinate units.")
-
-        if not brain_atlas:
-            brain_atlas = atlas.AllenAtlas(25)
-
-        #region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
-        region_ids = []
-        xyz_indices = np.round(xyz_coords * 1e6 / brain_atlas.spacing).astype(np.int64)
-
-        # Count valid coordinates before filtering
-        n_original = len(xyz_indices)
-        xyz_indices = xyz_indices[(xyz_indices[:, 0] < brain_atlas.image.shape[0]) & (xyz_indices[:, 1] < brain_atlas.image.shape[1])
-                                  & (xyz_indices[:, 2] < brain_atlas.image.shape[2])]
-        n_valid = len(xyz_indices)
-
-        if n_valid == 0:
-            coord_range = f"{xyz_coords.min(axis=0)} to {xyz_coords.max(axis=0)}"
-            atlas_range = f"[0, 0, 0] to {np.array(brain_atlas.image.shape) * brain_atlas.spacing / 1e6}"
-            raise ValueError(
-                f"All {n_original} probe coordinates are outside atlas bounds.\n"
-                f"Atlas dimensions: {brain_atlas.image.shape} (spacing: {brain_atlas.spacing}μm)\n"
-                f"Coordinate range: {coord_range}\n"
-                f"Atlas range: {atlas_range}\n"
-                "Check coordinate system and scaling."
+            print(
+                f"WARNING: Very large coordinates detected (max: {max_coord:.3f}m). Check coordinate units."
             )
 
-        if n_valid < n_original:
-            print(f"WARNING: {n_original - n_valid} of {n_original} coordinates were outside atlas bounds and filtered out")
-
-        for coord in xyz_indices:
-            region_ids.append(brain_atlas.label[coord[0], coord[1], coord[2]])
+        region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
 
         region_info = brain_atlas.regions.get(region_ids)
         boundaries = np.where(np.diff(region_info.id))[0]
 
         # Handle single region case (no boundaries)
-        if len(boundaries) == 0:
-            # Single region spanning entire trajectory
-            region = np.array([[depth_coords[0], depth_coords[-1]]])
-            region_label = np.array([[(depth_coords[0] + depth_coords[-1]) / 2, region_info.acronym[0]]], dtype=object)
-            region_id = np.array([[region_info.id[0]]], dtype=int)
-            region_colour = np.array([region_info.rgb[0]], dtype=int)
+        # if len(boundaries) == 0:
+        #     # Single region spanning entire trajectory
+        #     region = np.array([[depth_coords[0], depth_coords[-1]]])
+        #     region_label = np.array([[(depth_coords[0] + depth_coords[-1]) / 2, region_info.acronym[0]]], dtype=object)
+        #     region_id = np.array([[region_info.id[0]]], dtype=int)
+        #     region_colour = np.array([region_info.rgb[0]], dtype=int)
 
-            print(f"INFO: Probe trajectory spans single brain region: {region_info.acronym[0]}")
-            return region, region_label, region_colour, region_id
+        #     print(f"INFO: Probe trajectory spans single brain region: {region_info.acronym[0]}")
+        #     return region, region_label, region_colour, region_id
 
         # Multiple regions case (original logic)
         region = np.empty((boundaries.size + 1, 2))
@@ -337,8 +332,9 @@ class EphysAlignment:
         return region, region_label, region_colour, region_id
 
     @staticmethod
-    def get_nearest_boundary(xyz_coords, allen, extent=100, steps=8, parent=True,
-                             brain_atlas=None):
+    def get_nearest_boundary(
+        xyz_coords, allen, extent=100, steps=8, parent=True, brain_atlas=None
+    ):
         """
         Finds distance to closest neighbouring brain region along trajectory. For each point in
         xyz_coords computes the plane passing through point and perpendicular to trajectory and
@@ -361,67 +357,86 @@ class EphysAlignment:
         if not brain_atlas:
             brain_atlas = atlas.AllenAtlas(25)
 
-        vector = atlas.Insertion.from_track(xyz_coords, brain_atlas=brain_atlas).trajectory.vector
+        vector = atlas.Insertion.from_track(
+            xyz_coords, brain_atlas=brain_atlas
+        ).trajectory.vector
         nearest_bound = dict()
-        nearest_bound['dist'] = np.zeros((xyz_coords.shape[0]))
-        nearest_bound['id'] = np.zeros((xyz_coords.shape[0]))
+        nearest_bound["dist"] = np.zeros((xyz_coords.shape[0]))
+        nearest_bound["id"] = np.zeros((xyz_coords.shape[0]))
         # nearest_bound['adj_id'] = np.zeros((xyz_coords.shape[0]))
-        nearest_bound['col'] = []
+        nearest_bound["col"] = []
 
         if parent:
-            nearest_bound['parent_dist'] = np.zeros((xyz_coords.shape[0]))
-            nearest_bound['parent_id'] = np.zeros((xyz_coords.shape[0]))
+            nearest_bound["parent_dist"] = np.zeros((xyz_coords.shape[0]))
+            nearest_bound["parent_id"] = np.zeros((xyz_coords.shape[0]))
             # nearest_bound['parent_adj_id'] = np.zeros((xyz_coords.shape[0]))
-            nearest_bound['parent_col'] = []
+            nearest_bound["parent_col"] = []
 
         for iP, point in enumerate(xyz_coords):
             d = np.dot(vector, point)
-            x_vals = np.r_[np.linspace(point[0] - extent / 1e6, point[0] + extent / 1e6, steps),
-                           point[0]]
-            y_vals = np.r_[np.linspace(point[1] - extent / 1e6, point[1] + extent / 1e6, steps),
-                           point[1]]
+            x_vals = np.r_[
+                np.linspace(point[0] - extent / 1e6, point[0] + extent / 1e6, steps),
+                point[0],
+            ]
+            y_vals = np.r_[
+                np.linspace(point[1] - extent / 1e6, point[1] + extent / 1e6, steps),
+                point[1],
+            ]
 
             X, Y = np.meshgrid(x_vals, y_vals)
             Z = (d - vector[0] * X - vector[1] * Y) / vector[2]
-            XYZ = np.c_[np.reshape(X, X.size), np.reshape(Y, Y.size), np.reshape(Z, Z.size)]
+            XYZ = np.c_[
+                np.reshape(X, X.size), np.reshape(Y, Y.size), np.reshape(Z, Z.size)
+            ]
             dist = np.sqrt(np.sum((XYZ - point) ** 2, axis=1))
 
             try:
-                brain_id = brain_atlas.regions.get(brain_atlas.get_labels(XYZ))['id']
+                brain_id = brain_atlas.regions.get(brain_atlas.get_labels(XYZ))["id"]
             except Exception as err:
                 print(err)
                 continue
 
             dist_sorted = np.argsort(dist)
             brain_id_sorted = brain_id[dist_sorted]
-            nearest_bound['id'][iP] = brain_id_sorted[0]
-            nearest_bound['col'].append(allen['color_hex_triplet'][np.where(allen['id'] ==
-                                                                   brain_id_sorted[0])[0][0]])
+            nearest_bound["id"][iP] = brain_id_sorted[0]
+            nearest_bound["col"].append(
+                allen["color_hex_triplet"][
+                    np.where(allen["id"] == brain_id_sorted[0])[0][0]
+                ]
+            )
             bound_idx = np.where(brain_id_sorted != brain_id_sorted[0])[0]
             if np.any(bound_idx):
-                nearest_bound['dist'][iP] = dist[dist_sorted[bound_idx[0]]] * 1e6
+                nearest_bound["dist"][iP] = dist[dist_sorted[bound_idx[0]]] * 1e6
                 # nearest_bound['adj_id'][iP] = brain_id_sorted[bound_idx[0]]
             else:
-                nearest_bound['dist'][iP] = np.max(dist) * 1e6
+                nearest_bound["dist"][iP] = np.max(dist) * 1e6
                 # nearest_bound['adj_id'][iP] = brain_id_sorted[0]
 
             if parent:
                 # Now compute for the parents
-                brain_parent = np.array([allen['parent_structure_id'][np.where(allen['id'] == br)
-                                        [0][0]] for br in brain_id_sorted])
+                brain_parent = np.array(
+                    [
+                        allen["parent_structure_id"][np.where(allen["id"] == br)[0][0]]
+                        for br in brain_id_sorted
+                    ]
+                )
                 brain_parent[np.isnan(brain_parent)] = 0
 
-                nearest_bound['parent_id'][iP] = brain_parent[0]
-                nearest_bound['parent_col'].append(allen['color_hex_triplet']
-                                                   [np.where(allen['id'] ==
-                                                             brain_parent[0])[0][0]])
+                nearest_bound["parent_id"][iP] = brain_parent[0]
+                nearest_bound["parent_col"].append(
+                    allen["color_hex_triplet"][
+                        np.where(allen["id"] == brain_parent[0])[0][0]
+                    ]
+                )
 
                 parent_idx = np.where(brain_parent != brain_parent[0])[0]
                 if np.any(parent_idx):
-                    nearest_bound['parent_dist'][iP] = dist[dist_sorted[parent_idx[0]]] * 1e6
+                    nearest_bound["parent_dist"][iP] = (
+                        dist[dist_sorted[parent_idx[0]]] * 1e6
+                    )
                     # nearest_bound['parent_adj_id'][iP] = brain_parent[parent_idx[0]]
                 else:
-                    nearest_bound['parent_dist'][iP] = np.max(dist) * 1e6
+                    nearest_bound["parent_dist"][iP] = np.max(dist) * 1e6
                     # nearest_bound['parent_adj_id'][iP] = brain_parent[0]
 
         return nearest_bound
@@ -453,17 +468,17 @@ class EphysAlignment:
         all_x = []
         all_colour = []
         for iB in np.arange(len(bound) - 1):
-            y = depth_coords[bound[iB]:(bound[iB + 1])]
+            y = depth_coords[bound[iB] : (bound[iB + 1])]
             y = np.r_[y[0], y, y[-1]]
-            x = distance[bound[iB]:(bound[iB + 1])]
+            x = distance[bound[iB] : (bound[iB + 1])]
             x = np.r_[0, x, 0]
             all_y.append(y)
             all_x.append(x)
             col = region_colours[bound[iB]]
             if not isinstance(col, str):
-                col = '#FFFFFF'
+                col = "#FFFFFF"
             else:
-                col = '#' + col
+                col = "#" + col
             all_colour.append(col)
 
         return all_x, all_y, all_colour
@@ -492,16 +507,19 @@ class EphysAlignment:
             scale_factor = []
             for bound in np.arange(boundaries.size + 1):
                 if bound == 0:
-                    _scaled_region = np.array([region[0][0],
-                                              region[boundaries[bound]][1]])
+                    _scaled_region = np.array(
+                        [region[0][0], region[boundaries[bound]][1]]
+                    )
                     _scale_factor = scale[0]
                 elif bound == boundaries.size:
-                    _scaled_region = np.array([region[boundaries[bound - 1]][1],
-                                              region[-1][1]])
+                    _scaled_region = np.array(
+                        [region[boundaries[bound - 1]][1], region[-1][1]]
+                    )
                     _scale_factor = scale[-1]
                 else:
-                    _scaled_region = np.array([region[boundaries[bound - 1]][1],
-                                              region[boundaries[bound]][1]])
+                    _scaled_region = np.array(
+                        [region[boundaries[bound - 1]][1], region[boundaries[bound]][1]]
+                    )
                     _scale_factor = scale[boundaries[bound]]
                 scaled_region[bound, :] = _scaled_region
                 scale_factor = np.r_[scale_factor, _scale_factor]
@@ -517,12 +535,13 @@ class EphysAlignment:
         if depths is None:
             depths = self.chn_depths / 1e6
         # nb using scipy here so we can change to cubic spline if needed
-        channel_depths_track = self.feature2track(depths, feature, track) - self.track_extent[0]
-        
-        xyz_channels = histology.interpolate_along_track(self.xyz_track, channel_depths_track)
-        xyz_channels = xyz_channels * 1e6 / self.brain_atlas.spacing
-        print('xyz channels length', len(xyz_channels))
-        print('xyz channels', xyz_channels)
+        channel_depths_track = (
+            self.feature2track(depths, feature, track) - self.track_extent[0]
+        )
+
+        xyz_channels = histology.interpolate_along_track(
+            self.xyz_track, channel_depths_track
+        )
         return xyz_channels
 
     def get_brain_locations(self, xyz_channels):
@@ -533,7 +552,9 @@ class EphysAlignment:
         :return brain_regions: brain region object for each electrode
         :type dict
         """
-        brain_regions = self.brain_atlas.regions.get(self.brain_atlas.get_labels(xyz_channels))
+        brain_regions = self.brain_atlas.regions.get(
+            self.brain_atlas.get_labels(xyz_channels)
+        )
         return brain_regions
 
     def get_perp_vector(self, feature, track):
@@ -552,12 +573,13 @@ class EphysAlignment:
             depths = np.array([line, line + 10 / 1e6])
             xyz = self.get_channel_locations(feature, track, depths)
 
-            extent = 20
+            extent = 500e-6
             vector = np.diff(xyz, axis=0)[0]
             point = xyz[0, :]
             vector_perp = np.array([1, 0, -1 * vector[0] / vector[2]])
-            xyz_per = np.r_[[point + (-1 * extent * vector_perp)],
-                            [point + (extent * vector_perp)]]
+            xyz_per = np.r_[
+                [point + (-1 * extent * vector_perp)], [point + (extent * vector_perp)]
+            ]
             slice_lines.append(xyz_per)
 
         return slice_lines
