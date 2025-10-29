@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
@@ -27,10 +28,11 @@ from .custom_atlas import BrainAtlasAnatomical
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger("ibllib")
 
+
 def _cut_slice_from_atlas_image(
     atlas_array: NDArray,
     xyz_channel_indices: NDArray,
-    func: Callable[[NDArray], NDArray] | None = None
+    func: Callable[[NDArray], NDArray] | None = None,
 ) -> NDArray:
     """
     Extract a "wavy" slice from the atlas image given the xyz channel indices.
@@ -54,8 +56,9 @@ def _cut_slice_from_atlas_image(
     slice = atlas_array[xyz_channel_indices[:, 0], :, xyz_channel_indices[:, 2]]
     if func is not None:
         slice = func(slice)
-    slice = np.swapaxes(slice, 0, 1) # Now it's image.shape[1] x N [x 3 for RGB]
+    slice = np.swapaxes(slice, 0, 1)  # Now it's image.shape[1] x N [x 3 for RGB]
     return slice
+
 
 class LoadDataLocal:
     def __init__(self):
@@ -72,7 +75,7 @@ class LoadDataLocal:
         self.data_root = None
         self.output_directory = None
         self.previous_directory = None
-        self.slice_images = {}
+        self.histology_atlases: dict[str, BrainAtlasAnatomical] = {}
 
     def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
         """
@@ -211,6 +214,7 @@ class LoadDataLocal:
         if reload_data:
             if not hasattr(self, "atlas_image_path"):
                 search_path: Path = self.folder_path.parent.parent
+
                 def _glob_nonempty_or_err(pattern: str) -> tuple[Path, ...]:
                     paths = tuple(search_path.glob(pattern))
                     if not paths:
@@ -218,10 +222,19 @@ class LoadDataLocal:
                             f"Could not find path to atlas image in data asset attached. Looking for pattern {pattern} in {search_path}"
                         )
                     return paths
-                self.atlas_image_path = _glob_nonempty_or_err("image_space_histology/ccf_in_*.nrrd")
-                self.atlas_labels_path = _glob_nonempty_or_err("image_space_histology/labels_in_*.nrrd")
-                self.pipeline_image_path = _glob_nonempty_or_err("image_space_histology/histology_registration_pipeline.nrrd")
-                self.histology_image_path = _glob_nonempty_or_err("image_space_histology/histology_registration.nrrd")
+
+                self.atlas_image_path = _glob_nonempty_or_err(
+                    "image_space_histology/ccf_in_*.nrrd"
+                )
+                self.atlas_labels_path = _glob_nonempty_or_err(
+                    "image_space_histology/labels_in_*.nrrd"
+                )
+                self.pipeline_image_path = _glob_nonempty_or_err(
+                    "image_space_histology/histology_registration_pipeline.nrrd"
+                )
+                self.histology_image_path = _glob_nonempty_or_err(
+                    "image_space_histology/histology_registration.nrrd"
+                )
                 self.histology_path = self.atlas_image_path[0].parent
                 intensity_image = sitk.ReadImage(self.atlas_image_path[0])
                 label_image_compacted = sitk.ReadImage(self.atlas_labels_path[0])
@@ -238,14 +251,23 @@ class LoadDataLocal:
                     label_img=label_image,
                     pipeline_img=pipeline_image,
                 )
-                self.slice_images["histology_registration"] = (
-                    BrainAtlasAnatomical(
-                        intensity_img=histology_image,
-                        label_img=label_image,
-                        pipeline_img=pipeline_image,
-                    )
-                )
 
+                self.histology_atlases["histology_registration"] = BrainAtlasAnatomical(
+                    intensity_img=histology_image,
+                    label_img=label_image,
+                    pipeline_img=pipeline_image,
+                )
+                pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
+                for other_channel in self.histology_path.iterdir():
+                    if pattern.match(other_channel.name):
+                        channel_name = other_channel.stem
+                        if channel_name not in self.histology_atlases:
+                            channel_image = sitk.ReadImage(str(other_channel))
+                            self.histology_atlases[channel_name] = BrainAtlasAnatomical(
+                                intensity_img=channel_image,
+                                label_img=label_image,
+                                pipeline_img=pipeline_image,
+                            )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
@@ -341,12 +363,13 @@ class LoadDataLocal:
             )
         elif len(xyz_file) > 1:
             raise ValueError(
-                f"Multiple trajectory files found: {[f.name for f in xyz_file]}. Please ensure only one exists."
+                f"Multiple trajectory files found: {[f.name for f in xyz_file]}. "
+                "Please ensure only one exists."
             )
         with open(xyz_file[0], "r") as f:
             user_picks = json.load(f)
 
-        xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6 # convert to meters
+        xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6  # convert to meters
 
         return xyz_picks
 
@@ -367,19 +390,27 @@ class LoadDataLocal:
         # Build a tilted slice by getting horizontal lines at each index,
         # N x image.shape[1]
         ccf_slice = _cut_slice_from_atlas_image(
-            self.brain_atlas.image, index # type: ignore
+            self.brain_atlas.image,
+            index,  # type: ignore
         )
         label_slice = _cut_slice_from_atlas_image(
-            self.brain_atlas.label, index, self.brain_atlas._label2rgb # type: ignore
+            self.brain_atlas.label,
+            index,
+            self.brain_atlas._label2rgb,  # type: ignore
         )
         x_dimno = self.brain_atlas.xyz2dims[0]
         # ML span of the slice in world coordinates
         width = [
             self.brain_atlas.bc.i2x(0),
-            self.brain_atlas.bc.i2x(self.brain_atlas.image.shape[x_dimno]), # was 456: CCF 25 width
+            self.brain_atlas.bc.i2x(
+                self.brain_atlas.image.shape[x_dimno]
+            ),  # was 456: CCF 25 width
         ]
         # DV span of the slice in world coordinates
-        height = [self.brain_atlas.bc.i2z(index[0, 2]), self.brain_atlas.bc.i2z(index[-1, 2])]
+        height = [
+            self.brain_atlas.bc.i2z(index[0, 2]),
+            self.brain_atlas.bc.i2z(index[-1, 2]),
+        ]
 
         print("Ccf slice", ccf_slice.shape)
         slice_data = {
@@ -395,13 +426,12 @@ class LoadDataLocal:
         }
 
         # --- Get the histology slices in image space ---
-        # Load local slice images
-        if "histology_registration" in self.slice_images:
-            hist_atlas = self.slice_images["histology_registration"]
+        for channel_name, hist_atlas in self.histology_atlases.items():
             hist_slice = _cut_slice_from_atlas_image(
-                hist_atlas.image, index # type: ignore
+                hist_atlas.image,
+                index,  # type: ignore
             )
-            slice_data["histology_registration"] = hist_slice
+            slice_data[channel_name] = hist_slice
 
         return slice_data, None
 
@@ -487,9 +517,9 @@ class LoadDataLocal:
 
         for i in np.arange(brain_regions.id.size):
             channel = {
-                "x": np.float64(brain_regions.xyz[i, 0]),
-                "y": np.float64(brain_regions.xyz[i, 1]),
-                "z": np.float64(brain_regions.xyz[i, 2]),
+                "x": np.float64(brain_regions.xyz[i, 0] * 1e6),
+                "y": np.float64(brain_regions.xyz[i, 1] * 1e6),
+                "z": np.float64(brain_regions.xyz[i, 2] * 1e6),
                 "axial": np.float64(brain_regions.axial[i]),
                 "lateral": np.float64(brain_regions.lateral[i]),
                 "brain_region_id": int(brain_regions.id[i]),
