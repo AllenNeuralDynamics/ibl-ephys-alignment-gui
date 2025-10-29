@@ -289,7 +289,7 @@ class LoadDataLocal:
         xyz_file_name = (
             "*xyz_picks_image_space.json"
             if self.n_shanks == 1
-            else f"*xyz_picks_shank{float(shank_idx) + 1}_image_space.json"
+            else f"*xyz_picks_shank{shank_idx + 1}_image_space.json"
         )
         xyz_file = sorted(folder_path.glob(xyz_file_name))
 
@@ -306,57 +306,30 @@ class LoadDataLocal:
         with open(xyz_file[0], "r") as f:
             user_picks = json.load(f)
 
-        xyz_picks = np.array(user_picks["xyz_picks"]) / self.brain_atlas.spacing
-        xyz_picks[:, 0] = self.brain_atlas.image.shape[0] - xyz_picks[:, 0]
-        xyz_picks[:, 2] = self.brain_atlas.image.shape[2] - xyz_picks[:, 2]
-        xyz_picks = xyz_picks * self.brain_atlas.spacing / 1e6
+        xyz_picks = np.array(user_picks['xyz_picks']) / 1e6
 
         print("xyz_picks", xyz_picks)
         return xyz_picks
 
     def get_slice_images(self, xyz_channels):
         # Load the CCF images
-        """
         index = self.brain_atlas.bc.xyz2i(xyz_channels)[
             :, self.brain_atlas.xyz2dims
         ]
-        """
-        index = np.round(xyz_channels * 1e6 / self.brain_atlas.spacing).astype(np.int64)
-        shape = self.brain_atlas.image.shape
-        index = index[
-            (index[:, 0] < shape[0])
-            & (index[:, 1] < shape[1])
-            & (index[:, 2] < shape[2])
-        ]
+        ccf_slice = self.brain_atlas.image[index[:, 0], :, index[:, 2]]
+        ccf_slice = np.swapaxes(ccf_slice, 0, 1)
 
-        ccf_slice = self.brain_atlas.image[:, index[:, 1], index[:, 2]]
-        print("Ccf slice", ccf_slice.shape)
+        label_slice = self.brain_atlas._label2rgb(
+            self.brain_atlas.label[index[:, 0], :, index[:, 2]]
+        )
+        label_slice = np.swapaxes(label_slice, 0, 1)
 
-        # ccf_slice = np.swapaxes(ccf_slice, 0, 1)
-
-        label_indices = self.brain_atlas.label[:, index[:, 1], index[:, 2]]
-
-        # IBL function requires the label ids to the the row indices of the structure tree rather than the atlas id
-        structure_tree = self.get_allen_csv()
-        structure_tree["row_id"] = structure_tree.index.values
-        unique_labels = np.unique(label_indices)
-        new_labels = structure_tree.set_index("id").loc[unique_labels]["row_id"]
-
-        mapping = {old: new for old, new in zip(unique_labels, new_labels)}
-        vectorized_map = np.vectorize(mapping.get)
-
-        label_indices = vectorized_map(label_indices)
-
-        label_slice = self.brain_atlas._label2rgb(label_indices)
-        # label_slice = np.swapaxes(label_slice, 0, 1)
-
-        width = [0, self.brain_atlas.image.shape[0]]
+        width = [self.brain_atlas.bc.i2x(0), self.brain_atlas.bc.i2x(456)]
         height = [
-            index[0, 2],
-            index[-1, 2],
+            self.brain_atlas.bc.i2z(index[0, 2]),
+            self.brain_atlas.bc.i2z(index[-1, 2]),
         ]
 
-        print("Ccf slice", ccf_slice.shape)
         slice_data = {
             "ccf": ccf_slice,
             "label": label_slice,
@@ -374,7 +347,7 @@ class LoadDataLocal:
             histology_images = [
                 ii.name
                 for ii in list(Path(self.histology_path).iterdir())
-                if "histology_registration.nii.gz" in ii.name
+                if ".nrrd" in ii.name and "Ex_" in ii.name
             ]
             for image in histology_images:
                 path_to_image = glob.glob(str(self.histology_path) + f"/{image}")
@@ -385,51 +358,20 @@ class LoadDataLocal:
 
                 if hist_path:
                     # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
-                    if image.split(".nii.gz")[0] not in self.slice_images:
+                    if image.split(".nrrd")[0] not in self.slice_images:
+                        image = sitk.ReadImage(self.atlas_image_path[0])
                         hist_atlas = BrainAtlasAnatomical(
-                            o, age=hist_path, label=self.atlas_labels_path
+                            intensity_img=image, 
+                            label=self.brain_atlas.label,
+                            pipeline_img=self.brain_atlas.pipeline_image
                         )
-                        self.slice_images[image.split(".nii.gz")[0]] = hist_atlas
+                        self.slice_images[image.split(".nrrd")[0]] = hist_atlas
                     else:
-                        hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
+                        hist_atlas = self.slice_images[image.split(".nrrd")[0]]
 
-                    proxy_index = np.round(
-                        xyz_channels * 1e6 / hist_atlas.spacing
-                    ).astype(np.int64)
-                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0]
-                    proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
-
-                    # Clip to valid bounds
-                    mask = (
-                        (proxy_index[:, 0] >= 0)
-                        & (proxy_index[:, 0] < hist_atlas.image.shape[0])
-                        & (proxy_index[:, 1] >= 0)
-                        & (proxy_index[:, 1] < hist_atlas.image.shape[1])
-                        & (proxy_index[:, 2] >= 0)
-                        & (proxy_index[:, 2] < hist_atlas.image.shape[2])
-                    )
-                    proxy_index = proxy_index[mask]
-
-                    # Find bounding box around the voxels you need
-                    ymin, ymax = proxy_index[:, 1].min(), proxy_index[:, 1].max()
-                    zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
-
-                    # Extract minimal subvolume lazily
-                    subvol = np.asanyarray(
-                        hist_atlas.image[:, ymin : ymax + 1, zmin : zmax + 1]
-                    )
-                    subvol = np.flip(subvol, axis=(0, 2))
-
-                    y_rel = proxy_index[:, 1] - ymin  # AP axis, not flipped
-                    z_rel = (
-                        proxy_index[:, 2] - zmin
-                    )  # DV axis, **flipped**, so need to adjust
-                    z_rel_flipped = subvol.shape[2] - z_rel - 1
-
-                    # Gather slice values
-                    hist_slice = subvol[:, y_rel, z_rel_flipped]
-
-                    slice_data[image.split(".nii.gz")[0]] = hist_slice
+                    hist_slice = hist_atlas.i[index[:, 0], :, index[:, 2]]
+                    hist_slice = np.swapaxes(hist_slice, 0, 1)
+                    slice_data[image.split(".nrrd")[0]] = hist_slice
 
         return slice_data, None
 
@@ -453,39 +395,22 @@ class LoadDataLocal:
         return description, region_lookup
 
     def upload_data(self, feature, track, xyz_channels, shank_idx):
-        print("Channels", xyz_channels)
-        region_ids = []
-        index = np.round(xyz_channels).astype(np.int64)
-        index = index[
-            (index[:, 0] < self.brain_atlas.image.shape[0])
-            & (index[:, 1] < self.brain_atlas.image.shape[1])
-            & (index[:, 2] < self.brain_atlas.image.shape[2])
-        ]
-
-        for coord in index:
-            region_ids.append(self.brain_atlas.label[coord[0], coord[1], coord[2]])
-
-        brain_regions = self.brain_atlas.regions.get(region_ids)
-        brain_regions["xyz"] = xyz_channels
-        brain_regions["lateral"] = self.chn_coords[:, 0]
-        brain_regions["axial"] = self.chn_coords[:, 1]
-
+        brain_regions = self.brain_atlas.regions.get(self.brain_atlas.get_labels
+                                                     (xyz_channels))
+        brain_regions['xyz'] = xyz_channels
+        brain_regions['lateral'] = self.chn_coords[:, 0]
+        brain_regions['axial'] = self.chn_coords[:, 1]
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
         channel_dict = self.create_channel_dict(brain_regions)
-        self.channel_dict = channel_dict
-        bregma = atlas.ALLEN_CCF_LANDMARKS_MLAPDV_UM["bregma"].tolist()
-        origin = {"origin": {"bregma": bregma}}
+        bregma = atlas.ALLEN_CCF_LANDMARKS_MLAPDV_UM['bregma'].tolist()
+        origin = {'origin': {'bregma': bregma}}
         channel_dict.update(origin)
         # Save the channel locations
-        chan_loc_filename = (
-            "channel_locations.json"
-            if self.n_shanks == 1
-            else f"channel_locations_shank{shank_idx}.json"
-        )
+        chan_loc_filename = 'channel_locations.json' if self.n_shanks == 1 else \
+            f'channel_locations_shank{shank_idx}.json'
 
-        os.makedirs(self.output_directory, exist_ok=True)
-        with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
-            json.dump(channel_dict, f, indent=2, separators=(",", ": "))
+        with open(self.folder_path.joinpath(chan_loc_filename), "w") as f:
+            json.dump(channel_dict, f, indent=2, separators=(',', ': '))
         original_json = self.alignments
         date = datetime.now().replace(microsecond=0).isoformat()
         data = {date: [feature.tolist(), track.tolist()]}
@@ -494,13 +419,10 @@ class LoadDataLocal:
         else:
             original_json = data
         # Save the new alignment
-        prev_align_filename = (
-            "prev_alignments.json"
-            if self.n_shanks == 1
-            else f"prev_alignments_shank{self.shank_idx + 1}.json"
-        )
-        with open(self.output_directory.joinpath(prev_align_filename), "w") as f:
-            json.dump(original_json, f, indent=2, separators=(",", ": "))
+        prev_align_filename = 'prev_alignments.json' if self.n_shanks == 1 else \
+            f'prev_alignments_shank{shank_idx}.json'
+        with open(self.folder_path.joinpath(prev_align_filename), "w") as f:
+            json.dump(original_json, f, indent=2, separators=(',', ': '))
 
     @staticmethod
     def create_channel_dict(brain_regions):

@@ -95,7 +95,7 @@ class EphysAlignment:
         xyz_track = xyz_track[indices, :]
       
         # Compute distance to first electrode from bottom coordinate
-        tip_distance = _cumulative_distance(xyz_track)[1] - TIP_SIZE_UM / 1e6
+        tip_distance = _cumulative_distance(xyz_track)[1] + TIP_SIZE_UM / 1e6
         track_length = _cumulative_distance(xyz_track)[-1]
         track_extent = np.array([0, track_length]) - tip_distance
         print('Extent', track_extent)
@@ -240,82 +240,14 @@ class EphysAlignment:
         :return region_id: allen atlas id for each brain region along track
         :type region_id: np.array((n_bound))
         """
-        # Input validation and sanity checks
-        if len(xyz_coords) == 0:
-            raise ValueError("Empty coordinate array provided")
 
-        if xyz_coords.ndim != 2 or xyz_coords.shape[1] != 3:
-            raise ValueError(f"Coordinates must be Nx3 array, got shape {xyz_coords.shape}")
-
-        if len(depth_coords) != len(xyz_coords):
-            raise ValueError(f"Coordinate and depth arrays must have same length: {len(xyz_coords)} vs {len(depth_coords)}")
-
-        if np.any(~np.isfinite(xyz_coords)) or np.any(~np.isfinite(depth_coords)):
-            raise ValueError("Coordinates contain NaN or infinite values")
-
-        if len(xyz_coords) < 2:
-            raise ValueError(f"Need at least 2 trajectory points, got {len(xyz_coords)}")
-
-        # Check for degenerate trajectory (all points at same location)
-        coord_range = np.ptp(xyz_coords, axis=0)  # peak-to-peak range
-        if np.all(coord_range < 1e-9):  # less than 1 nanometer variation
-            raise ValueError("Degenerate trajectory: all coordinates are at the same location")
-
-        # Check for unreasonably large coordinates (likely unit errors)
-        max_coord = np.abs(xyz_coords).max()
-        if max_coord > 1.0:  # larger than 1 meter
-            print(f"WARNING: Very large coordinates detected (max: {max_coord:.3f}m). Check coordinate units.")
-
-        if not brain_atlas:
-            brain_atlas = atlas.AllenAtlas(25)
-
-        #region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
-        region_ids = []
-        xyz_indices = np.round(xyz_coords * 1e6 / brain_atlas.spacing).astype(np.int64)
-
-        # Count valid coordinates before filtering
-        n_original = len(xyz_indices)
-        xyz_indices = xyz_indices[(xyz_indices[:, 0] < brain_atlas.image.shape[0]) & (xyz_indices[:, 1] < brain_atlas.image.shape[1])
-                                  & (xyz_indices[:, 2] < brain_atlas.image.shape[2])]
-        n_valid = len(xyz_indices)
-
-        if n_valid == 0:
-            coord_range = f"{xyz_coords.min(axis=0)} to {xyz_coords.max(axis=0)}"
-            atlas_range = f"[0, 0, 0] to {np.array(brain_atlas.image.shape) * brain_atlas.spacing / 1e6}"
-            raise ValueError(
-                f"All {n_original} probe coordinates are outside atlas bounds.\n"
-                f"Atlas dimensions: {brain_atlas.image.shape} (spacing: {brain_atlas.spacing}μm)\n"
-                f"Coordinate range: {coord_range}\n"
-                f"Atlas range: {atlas_range}\n"
-                "Check coordinate system and scaling."
-            )
-
-        if n_valid < n_original:
-            print(f"WARNING: {n_original - n_valid} of {n_original} coordinates were outside atlas bounds and filtered out")
-
-        for coord in xyz_indices:
-            region_ids.append(brain_atlas.label[coord[0], coord[1], coord[2]])
-
+        region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
         region_info = brain_atlas.regions.get(region_ids)
         boundaries = np.where(np.diff(region_info.id))[0]
-
-        # Handle single region case (no boundaries)
-        if len(boundaries) == 0:
-            # Single region spanning entire trajectory
-            region = np.array([[depth_coords[0], depth_coords[-1]]])
-            region_label = np.array([[(depth_coords[0] + depth_coords[-1]) / 2, region_info.acronym[0]]], dtype=object)
-            region_id = np.array([[region_info.id[0]]], dtype=int)
-            region_colour = np.array([region_info.rgb[0]], dtype=int)
-
-            print(f"INFO: Probe trajectory spans single brain region: {region_info.acronym[0]}")
-            return region, region_label, region_colour, region_id
-
-        # Multiple regions case (original logic)
         region = np.empty((boundaries.size + 1, 2))
         region_label = np.empty((boundaries.size + 1, 2), dtype=object)
         region_id = np.empty((boundaries.size + 1, 1), dtype=int)
         region_colour = np.empty((boundaries.size + 1, 3), dtype=int)
-
         for bound in np.arange(boundaries.size + 1):
             if bound == 0:
                 _region = np.array([0, boundaries[bound]])
@@ -323,7 +255,6 @@ class EphysAlignment:
                 _region = np.array([boundaries[bound - 1], region_info.id.size - 1])
             else:
                 _region = np.array([boundaries[bound - 1], boundaries[bound]])
-
             _region_colour = region_info.rgb[_region[1]]
             _region_label = region_info.acronym[_region[1]]
             _region_id = region_info.id[_region[1]]
@@ -335,6 +266,7 @@ class EphysAlignment:
             region_label[bound, :] = (_region_mean, _region_label)
 
         return region, region_label, region_colour, region_id
+
 
     @staticmethod
     def get_nearest_boundary(xyz_coords, allen, extent=100, steps=8, parent=True,
