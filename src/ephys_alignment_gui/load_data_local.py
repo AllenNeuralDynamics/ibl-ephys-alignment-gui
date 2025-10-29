@@ -254,8 +254,8 @@ class LoadDataLocal:
 
                 self.histology_atlases["histology_registration"] = BrainAtlasAnatomical(
                     intensity_img=histology_image,
-                    label_img=label_image,
-                    pipeline_img=pipeline_image,
+                    label_img=sitk.Image(label_image),
+                    pipeline_img=sitk.Image(pipeline_image),
                 )
                 pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
                 for other_channel in self.histology_path.iterdir():
@@ -265,8 +265,8 @@ class LoadDataLocal:
                             channel_image = sitk.ReadImage(str(other_channel))
                             self.histology_atlases[channel_name] = BrainAtlasAnatomical(
                                 intensity_img=channel_image,
-                                label_img=label_image,
-                                pipeline_img=pipeline_image,
+                                label_img=sitk.Image(label_image),
+                                pipeline_img=sitk.Image(pipeline_image),
                             )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
