@@ -369,7 +369,7 @@ class LoadDataLocal:
                     else:
                         hist_atlas = self.slice_images[image.split(".nrrd")[0]]
 
-                    hist_slice = hist_atlas.i[index[:, 0], :, index[:, 2]]
+                    hist_slice = hist_atlas.image[index[:, 0], :, index[:, 2]]
                     hist_slice = np.swapaxes(hist_slice, 0, 1)
                     slice_data[image.split(".nrrd")[0]] = hist_slice
 
