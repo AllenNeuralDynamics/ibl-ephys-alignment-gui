@@ -42,10 +42,10 @@ class EphysAlignment:
                                                              self.sampling_trk[0])
         print('Xyz samples', self.xyz_samples)
         # ensure none of the track is outside the y or x lim of atlas
-        xlim = np.bitwise_and((self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 0] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[0])
-        ylim = np.bitwise_and((self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) > 0,
-                              (self.xyz_samples[:, 2] * 1e6 / self.brain_atlas.spacing) < self.brain_atlas.image.shape[2])
+        xlim = np.bitwise_and(self.xyz_samples[:, 0] > self.brain_atlas.bc.xlim[0],
+                              self.xyz_samples[:, 0] < self.brain_atlas.bc.xlim[1])
+        ylim = np.bitwise_and(self.xyz_samples[:, 1] < self.brain_atlas.bc.ylim[0],
+                              self.xyz_samples[:, 1] > self.brain_atlas.bc.ylim[1])
         rem = np.bitwise_and(xlim, ylim)
         self.xyz_samples = self.xyz_samples[rem]
         
