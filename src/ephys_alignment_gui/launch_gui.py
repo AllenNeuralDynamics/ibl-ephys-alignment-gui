@@ -20,7 +20,6 @@ import pandas
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
-from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 import ephys_alignment_gui.plot_data as pd
@@ -2421,55 +2420,6 @@ def is_debug_mode():
     """Check if we're in debug mode."""
     return _DEBUG_MODE
 
-
-class ExceptionHandlingApplication(QApplication):
-    """QApplication subclass that catches exceptions in event handlers (slots)."""
-
-    def notify(self, receiver, event):
-        """Override notify to catch exceptions in Qt event handlers."""
-        try:
-            return super().notify(receiver, event)
-        except Exception as e:
-            # Capture full traceback
-            tb_str = traceback.format_exc()
-
-            # Always print to console
-            print("\n" + "="*60)
-            print("EXCEPTION IN QT EVENT HANDLER")
-            print(f"Receiver: {receiver}")
-            print(f"Event: {event.type()}")
-            print("="*60)
-            print(tb_str)
-            print("="*60 + "\n")
-
-            if is_debug_mode():
-                # Debug mode: Break into debugger explicitly
-                print("Breaking into debugger...")
-                import pdb
-                import sys
-                # If running under debugpy (VSCode), this will break at the exception point
-                if 'debugpy' in sys.modules:
-                    # Trigger debugpy to break here
-                    import debugpy
-                    debugpy.breakpoint()
-                else:
-                    # Fallback to pdb if not in VSCode
-                    pdb.post_mortem(sys.exc_info()[2])
-                # Re-raise to crash the application
-                raise
-            else:
-                # Normal mode: Log and continue
-                print("GUI will attempt to continue. Use --debug flag to investigate.\n")
-                # Show error dialog
-                QtWidgets.QMessageBox.critical(
-                    None,
-                    "Error",
-                    f"An error occurred:\n\n{e}\n\n"
-                    f"Check console for full traceback.\n"
-                    f"Run with --debug flag to debug this error."
-                )
-                return False
-
 def setup_exception_handling(debug_mode=False):
     """Setup global exception handling with specified mode."""
     global _DEBUG_MODE
@@ -2523,8 +2473,7 @@ def main():
     # Setup exception handling FIRST, before creating QApplication
     setup_exception_handling(debug_mode=args.debug)
 
-    # Use custom QApplication that catches exceptions in event handlers
-    app = ExceptionHandlingApplication([])
+    app = QtWidgets.QApplication([])
     mainapp = MainWindow(offline=args.offline, probe_id=args.insertion, remote=args.remote)
     # mainapp = MainWindow(offline=True)
     mainapp.show()
