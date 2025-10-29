@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 import SimpleITK as sitk
-from iblatlas.atlas import BrainAtlas
+from iblatlas.atlas import BrainAtlas, BrainCoordinates
 from iblatlas.regions import BrainRegions
 
 _logger = logging.getLogger(__name__)
@@ -13,14 +13,18 @@ class BrainAtlasAnatomical(BrainAtlas):
     BrainAtlas subclass for anatomical atlases built from anatomical images.
     In addition to the BrainAtlas intensity and label arrays, this class also
     stores the SimpleITK images for potential further processing.
-    
+
     pipeline_sitk_image: sitk.Image
         The pipeline image associated with this atlas for CCF conversion.
     intensity_sitk_image: sitk.Image
         The anatomical intensity image.
     """
-    pipeline_sitk_image: sitk.Image # Pipeline image associated with this atlas for CCF conversion
-    intensity_sitk_image: sitk.Image  # Anatomical intensity image
+
+    # Pipeline image associated with this atlas for CCF conversion
+    pipeline_sitk_image: sitk.Image
+    # Anatomical intensity image
+    intensity_sitk_image: sitk.Image
+
     def __init__(
         self,
         intensity_img: sitk.Image,
@@ -29,7 +33,7 @@ class BrainAtlasAnatomical(BrainAtlas):
     ) -> None:
         """
         Initialize the BrainAtlasAnatomical class.
-        
+
         Parameters
         ----------
         intensity_img : sitk.Image
@@ -90,7 +94,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         spacing_tup_np = np.array(intensity_img_sra.GetSpacing())[::-1] * 1e-3
 
         # But BrainCoordinates wants it in the IBL XYZ (RAS) world coordinate system
-        spacing_tup_xyz = spacing_tup_np[dims2xyz]
+        dxyz = spacing_tup_np[dims2xyz]
 
         # IBL defines origin by saying which index is at world coordinate 0,0,0
         # We are not using bregma here, so just set to 0,0,0
@@ -108,13 +112,20 @@ class BrainAtlasAnatomical(BrainAtlas):
         super().__init__(
             intensity_img_sra_arr,
             label_img_sra_arr,
-            spacing_tup_xyz,
+            dxyz,
             regions,
             iorigin=iorigin,
             dims2xyz=dims2xyz,
             xyz2dims=xyz2dims,
         )
 
+        # Need to account for the anatomical image origin not being at 0,0,0
+        # SimpleITK is mm LPS, and IBL wants m RAS
+        sitk_origin_ras_m = (
+            np.array(intensity_img_sra.GetOrigin()) * np.array([-1, -1, 1]) * 1e-3
+        )
+        nxyz = intensity_img_sra_arr.shape[dims2xyz]
+        self.bc = BrainCoordinates(nxyz=nxyz, xyz0=sitk_origin_ras_m, dxyz=dxyz)
         # Store the SimpleITK intensity image, and the pipeline image for use
         # with CCF transforms
         self.intensity_sitk_image = intensity_img_sra
