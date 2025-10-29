@@ -46,7 +46,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         # Compute dxyz
         # Reverse to go to NP/C order, and convert from μm to m
         # This is in the IMAGE index coordinate system
-        spacing_tup_np = np.array(intensity_img_sra.GetSpacing())[::-1] * 1e-6
+        spacing_tup_np = np.array(intensity_img_sra.GetSpacing())[::-1] * 1e-3
         # But BrainCoordinates wants it in the XYZ world coordinate system
 
         spacing_tup_xyz = spacing_tup_np[dims2xyz]
