@@ -1,6 +1,8 @@
 import json
 import os
 import platform
+import sys
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1929,6 +1931,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.worker.finished.connect(self.thread.quit)           # Gracefully stop thread
         self.worker.finished.connect(self.worker.deleteLater)    # Clean up worker
         self.thread.finished.connect(self.thread.deleteLater)    # Clean up thread
+        self.worker.error.connect(self.handle_worker_error)      # Handle errors
+
+        self.thread.start()
+
+    def handle_worker_error(self, exception, traceback_str):
+        """Handle errors from worker threads."""
+        if is_debug_mode():
+            # Debug mode: Show error dialog and exit
+            # VSCode will have already broken on the exception in the worker
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Fatal Error (Debug Mode)",
+                f"An error occurred in background thread:\n\n{exception}\n\n"
+                f"Check the VSCode debug console for full traceback.\n"
+                f"Application will now exit."
+            )
+            sys.exit(1)
+        else:
+            # Normal mode: Show error but continue
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"An error occurred while saving:\n\n{exception}\n\n"
+                f"The operation could not be completed. "
+                f"Run with --debug flag to investigate."
+            )
 
     def complete_button_pressed_offline(self):
         """
@@ -2385,6 +2413,52 @@ def viewer(probe_id, one=None, histology=False, spike_collection=None, title=Non
     av.show()
     return av
 
+# Global debug mode flag
+_DEBUG_MODE = False
+
+def is_debug_mode():
+    """Check if we're in debug mode."""
+    return _DEBUG_MODE
+
+def setup_exception_handling(debug_mode=False):
+    """Setup global exception handling with specified mode."""
+    global _DEBUG_MODE
+    _DEBUG_MODE = debug_mode
+
+    if debug_mode:
+        print("="*60)
+        print("DEBUG MODE ENABLED")
+        print("Exceptions will crash the application")
+        print("VSCode debugger will break on uncaught exceptions")
+        print("="*60)
+
+        # In debug mode, use default exception handler (VSCode will catch it)
+        # Just make sure tracebacks are always printed
+        def debug_excepthook(exc_type, exc_value, exc_traceback):
+            print("\n" + "="*60)
+            print("UNCAUGHT EXCEPTION (Debug Mode)")
+            print("="*60)
+            traceback.print_exception(exc_type, exc_value, exc_traceback)
+            print("="*60 + "\n")
+            # Don't call sys.exit() - let VSCode handle it
+            # The exception will propagate and VSCode will break
+
+        sys.excepthook = debug_excepthook
+    else:
+        print("Normal mode: GUI will attempt to continue on recoverable errors")
+
+        # In normal mode, catch and log exceptions but try to continue
+        def normal_excepthook(exc_type, exc_value, exc_traceback):
+            print("\n" + "="*60)
+            print("ERROR (Normal Mode)")
+            print("="*60)
+            traceback.print_exception(exc_type, exc_value, exc_traceback)
+            print("="*60)
+            print("GUI will attempt to continue. Use --debug flag to investigate.\n")
+            # Don't exit - let Qt's event loop continue
+
+        sys.excepthook = normal_excepthook
+
 def main():
     import argparse
 
@@ -2392,7 +2466,12 @@ def main():
     parser.add_argument('-o', '--offline', default=True, required=False, help='Offline mode')
     parser.add_argument('-r', '--remote', default=False, required=False, action='store_true', help='Remote mode')
     parser.add_argument('-i', '--insertion', default=None, required=False, help='Insertion mode')
+    parser.add_argument('--debug', default=False, required=False, action='store_true',
+                        help='Enable debug mode: crash on all errors for VSCode debugging')
     args = parser.parse_args()
+
+    # Setup exception handling FIRST, before creating QApplication
+    setup_exception_handling(debug_mode=args.debug)
 
     app = QtWidgets.QApplication([])
     mainapp = MainWindow(offline=args.offline, probe_id=args.insertion, remote=args.remote)
