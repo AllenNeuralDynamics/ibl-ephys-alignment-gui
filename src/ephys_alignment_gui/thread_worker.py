@@ -1,12 +1,28 @@
 from PyQt5.QtCore import QThread, QObject, pyqtSignal
+import traceback
 
 class Worker(QObject):
     finished = pyqtSignal()
+    error = pyqtSignal(str)  # Emit error message
 
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
 
     def run(self):
-        self.fn()
-        self.finished.emit()
+        try:
+            self.fn()
+        except Exception as e:
+            # Capture and log the exception
+            error_msg = f"ERROR in worker thread: {e}"
+            print("\n" + "="*60)
+            print(error_msg)
+            print("="*60)
+            traceback.print_exc()
+            print("="*60 + "\n")
+
+            # Emit error signal so GUI can handle it
+            self.error.emit(error_msg)
+        finally:
+            # Always emit finished to clean up thread, even if error handling fails
+            self.finished.emit()
