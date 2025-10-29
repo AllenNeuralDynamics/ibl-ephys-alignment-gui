@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import glob
 import json
 import logging
 import os
@@ -10,6 +9,7 @@ import os
 import ssl
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import iblatlas.atlas as atlas
 import numpy as np
@@ -17,6 +17,7 @@ import one.alf.io as alfio
 import SimpleITK as sitk
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 from aind_registration_utils.annotations import expand_compacted_image
+from numpy.typing import NDArray
 from one import alf
 
 from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
@@ -26,6 +27,35 @@ from .custom_atlas import BrainAtlasAnatomical
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger("ibllib")
 
+def _cut_slice_from_atlas_image(
+    atlas_array: NDArray,
+    xyz_channel_indices: NDArray,
+    func: Callable[[NDArray], NDArray] | None = None
+) -> NDArray:
+    """
+    Extract a "wavy" slice from the atlas image given the xyz channel indices.
+    xyz channel indices are indices in the atlas array, not physical coordinates.
+
+    Parameters
+    ----------
+    atlas_array : NDArray
+        The atlas image array from which to extract the slice.
+    xyz_channel_indices : NDArray
+        The xyz channel indices in the atlas array.
+    func : Callable[[NDArray], NDArray] | None, optional
+        An optional function to apply to the extracted slice, by default None.
+
+    Returns
+    -------
+    NDArray
+        The extracted slice from the atlas image.
+    """
+    # N x image.shape[1]
+    slice = atlas_array[xyz_channel_indices[:, 0], :, xyz_channel_indices[:, 2]]
+    if func is not None:
+        slice = func(slice)
+    slice = np.swapaxes(slice, 0, 1) # Now it's image.shape[1] x N [x 3 for RGB]
+    return slice
 
 class LoadDataLocal:
     def __init__(self):
@@ -181,19 +211,21 @@ class LoadDataLocal:
         if reload_data:
             if not hasattr(self, "atlas_image_path"):
                 search_path: Path = self.folder_path.parent.parent
-                def _glob_or_err(pattern: str) -> tuple[Path, ...]:
+                def _glob_nonempty_or_err(pattern: str) -> tuple[Path, ...]:
                     paths = tuple(search_path.glob(pattern))
                     if not paths:
                         raise FileNotFoundError(
                             f"Could not find path to atlas image in data asset attached. Looking for pattern {pattern} in {search_path}"
                         )
                     return paths
-                self.atlas_image_path = _glob_or_err("image_space_histology/ccf_in_*.nrrd")
-                self.atlas_labels_path = _glob_or_err("image_space_histology/labels_in_*.nrrd")
-                self.pipeline_image_path = _glob_or_err("image_space_histology/histology_registration_pipeline.nrrd")
+                self.atlas_image_path = _glob_nonempty_or_err("image_space_histology/ccf_in_*.nrrd")
+                self.atlas_labels_path = _glob_nonempty_or_err("image_space_histology/labels_in_*.nrrd")
+                self.pipeline_image_path = _glob_nonempty_or_err("image_space_histology/histology_registration_pipeline.nrrd")
+                self.histology_image_path = _glob_nonempty_or_err("image_space_histology/histology_registration.nrrd")
                 self.histology_path = self.atlas_image_path[0].parent
                 intensity_image = sitk.ReadImage(self.atlas_image_path[0])
                 label_image_compacted = sitk.ReadImage(self.atlas_labels_path[0])
+                histology_image = sitk.ReadImage(self.histology_image_path[0])
                 pipeline_image = sitk.ReadImage(self.pipeline_image_path[0])
                 unq_annotations = np.load(
                     "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
@@ -206,6 +238,14 @@ class LoadDataLocal:
                     label_img=label_image,
                     pipeline_img=pipeline_image,
                 )
+                self.slice_images["histology_registration"] = (
+                    BrainAtlasAnatomical(
+                        intensity_img=histology_image,
+                        label_img=label_image,
+                        pipeline_img=pipeline_image,
+                    )
+                )
+
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
@@ -306,12 +346,8 @@ class LoadDataLocal:
         with open(xyz_file[0], "r") as f:
             user_picks = json.load(f)
 
-        xyz_picks = np.array(user_picks["xyz_picks"]) / self.brain_atlas.spacing
-        xyz_picks[:, 0] = self.brain_atlas.image.shape[0] - xyz_picks[:, 0]
-        xyz_picks[:, 2] = self.brain_atlas.image.shape[2] - xyz_picks[:, 2]
-        xyz_picks = xyz_picks * self.brain_atlas.spacing / 1e6
+        xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6 # convert to meters
 
-        print("xyz_picks", xyz_picks)
         return xyz_picks
 
     def get_slice_images(self, xyz_channels):
@@ -321,40 +357,29 @@ class LoadDataLocal:
             :, self.brain_atlas.xyz2dims
         ]
         """
-        index = np.round(xyz_channels * 1e6 / self.brain_atlas.spacing).astype(np.int64)
-        shape = self.brain_atlas.image.shape
-        index = index[
-            (index[:, 0] < shape[0])
-            & (index[:, 1] < shape[1])
-            & (index[:, 2] < shape[2])
+        # --- Get the ccf slice in image space ---
+        #
+        # BrainCoordinates converts from XYZ world to IJK (spacing only) but
+        # doesn't handle permutations (xyz2dim). This converts world
+        # coordinates to image indices, and then permutes to match atlas image
+        # orientation
+        index = self.brain_atlas.bc.xyz2i(xyz_channels)[:, self.brain_atlas.xyz2dims]
+        # Build a tilted slice by getting horizontal lines at each index,
+        # N x image.shape[1]
+        ccf_slice = _cut_slice_from_atlas_image(
+            self.brain_atlas.image, index # type: ignore
+        )
+        label_slice = _cut_slice_from_atlas_image(
+            self.brain_atlas.label, index, self.brain_atlas._label2rgb # type: ignore
+        )
+        x_dimno = self.brain_atlas.xyz2dims[0]
+        # ML span of the slice in world coordinates
+        width = [
+            self.brain_atlas.bc.i2x(0),
+            self.brain_atlas.bc.i2x(self.brain_atlas.image.shape[x_dimno]), # was 456: CCF 25 width
         ]
-
-        ccf_slice = self.brain_atlas.image[:, index[:, 1], index[:, 2]]
-        print("Ccf slice", ccf_slice.shape)
-
-        # ccf_slice = np.swapaxes(ccf_slice, 0, 1)
-
-        label_indices = self.brain_atlas.label[:, index[:, 1], index[:, 2]]
-
-        # IBL function requires the label ids to the the row indices of the structure tree rather than the atlas id
-        structure_tree = self.get_allen_csv()
-        structure_tree["row_id"] = structure_tree.index.values
-        unique_labels = np.unique(label_indices)
-        new_labels = structure_tree.set_index("id").loc[unique_labels]["row_id"]
-
-        mapping = {old: new for old, new in zip(unique_labels, new_labels)}
-        vectorized_map = np.vectorize(mapping.get)
-
-        label_indices = vectorized_map(label_indices)
-
-        label_slice = self.brain_atlas._label2rgb(label_indices)
-        # label_slice = np.swapaxes(label_slice, 0, 1)
-
-        width = [0, self.brain_atlas.image.shape[0]]
-        height = [
-            index[0, 2],
-            index[-1, 2],
-        ]
+        # DV span of the slice in world coordinates
+        height = [self.brain_atlas.bc.i2z(index[0, 2]), self.brain_atlas.bc.i2z(index[-1, 2])]
 
         print("Ccf slice", ccf_slice.shape)
         slice_data = {
@@ -369,67 +394,14 @@ class LoadDataLocal:
             "offset": np.array([width[0], height[0]]),
         }
 
+        # --- Get the histology slices in image space ---
         # Load local slice images
-        if self.histology_path is not None:
-            histology_images = [
-                ii.name
-                for ii in list(Path(self.histology_path).iterdir())
-                if "histology_registration.nii.gz" in ii.name
-            ]
-            for image in histology_images:
-                path_to_image = glob.glob(str(self.histology_path) + f"/{image}")
-                if path_to_image:
-                    hist_path = Path(path_to_image[0])
-                else:
-                    hist_path = []
-
-                if hist_path:
-                    # hist_atlas = atlas.AllenAtlas(hist_path=hist_path)
-                    if image.split(".nii.gz")[0] not in self.slice_images:
-                        hist_atlas = BrainAtlasAnatomical(
-                            o, age=hist_path, label=self.atlas_labels_path
-                        )
-                        self.slice_images[image.split(".nii.gz")[0]] = hist_atlas
-                    else:
-                        hist_atlas = self.slice_images[image.split(".nii.gz")[0]]
-
-                    proxy_index = np.round(
-                        xyz_channels * 1e6 / hist_atlas.spacing
-                    ).astype(np.int64)
-                    proxy_index[:, 0] = hist_atlas.image.shape[0] - proxy_index[:, 0]
-                    proxy_index[:, 2] = hist_atlas.image.shape[2] - proxy_index[:, 2]
-
-                    # Clip to valid bounds
-                    mask = (
-                        (proxy_index[:, 0] >= 0)
-                        & (proxy_index[:, 0] < hist_atlas.image.shape[0])
-                        & (proxy_index[:, 1] >= 0)
-                        & (proxy_index[:, 1] < hist_atlas.image.shape[1])
-                        & (proxy_index[:, 2] >= 0)
-                        & (proxy_index[:, 2] < hist_atlas.image.shape[2])
-                    )
-                    proxy_index = proxy_index[mask]
-
-                    # Find bounding box around the voxels you need
-                    ymin, ymax = proxy_index[:, 1].min(), proxy_index[:, 1].max()
-                    zmin, zmax = proxy_index[:, 2].min(), proxy_index[:, 2].max()
-
-                    # Extract minimal subvolume lazily
-                    subvol = np.asanyarray(
-                        hist_atlas.image[:, ymin : ymax + 1, zmin : zmax + 1]
-                    )
-                    subvol = np.flip(subvol, axis=(0, 2))
-
-                    y_rel = proxy_index[:, 1] - ymin  # AP axis, not flipped
-                    z_rel = (
-                        proxy_index[:, 2] - zmin
-                    )  # DV axis, **flipped**, so need to adjust
-                    z_rel_flipped = subvol.shape[2] - z_rel - 1
-
-                    # Gather slice values
-                    hist_slice = subvol[:, y_rel, z_rel_flipped]
-
-                    slice_data[image.split(".nii.gz")[0]] = hist_slice
+        if "histology_registration" in self.slice_images:
+            hist_atlas = self.slice_images["histology_registration"]
+            hist_slice = _cut_slice_from_atlas_image(
+                hist_atlas.image, index # type: ignore
+            )
+            slice_data["histology_registration"] = hist_slice
 
         return slice_data, None
 

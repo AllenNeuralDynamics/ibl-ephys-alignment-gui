@@ -8,32 +8,27 @@ if platform.system() == 'Darwin':
     if platform.release().split('.')[0] >= '20':
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
-from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtCore import QThread, QObject
-from ephys_alignment_gui.thread_worker import Worker
-import pyqtgraph as pg
-
-import numpy as np
-import numpy.typing as npt
 from random import randrange
 
-import pandas
 import ants
-
-import ephys_alignment_gui.plot_data as pd
-from ephys_alignment_gui.plot_elements import ColorBar
-import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-
-from ephys_alignment_gui.load_data_local import LoadDataLocal
-from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
-from ephys_alignment_gui.create_overview_plots import make_overview_plot
-
-from ephys_alignment_gui.windows.features_across_region import RegionFeatureWindow
-from ephys_alignment_gui.ephys_alignment import EphysAlignment
-
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
+import numpy as np
+import numpy.typing as npt
+import pandas
+import pyqtgraph as pg
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import QThread
 
+import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+import ephys_alignment_gui.plot_data as pd
+from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
+from ephys_alignment_gui.ephys_alignment import EphysAlignment
+from ephys_alignment_gui.load_data_local import LoadDataLocal
+from ephys_alignment_gui.plot_elements import ColorBar
+from ephys_alignment_gui.thread_worker import Worker
+from ephys_alignment_gui.windows.features_across_region import RegionFeatureWindow
+from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
 
 ANTS_DIMENSION = 3
 
@@ -1975,7 +1970,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.loaddata.brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot transform to CCF coordinates")
         else:
-            pipeline_img = self.loaddata.brain_atlas.pipeline_image
+            pipeline_img = self.loaddata.brain_atlas.pipeline_sitk_image
             for point in channel_coords:
                 ants_physical_points.append(pipeline_img.TransformContinuousIndexToPhysicalPoint(point.tolist()))
 
