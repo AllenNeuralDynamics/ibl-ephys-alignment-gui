@@ -105,8 +105,8 @@ class BrainAtlasAnatomical(BrainAtlas):
         regions = BrainRegions()
 
         # Get arrays from SimpleITK images. I think there's no mutation risk
-        intensity_img_sra_arr = sitk.GetArrayViewFromImage(intensity_img_sra)
-        label_img_sra_arr = sitk.GetArrayViewFromImage(label_img_sra)
+        intensity_img_sra_arr = sitk.GetArrayFromImage(intensity_img_sra)
+        label_img_sra_arr = sitk.GetArrayFromImage(label_img_sra)
 
         # Initialize the superclass
         super().__init__(
@@ -124,7 +124,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         sitk_origin_ras_m = (
             np.array(intensity_img_sra.GetOrigin()) * np.array([-1, -1, 1]) * 1e-3
         )
-        nxyz = intensity_img_sra_arr.shape[dims2xyz]
+        nxyz = np.array(intensity_img_sra_arr.shape)[dims2xyz]
         self.bc = BrainCoordinates(nxyz=nxyz, xyz0=sitk_origin_ras_m, dxyz=dxyz)
         # Store the SimpleITK intensity image, and the pipeline image for use
         # with CCF transforms
