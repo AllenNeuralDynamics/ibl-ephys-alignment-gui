@@ -105,8 +105,8 @@ class BrainAtlasAnatomical(BrainAtlas):
         regions = BrainRegions()
 
         # Get arrays from SimpleITK images. I think there's no mutation risk
-        intensity_img_sra_arr = sitk.GetArrayViewFromImage(intensity_img_sra)
-        label_img_sra_arr = sitk.GetArrayViewFromImage(label_img_sra)
+        intensity_img_sra_arr = sitk.GetArrayFromImage(intensity_img_sra)
+        label_img_sra_arr = sitk.GetArrayFromImage(label_img_sra)
 
         # Initialize the superclass
         super().__init__(
