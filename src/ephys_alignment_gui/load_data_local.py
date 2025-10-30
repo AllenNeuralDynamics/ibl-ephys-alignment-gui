@@ -75,7 +75,7 @@ class LoadDataLocal:
         self.data_root = None
         self.output_directory = None
         self.previous_directory = None
-        self.histology_atlases: dict[str, BrainAtlasAnatomical] = {}
+        self.histology_images: dict[str, sitk.Image] = {}
 
     def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
         """
@@ -252,22 +252,27 @@ class LoadDataLocal:
                     pipeline_img=pipeline_image,
                 )
 
-                self.histology_atlases["histology_registration"] = BrainAtlasAnatomical(
-                    intensity_img=histology_image,
-                    label_img=sitk.Image(label_image),
-                    pipeline_img=sitk.Image(pipeline_image),
+                histology_image = sitk.ReadImage(self.histology_image_path[0])
+                dicom_orient_str = (
+                    sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
+                        histology_image.GetDirection()
+                    )
                 )
+                if dicom_orient_str == "SRA":
+                    reorient = False
+                else:
+                    reorient = True
+                    histology_image = sitk.DICOMOrient(histology_image, "SRA")
+                self.histology_images["histology_registration"] = histology_image
                 pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
                 for other_channel in self.histology_path.iterdir():
                     if pattern.match(other_channel.name):
                         channel_name = other_channel.stem
-                        if channel_name not in self.histology_atlases:
+                        if channel_name not in self.histology_images:
                             channel_image = sitk.ReadImage(str(other_channel))
-                            self.histology_atlases[channel_name] = BrainAtlasAnatomical(
-                                intensity_img=channel_image,
-                                label_img=sitk.Image(label_image),
-                                pipeline_img=sitk.Image(pipeline_image),
-                            )
+                            if reorient:
+                                channel_image = sitk.DICOMOrient(channel_image, "SRA")
+                            self.histology_images[channel_name] = channel_image
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
@@ -426,9 +431,10 @@ class LoadDataLocal:
         }
 
         # --- Get the histology slices in image space ---
-        for channel_name, hist_atlas in self.histology_atlases.items():
+        for channel_name, hist_image in self.histology_images.items():
+            hist_arr = sitk.GetArrayViewFromImage(hist_image)
             hist_slice = _cut_slice_from_atlas_image(
-                hist_atlas.image,
+                hist_arr,
                 index,  # type: ignore
             )
             slice_data[channel_name] = hist_slice
