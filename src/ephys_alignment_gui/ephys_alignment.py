@@ -166,10 +166,13 @@ class EphysAlignment:
 
         # Force the entry to be on the upper z lim of the atlas to account for cases where channels
         # may be located above the surface of the brain
-        entry = (traj_entry.eval_z(self.brain_atlas.bc.zlim))[0, :]
-
+        entry_lims = (traj_entry.eval_z(self.brain_atlas.bc.zlim))
+        entry_top_lim = np.argmax(entry_lims[:, 2])
+        entry = entry_lims[entry_top_lim, :]
         if speedy:
-            exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
+            exit_lims = (traj_exit.eval_z(self.brain_atlas.bc.zlim))
+            exit_top_lim = np.argmin(entry_lims[:, 2])
+            exit = exit_lims[exit_top_lim, :]
         else:
             exit = get_brain_exit_override(traj_exit, self.brain_atlas)
             # The exit is just below the bottom surfacce of the brain
