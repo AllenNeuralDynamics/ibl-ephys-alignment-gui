@@ -13,6 +13,10 @@ from PyQt5 import QtGui
 
 import os
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
 BNK_SIZE = 10
 AUTOCORR_BIN_SIZE = 0.25 / 1000
 AUTOCORR_WIN_SIZE = 10 / 1000
@@ -80,9 +84,9 @@ class PlotData:
                 self.data['spikes'][key] = self.data['spikes'][key][shank_spikes_subset]
             self.filter_units('all')
             self.compute_timescales()
-        
-        print('Spike idx', self.spike_idx)
-        print('Keep idx', self.kp_idx)
+
+        logger.debug(f'Spike idx: {self.spike_idx}')
+        logger.debug(f'Keep idx: {self.kp_idx}')
 
     def filter_units(self, type):
 
@@ -114,7 +118,7 @@ class PlotData:
                 clust = np.where(self.data['clusters'].metrics["unitrefine_label"] != "noise")
                 self.spike_idx = np.where(np.isin(self.data['spikes']['clusters'], clust))[0]
         except Exception:
-            print(f'{type} metrics not found will return all units instead')
+            logger.warning(f'{type} metrics not found, returning all units instead')
             self.spike_idx = np.arange(self.data['spikes']['clusters'].size)
 
         # Filter for nans in depths and also in amps
@@ -586,7 +590,7 @@ class PlotData:
         # Load all npy files in the folder into the data dictionary
         lfp_corr_files = list(lfp_corr_folder.glob('*.npy'))
         if not lfp_corr_files:
-            print(f"No LFP correlation files found in {lfp_corr_folder}.")
+            logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
             return {}
 
         all_data = {}
@@ -634,7 +638,7 @@ class PlotData:
             return {key: all_data[key] for key in sorted_keys}
 
         data_img_lfp_corr = _sort_lfp_correlation_keys(all_data)
-        print(f"LFP correlation data loaded with {len(data_img_lfp_corr)} epoch_bands.")
+        logger.info(f"LFP correlation data loaded with {len(data_img_lfp_corr)} epoch_bands")
         return data_img_lfp_corr
 
     def get_rfmap_data(self):

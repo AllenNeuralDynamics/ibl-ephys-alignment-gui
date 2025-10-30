@@ -1,8 +1,11 @@
 import iblatlas.atlas as atlas
+import logging
 import numpy as np
 import scipy
 
 import ephys_alignment_gui.histology as histology
+
+logger = logging.getLogger(__name__)
 
 TIP_SIZE_UM = 200
 
@@ -106,7 +109,7 @@ class EphysAlignment:
         tip_distance = _cumulative_distance(xyz_track)[1] + TIP_SIZE_UM / 1e6
         track_length = _cumulative_distance(xyz_track)[-1]
         track_extent = np.array([0, track_length]) - tip_distance
-        print("Extent", track_extent)
+        logger.debug(f"Track extent: {track_extent}")
         return xyz_track, track_extent
 
     def get_track_and_feature(self):
@@ -285,8 +288,8 @@ class EphysAlignment:
         # Check for unreasonably large coordinates (likely unit errors)
         max_coord = np.abs(xyz_coords).max()
         if max_coord > 1.0:  # larger than 1 meter
-            print(
-                f"WARNING: Very large coordinates detected (max: {max_coord:.3f}m). Check coordinate units."
+            logger.warning(
+                f"Very large coordinates detected (max: {max_coord:.3f}m). Check coordinate units."
             )
 
         region_ids = brain_atlas.get_labels(xyz_coords, mapping=mapping)
@@ -393,7 +396,7 @@ class EphysAlignment:
             try:
                 brain_id = brain_atlas.regions.get(brain_atlas.get_labels(XYZ))["id"]
             except Exception as err:
-                print(err)
+                logger.error(f"Failed to get brain region for boundary: {err}")
                 continue
 
             dist_sorted = np.argsort(dist)

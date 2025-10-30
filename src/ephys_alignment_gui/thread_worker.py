@@ -1,5 +1,9 @@
 from PyQt5.QtCore import QThread, QObject, pyqtSignal
+import logging
 import traceback
+
+logger = logging.getLogger(__name__)
+
 
 class Worker(QObject):
     finished = pyqtSignal()
@@ -15,11 +19,11 @@ class Worker(QObject):
         except Exception as e:
             # Capture and log the exception
             error_msg = f"ERROR in worker thread: {e}"
-            print("\n" + "="*60)
-            print(error_msg)
-            print("="*60)
-            traceback.print_exc()
-            print("="*60 + "\n")
+            logger.error("="*60)
+            logger.error(error_msg)
+            logger.error("="*60)
+            logger.exception("Full traceback:")
+            logger.error("="*60)
 
             # Emit error signal so GUI can handle it
             self.error.emit(error_msg)
