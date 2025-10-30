@@ -238,7 +238,6 @@ class LoadDataLocal:
                 self.histology_path = self.atlas_image_path[0].parent
                 intensity_image = sitk.ReadImage(self.atlas_image_path[0])
                 label_image_compacted = sitk.ReadImage(self.atlas_labels_path[0])
-                histology_image = sitk.ReadImage(self.histology_image_path[0])
                 pipeline_image = sitk.ReadImage(self.pipeline_image_path[0])
                 unq_annotations = np.load(
                     "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
@@ -432,7 +431,7 @@ class LoadDataLocal:
 
         # --- Get the histology slices in image space ---
         for channel_name, hist_image in self.histology_images.items():
-            hist_arr = sitk.GetArrayViewFromImage(hist_image)
+            hist_arr = sitk.GetArrayFromImage(hist_image)
             hist_slice = _cut_slice_from_atlas_image(
                 hist_arr,
                 index,  # type: ignore
