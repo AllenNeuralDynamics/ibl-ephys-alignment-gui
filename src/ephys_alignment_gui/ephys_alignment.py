@@ -1,7 +1,10 @@
-import iblatlas.atlas as atlas
 import logging
+
 import numpy as np
 import scipy
+from iblatlas import atlas
+from iblatlas.atlas import BrainAtlas, Trajectory
+from numpy.typing import NDArray
 
 import ephys_alignment_gui.histology as histology
 
@@ -12,6 +15,82 @@ TIP_SIZE_UM = 200
 
 def _cumulative_distance(xyz):
     return np.cumsum(np.r_[0, np.sqrt(np.sum(np.diff(xyz, axis=0) ** 2, axis=1))])
+
+
+def _get_surface_intersection_override(
+    traj: Trajectory, brain_atlas: BrainAtlas, surface: str = "top", mode: str = "raise"
+) -> NDArray[np.float64]:
+    """
+    Override for atlas.Insertion._get_surface_intersection to avoid issues
+    with atlases that don't have `res_um`
+
+    Computes the intersection of a trajectory with either the top or the bottom surface of an atlas.
+
+    Parameters
+    ----------
+    traj: iblatlas.atlas.Trajectory object
+    brain_atlas: iblatlas.atlas.BrainAtlas (or descendant) object
+    surface: str, optional (defaults to 'top') 'top' or 'bottom'
+    mode: str, optional (defaults to 'raise') 'raise' or 'none': raise an error if no intersection
+        with the brain surface is found otherwise returns None
+
+    Returns
+    -------
+    xyz: np.array, 3 elements, x, y, z coordinates of the intersection point with the surface
+            None if no intersection is found and mode is not set to 'raise'
+    """
+    brain_atlas.compute_surface()
+    distance = traj.mindist(brain_atlas.srf_xyz)
+    dist_sort = np.argsort(distance)
+    # In some cases the nearest two intersection points are not the top and bottom of brain
+    # So we find all intersection points that fall within one voxel and take the one with
+    # highest dV to be entry and lowest dV to be exit
+    max_voxel_size_m = np.max(np.abs(brain_atlas.bc.dxyz))
+    idx_lim = np.sum(distance[dist_sort] < max_voxel_size_m)
+    if idx_lim == 0:  # no intersection found
+        if mode == "raise":
+            raise ValueError("No intersection found with brain surface")
+        else:
+            return
+    dist_lim = dist_sort[0:idx_lim]
+    z_val = brain_atlas.srf_xyz[dist_lim, 2]
+    if surface == "top":
+        ma = np.argmax(z_val)
+        _xyz = brain_atlas.srf_xyz[dist_lim[ma], :]
+        _ixyz = brain_atlas.bc.xyz2i(_xyz)
+        _ixyz[brain_atlas.xyz2dims[2]] += 1
+    elif surface == "bottom":
+        ma = np.argmin(z_val)
+        _xyz = brain_atlas.srf_xyz[dist_lim[ma], :]
+        _ixyz = brain_atlas.bc.xyz2i(_xyz)
+
+    xyz = brain_atlas.bc.i2xyz(_ixyz.astype(float))
+
+    return xyz
+
+def get_brain_exit_override(
+    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = 'raise'
+) -> NDArray[np.float64]:
+    """
+    Given a Trajectory and a BrainAtlas object, computes the brain exit coordinate as the
+    intersection of the trajectory and the brain surface (brain_atlas.surface)
+    :param brain_atlas:
+    :return: 3 element array x,y,z
+    """
+    # Find point where trajectory intersects with bottom of brain
+    return _get_surface_intersection_override(traj, brain_atlas, surface='bottom', mode=mode)
+
+def get_brain_entry_override(
+    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = 'raise'
+) -> NDArray[np.float64]:
+    """
+    Given a Trajectory and a BrainAtlas object, computes the brain entry coordinate as the
+    intersection of the trajectory and the brain surface (brain_atlas.surface)
+    :param brain_atlas:
+    :return: 3 element array x,y,z
+    """
+    # Find point where trajectory intersects with top of brain
+    return _get_surface_intersection_override(traj, brain_atlas, surface='top', mode=mode)
 
 
 class EphysAlignment:
@@ -92,7 +171,7 @@ class EphysAlignment:
         if speedy:
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
         else:
-            exit = atlas.Insertion.get_brain_exit(traj_exit, self.brain_atlas)
+            exit = get_brain_exit_override(traj_exit, self.brain_atlas)
             # The exit is just below the bottom surfacce of the brain
             exit[2] = exit[2] - 200 / 1e6
 
