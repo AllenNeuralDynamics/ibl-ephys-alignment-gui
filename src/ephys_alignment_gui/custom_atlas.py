@@ -7,6 +7,7 @@ from iblatlas.regions import BrainRegions
 
 _logger = logging.getLogger(__name__)
 
+_BLESSED_DIRECTION : str = "IRP"
 
 class BrainAtlasAnatomical(BrainAtlas):
     """
@@ -63,41 +64,72 @@ class BrainAtlasAnatomical(BrainAtlas):
                     f"Intensity and label {m}() mismatch: {intensity_val} != {label_val}"
                 )
 
-        # Reorient to SRA if needed
+        # Reorient to _BLESSED_DIRECTION if needed
         orientation_code = (
             sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
                 intensity_img.GetDirection()
             )
         )
-        if orientation_code == "SRA":
-            intensity_img_sra = intensity_img
-            label_img_sra = label_img
-            pipeline_img_sra = pipeline_img
+        if orientation_code == _BLESSED_DIRECTION:
+            intensity_img_blessed = intensity_img
+            label_img_blessed = label_img
+            pipeline_img_blessed = pipeline_img
         else:
             _logger.info(
-                f"Reorienting volume from {orientation_code} to SRA for consistency with IBL convention."
+                f"Reorienting volume from {orientation_code} to {_BLESSED_DIRECTION} "
+                "for consistency with IBL convention."
             )
-            intensity_img_sra = sitk.DICOMOrient(intensity_img, "SRA")
-            label_img_sra = sitk.DICOMOrient(label_img, "SRA")
-            pipeline_img_sra = sitk.DICOMOrient(pipeline_img, "SRA")
+            intensity_img_blessed = sitk.DICOMOrient(intensity_img, _BLESSED_DIRECTION)
+            label_img_blessed = sitk.DICOMOrient(label_img, _BLESSED_DIRECTION)
+            pipeline_img_blessed = sitk.DICOMOrient(pipeline_img, _BLESSED_DIRECTION)
 
-        # SRA to SAR, with C-order. This matches IBL XYZ (RAS with C order)
-        # Allows you to have coronal slices be close in memory for visualization
+        cosine_dir_mat = np.array(intensity_img_blessed.GetDirection()).reshape(3, 3)
+
+        # Check that the image is arranged IS, LR, AP in memory (fortran order)
+        if not np.allclose(
+            np.abs(cosine_dir_mat),
+            np.array(
+                [
+                    [0, 1, 0],
+                    [0, 0, 1],
+                    [1, 0, 0],
+                ]
+            ),
+        ):
+            raise ValueError(
+                f"After reorientation to blessed direction {_BLESSED_DIRECTION}, "
+                f"image direction cosines {cosine_dir_mat} are not as expected for "
+                "IS, LR, AP DICOM arrangement. Is the blessed orientation wrong?"
+            )
+
+        # SimpleITK uses fortran order, but when converting to numpy the
+        # underlying data are not changed and are interpreted by numpy as
+        # C-order. This code accounts for that.
+
+        # Going from C-order array data to XYZ (RAS) requires swapping the AP
+        # and LR Axes. This code assumes that the _BLESSED_DIRECTION is being used
+        # and it is something like SRA/IRP, which is how the IBL app wants to
+        # arrange its data to make it easy to get coronal slices with numpy
+        # indexing, and have them be compact in memory.
         dims2xyz = np.array([1, 0, 2])
         xyz2dims = np.array([1, 0, 2])
 
-        # Compute dxyz (IBL spacing) from SimpleITK spacing
-        # Reverse order to go from SimpleITK fortran order to NP/C order, and
-        # convert from mm to m. SimpleITK spacing should be in mm for these
-        # images, and is also the physical spacing of the image row-major ijk
-        # axes
-        spacing_tup_np = np.array(intensity_img_sra.GetSpacing())[::-1] * 1e-3
+        # --- Compute dxyz (IBL spacing) from SimpleITK spacing ---
+        # SimpleITK spacing should be in mm for these images
 
-        # But BrainCoordinates wants it in the IBL XYZ (RAS) world coordinate system
-        dxyz = spacing_tup_np[dims2xyz]
+        # First get the WORLD spacing in mm LPS. img.GetSpacing() returns
+        # spacing of ijk indices: have to use direction cosine matrix to
+        # convert to world axes
+        spacimg_mm_lps = cosine_dir_mat @ np.array(intensity_img_blessed.GetSpacing())
+        # Now convert from LPS to RAS, and mm to m
+        spacing_m_ras = 1e-3 * np.array([-1, -1, 1]) * spacimg_mm_lps
+
+        # This is what IBL calls dxyz
+        dxyz = spacing_m_ras
 
         # IBL defines origin by saying which index is at world coordinate 0,0,0
-        # We are not using bregma here, so just set to 0,0,0
+        # This is kind of broken for many images, and we'll manually override the
+        # origin (called xyz0 in IBL) later. Here we just set it to 0,0,0
         iorigin = [0, 0, 0]
 
         # We can use BrainRegions from iblatlas because the labels are
@@ -105,8 +137,8 @@ class BrainAtlasAnatomical(BrainAtlas):
         regions = BrainRegions()
 
         # Get arrays from SimpleITK images. I think there's no mutation risk
-        intensity_img_sra_arr = sitk.GetArrayFromImage(intensity_img_sra)
-        label_img_sra_arr = sitk.GetArrayFromImage(label_img_sra)
+        intensity_img_sra_arr = sitk.GetArrayFromImage(intensity_img_blessed)
+        label_img_sra_arr = sitk.GetArrayFromImage(label_img_blessed)
 
         # Initialize the superclass
         super().__init__(
@@ -122,11 +154,11 @@ class BrainAtlasAnatomical(BrainAtlas):
         # Need to account for the anatomical image origin not being at 0,0,0
         # SimpleITK is mm LPS, and IBL wants m RAS
         sitk_origin_ras_m = (
-            np.array(intensity_img_sra.GetOrigin()) * np.array([-1, -1, 1]) * 1e-3
+            np.array(intensity_img_blessed.GetOrigin()) * np.array([-1, -1, 1]) * 1e-3
         )
         nxyz = np.array(intensity_img_sra_arr.shape)[dims2xyz]
         self.bc = BrainCoordinates(nxyz=nxyz, xyz0=sitk_origin_ras_m, dxyz=dxyz)
         # Store the SimpleITK intensity image, and the pipeline image for use
         # with CCF transforms
-        self.intensity_sitk_image = intensity_img_sra
-        self.pipeline_sitk_image = pipeline_img_sra
+        self.intensity_sitk_image = intensity_img_blessed
+        self.pipeline_sitk_image = pipeline_img_blessed

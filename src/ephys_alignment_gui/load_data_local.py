@@ -21,9 +21,8 @@ from aind_registration_utils.annotations import expand_compacted_image
 from numpy.typing import NDArray
 from one import alf
 
+from ephys_alignment_gui.custom_atlas import _BLESSED_DIRECTION, BrainAtlasAnatomical
 from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
-
-from .custom_atlas import BrainAtlasAnatomical
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
@@ -257,11 +256,11 @@ class LoadDataLocal:
                         histology_image.GetDirection()
                     )
                 )
-                if dicom_orient_str == "SRA":
+                if dicom_orient_str == _BLESSED_DIRECTION:
                     reorient = False
                 else:
                     reorient = True
-                    histology_image = sitk.DICOMOrient(histology_image, "SRA")
+                    histology_image = sitk.DICOMOrient(histology_image, _BLESSED_DIRECTION)
                 self.histology_images["histology_registration"] = histology_image
                 pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
                 for other_channel in self.histology_path.iterdir():
