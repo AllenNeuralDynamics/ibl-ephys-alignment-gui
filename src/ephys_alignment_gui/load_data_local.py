@@ -399,7 +399,8 @@ class LoadDataLocal:
         label_slice = _cut_slice_from_atlas_image(
             self.brain_atlas.label,
             index,
-            self.brain_atlas._label2rgb,  # type: ignore
+            # only small range of CCF values are colored?
+            lambda x: self.brain_atlas._label2rgb(np.clip(np.abs(x), 0, 2654)) # type: ignore
         )
         x_dimno = self.brain_atlas.xyz2dims[0]
         # ML span of the slice in world coordinates
@@ -430,7 +431,7 @@ class LoadDataLocal:
 
         # --- Get the histology slices in image space ---
         for channel_name, hist_image in self.histology_images.items():
-            hist_arr = sitk.GetArrayFromImage(hist_image)
+            hist_arr = sitk.GetArrayViewFromImage(hist_image)
             hist_slice = _cut_slice_from_atlas_image(
                 hist_arr,
                 index,  # type: ignore
