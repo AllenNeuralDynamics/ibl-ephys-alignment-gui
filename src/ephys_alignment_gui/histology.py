@@ -574,7 +574,7 @@ def detect_missing_histology_tracks(path_tracks=None, one=None, subject=None, br
             for idx in miss_idx:
 
                 info = one.eid2path(ins_sess[idx][:36], query_type='remote').parts
-                print(ins_sess[idx][:36])
+                _logger.debug(f"Session ID: {ins_sess[idx][:36]}")
                 msg = f"Histology tracing missing for {info[-3]}, {info[-2]}, {info[-1]}," \
                       f" {ins_sess[idx][36:]}.\nEnter [y]es to register an empty track for " \
                       f"this insertion \nEnter [n]o, if tracing for this probe insertion will be "\
@@ -584,8 +584,8 @@ def detect_missing_histology_tracks(path_tracks=None, one=None, subject=None, br
                 if resp == 'y' or resp == 'yes':
                     _logger.info('Histology track for this probe insertion registered as empty')
                     probe_id = insertions[idx]['id']
-                    print(insertions[idx]['session'])
-                    print(probe_id)
+                    _logger.debug(f"Session: {insertions[idx]['session']}")
+                    _logger.debug(f"Probe ID: {probe_id}")
                     register_track(probe_id, one=one, brain_atlas=brain_atlas)
                 else:
                     _logger.info('Histology track for this probe insertion will not be registered')
@@ -614,7 +614,7 @@ def coverage(trajs, ba=None, dist_fcn=[100, 150]):
     for p in np.arange(len(trajs)):
         if len(trajs) > 20:
             if p % 20 == 0:
-                print(p / len(trajs))
+                _logger.info(f"Processing trajectory {p}/{len(trajs)} ({100*p/len(trajs):.1f}%)")
         traj = trajs[p]
 
         ins = atlas.Insertion.from_dict(traj)

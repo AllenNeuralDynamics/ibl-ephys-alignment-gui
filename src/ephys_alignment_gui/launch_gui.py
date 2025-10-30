@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 import platform
+import sys
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +32,8 @@ from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.windows.features_across_region import RegionFeatureWindow
 from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
+
+logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
 
@@ -976,7 +981,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_lines = self.ephysalign.get_perp_vector(self.features[self.idx],
                                                           self.track[self.idx])
 
-            print('Reference lines', track_lines)
+            logger.debug(f'Reference lines: {track_lines}')
             for ref_line in track_lines:
                 line = pg.PlotCurveItem()
                 line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.reference_line_kpen)
@@ -990,7 +995,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_lines = self.ephysalign.get_perp_vector(self.features[self.idx],
                                                           self.track[self.idx])
 
-            print('Reference lines', track_lines)
+            logger.debug(f'Reference lines: {track_lines}')
             for ref_line in track_lines:
                 line = pg.PlotCurveItem()
                 line.setData(x=ref_line[:, 0], y=ref_line[:, 2], pen=self.reference_line_kpen)
@@ -1013,7 +1018,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         type data: dict
         """
         if not data:
-            print('data for this plot not available')
+            logger.warning('data for this plot not available')
             return
         else:
             [self.fig_img.removeItem(plot) for plot in self.img_plots]
@@ -1063,7 +1068,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         type data: dict
         """
         if not data:
-            print('data for this plot not available')
+            logger.warning('data for this plot not available')
             return
         else:
             [self.fig_line.removeItem(plot) for plot in self.line_plots]
@@ -1093,7 +1098,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         type data: dict
         """
         if not data:
-            print('data for this plot not available')
+            logger.warning('data for this plot not available')
             return
         else:
             [self.fig_probe.removeItem(plot) for plot in self.probe_plots]
@@ -1149,7 +1154,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         type data: dict
         """
         if not data:
-            print('data for this plot not available')
+            logger.warning('data for this plot not available')
             return
         else:
             [self.fig_img.removeItem(plot) for plot in self.img_plots]
@@ -1221,9 +1226,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not hasattr(self, 'current_shank_idx'):
             self.current_shank_idx = 0
 
-        print('Input data path', input_data_path)
+        logger.info(f'Input data path: {input_data_path}')
         self.data_button_pressed(input_data_path)
-        print('Feature prev', self.feature_prev)
+        logger.debug(f'Feature prev: {self.feature_prev}')
 
     def load_existing_alignments(self):
         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
@@ -1254,7 +1259,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             subject_id = subject_id_path[0:subject_id_path.index('_')]
 
             out_folder = Path('/results').joinpath(subject_id)
-            print('Output folder', out_folder)
+            logger.info(f'Output folder: {out_folder}')
             
         else:
             out_folder = folder_path.parent/'out'
@@ -1269,7 +1274,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         os.makedirs(out_folder, exist_ok=True)
         # Set the output directory based on input name.
         self.output_directory = out_folder/folder_path.parent.stem/folder_path.stem
-        print('Output dir', self.output_directory)
+        logger.info(f'Output dir: {self.output_directory}')
         self.loaddata.output_directory = self.output_directory
         self.output_folder_line.setText(str(self.output_directory))
 
@@ -1402,7 +1407,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.get_scaled_histology()
         # If we have not loaded in the data before then we load eveything we need
         if not self.data_status or load_new_shank:
-            print('Shank index', self.current_shank_idx)
+            logger.debug(f'Shank index: {self.current_shank_idx}')
             self.plotdata = pd.PlotData(self.probe_path, self.data,
                                         self.current_shank_idx)
             self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
@@ -1877,7 +1882,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.update_string()
 
     def _find_transform_files(self) -> AntsTransformChainFiles:
-        print("Loading transforms from stitched smartspim asset ...")
+        logger.info("Loading transforms from stitched smartspim asset ...")
         subject_id = self.input_path.parent.parent.stem
         smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
         if not smartspim_template_affine_transform:
@@ -1912,7 +1917,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         tx_chain_files = self._find_transform_files()
 
-        print("applying transforms ...")
+        logger.info("applying transforms ...")
         probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, this_probe_df,
                                     tx_chain_files.as_list(),
                                     whichtoinvert = tx_chain_files.which_to_invert()
@@ -1937,10 +1942,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.loaddata.output_directory:
             if not self.on_output_folder_selected():
-                print("Channels locations not saved")
+                logger.warning("Channels locations not saved")
                 return
 
-        print("Warping to ccf and saving output files to results folder and docdb")
+        logger.info("Warping to ccf and saving output files to results folder and docdb")
         self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
                                     self.xyz_channels, self.current_shank_idx + 1)
         self.loaddata.get_starting_alignment(0)
@@ -2007,12 +2012,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
 
         try:
-            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb, 
+            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb,
                                 channel_results, prev_alignments, ccf_result_json)
         except ValueError as e:
-            print(f"Failed to write to docdb with error {e}. Output saved to results folder")
+            logger.error(f"Failed to write to docdb with error {e}. Output saved to results folder")
 
-        print(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
+        logger.info(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
 
 
     def display_qc_options(self):
@@ -2385,6 +2390,49 @@ def viewer(probe_id, one=None, histology=False, spike_collection=None, title=Non
     av.show()
     return av
 
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """
+    Setup logging configuration for the entire application.
+
+    Parameters
+    ----------
+    log_level : int
+        Logging level (logging.DEBUG, logging.INFO, etc.)
+    log_file : Path or str, optional
+        If provided, also log to this file
+    """
+    # Create formatter
+    formatter = logging.Formatter(
+        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # Setup root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove any existing handlers
+    root_logger.handlers.clear()
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler (optional)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        root_logger.info(f"Logging to file: {log_file}")
+
+    # Log initial message
+    root_logger.info("="*60)
+    root_logger.info("Ephys Alignment GUI Starting")
+    root_logger.info("="*60)
+
 def main():
     import argparse
 
@@ -2392,12 +2440,27 @@ def main():
     parser.add_argument('-o', '--offline', default=True, required=False, help='Offline mode')
     parser.add_argument('-r', '--remote', default=False, required=False, action='store_true', help='Remote mode')
     parser.add_argument('-i', '--insertion', default=None, required=False, help='Insertion mode')
+    parser.add_argument('--log-level', default='INFO', required=False,
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        help='Set logging level')
+    parser.add_argument('--log-file', default=None, required=False, type=str,
+                        help='Path to log file (optional, logs to console by default)')
     args = parser.parse_args()
+
+    # Setup logging FIRST, before anything else
+    log_level = getattr(logging, args.log_level)
+    setup_logging(log_level=log_level, log_file=args.log_file)
+
+    # Get logger for main module
+    logger = logging.getLogger(__name__)
+    logger.info(f"Arguments: {args}")
 
     app = QtWidgets.QApplication([])
     mainapp = MainWindow(offline=args.offline, probe_id=args.insertion, remote=args.remote)
     # mainapp = MainWindow(offline=True)
     mainapp.show()
+
+    logger.info("Starting Qt event loop")
     app.exec_()
 
 

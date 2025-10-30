@@ -26,7 +26,7 @@ from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
 from .custom_atlas import BrainAtlasAnatomical
 
 ssl._create_default_https_context = ssl._create_unverified_context
-logger = logging.getLogger("ibllib")
+logger = logging.getLogger(__name__)
 
 
 def _cut_slice_from_atlas_image(
@@ -104,7 +104,7 @@ class LoadDataLocal:
         if folder_path is None:
             folder_path = self.folder_path
 
-        print("Checking docdb for existing records")
+        logger.info("Checking docdb for existing records")
         self.shank_idx = shank_idx
 
         quality_control = None
@@ -112,7 +112,7 @@ class LoadDataLocal:
             docdb_id = query_docdb_id(folder_path.parent.stem)[0]
             quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
         except ValueError as e:
-            print(
+            logger.warning(
                 f"Failed to get record from docdb with exception {e}. Proceeding to load from scratch"
             )
 
@@ -129,7 +129,7 @@ class LoadDataLocal:
             ]
 
             if len(alignment_evaluations) > 0:
-                print(
+                logger.info(
                     f"Found exisitng record for {evaluation_name}. Loading alignment now"
                 )
                 latest_alignment_evaluation = max(
@@ -147,7 +147,7 @@ class LoadDataLocal:
                 self.prev_align = sorted(self.prev_align, reverse=True)
                 self.prev_align.append("original")
             else:
-                print(f"No alignment found in docdb for {evaluation_name}")
+                logger.info(f"No alignment found in docdb for {evaluation_name}")
                 self.alignments = []
                 self.prev_align = ["original"]
         else:
@@ -416,7 +416,7 @@ class LoadDataLocal:
             self.brain_atlas.bc.i2z(index[-1, 2]),
         ]
 
-        print("Ccf slice", ccf_slice.shape)
+        logger.debug(f"Ccf slice: {ccf_slice.shape}")
         slice_data = {
             "ccf": ccf_slice,
             "label": label_slice,
@@ -460,7 +460,7 @@ class LoadDataLocal:
         return description, region_lookup
 
     def upload_data(self, feature, track, xyz_channels, shank_idx):
-        print("Channels", xyz_channels)
+        logger.debug(f"Channels: {xyz_channels}")
         region_ids = []
         index = np.round(xyz_channels).astype(np.int64)
         index = index[

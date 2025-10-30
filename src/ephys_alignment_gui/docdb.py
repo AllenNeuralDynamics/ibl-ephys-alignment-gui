@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from aind_data_access_api.document_db import MetadataDbClient
@@ -9,6 +10,8 @@ from datetime import datetime
 import requests
 import boto3
 from aws_requests_auth.aws_auth import AWSRequestsAuth
+
+logger = logging.getLogger(__name__)
 
 # Resolve DocDB id of data asset
 API_GATEWAY_HOST = "api.allenneuraldynamics.org"
@@ -102,6 +105,6 @@ def write_output_to_docdb(session_name: str, probe: str,
                             json=post_request_content)
 
     if response.status_code != 200:
-        print(response.status_code)
-        print(response.text)
-        print(f"Failed to write {session_name} with {probe} to docdb")
+        logger.error(f"Failed to write {session_name} with {probe} to docdb")
+        logger.error(f"HTTP Status Code: {response.status_code}")
+        logger.error(f"Response: {response.text}")
