@@ -259,7 +259,6 @@ class LoadDataLocal:
         index = self.brain_atlas.bc.xyz2i(xyz_channels)[
             :, self.brain_atlas.xyz2dims
         ]
-        print("Index", index)
         ccf_slice = self.brain_atlas.image[index[:, 0], :, index[:, 2]]
         ccf_slice = np.swapaxes(ccf_slice, 0, 1)
 
@@ -291,7 +290,7 @@ class LoadDataLocal:
             histology_images = [
                 ii.name
                 for ii in list(Path(self.histology_path).iterdir())
-                if ".nii.gz" in ii.name
+                if ".nrrd" in ii.name
             ]
             for image in histology_images:
                 path_to_image = glob.glob(
