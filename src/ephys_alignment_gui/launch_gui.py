@@ -3,7 +3,6 @@ import logging
 import os
 import platform
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 if platform.system() == 'Darwin':
@@ -11,12 +10,10 @@ if platform.system() == 'Darwin':
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 from random import randrange
+from typing import Any
 
-import ants
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
 import numpy as np
-import numpy.typing as npt
-import pandas
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
@@ -26,7 +23,7 @@ import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
-from ephys_alignment_gui.load_data_local import LoadDataLocal
+from ephys_alignment_gui.load_data_local import AntsTransformChainFiles, LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.windows.features_across_region import RegionFeatureWindow
@@ -34,25 +31,10 @@ from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
 
 logger = logging.getLogger(__name__)
 
-ANTS_DIMENSION = 3
 
-@dataclass(frozen=True)
-class AntsTransformChainFiles:
-    smartspim_template_affine_transform: Path
-    smartspim_template_warp_transform: Path
-    template_to_ccf_affine_transform: Path
-    template_to_ccf_warp_transform: Path
-
-    def as_list(self) -> list[str]:
-        return [
-            self.smartspim_template_affine_transform.as_posix(),
-            self.smartspim_template_warp_transform.as_posix(),
-            self.template_to_ccf_affine_transform.as_posix(),
-            self.template_to_ccf_warp_transform.as_posix(),
-        ]
-
-    def which_to_invert(self) -> list[bool]:
-        return [True, False, True, False]
+def _dump_dict_to_json(data_dict: dict[str, Any], output_path: Path) -> None:
+    with open(output_path, "w") as f:
+        json.dump(data_dict, f, indent=2, separators=(",", ": "))
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -70,21 +52,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             av.setWindowTitle(title)
         return av
 
-    def __init__(self, offline=True, probe_id=None, one=None, histology=True,
-                 spike_collection=None, remote=False):
+    def __init__(
+        self,
+        offline=True,
+        probe_id=None,
+        one=None,
+        histology=True,
+        spike_collection=None,
+        remote=False,
+    ):
         super(MainWindow, self).__init__()
 
         self.init_variables()
         self.init_layout(self, offline=offline)
-        self.configure = True
-        one_mode = 'remote' if remote else 'auto'
+        self.configure: bool = True
 
-        self.loaddata = LoadDataLocal()
-        self.offline = True
-        self.histology_exists = True
-        self.data_status = False
-        self.output_directory = None
-        self.data_root = None
+        self.loaddata: LoadDataLocal = LoadDataLocal()
+        self.offline: bool = True
+        self.histology_exists: bool = True
+        self.data_status: bool = False
+        self.output_directory: Path | None = None
+        self.data_root: Path | None = None
+        self.tx_chain_files: AntsTransformChainFiles | None = None
 
         self.allen = self.loaddata.get_allen_csv()
         self.init_region_lookup(self.allen)
@@ -180,6 +169,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.features = [0] * (self.max_idx + 1)
 
         self.nearby = None
+
+        # Shank tracking for multi-shank probes (0-based index)
+        self.current_shank_idx = 0
 
     def set_axis(self, fig, ax, show=True, label=None, pen='k', ticks=True):
         """
@@ -1206,24 +1198,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             input_data_path = folder_path
 
-        if hasattr(self, 'current_shank_idx'):
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=self.current_shank_idx, input_path=input_data_path, skip_shanks=skip_shanks)
-        else:
-            self.prev_alignments, shank_options = self.loaddata.get_info(folder_path, shank_idx=0, input_path=input_data_path, skip_shanks=skip_shanks)
+        self.prev_alignments, shank_options = self.loaddata.get_info(
+            folder_path,
+            shank_idx=self.current_shank_idx,
+            input_path=input_data_path,
+            skip_shanks=skip_shanks
+        )
 
-        if hasattr(self, 'current_shank_idx'):
-            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=folder_path)
-        else: 
-            self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, folder_path=folder_path)
+        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(
+            0,
+            shank_idx=self.current_shank_idx,
+            folder_path=folder_path
+        )
 
         if shank_options is not None:
             self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
-
-        #if shank_options is None:
-        #    self.data_status = True
-        
-        if not hasattr(self, 'current_shank_idx'):
-            self.current_shank_idx = 0
 
         logger.info(f'Input data path: {input_data_path}')
         self.data_button_pressed(input_data_path)
@@ -1372,13 +1361,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Only run once
         if not self.data_status:
             self.probe_path, self.chn_depths, self.sess_notes, data = \
-                self.loaddata.get_data()
+                self.loaddata.get_data(self.current_shank_idx)
             self.data = data
             if not self.probe_path:
                 return
         if self.data_status and load_new_shank:
             self.probe_path, self.chn_depths, self.sess_notes, data = \
-                self.loaddata.get_data(reload_data=False)
+                self.loaddata.get_data(self.current_shank_idx, reload_data=False)
             self.data = data
             if not self.probe_path:
                 return
@@ -1881,48 +1870,62 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.update_string()
 
     def _find_transform_files(self) -> AntsTransformChainFiles:
-        logger.info("Loading transforms from stitched smartspim asset ...")
         subject_id = self.input_path.parent.parent.stem
-        smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        smartspim_template_affine_transform = tuple(
+            self.data_root.glob(
+                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
+            )
+        )
         if not smartspim_template_affine_transform:
             # try legacy way
-            smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            smartspim_template_affine_transform = tuple(
+                self.data_root.glob(
+                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat"
+                )
+            )
             if not smartspim_template_affine_transform:
-                raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
+                raise FileNotFoundError(
+                    "No affine transform from spim to template. Check attached assets"
+                )
 
-        smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        smartspim_template_warp_transform = tuple(
+            self.data_root.glob(
+                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz"
+            )
+        )
         if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            smartspim_template_warp_transform = tuple(
+                self.data_root.glob(
+                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz"
+                )
+            )
             if not smartspim_template_warp_transform:
-                raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
+                raise FileNotFoundError(
+                    "No warp transform from spim to template. Check attached assets"
+                )
 
-        template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        template_to_ccf_affine_transform = tuple(
+            self.data_root.glob("spim_template_to_ccf/syn_0GenericAffine.mat")
+        )
         if not template_to_ccf_affine_transform:
-            raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
+            raise FileNotFoundError(
+                "No affine transform from template to ccf. Check attached assets"
+            )
 
-        template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        template_to_ccf_warp_transform = tuple(
+            self.data_root.glob("spim_template_to_ccf/syn_1InverseWarp.nii.gz")
+        )
         if not template_to_ccf_warp_transform:
-            raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
+            raise FileNotFoundError(
+                "No warp transform from template to ccf. Check attached assets"
+            )
 
         return AntsTransformChainFiles(
             smartspim_template_affine_transform=smartspim_template_affine_transform[0],
             smartspim_template_warp_transform=smartspim_template_warp_transform[0],
             template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
-            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0]
+            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0],
         )
-
-    def _transform_to_ccf(self, image_physical_space_coordinates: npt.NDArray) -> pandas.DataFrame:
-        this_probe_df = pandas.DataFrame(image_physical_space_coordinates, columns = list("xyz"))
-
-        tx_chain_files = self._find_transform_files()
-
-        logger.info("applying transforms ...")
-        probe_ccf: pandas.DataFrame = ants.apply_transforms_to_points(ANTS_DIMENSION, this_probe_df,
-                                    tx_chain_files.as_list(),
-                                    whichtoinvert = tx_chain_files.which_to_invert()
-        )
-
-        return probe_ccf
 
     def run_complete_button_in_thread(self):
         self.thread = QThread()
@@ -1944,80 +1947,47 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 logger.warning("Channels locations not saved")
                 return
 
-        logger.info("Warping to ccf and saving output files to results folder and docdb")
-        self.loaddata.upload_data(self.features[self.idx], self.track[self.idx],
-                                    self.xyz_channels, self.current_shank_idx + 1)
-        self.loaddata.get_starting_alignment(0)
-        
-        if self.loaddata.n_shanks > 1:
-            with open(self.output_directory / f'channel_locations_shank{self.current_shank_idx + 1}.json', 'r') as f:
-                channel_results = json.load(f)
-            
-            with open(self.output_directory / f'prev_alignments_shank{self.current_shank_idx + 1}.json', 'r') as f:
-                prev_alignments = json.load(f)
-        else:
-            with open(self.output_directory / 'channel_locations.json', 'r') as f:
-                channel_results = json.load(f)
-            with open(self.output_directory / 'prev_alignments.json', 'r') as f:
-                prev_alignments = json.load(f)
-        
-        channel_ids = [channel for channel in tuple(channel_results.keys()) if 'channel' in channel]
-        channel_coords = np.zeros((len(channel_ids), 3), dtype=int)
-        for i in range(len(channel_ids)):
-            channel_coords[i] = (
-                channel_results[channel_ids[i]]['x'],
-                channel_results[channel_ids[i]]['y'],
-                channel_results[channel_ids[i]]['z'],
+        # Save histology-space to disk and update in-memory state
+        channel_dict, alignment_dict, ccf_channel_dict, multi_shank = (
+            self.loaddata.upload_data(
+                self.features[self.idx],
+                self.track[self.idx],
+                self.xyz_channels,
+                self.tx_chain_files,
             )
-        
-        ants_physical_points = []
-        if self.loaddata.brain_atlas is None:
-            raise ValueError("Brain atlas not loaded, cannot transform to CCF coordinates")
-        else:
-            pipeline_img = self.loaddata.brain_atlas.pipeline_sitk_image
-            for point in channel_coords:
-                ants_physical_points.append(pipeline_img.TransformContinuousIndexToPhysicalPoint(point.tolist()))
+        )
 
-        ants_physical_points_array = np.array(ants_physical_points)
-        ccf_coordinates_dataframe = self._transform_to_ccf(ants_physical_points_array)
-        ccf_result_json = {}
+        shank_saveno = self.current_shank_idx + 1
+        suffix = f"_shank{shank_saveno}" if multi_shank else ""
+        channel_loc_filename = f"channel_locations{suffix}.json"
+        prev_align_filename = f"prev_alignments{suffix}.json"
+        ccf_channel_loc_filename = f"ccf_channel_locations{suffix}.json"
 
-        for channel in self.loaddata.channel_dict:
-            if channel == 'origin':
-                continue
+        logger.info("Saving output files to results folder and docdb")
+        _dump_dict_to_json(channel_dict, self.output_directory / channel_loc_filename)
+        _dump_dict_to_json(alignment_dict, self.output_directory / prev_align_filename)
+        _dump_dict_to_json(
+            ccf_channel_dict, self.output_directory / ccf_channel_loc_filename
+        )
 
-            channel_dict_info = self.loaddata.channel_dict[channel]
-
-            channel_index = int(channel[channel.index('_')+1:])
-            ccf_channel_info = ccf_coordinates_dataframe.iloc[channel_index]
-            ccf_result_json[channel] = {
-                "x": ccf_channel_info['x'].astype(np.float64),
-                "y": ccf_channel_info['y'].astype(np.float64),
-                "z": ccf_channel_info['z'].astype(np.float64),
-                "axial": channel_dict_info['axial'],
-                "lateral": channel_dict_info['lateral'],
-                "brain_region_id": channel_dict_info['brain_region_id'],
-                "brain_region": channel_dict_info['brain_region']
-            }
-        
-        if self.loaddata.n_shanks > 1:
-            with open(self.output_directory / f'ccf_channel_locations_shank{self.current_shank_idx + 1}.json', "w") as f:
-                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
-        else:
-            with open(self.output_directory / 'ccf_channel_locations.json', "w") as f:
-                json.dump(ccf_result_json, f, indent=2, separators=(",", ": "))
-
-
-        probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
+        probe_name_for_docdb = f"{self.output_directory.stem}_{self.current_shank_idx}"
 
         try:
-            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb,
-                                channel_results, prev_alignments, ccf_result_json)
+            write_output_to_docdb(
+                self.output_directory.parent.stem,
+                probe_name_for_docdb,
+                channel_dict,
+                alignment_dict,
+                ccf_channel_dict,
+            )
         except ValueError as e:
-            logger.error(f"Failed to write to docdb with error {e}. Output saved to results folder")
+            logger.error(
+                f"Failed to write to docdb with error {e}. Output saved to results folder"
+            )
 
-        logger.info(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
-
+        logger.info(
+            f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
+        )
 
     def display_qc_options(self):
 

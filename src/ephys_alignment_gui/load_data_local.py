@@ -2,22 +2,26 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
 import ssl
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-import iblatlas.atlas as atlas
+import ants
 import numpy as np
 import one.alf.io as alfio
+import pandas
 import SimpleITK as sitk
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 from aind_registration_utils.annotations import expand_compacted_image
+from iblatlas import atlas
+from iblatlas.regions import BrainRegions
+from iblutil.util import Bunch
 from numpy.typing import NDArray
 from one import alf
 
@@ -26,6 +30,8 @@ from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
+
+ANTS_DIMENSION = 3
 
 
 def _cut_slice_from_atlas_image(
@@ -59,22 +65,41 @@ def _cut_slice_from_atlas_image(
     return slice
 
 
+@dataclass(frozen=True)
+class AntsTransformChainFiles:
+    smartspim_template_affine_transform: Path
+    smartspim_template_warp_transform: Path
+    template_to_ccf_affine_transform: Path
+    template_to_ccf_warp_transform: Path
+
+    def as_list(self) -> list[str]:
+        return [
+            self.smartspim_template_affine_transform.as_posix(),
+            self.smartspim_template_warp_transform.as_posix(),
+            self.template_to_ccf_affine_transform.as_posix(),
+            self.template_to_ccf_warp_transform.as_posix(),
+        ]
+
+    def which_to_invert(self) -> list[bool]:
+        return [True, False, True, False]
+
+
+@dataclass
 class LoadDataLocal:
-    def __init__(self):
-        self.brain_atlas = None
-        self.franklin_atlas = None
-        self.folder_path = None
-        self.atlas_path = Path(__file__).parents[2].joinpath("atlas_data")
-        self.histology_path = None
-        self.chn_coords = None
-        self.chn_coords_all = None
-        self.sess_path = None
-        self.shank_idx = 0
-        self.n_shanks = 1
-        self.data_root = None
-        self.output_directory = None
-        self.previous_directory = None
-        self.histology_images: dict[str, sitk.Image] = {}
+    brain_atlas: BrainAtlasAnatomical | None = None
+    folder_path: Path | None = None
+    histology_path: Path | None = None
+    chn_coords: NDArray | None = None
+    chn_coords_all: NDArray | None = None
+    sess_path: Path | None = None
+    n_shanks: int = 1
+    data_root: Path | None = None
+    previous_directory: Path | None = None
+
+    histology_images: dict[str, sitk.Image] = field(default_factory=dict)
+    channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
+    alignments: dict[str, list[list[float]]] = field(default_factory=dict)
+    prev_align: list[str] = field(default_factory=list)
 
     def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
         """
@@ -104,7 +129,6 @@ class LoadDataLocal:
             folder_path = self.folder_path
 
         logger.info("Checking docdb for existing records")
-        self.shank_idx = shank_idx
 
         quality_control = None
         try:
@@ -147,14 +171,14 @@ class LoadDataLocal:
                 self.prev_align.append("original")
             else:
                 logger.info(f"No alignment found in docdb for {evaluation_name}")
-                self.alignments = []
+                self.alignments = {}
                 self.prev_align = ["original"]
         else:
             # If previous alignment json file exists, read in previous alignments
             prev_align_filename = (
                 "prev_alignments.json"
                 if self.n_shanks == 1
-                else f"prev_alignments_shank{self.shank_idx + 1}.json"
+                else f"prev_alignments_shank{shank_idx + 1}.json"
             )
 
             if folder_path.joinpath(prev_align_filename).exists():
@@ -166,14 +190,16 @@ class LoadDataLocal:
                     self.prev_align = sorted(self.prev_align, reverse=True)
                     self.prev_align.append("original")
             else:
-                self.alignments = []
+                self.alignments = {}
                 self.prev_align = ["original"]
 
         return self.prev_align
 
-    def get_starting_alignment(self, idx, shank_idx=0, folder_path: Path | None = None):
+    def get_starting_alignment(
+        self, idx: int, shank_idx=0, folder_path: Path | None = None
+    ):
         """
-        Find out the starting alignmnet
+        Find out the starting alignment
         """
         align = self.get_previous_alignments(
             shank_idx=shank_idx, folder_path=folder_path
@@ -209,7 +235,7 @@ class LoadDataLocal:
 
         return shank_list
 
-    def get_data(self, reload_data: bool = True):
+    def get_data(self, shank_idx, reload_data: bool = True):
         if reload_data:
             if not hasattr(self, "atlas_image_path"):
                 search_path: Path = self.folder_path.parent.parent
@@ -260,7 +286,9 @@ class LoadDataLocal:
                     reorient = False
                 else:
                     reorient = True
-                    histology_image = sitk.DICOMOrient(histology_image, _BLESSED_DIRECTION)
+                    histology_image = sitk.DICOMOrient(
+                        histology_image, _BLESSED_DIRECTION
+                    )
                 self.histology_images["histology_registration"] = histology_image
                 pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
                 for other_channel in self.histology_path.iterdir():
@@ -279,8 +307,8 @@ class LoadDataLocal:
                 shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
 
             shank_chns = np.bitwise_and(
-                self.chn_coords_all[:, 0] >= shanks[self.shank_idx][0],
-                self.chn_coords_all[:, 0] <= shanks[self.shank_idx][1],
+                self.chn_coords_all[:, 0] >= shanks[shank_idx][0],
+                self.chn_coords_all[:, 0] <= shanks[shank_idx][1],
             )
             self.chn_coords = self.chn_coords_all[shank_chns, :]
         else:
@@ -399,7 +427,7 @@ class LoadDataLocal:
         label_slice = _cut_slice_from_atlas_image(
             self.brain_atlas.label,
             index,
-            self.brain_atlas._label2rgb  # type: ignore
+            self.brain_atlas._label2rgb,  # type: ignore
         )
         x_dimno = self.brain_atlas.xyz2dims[0]
         # ML span of the slice in world coordinates
@@ -458,20 +486,89 @@ class LoadDataLocal:
 
         return description, region_lookup
 
-    def upload_data(self, feature, track, xyz_channels, shank_idx):
+    def _transform_to_ccf(
+        self,
+        xyz_channels: NDArray,
+        tx_chain_files: AntsTransformChainFiles,
+        channel_dict: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        channel_coords_mm = 1e-3 * xyz_channels  # convert to mm
+
+        # Have to convert these to the physical space of the pipeline image first
+        # We will do that go going through simpleITK indices for the paired images
+        intensity_img = self.brain_atlas.intensity_sitk_image
+        pipeline_img = self.brain_atlas.pipeline_sitk_image
+
+        reg_pipeline_physical_points: list[list[float]] = []
+        for point in channel_coords_mm:
+            intensity_index = intensity_img.TransformPhysicalPointToContinuousIndex(
+                tuple(point.tolist())
+            )
+            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(
+                intensity_index
+            )
+            reg_pipeline_physical_points.append(list(pipeline_point))
+
+        reg_pipeline_physical_points_array = np.array(reg_pipeline_physical_points)
+
+        logger.info("Warping to ccf")
+        this_probe_df = pandas.DataFrame(
+            reg_pipeline_physical_points_array, columns=list("xyz")
+        )
+
+        logger.info("applying transforms ...")
+        ccf_coordinates_dataframe: pandas.DataFrame = ants.apply_transforms_to_points(
+            ANTS_DIMENSION,
+            this_probe_df,
+            tx_chain_files.as_list(),
+            whichtoinvert=tx_chain_files.which_to_invert(),
+        )
+        logger.info("Done warping to ccf")
+
+        ccf_channel_dict = {}
+        pattern = re.compile(r"channel_(\d+)")
+
+        # Collect indices and vectorize extraction of coordinates
+        channel_indices = []
+        channel_names = []
+        for ch in channel_dict.keys():
+            m = pattern.match(ch)
+            if m:
+                channel_indices.append(int(m.group(1)))
+                channel_names.append(ch)
+
+        # Slice once, ensure float64
+        xyz_array = ccf_coordinates_dataframe.loc[
+            channel_indices, ["x", "y", "z"]
+        ].to_numpy(dtype=np.float64)
+
+        for ch, (x, y, z) in zip(channel_names, xyz_array):
+            info = channel_dict[ch]
+            # channel_index = int(channel[channel.index('_')+1:])
+            ccf_channel_dict[ch] = {
+                "x": float(x),
+                "y": float(y),
+                "z": float(z),
+                "axial": info["axial"],
+                "lateral": info["lateral"],
+                "brain_region_id": info["brain_region_id"],
+                "brain_region": info["brain_region"],
+            }
+        return ccf_channel_dict
+
+    def upload_data(
+        self,
+        feature: NDArray,
+        track: NDArray,
+        xyz_channels: NDArray,
+        tx_chain_files: AntsTransformChainFiles,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, list[list[float]]], bool]:
+        logger.info("Saving channel locations and previous alignments locally")
         logger.debug(f"Channels: {xyz_channels}")
-        region_ids = []
-        index = np.round(xyz_channels).astype(np.int64)
-        index = index[
-            (index[:, 0] < self.brain_atlas.image.shape[0])
-            & (index[:, 1] < self.brain_atlas.image.shape[1])
-            & (index[:, 2] < self.brain_atlas.image.shape[2])
-        ]
-
-        for coord in index:
-            region_ids.append(self.brain_atlas.label[coord[0], coord[1], coord[2]])
-
-        brain_regions = self.brain_atlas.regions.get(region_ids)
+        if self.brain_atlas is None:
+            raise ValueError("Brain atlas not loaded, cannot save channel locations")
+        regions: BrainRegions = self.brain_atlas.regions
+        brain_regions = regions.get(self.brain_atlas.get_labels(xyz_channels))
         brain_regions["xyz"] = xyz_channels
         brain_regions["lateral"] = self.chn_coords[:, 0]
         brain_regions["axial"] = self.chn_coords[:, 1]
@@ -479,37 +576,20 @@ class LoadDataLocal:
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
         channel_dict = self.create_channel_dict(brain_regions)
         self.channel_dict = channel_dict
-        bregma = atlas.ALLEN_CCF_LANDMARKS_MLAPDV_UM["bregma"].tolist()
-        origin = {"origin": {"bregma": bregma}}
-        channel_dict.update(origin)
-        # Save the channel locations
-        chan_loc_filename = (
-            "channel_locations.json"
-            if self.n_shanks == 1
-            else f"channel_locations_shank{shank_idx}.json"
+
+        ccf_channel_dict = self._transform_to_ccf(
+            xyz_channels, tx_chain_files, channel_dict
         )
 
-        os.makedirs(self.output_directory, exist_ok=True)
-        with open(self.output_directory.joinpath(chan_loc_filename), "w") as f:
-            json.dump(channel_dict, f, indent=2, separators=(",", ": "))
-        original_json = self.alignments
         date = datetime.now().replace(microsecond=0).isoformat()
-        data = {date: [feature.tolist(), track.tolist()]}
-        if original_json:
-            original_json.update(data)
-        else:
-            original_json = data
-        # Save the new alignment
-        prev_align_filename = (
-            "prev_alignments.json"
-            if self.n_shanks == 1
-            else f"prev_alignments_shank{self.shank_idx + 1}.json"
-        )
-        with open(self.output_directory.joinpath(prev_align_filename), "w") as f:
-            json.dump(original_json, f, indent=2, separators=(",", ": "))
+        self.alignments[date] = [feature.tolist(), track.tolist()]
+
+        multi_shank = self.n_shanks > 1
+
+        return channel_dict, self.alignments, ccf_channel_dict, multi_shank
 
     @staticmethod
-    def create_channel_dict(brain_regions):
+    def create_channel_dict(brain_regions: Bunch) -> dict[str, dict[str, Any]]:
         """
         Create channel dictionary in form to write to json file
         :param brain_regions: information about location of electrode channels in brain atlas
@@ -517,9 +597,9 @@ class LoadDataLocal:
         :return channel_dict:
         :type channel_dict: dictionary of dictionaries
         """
-        channel_dict = {}
+        channel_dict: dict[str, dict[str, Any]] = {}
 
-        for i in np.arange(brain_regions.id.size):
+        for i in range(brain_regions.id.size):
             channel = {
                 "x": np.float64(brain_regions.xyz[i, 0] * 1e6),
                 "y": np.float64(brain_regions.xyz[i, 1] * 1e6),
