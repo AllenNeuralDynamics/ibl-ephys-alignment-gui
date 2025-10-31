@@ -399,8 +399,7 @@ class LoadDataLocal:
         label_slice = _cut_slice_from_atlas_image(
             self.brain_atlas.label,
             index,
-            # only small range of CCF values are colored?
-            lambda x: self.brain_atlas._label2rgb(np.clip(np.abs(x), 0, 2654)) # type: ignore
+            self.brain_atlas._label2rgb  # type: ignore
         )
         x_dimno = self.brain_atlas.xyz2dims[0]
         # ML span of the slice in world coordinates

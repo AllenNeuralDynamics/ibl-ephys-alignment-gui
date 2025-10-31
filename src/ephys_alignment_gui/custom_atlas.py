@@ -4,6 +4,7 @@ import numpy as np
 import SimpleITK as sitk
 from iblatlas.atlas import BrainAtlas, BrainCoordinates
 from iblatlas.regions import BrainRegions
+from iblutil.numerical import ismember
 
 _logger = logging.getLogger(__name__)
 
@@ -140,10 +141,15 @@ class BrainAtlasAnatomical(BrainAtlas):
         intensity_img_sra_arr = sitk.GetArrayFromImage(intensity_img_blessed)
         label_img_sra_arr = sitk.GetArrayFromImage(label_img_blessed)
 
+        # Need to convert these lateralized labels to IBL codes (input to their
+        # mappings)
+        _, im = ismember(label_img_sra_arr, regions.id)
+        label = np.reshape(im.astype(np.int16), label_img_sra_arr.shape)
+
         # Initialize the superclass
         super().__init__(
             intensity_img_sra_arr,
-            label_img_sra_arr,
+            label,
             dxyz,
             regions,
             iorigin=iorigin,
