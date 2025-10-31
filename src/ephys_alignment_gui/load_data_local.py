@@ -336,17 +336,8 @@ class LoadDataLocal:
         return description, region_lookup
 
     def upload_data(self, feature, track, xyz_channels):
-        print('Channels', xyz_channels)
-        region_ids = []
-        index = np.round(xyz_channels).astype(np.int64)
-        index = index[(index[:, 0] < self.brain_atlas.image.shape[0]) & (index[:, 1] < self.brain_atlas.image.shape[1])
-                                  & (index[:, 2] < self.brain_atlas.image.shape[2])]
-        
-        for coord in index:
-            region_ids.append(self.brain_atlas.label[coord[0], coord[1], coord[2]])
-        
         brain_regions = self.brain_atlas.regions.get(
-            region_ids
+            self.brain_atlas.get_labels(xyz_channels)
         )
         brain_regions["xyz"] = xyz_channels
         brain_regions["lateral"] = self.chn_coords[:, 0]
