@@ -190,8 +190,9 @@ class EphysAlignment:
         xyz_track = xyz_track[indices, :]
 
         # Compute distance to first electrode from bottom coordinate
-        tip_distance = _cumulative_distance(xyz_track)[1] + TIP_SIZE_UM / 1e6
-        track_length = _cumulative_distance(xyz_track)[-1]
+        cumulative_dist = _cumulative_distance(xyz_track)
+        tip_distance = cumulative_dist[1] + TIP_SIZE_UM / 1e6
+        track_length = cumulative_dist[-1]
         track_extent = np.array([0, track_length]) - tip_distance
         logger.debug(f"Track extent: {track_extent}")
         return xyz_track, track_extent
