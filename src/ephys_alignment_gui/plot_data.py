@@ -1,19 +1,18 @@
-from matplotlib import cm
+import logging
+from copy import deepcopy
+
 import numpy as np
-from ephys_alignment_gui.utils import bincount2D
 
 #from brainbox.io.spikeglx import Streamer
 #from brainbox.population.decode import xcorr
 #from brainbox.task import passive
 #from neurodsp import voltage
 #import neuropixel
-
 import scipy
+from matplotlib import cm
 from PyQt5 import QtGui
 
-import os
-from pathlib import Path
-import logging
+from ephys_alignment_gui.utils import bincount2D
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,10 @@ class PlotData:
     def __init__(self, probe_path, data, shank_idx):
 
         self.probe_path = probe_path
-        self.data = data
+        self.data = deepcopy(data)
 
-        self.chn_coords_all = data['channels']['localCoordinates']
-        self.chn_ind_all = data['channels']['rawInd'].astype(int)
+        self.chn_coords_all = self.data['channels']['localCoordinates']
+        self.chn_ind_all = self.data['channels']['rawInd'].astype(int)
 
         self.chn_min = np.min(self.chn_coords_all[:, 1])
         self.chn_max = np.max(self.chn_coords_all[:, 1])

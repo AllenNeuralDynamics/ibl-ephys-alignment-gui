@@ -83,225 +83,290 @@ class AntsTransformChainFiles:
     def which_to_invert(self) -> list[bool]:
         return [True, False, True, False]
 
+@dataclass(frozen=True)
+class ImageSpacePaths:
+    atlas_image_path: Path
+    atlas_labels_path: Path
+    pipeline_image_path: Path
+    histology_image_path: Path
+    other_channel_paths: list[Path] = field(default_factory=list)
+
+    @classmethod
+    def from_folder(cls, input_path: Path) -> ImageSpacePaths:
+        def _glob_first(pattern: str) -> Path:
+            return next(input_path.glob(pattern))
+        atlas_image_path = _glob_first("ccf_in_*.nrrd")
+        atlas_labels_path = _glob_first("labels_in_*.nrrd")
+        pipeline_image_path = _glob_first("histology_registration_pipeline.nrrd")
+        histology_image_path = _glob_first("histology_registration.nrrd")
+
+        pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
+        other_channel_paths: list[Path] = []
+        for other_channel in input_path.iterdir():
+            if pattern.match(other_channel.name):
+                other_channel_paths.append(other_channel)
+        return cls(
+            atlas_image_path=atlas_image_path,
+            atlas_labels_path=atlas_labels_path,
+            pipeline_image_path=pipeline_image_path,
+            histology_image_path=histology_image_path,
+            other_channel_paths=other_channel_paths,
+        )
 
 @dataclass
 class LoadDataLocal:
+    image_space_paths: ImageSpacePaths | None = None
     brain_atlas: BrainAtlasAnatomical | None = None
-    folder_path: Path | None = None
+    input_path: Path | None = None
+    data_root: Path | None = None
     histology_path: Path | None = None
+    we_are_in_code_ocean: bool = True
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
     sess_path: Path | None = None
-    n_shanks: int = -1
-    data_root: Path | None = None
+    n_shanks: int = 0
     previous_directory: Path | None = None
+    tx_chain_files: AntsTransformChainFiles | None = None
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
     channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
     alignments: dict[str, list[list[float]]] = field(default_factory=dict)
-    prev_align: list[str] = field(default_factory=list)
+    prev_align: list[str] = field(default_factory=lambda: ["original"])
 
-    def get_info(self, folder_path, shank_idx: int, input_path=None, skip_shanks=False):
-        """
-        Read in the local json file to see if any previous alignments exist
-        """
-        shank_list = None
+    def load_previous_alignments_docdb(
+        self, input_path: Path, shank_idx=0, 
+    ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
+        docdb_id = query_docdb_id(input_path.parent.stem)[0]
+        quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
 
-        self.folder_path = input_path
-        if not skip_shanks:
-            shank_list = self.get_nshanks()
+        if quality_control is None:
+            return None
 
-        prev_aligns = self.get_previous_alignments(
-            shank_idx=shank_idx, folder_path=folder_path
+        evaluations = quality_control.evaluations
+
+        evaluation_name = (
+            f"{input_path.parent.stem}_{input_path.stem}_{shank_idx}"
         )
-        return prev_aligns, shank_list
+        alignment_evaluations = [
+            evaluation
+            for evaluation in evaluations
+            if evaluation.name == f"Probe Alignment for {evaluation_name}"
+        ]
 
-    def get_previous_info(self, folder_path):
-        """
-        Read in the local json file to see if any previous alignments exist
-        """
-        shank_list = self.get_nshanks()
-        prev_aligns = self.get_previous_alignments(folder_path=folder_path)
-        return prev_aligns, shank_list
+        n_eval = len(alignment_evaluations)
+        
+        if n_eval == 0:
+            logger.info(f"No alignment found in docdb for {evaluation_name}")
+            return None
 
-    def get_previous_alignments(self, shank_idx=0, folder_path: Path | None = None):
-        if folder_path is None:
-            folder_path = self.folder_path
+        logger.info(
+            f"Found existing record for {evaluation_name}. Loading alignment now"
+        )
+        latest_alignment_evaluation = max(
+            alignment_evaluations, key=lambda x: x.created
+        )  # pull latest alignment evaluation
+        curation_metric = latest_alignment_evaluation.metrics[0].value[
+            "curations"
+        ]
+        alignments = json.loads(curation_metric[0])[
+            "previous_alignments"
+        ]  # load in the previous alignment
+        prev_align = list(alignments.keys())
+        prev_align = sorted(prev_align, reverse=True)
+        prev_align.append("original")
+        return alignments, prev_align
 
-        logger.info("Checking docdb for existing records")
-
-        quality_control = None
-        try:
-            docdb_id = query_docdb_id(folder_path.parent.stem)[0]
-            quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
-        except ValueError as e:
-            logger.warning(
-                f"Failed to get record from docdb with exception {e}. Proceeding to load from scratch"
-            )
-
-        if quality_control is not None:
-            evaluations = quality_control.evaluations
-
-            evaluation_name = (
-                f"{folder_path.parent.stem}_{folder_path.stem}_{shank_idx}"
-            )
-            alignment_evaluations = [
-                evaluation
-                for evaluation in evaluations
-                if evaluation.name == f"Probe Alignment for {evaluation_name}"
-            ]
-
-            if len(alignment_evaluations) > 0:
-                logger.info(
-                    f"Found exisitng record for {evaluation_name}. Loading alignment now"
-                )
-                latest_alignment_evaluation = max(
-                    alignment_evaluations, key=lambda x: x.created
-                )  # pull latest alignment evaluation
-                curation_metric = latest_alignment_evaluation.metrics[0].value[
-                    "curations"
-                ]
-                self.alignments = json.loads(curation_metric[0])[
-                    "previous_alignments"
-                ]  # load in the previous alignment
-                self.prev_align = []
-                if self.alignments:
-                    self.prev_align = [*self.alignments.keys()]
-                self.prev_align = sorted(self.prev_align, reverse=True)
-                self.prev_align.append("original")
-            else:
-                logger.info(f"No alignment found in docdb for {evaluation_name}")
-                self.alignments = {}
-                self.prev_align = ["original"]
+    def load_previous_alignments_local(
+        self, input_path: Path | None = None, shank_idx: int=0,
+    ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
+        input_path = self._check_input_path_arg(input_path)
+        suffix = f"_shank{shank_idx + 1}" if self.n_shanks > 1 else ""
+        prev_align_filename =  f"prev_alignments{suffix}.json"
+        if input_path.joinpath(prev_align_filename).exists():
+            with open(input_path.joinpath(prev_align_filename)) as f:
+                alignments: dict[str, list[list[float]]] = json.load(f)
+            prev_align = list(alignments.keys())
+            prev_align = sorted(prev_align, reverse=True)
+            prev_align.append("original")
         else:
-            # If previous alignment json file exists, read in previous alignments
-            prev_align_filename = (
-                "prev_alignments.json"
-                if self.n_shanks == 1
-                else f"prev_alignments_shank{shank_idx + 1}.json"
+            return None
+        return alignments, prev_align
+
+
+    def load_previous_alignments(
+        self, shank_idx=0, input_path: Path | None = None, use_docdb=True
+    ) -> None:
+        input_path = self._check_input_path_arg(input_path)
+
+        maybe_alignments = None
+        load_local = not use_docdb
+        if use_docdb:
+            logger.debug("Using docdb to get previous alignments")
+            try:
+                maybe_alignments = self.load_previous_alignments_docdb(
+                    input_path=input_path, shank_idx=shank_idx
+                )
+                if maybe_alignments is None:
+                    load_local = True
+            except ValueError as e:
+                logger.warning(
+                    f"Failed to load previous alignments from docdb with exception {e}. "
+                    "Falling back to local file."
+                )
+                load_local = True
+        if load_local:
+            maybe_alignments = self.load_previous_alignments_local(
+                input_path=input_path, shank_idx=shank_idx
             )
+        if maybe_alignments is not None:
+            alignments, prev_align = maybe_alignments
+            self.alignments = alignments
+            self.prev_align = prev_align
 
-            if folder_path.joinpath(prev_align_filename).exists():
-                with open(folder_path.joinpath(prev_align_filename), "r") as f:
-                    self.alignments = json.load(f)
-                    self.prev_align = []
-                    if self.alignments:
-                        self.prev_align = [*self.alignments.keys()]
-                    self.prev_align = sorted(self.prev_align, reverse=True)
-                    self.prev_align.append("original")
-            else:
-                self.alignments = {}
-                self.prev_align = ["original"]
+        return None
 
-        return self.prev_align
-
-    def get_starting_alignment(
-        self, idx: int, shank_idx=0, folder_path: Path | None = None
-    ):
+    def get_alignment_idx( self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """
         Find out the starting alignment
         """
-        align = self.get_previous_alignments(
-            shank_idx=shank_idx, folder_path=folder_path
-        )[idx]
-
-        if align == "original":
+        if len(self.prev_align) <= idx:
+            return None, None
+        alignment = self.prev_align[idx]
+        if alignment == "original":
             feature = None
             track = None
         else:
-            feature = np.array(self.alignments[align][0])
-            track = np.array(self.alignments[align][1])
+            feature = np.array(self.alignments[alignment][0])
+            track = np.array(self.alignments[alignment][1])
 
         return feature, track
 
-    def get_nshanks(self):
-        """
-        Find out the number of shanks on the probe, either 1 or 4
-        """
-        if self.chn_coords_all is None:
-            self.chn_coords_all = np.load(
-                self.folder_path.joinpath("channels.localCoordinates.npy")
-            )
-        if self.n_shanks <= 0:
-            chn_x = np.unique(self.chn_coords_all[:, 0])
-            chn_x_diff = np.diff(chn_x)
-            self.n_shanks = np.sum(chn_x_diff > 100) + 1
+    def _check_input_path_arg(self, input_path: Path | None) -> Path:
+        if input_path is None:
+            if self.input_path is None:
+                raise RuntimeError("input_path must be provided if not set in the class")
+            input_path = self.input_path
+        return input_path
 
+    def load_channel_info(self, input_path: Path | None = None) -> None:
+        """
+        Load channel local coordinates from the alf files
+        """
+        input_path = self._check_input_path_arg(input_path)
+        self.chn_coords_all = np.load(
+            input_path.joinpath("channels.localCoordinates.npy")
+        )
+        chn_x = np.unique(self.chn_coords_all[:, 0])
+        chn_x_diff = np.diff(chn_x)
+        self.n_shanks = np.sum(chn_x_diff > 100) + 1
+
+    def set_input_paths(self, input_path: Path, we_are_in_code_ocean: bool) -> None:
+        if not we_are_in_code_ocean:
+            raise RuntimeError("Only Code Ocean path resolution is supported currently")
+        if self.input_path == input_path:
+            logger.debug("Input path already set, skipping reset")
+            return
+        self.we_are_in_code_ocean = we_are_in_code_ocean
+        self.input_path = input_path
+        self.chn_coords_all = None
+        data_root = input_path.parents[3]
+        self.data_root = data_root
+        maybe_tx_chain = self._find_transform_files()
+        if maybe_tx_chain is None:
+            raise FileNotFoundError("No transform chain files found in input directory.")
+        self.tx_chain_files = maybe_tx_chain
+        histology_path: Path = self.input_path.parent.parent / "image_space_histology"
+        if histology_path != self.histology_path:
+            logger.debug("Atlas and histology path changed, resetting image space paths")
+            self.brain_atlas = None
+            self.histology_path = histology_path
+        self.image_space_paths = ImageSpacePaths.from_folder(histology_path)
+    
+    def get_shank_list(self) -> list[str] | None:
+        """
+        Generate shank list without setting n_shanks
+        """
         if self.n_shanks == 1:
             shank_list = ["1/1"]
-        else:
+        elif self.n_shanks > 1:
             shank_list = [
                 f"{iShank + 1}/{self.n_shanks}" for iShank in range(self.n_shanks)
             ]
-
+        else:
+            shank_list = None
         return shank_list
+    
+    def load_atlas_and_histology(self) -> None:
+        logger.debug(f"Loading atlas and histology from {self.histology_path}")
+        if self.image_space_paths is None:
+            raise RuntimeError("Image space paths not set, cannot load atlas and histology")
+        intensity_image = sitk.ReadImage(self.image_space_paths.atlas_image_path)
+        label_image = sitk.ReadImage(self.image_space_paths.atlas_labels_path)
+        if label_image.GetPixelID() is not sitk.sitkInt32:
+            # This is a hack that I need to fix in the processing pipeline
+            unq_annotations = np.load(
+                "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
+            )["unique_labels"]
+            label_image = expand_compacted_image(
+                label_image, unq_annotations
+            )
+        pipeline_image = sitk.ReadImage(self.image_space_paths.pipeline_image_path)
+        self.brain_atlas = BrainAtlasAnatomical(
+            intensity_img=intensity_image,
+            label_img=label_image,
+            pipeline_img=pipeline_image,
+        )
 
-    def get_data(self, shank_idx, reload_data: bool = True):
-        if reload_data:
-            self.get_nshanks()
-            if not hasattr(self, "atlas_image_path"):
-                search_path: Path = self.folder_path.parent.parent
+        histology_image = sitk.ReadImage(self.image_space_paths.histology_image_path)
+        dicom_orient_str = (
+            sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
+                histology_image.GetDirection()
+            )
+        )
+        if dicom_orient_str == _BLESSED_DIRECTION:
+            reorient = False
+        else:
+            reorient = True
+            histology_image = sitk.DICOMOrient(
+                histology_image, _BLESSED_DIRECTION
+            )
+        self.histology_images["histology_registration"] = histology_image
+        for other_channel in self.image_space_paths.other_channel_paths:
+            channel_name = other_channel.stem
+            if channel_name not in self.histology_images:
+                channel_image = sitk.ReadImage(str(other_channel))
+                if reorient:
+                    channel_image = sitk.DICOMOrient(channel_image, "SRA")
+                self.histology_images[channel_name] = channel_image
 
-                def _glob_nonempty_or_err(pattern: str) -> tuple[Path, ...]:
-                    paths = tuple(search_path.glob(pattern))
-                    if not paths:
-                        raise FileNotFoundError(
-                            f"Could not find path to atlas image in data asset attached. Looking for pattern {pattern} in {search_path}"
-                        )
-                    return paths
+    def set_channels_for_shank(self, shank_idx: int):
+        """Filter cached channel coordinates for selected shank. No disk I/O."""
+        if self.chn_coords_all is None:
+            raise RuntimeError("Must call load_channel_info() first")
+        chn_coords_all = self.chn_coords_all
+        chn_x = np.unique(chn_coords_all[:, 0])
 
-                self.atlas_image_path = _glob_nonempty_or_err(
-                    "image_space_histology/ccf_in_*.nrrd"
-                )
-                self.atlas_labels_path = _glob_nonempty_or_err(
-                    "image_space_histology/labels_in_*.nrrd"
-                )
-                self.pipeline_image_path = _glob_nonempty_or_err(
-                    "image_space_histology/histology_registration_pipeline.nrrd"
-                )
-                self.histology_image_path = _glob_nonempty_or_err(
-                    "image_space_histology/histology_registration.nrrd"
-                )
-                self.histology_path = self.atlas_image_path[0].parent
-                intensity_image = sitk.ReadImage(self.atlas_image_path[0])
-                label_image_compacted = sitk.ReadImage(self.atlas_labels_path[0])
-                pipeline_image = sitk.ReadImage(self.pipeline_image_path[0])
-                unq_annotations = np.load(
-                    "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
-                )["unique_labels"]
-                label_image = expand_compacted_image(
-                    label_image_compacted, unq_annotations
-                )
-                self.brain_atlas = BrainAtlasAnatomical(
-                    intensity_img=intensity_image,
-                    label_img=label_image,
-                    pipeline_img=pipeline_image,
-                )
+        if self.n_shanks > 1:
+            shanks = {}
+            for iShank in range(self.n_shanks):
+                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
 
-                histology_image = sitk.ReadImage(self.histology_image_path[0])
-                dicom_orient_str = (
-                    sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
-                        histology_image.GetDirection()
-                    )
-                )
-                if dicom_orient_str == _BLESSED_DIRECTION:
-                    reorient = False
-                else:
-                    reorient = True
-                    histology_image = sitk.DICOMOrient(
-                        histology_image, _BLESSED_DIRECTION
-                    )
-                self.histology_images["histology_registration"] = histology_image
-                pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
-                for other_channel in self.histology_path.iterdir():
-                    if pattern.match(other_channel.name):
-                        channel_name = other_channel.stem
-                        if channel_name not in self.histology_images:
-                            channel_image = sitk.ReadImage(str(other_channel))
-                            if reorient:
-                                channel_image = sitk.DICOMOrient(channel_image, "SRA")
-                            self.histology_images[channel_name] = channel_image
+            shank_chns = np.bitwise_and(
+                chn_coords_all[:, 0] >= shanks[shank_idx][0],
+                chn_coords_all[:, 0] <= shanks[shank_idx][1],
+            )
+            chn_coords = chn_coords_all[shank_chns, :]
+        else:
+            chn_coords = chn_coords_all
+        self.chn_coords = chn_coords
 
+        return chn_coords[:, 1]  # Return depths
+
+
+    def get_ephys_data(self, shank_idx, input_path: Path | None = None):
+        input_path = self._check_input_path_arg(input_path)
+        if self.chn_coords_all is None:
+            raise RuntimeError("Must call load_channel_info() first")
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
             shanks = {}
@@ -343,7 +408,7 @@ class LoadDataLocal:
         ]
         for v, o in zip(values, objects):
             try:
-                data[v] = alfio.load_object(self.folder_path, o)
+                data[v] = alfio.load_object(input_path, o)
                 data[v]["exists"] = True
                 if "rms" in v:
                     data[v]["xaxis"] = "Time (s)"
@@ -355,43 +420,43 @@ class LoadDataLocal:
         data["pass_stim"] = {"exists": False}
         data["gabor"] = {"exists": False}
 
-        shank_indices_file = self.folder_path / "spike_shank_indices.npy"
+        shank_indices_file = input_path / "spike_shank_indices.npy"
         if shank_indices_file.exists():
             data["spike_shanks"] = np.load(shank_indices_file)
 
-        unit_shank_indices_file = self.folder_path / "unit_shank_indices.npy"
+        unit_shank_indices_file = input_path / "unit_shank_indices.npy"
         if unit_shank_indices_file.exists():
             data["unit_shank_indices"] = np.load(unit_shank_indices_file)
 
         # Read in notes for this experiment see if file exists in directory
-        if self.folder_path.joinpath("session_notes.txt").exists():
-            with open(self.folder_path.joinpath("session_notes.txt"), "r") as f:
+        if input_path.joinpath("session_notes.txt").exists():
+            with open(input_path.joinpath("session_notes.txt"), "r") as f:
                 sess_notes = f.read()
         else:
             sess_notes = "No notes for this session"
 
-        return self.folder_path, chn_depths, sess_notes, data
+        return input_path, chn_depths, sess_notes, data
 
-    def get_allen_csv(self):
+    def load_allen_csv(self):
         allen_path = Path(Path(atlas.__file__).parent, "allen_structure_tree.csv")
         self.allen = alfio.load_file_content(allen_path)
 
         return self.allen
 
-    def get_xyzpicks(self, folder_path: Path, shank_idx: int):
+    def get_xyzpicks(
+        self, shank_idx: int, input_path: Path | None = None
+    ) -> NDArray[np.floating]:
         # Read in local xyz_picks file
         # This file must exist, otherwise we don't know where probe was
-        xyz_file_name = (
-            "*xyz_picks_image_space.json"
-            if self.n_shanks == 1
-            else f"*xyz_picks_shank{float(shank_idx) + 1}_image_space.json"
-        )
-        xyz_file = sorted(folder_path.glob(xyz_file_name))
+        input_path = self._check_input_path_arg(input_path)
+        glob_suffix = "" if self.n_shanks == 1 else f"_shank{shank_idx + 1}"
+        xyz_glob_str = f"*xyz_picks{glob_suffix}_image_space.json"
+        xyz_file = sorted(input_path.glob(xyz_glob_str))
 
         if len(xyz_file) == 0:
             raise FileNotFoundError(
-                f"Missing required probe trajectory file: {xyz_file_name}\n"
-                f"Expected location: {folder_path}\n"
+                f"Missing required probe trajectory file: {xyz_glob_str}\n"
+                f"Expected location: {input_path}\n"
                 "This file must contain probe insertion coordinates in image space."
             )
         elif len(xyz_file) > 1:
@@ -488,12 +553,46 @@ class LoadDataLocal:
 
         return description, region_lookup
 
+
+    def _find_transform_files(self) -> AntsTransformChainFiles:
+        logger.info("Loading transforms from stitched smartspim asset ...")
+        subject_id = self.input_path.parent.parent.stem
+        smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        if not smartspim_template_affine_transform:
+            # try legacy way
+            smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            if not smartspim_template_affine_transform:
+                raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
+
+        smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        if not smartspim_template_warp_transform:
+            smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            if not smartspim_template_warp_transform:
+                raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
+
+        template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        if not template_to_ccf_affine_transform:
+            raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
+
+        template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        if not template_to_ccf_warp_transform:
+            raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
+
+        return AntsTransformChainFiles(
+            smartspim_template_affine_transform=smartspim_template_affine_transform[0],
+            smartspim_template_warp_transform=smartspim_template_warp_transform[0],
+            template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
+            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0]
+        )
+
+
     def _transform_to_ccf(
         self,
         xyz_channels: NDArray,
-        tx_chain_files: AntsTransformChainFiles,
         channel_dict: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
+        if self.tx_chain_files is None:
+            raise RuntimeError("Transform chain files not set, cannot transform to CCF")
         channel_coords_mm = 1e-3 * xyz_channels  # convert to mm
 
         # Have to convert these to the physical space of the pipeline image first
@@ -522,8 +621,8 @@ class LoadDataLocal:
         ccf_coordinates_dataframe: pandas.DataFrame = ants.apply_transforms_to_points(
             ANTS_DIMENSION,
             this_probe_df,
-            tx_chain_files.as_list(),
-            whichtoinvert=tx_chain_files.which_to_invert(),
+            self.tx_chain_files.as_list(),
+            whichtoinvert=self.tx_chain_files.which_to_invert(),
         )
         logger.info("Done warping to ccf")
 
@@ -546,7 +645,6 @@ class LoadDataLocal:
 
         for ch, (x, y, z) in zip(channel_names, xyz_array):
             info = channel_dict[ch]
-            # channel_index = int(channel[channel.index('_')+1:])
             ccf_channel_dict[ch] = {
                 "x": float(x),
                 "y": float(y),
@@ -558,12 +656,11 @@ class LoadDataLocal:
             }
         return ccf_channel_dict
 
-    def upload_data(
+    def get_alignment_results(
         self,
         feature: NDArray,
         track: NDArray,
         xyz_channels: NDArray,
-        tx_chain_files: AntsTransformChainFiles,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, list[list[float]]], dict[str, dict[str, Any]], bool]:
         logger.info("Saving channel locations and previous alignments locally")
         logger.debug(f"Channels: {xyz_channels}")
@@ -580,7 +677,7 @@ class LoadDataLocal:
         self.channel_dict = channel_dict
 
         ccf_channel_dict = self._transform_to_ccf(
-            xyz_channels, tx_chain_files, channel_dict
+            xyz_channels, channel_dict
         )
 
         date = datetime.now().replace(microsecond=0).isoformat()
