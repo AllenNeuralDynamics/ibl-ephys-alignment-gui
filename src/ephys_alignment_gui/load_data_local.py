@@ -92,7 +92,7 @@ class LoadDataLocal:
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
     sess_path: Path | None = None
-    n_shanks: int = 1
+    n_shanks: int = -1
     data_root: Path | None = None
     previous_directory: Path | None = None
 
@@ -218,13 +218,14 @@ class LoadDataLocal:
         """
         Find out the number of shanks on the probe, either 1 or 4
         """
-        self.chn_coords_all = np.load(
-            self.folder_path.joinpath("channels.localCoordinates.npy")
-        )
-
-        chn_x = np.unique(self.chn_coords_all[:, 0])
-        chn_x_diff = np.diff(chn_x)
-        self.n_shanks = np.sum(chn_x_diff > 100) + 1
+        if self.chn_coords_all is None:
+            self.chn_coords_all = np.load(
+                self.folder_path.joinpath("channels.localCoordinates.npy")
+            )
+        if self.n_shanks <= 0:
+            chn_x = np.unique(self.chn_coords_all[:, 0])
+            chn_x_diff = np.diff(chn_x)
+            self.n_shanks = np.sum(chn_x_diff > 100) + 1
 
         if self.n_shanks == 1:
             shank_list = ["1/1"]
@@ -237,6 +238,7 @@ class LoadDataLocal:
 
     def get_data(self, shank_idx, reload_data: bool = True):
         if reload_data:
+            self.get_nshanks()
             if not hasattr(self, "atlas_image_path"):
                 search_path: Path = self.folder_path.parent.parent
 
