@@ -1,8 +1,10 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+from random import randrange
+
+import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.exporters
-import numpy as np
-from random import randrange
+from PyQt5 import QtCore, QtGui, QtWidgets
+
 from ephys_alignment_gui.plot_elements import replace_axis
 
 pg.setConfigOption('background', 'w')
@@ -451,18 +453,6 @@ class Setup():
             feature_info.triggered.connect(self.display_region_features)
             info_options.addAction(feature_info)
 
-        # MAPPING MENU BAR
-        # allen_mapping = QtWidgets.QAction('Allen', self, checkable=True, checked=True)
-        # beryl_mapping = QtWidgets.QAction('Beryl', self, checkable=True, checked=False)
-        # cosmos_mapping = QtWidgets.QAction('Cosmos', self, checkable=True, checked=False)
-        #
-        # mapping_options = menu_bar.addMenu('Atlas Mappings')
-        # mapping_options.addAction(allen_mapping)
-        # mapping_options.addAction(beryl_mapping)
-        # mapping_options.addAction(cosmos_mapping)
-        #
-        # # Initialise with Allen mapping
-        # self.mapping_init = allen_mapping
 
     def init_slice_menu(self):
         menu_bar = self.menuBar()
@@ -571,25 +561,31 @@ class Setup():
             self.reload_folder_button.setText('Load Existing Alignment Directory')
             self.reload_folder_button.clicked.connect(self.load_existing_alignments)
 
-        # Button to load Histology 
-        self.histology_folder_button = QtWidgets.QToolButton()
-        self.histology_folder_button.setText('Load Histology')
-        self.histology_folder_button.clicked.connect(self.on_histology_folder_selected)
-        # self.histology_combo_box = QtWidgets.QComboBox()
-        # self.histology_list = QtGui.QStandardItemModel()
-        # self.histology_combo_box.setModel(self.histology_list)
-        # self.histology_combo_box.activated.connect(self.on_histology_selected)
-
         # Drop down list to select shank
         self.shank_list = QtGui.QStandardItemModel()
         self.shank_combobox = QtWidgets.QComboBox()
         self.shank_combobox.setModel(self.shank_list)
         self.shank_combobox.activated.connect(self.on_shank_selected)
 
+        # Drop down list to select previous alignment (NEW)
+        self.align_list = QtGui.QStandardItemModel()
+        self.align_combobox = QtWidgets.QComboBox()
+        self.align_combobox.setModel(self.align_list)
+        self.align_combobox.activated.connect(self.on_alignment_selected)
+
         self.output_folder_line = QtWidgets.QLineEdit()
         self.output_folder_button = QtWidgets.QToolButton()
         self.output_folder_button.setText('Output Directory')
         self.output_folder_button.clicked.connect(self.on_output_folder_selected)
+
+        # After output_folder_button creation (around line 573):
+        self.use_docdb_checkbox = QtWidgets.QCheckBox('Use DocDB')
+        self.use_docdb_checkbox.setChecked(True)  # Default: try DocDB
+        self.use_docdb_checkbox.stateChanged.connect(self.on_use_docdb_changed)
+
+        self.load_data_button = QtWidgets.QToolButton()
+        self.load_data_button.setText('Load Data')
+        self.load_data_button.clicked.connect(self.on_load_data_button_pressed)
 
         # Arrange interaction features into three different layout groups
         # Group 1
@@ -623,13 +619,11 @@ class Setup():
             self.interaction_layout3.addWidget(self.input_folder_button, stretch=1)
             self.interaction_layout3.addWidget(self.input_folder_line, stretch=2)
             self.interaction_layout3.addWidget(self.shank_combobox, stretch=1)
+            self.interaction_layout3.addWidget(self.align_combobox, stretch=1)
             self.interaction_layout3.addWidget(self.reload_folder_button, stretch=1)
             self.interaction_layout3.addWidget(self.reload_folder_line, stretch=2)
-
-        # # Group 3 -- Histology location
-        # self.interaction_layout3 = QtWidgets.QHBoxLayout()
-        #self.interaction_layout3.addWidget(self.histology_folder_button, stretch=1)
-        # self.interaction_layout3.addWidget(self.histology_folder_line, stretch=2)
+            self.interaction_layout3.addWidget(self.use_docdb_checkbox, stretch=1)
+            self.interaction_layout3.addWidget(self.load_data_button, stretch=1)
 
         # Pop up dialog for qc results to datajoint, only for online mode
         if not self.offline:
@@ -815,8 +809,7 @@ class Setup():
         self.fig_img.setYLink(self.fig_line)
         self.fig_img.setYLink(self.fig_hist)
         self.fig_line.setYLink(self.fig_hist)
-        # This is the solution from pyqtgraph people, but doesn't show ticks
-        # self.fig_hist.showGrid(False, True, 0)
+        self.fig_probe.setYLink(self.fig_img)
 
         replace_axis(self.fig_hist)
         self.ax_hist = self.set_axis(self.fig_hist, 'left', pen=None)

@@ -3,6 +3,7 @@ import logging
 import os
 import platform
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 if platform.system() == 'Darwin':
@@ -10,11 +11,11 @@ if platform.system() == 'Darwin':
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 from random import randrange
-from typing import Any
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
 import numpy as np
 import pyqtgraph as pg
+from numpy.typing import NDArray
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
@@ -23,7 +24,7 @@ import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
-from ephys_alignment_gui.load_data_local import AntsTransformChainFiles, LoadDataLocal
+from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.windows.features_across_region import RegionFeatureWindow
@@ -31,10 +32,25 @@ from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
 
 logger = logging.getLogger(__name__)
 
+ANTS_DIMENSION = 3
 
-def _dump_dict_to_json(data_dict: dict[str, Any], output_path: Path) -> None:
-    with open(output_path, "w") as f:
-        json.dump(data_dict, f, indent=2, separators=(",", ": "))
+@dataclass(frozen=True)
+class AntsTransformChainFiles:
+    smartspim_template_affine_transform: Path
+    smartspim_template_warp_transform: Path
+    template_to_ccf_affine_transform: Path
+    template_to_ccf_warp_transform: Path
+
+    def as_list(self) -> list[str]:
+        return [
+            self.smartspim_template_affine_transform.as_posix(),
+            self.smartspim_template_warp_transform.as_posix(),
+            self.template_to_ccf_affine_transform.as_posix(),
+            self.template_to_ccf_warp_transform.as_posix(),
+        ]
+
+    def which_to_invert(self) -> list[bool]:
+        return [True, False, True, False]
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -52,30 +68,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             av.setWindowTitle(title)
         return av
 
-    def __init__(
-        self,
-        offline=True,
-        probe_id=None,
-        one=None,
-        histology=True,
-        spike_collection=None,
-        remote=False,
-    ):
+    def __init__(self, offline=True, probe_id=None, one=None, histology=True,
+                 spike_collection=None, remote=False):
         super(MainWindow, self).__init__()
 
         self.init_variables()
+        self.offline: bool = offline
         self.init_layout(self, offline=offline)
-        self.configure: bool = True
 
-        self.loaddata: LoadDataLocal = LoadDataLocal()
+        self.configure: bool = True
         self.offline: bool = True
-        self.histology_exists: bool = True
+        self.histology_exists: bool= True
         self.data_status: bool = False
         self.output_directory: Path | None = None
-        self.data_root: Path | None = None
-        self.tx_chain_files: AntsTransformChainFiles | None = None
+        self.use_docdb: bool = True
 
-        self.allen = self.loaddata.get_allen_csv()
+        self.loaddata = LoadDataLocal()
+
+        self.allen = self.loaddata.load_allen_csv()
         self.init_region_lookup(self.allen)
 
     def init_variables(self):
@@ -92,7 +102,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Padding to add to figures to make sure always same size viewbox
         self.pad = 0.05
-
+        self.init_session_variables()
+    
+    def init_session_variables(self):
+        """
+        Initialise variables that need to be reset for each session
+        """
         # Variables to do with probe dimension
         self.probe_tip = 0
         self.probe_top = 3840
@@ -170,8 +185,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.nearby = None
 
+        self.xyz_picks: NDArray[np.floating] | None = None
+        self.xyz_track: NDArray[np.floating] | None = None
+        self.xyz_channels: NDArray[np.floating] | None = None
+        self.probe_path: Path | None = None
+        self.chn_depths: NDArray[np.floating] | None = None
+        self.sess_notes: str = ''
+
         # Shank tracking for multi-shank probes (0-based index)
         self.current_shank_idx = 0
+
 
     def set_axis(self, fig, ax, show=True, label=None, pen='k', ticks=True):
         """
@@ -400,12 +423,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.on_output_folder_selected()
             image_path_overview = Path(self.loaddata.output_directory / f"Plots_Shank_{self.current_shank_idx + 1}")
 
-        os.makedirs(image_path_overview, exist_ok=True)
-        os.makedirs(image_path_overview, exist_ok=True)
+        image_path_overview.mkdir(exist_ok=True)
         # Reset all axis, put view back to 1 and remove any reference lines
         self.reset_axis_button_pressed()
         self.set_view(view=1, configure=False)
-        # self.remove_lines_points()
 
         xlabel_img = self.fig_img.getAxis('bottom').label.toPlainText()
         xlabel_line = self.fig_line.getAxis('bottom').label.toPlainText()
@@ -437,7 +458,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                                     .text() + '.png')))
             self.add_lines_points()  # Add reference lines
             self.toggle_plots(self.img_options_group)
-            # self.remove_lines_points()
             plot = self.img_options_group.checkedAction()
 
         self.set_font(self.fig_img, 'left', ptsize=8, width=ax_width)
@@ -1188,152 +1208,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.xrange = data['xrange']
 
 
-    """
-    Interaction functions
-    """
-    def _update_ephys_alignments(self, folder_path: Path, skip_shanks=False):
-        if Path('/data').is_dir():
-            data_string =  f"{folder_path.parent.parent.stem}/{folder_path.parent.stem}/{folder_path.stem}"
-            input_data_path = tuple(Path('/data').glob(f"*/{data_string}"))[0]
-        else:
-            input_data_path = folder_path
-
-        self.prev_alignments, shank_options = self.loaddata.get_info(
-            folder_path,
-            shank_idx=self.current_shank_idx,
-            input_path=input_data_path,
-            skip_shanks=skip_shanks
-        )
-
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(
-            0,
-            shank_idx=self.current_shank_idx,
-            folder_path=folder_path
-        )
-
-        if shank_options is not None:
-            self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
-
-        logger.info(f'Input data path: {input_data_path}')
-        self.data_button_pressed(input_data_path)
-        logger.debug(f'Feature prev: {self.feature_prev}')
-
-    def load_existing_alignments(self):
-        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
-        self.reload_folder_line.setText(str(folder_path))
-            
-        self._update_ephys_alignments(folder_path)
-
-    def on_folder_selected(self):
-        """
-        Triggered in offline mode when folder button is clicked
-        """
-        self.data_status = False
-        
-        if Path('/data/').is_dir():
-            # Default For code ocean.
-            we_are_in_code_ocean = True
-            folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory", directory='/data/'))
-        else:
-            # If not code ocean, will default to current directory
-            we_are_in_code_ocean = False
-            folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
-        # Set the output default based on the selected folder path
-        if we_are_in_code_ocean:
-            out_folder = Path('/results/').joinpath(folder_path.parent.stem)
-            string_folder_path = folder_path.parent.stem
-            subject_id_path = string_folder_path[string_folder_path.index('_')+1:]
-            subject_id = subject_id_path[0:subject_id_path.index('_')]
-
-            out_folder = Path('/results').joinpath(subject_id)
-            logger.info(f'Output folder: {out_folder}')
-            
-        else:
-            out_folder = folder_path.parent/'out'
-            
-        self.input_path = folder_path
-
-        # Make it compatible with path outside of code ocean
-        self.loaddata.data_root = folder_path.parents[3]
-        self.data_root = self.loaddata.data_root
-        self.tx_chain_files = self._find_transform_files()
-
-        # Create the output folder if it doesn't exist
-        
-        out_folder.mkdir(exist_ok=True)
-        # Set the output directory based on input name.
-        self.output_directory = out_folder/folder_path.parent.stem/folder_path.stem
-        self.output_directory.mkdir(parents=True, exist_ok=True)
-        logger.info(f'Output dir: {self.output_directory}')
-        self.output_folder_line.setText(str(self.output_directory))
-
-        if folder_path:
-            self.input_folder_line.setText(str(folder_path))
-            self._update_ephys_alignments(folder_path)
-            return True
-        else:
-            return False
-
-    def on_histology_folder_selected(self):
-        """
-        Triggered in offline mode when folder button is clicked
-        """
-        self.data_status = False
-        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Histology Directory"))
-
-        if folder_path:
-            # self.histology_folder_line.setText(str(folder_path))
-            self.loaddata.histology_path = folder_path
-            if self.histology_exists:
-                self.slice_data, self.fp_slice_data = self.loaddata.get_slice_images(self.ephysalign.xyz_samples)
-            try:
-                self.data_button_pressed()
-            except TypeError:
-                pass
-            return True
-        else:
-            return False
-        
-
-
-    def on_output_folder_selected(self):
-        """
-        Triggered in offline mode when folder button is clicked
-        """
-        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Output Directory"))
-
-        if folder_path:
-            self.output_folder_line.setText(str(folder_path))
-            self.loaddata.output_directory = folder_path
-            return True
-        else:
-            return False
-        
-        
-    def on_shank_selected(self, idx):
-        """
-        Triggered in offline mode for selecting shank when using NP2.0
-        """
-        #self.data_status = False
-        # Update prev_alignments
-        shank_text = self.shank_combobox.currentText()
-        shank_id = int(shank_text.split('/')[0])
-        self.current_shank_idx = shank_id - 1
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(0, shank_idx=self.current_shank_idx, folder_path=self.output_directory)
-
-        if self.data_status:
-            #if self.current_shank_idx != 0:
-            self.data_button_pressed(self.input_path, load_new_shank=True)
-
-    def on_alignment_selected(self, idx):
-        self.feature_prev, self.track_prev = self.loaddata.get_starting_alignment(idx)
-
-    def data_button_pressed(self, folder_path: Path, load_new_shank: bool = False):
-        """
-        Triggered when Get Data button pressed, uses subject and session info to find eid and
-        downloads and computes data needed for GUI display
-        """
-
+    ### --------- interaction functions --------- ###
+    def clear_plots(self):
         # Clear all plots from previous session
         [self.fig_img.removeItem(plot) for plot in self.img_plots]
         [self.fig_img.removeItem(cbar) for cbar in self.img_cbars]
@@ -1349,110 +1225,342 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fit_plot.setData()
         self.fit_scatter.setData()
         self.remove_lines_points()
-        self.init_variables()
+        
+    def load_heavy_data(self):
+        """Load all heavy data - ephys, atlas, histology. Called once per session."""
 
-        # Only run once
-        if not self.data_status:
-            self.probe_path, self.chn_depths, self.sess_notes, data = \
-                self.loaddata.get_data(self.current_shank_idx)
-            self.data = data
-            if not self.probe_path:
-                return
-        if self.data_status and load_new_shank:
-            self.probe_path, self.chn_depths, self.sess_notes, data = \
-                self.loaddata.get_data(self.current_shank_idx, reload_data=False)
-            self.data = data
-            if not self.probe_path:
-                return
+        logger.info("=== Starting heavy data load ===")
+        self.clear_plots()
+        self.init_session_variables()
 
-        # Only get histology specific stuff if the histology tracing exists
-        if self.histology_exists:
-            self.xyz_picks = self.loaddata.get_xyzpicks(folder_path, self.current_shank_idx)
+        # Load ephys data (session-specific, always reload)
+        logger.info("Loading ephys data...")
+        self.probe_path, self.chn_depths, self.sess_notes, data = \
+            self.loaddata.get_ephys_data(self.current_shank_idx)
+        self.data = data
 
-            if np.any(self.feature_prev):
-                self.ephysalign = EphysAlignment(self.xyz_picks, self.chn_depths,
-                                                 track_prev=self.track_prev,
-                                                 feature_prev=self.feature_prev,
-                                                 brain_atlas=self.loaddata.brain_atlas)
-            else:
-                self.ephysalign = EphysAlignment(self.xyz_picks, self.chn_depths,
-                                                 brain_atlas=self.loaddata.brain_atlas)
+        if not self.probe_path:
+            logger.error("Failed to load ephys data")
+            return
 
-            self.region_fp, self.region_label_fp, self.region_colour_fp, _ \
-                = EphysAlignment.get_histology_regions(self.ephysalign.xyz_samples, self.ephysalign.sampling_trk,
-                                                       self.loaddata.brain_atlas)
+        logger.info(f"Loaded ephys data from {self.probe_path}")
 
-            self.features[self.idx], self.track[self.idx], self.xyz_track \
-                = self.ephysalign.get_track_and_feature()
+        # Load atlas and histology (subject-level, cached if same subject)
+        if self.loaddata.brain_atlas is None:
+            try:
+                logger.info("Loading atlas and histology...")
+                self.loaddata.load_atlas_and_histology()
+                logger.info("Atlas and histology loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to load atlas/histology: {e}")
+                self.histology_exists = False
 
-            self.get_scaled_histology()
-        # If we have not loaded in the data before then we load eveything we need
-        if not self.data_status or load_new_shank:
-            logger.debug(f'Shank index: {self.current_shank_idx}')
-            self.plotdata = pd.PlotData(self.probe_path, self.data,
-                                        self.current_shank_idx)
-            self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
-            self.scat_drift_data = self.plotdata.get_depth_data_scatter()
-            (self.scat_fr_data, self.scat_p2t_data,
-             self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
-            self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
-            self.img_fr_data = self.plotdata.get_fr_img()
-            self.img_rms_APdata, self.probe_rms_APdata = self.plotdata.get_rms_data_img_probe('AP')
-            self.img_rms_LFPdata, self.probe_rms_LFPdata = self.plotdata.get_rms_data_img_probe(
-                'LF')
-            self.img_rms_APdata_main, self.probe_rms_APdata_main = self.plotdata.get_rms_data_img_probe('AP_main')
-            self.img_rms_LFPdata_main, self.probe_rms_LFPdata_main = self.plotdata.get_rms_data_img_probe('LF_main')
-            self.img_lfp_data, self.probe_lfp_data = self.plotdata.get_lfp_spectrum_data('lf')
-            self.img_lfp_data_main, self.probe_lfp_data_main = self.plotdata.get_lfp_spectrum_data('lf_main')
+        # Setup view for current shank (common with switch_shank_view)
+        self.setup_session_view()
 
-            self.img_lfp_corr_data = self.plotdata.get_lfp_correlation_data_img()
+        self.data_status = True
+        logger.info("=== Heavy data load complete ===")
 
-            self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
-            self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
-            self.img_stim_data = self.plotdata.get_passive_events()
-            if not self.offline:
-                self.img_raw_data = self.plotdata.get_raw_data_image(self.loaddata.probe_id, one=self.loaddata.one)
-            else:
-                self.img_raw_data = {}
-            if self.histology_exists:
-                self.slice_data, self.fp_slice_data = self.loaddata.get_slice_images(self.ephysalign.xyz_samples)
-            else:
-                # probably need to return an empty array of things
-                self.slice_data = {}
-                self.fp_slice_data = None
+    def load_existing_alignments(self) -> bool:
+        if self.loaddata.n_shanks == 0:
+            logger.error("Channel info not loaded. Please select Input Directory first.")
+            return False
+        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments"))
+        if not folder_path:
+            return False
+        self.reload_folder_line.setText(str(folder_path))
 
-            self.data_status = True
-            self.init_menubar()
+        logger.info(f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}")
+        self.prev_alignments = self.loaddata.load_previous_alignments(
+            shank_idx = self.current_shank_idx,
+            input_path = folder_path,
+            use_docdb=self.use_docdb
+        )
+        self.populate_lists(self.prev_alignments, self.align_list, self.align_combobox)
+
+        # Get starting alignment (from cached data, no disk read)
+        if self.prev_alignments:
+            self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
+            logger.info(f"Loaded {len(self.prev_alignments)} previous alignments")
         else:
-            self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
+            self.feature_prev = None
+            self.track_prev = None
+            logger.info("No previous alignments found")
 
-        # Initialise checked plots
+        return True
+
+
+    def on_folder_selected(self) -> bool:
+        """
+        Triggered in offline mode when folder button is clicked
+        """
+        self.data_status = False
+
+        # Get folder from dialog (with Code Ocean logic)
+
+        we_are_in_code_ocean = Path('/results/').is_dir() and Path('/data/').is_dir()
+        start_dir = '/data/' if we_are_in_code_ocean else None
+        input_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory", directory=start_dir))
+        if not input_path:
+            return False
+
+        # Set up output directory (Code Ocean-specific logic)
+        if we_are_in_code_ocean:
+            out_folder = Path('/results/').joinpath(input_path.parent.stem)
+            string_folder_path = input_path.parent.stem
+            subject_id_path = string_folder_path[string_folder_path.index('_')+1:]
+            subject_id = subject_id_path[0:subject_id_path.index('_')]
+
+            out_folder = Path('/results').joinpath(subject_id)
+            logger.info(f'Output folder: {out_folder}')
+        else:
+            out_folder = input_path.parent/'out'
+
+        # Create the output directory structure
+        out_folder.mkdir(exist_ok=True)
+        output_directory = out_folder/input_path.parent.stem/input_path.stem
+        output_directory.mkdir(parents=True, exist_ok=True)
+        logger.info(f'Output dir: {output_directory}')
+        self.output_directory = output_directory
+
+        # Update UI
+        self.output_folder_line.setText(str(output_directory))
+        self.input_folder_line.setText(str(input_path))
+
+        # Load only channel info and shank list initially
+        self.loaddata.set_input_paths(input_path, we_are_in_code_ocean)
+        self.loaddata.load_channel_info(input_path)
+        shanklist = self.loaddata.get_shank_list()
+        if shanklist is not None:
+            self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
+            logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
+
+        self.current_shank_idx = 0
+        self.feature_prev = None
+        self.track_prev = None
+        
+        logger.info("Input directory loaded, ready to load data or existing alignments.")
+        return True
+
+
+    def on_use_docdb_changed(self, state):
+        """Handler for Use DocDB checkbox state changes"""
+        self.use_docdb = (state == QtCore.Qt.Checked)
+        logger.info(f"Use DocDB: {self.use_docdb}")
+
+
+    def on_load_data_button_pressed(self):
+        """Triggered when user clicks 'Load Data' button"""
+        if self.loaddata.input_path is None:
+            logger.error("Must select Input Directory first")
+            return
+
+        if self.loaddata.n_shanks == 0:
+            logger.error("Channel info not loaded. Please select Input Directory first.")
+            return
+
+        logger.info("Load Data button pressed")
+        self.load_heavy_data()
+
+
+    def on_output_folder_selected(self):
+        """
+        Triggered in offline mode when folder button is clicked
+        """
+        folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Output Directory"))
+
+        if folder_path:
+            self.output_folder_line.setText(str(folder_path))
+            self.output_directory = folder_path
+            return True
+        else:
+            return False
+
+    def recreate_alignment_and_regions(self):
+        """Create EphysAlignment and compute histology regions. Common code."""
+        if not self.histology_exists:
+            return
+
+        # Create alignment
+        if np.any(self.feature_prev):
+            self.ephysalign = EphysAlignment(
+                self.xyz_picks, self.chn_depths,
+                track_prev=self.track_prev,
+                feature_prev=self.feature_prev,
+                brain_atlas=self.loaddata.brain_atlas
+            )
+        else:
+            self.ephysalign = EphysAlignment(
+                self.xyz_picks, self.chn_depths,
+                brain_atlas=self.loaddata.brain_atlas
+            )
+
+        # Get histology regions
+        self.region_fp, self.region_label_fp, self.region_colour_fp, _ = \
+            EphysAlignment.get_histology_regions(
+                self.ephysalign.xyz_samples,
+                self.ephysalign.sampling_trk,
+                self.loaddata.brain_atlas
+            )
+
+        self.features[self.idx], self.track[self.idx], self.xyz_track = \
+            self.ephysalign.get_track_and_feature()
+
+        self.get_scaled_histology()
+
+    def render_histology_plots(self):
+        """Render all histology plots. Common code."""
+        if not self.histology_exists:
+            return
+
+        self.plot_histology_ref(self.fig_hist_ref)
+        self.plot_histology(self.fig_hist)
+        # force labels off then on to refresh
+        # TODO better way to do this?
+        self.label_status = False
+        self.toggle_labels_button_pressed()
+        self.plot_scale_factor()
+        self.plot_fit()
+
+        if np.any(self.feature_prev):
+            self.create_lines(self.feature_prev[1:-1] * 1e6)
+
+    def setup_session_view(self):
+        """Setup/refresh view for current session. Used by both initial load and session switching."""
+        logger.info("Setting up session view")
+        self.setup_shank_view()
+
+    def setup_shank_view(self):
+        """Setup/refresh view for current shank. Used by both initial load and shank switching."""
+
+        logger.info(f"Setting up view for shank index {self.current_shank_idx}")
+
+        # Re-filter channels for current shank (from cached chn_coords_all)
+        if self.loaddata.chn_coords_all is not None:
+            self.chn_depths = self.loaddata.set_channels_for_shank(self.current_shank_idx)
+            logger.debug(f"Filtered {len(self.chn_depths)} channels for this shank")
+
+        # Only process histology if it exists
+        if self.histology_exists:
+            # Load xyz_picks for this shank
+            self.xyz_picks = self.loaddata.get_xyzpicks(self.current_shank_idx)
+            logger.debug("Loaded xyz_picks for shank")
+
+            # Get alignment for this shank (from cached alignments, no disk read)
+            self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
+            self.recreate_alignment_and_regions()
+
+        self.plotdata = pd.PlotData(self.probe_path, self.data, self.current_shank_idx)
+        self.set_lims(np.min([0, self.plotdata.chn_min]), self.plotdata.chn_max)
+
+        self.scat_drift_data = self.plotdata.get_depth_data_scatter()
+        (self.scat_fr_data, self.scat_p2t_data, self.scat_amp_data) = \
+            self.plotdata.get_fr_p2t_data_scatter()
+        self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
+        self.img_fr_data = self.plotdata.get_fr_img()
+
+        self.img_rms_APdata, self.probe_rms_APdata = \
+            self.plotdata.get_rms_data_img_probe('AP')
+        self.img_rms_LFPdata, self.probe_rms_LFPdata = \
+            self.plotdata.get_rms_data_img_probe('LF')
+        self.img_rms_APdata_main, self.probe_rms_APdata_main = \
+            self.plotdata.get_rms_data_img_probe('AP_main')
+        self.img_rms_LFPdata_main, self.probe_rms_LFPdata_main = \
+            self.plotdata.get_rms_data_img_probe('LF_main')
+
+        self.img_lfp_data, self.probe_lfp_data = \
+            self.plotdata.get_lfp_spectrum_data('lf')
+        self.img_lfp_data_main, self.probe_lfp_data_main = \
+            self.plotdata.get_lfp_spectrum_data('lf_main')
+
+        self.img_lfp_corr_data = self.plotdata.get_lfp_correlation_data_img()
+        self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
+        self.probe_rfmap, self.rfmap_boundaries = self.plotdata.get_rfmap_data()
+        self.img_stim_data = self.plotdata.get_passive_events()
+
+        # TODO broken
+        if self.offline:
+            self.img_raw_data = {}
+        else:
+            self.img_raw_data = self.plotdata.get_raw_data_image(
+                self.loaddata.probe_id, one=self.loaddata.one)
+
+        if self.histology_exists:
+            self.slice_data, self.fp_slice_data = \
+                self.loaddata.get_slice_images(self.ephysalign.xyz_samples)
+        else:
+            self.slice_data = {}
+            self.fp_slice_data = None
+
+        if not self.data_status:
+            self.init_menubar()
+
+        # Initialize/update checked plots
         self.img_init.setChecked(True)
         self.line_init.setChecked(True)
         self.probe_init.setChecked(True)
         self.unit_init.setChecked(True)
         self.slice_init.setChecked(True)
 
-        # Initialise ephys plots
+        # Render all plots
+        logger.info("Rendering plots...")
         self.plot_image(self.img_fr_data)
         self.plot_probe(self.probe_rms_LFPdata)
         self.plot_line(self.line_fr_data)
 
-        # Initialise histology plots
-        self.plot_histology_ref(self.fig_hist_ref)
-        self.plot_histology(self.fig_hist)
-        self.label_status = False
-        self.toggle_labels_button_pressed()
-        self.plot_scale_factor()
-        if np.any(self.feature_prev):
-            self.create_lines(self.feature_prev[1:-1] * 1e6)
-        # Initialise slice and fit images
-        self.plot_fit()
+        self.render_histology_plots()
         self.plot_slice(self.slice_data, 'ccf')
 
-        # Only configure the view the first time the GUI is launched
-        self.set_view(view=1, configure=self.configure)
-        self.configure = False
+        # Only configure the view on first launch
+        self.set_view(view=1, configure = self.configure and not self.data_status)
+        if not self.data_status:
+            self.configure = False
+
+        logger.info("Shank view setup complete")
+
+
+    def on_shank_selected(self, idx):
+        """Triggered when selecting shank from dropdown"""
+        shank_text = self.shank_combobox.currentText()
+        new_shank_id = int(shank_text.split('/')[0])
+        if new_shank_id - 1 == self.current_shank_idx:
+            logger.info(f"Shank {new_shank_id} already selected")
+            return
+
+        self.current_shank_idx = new_shank_id - 1
+
+        logger.info(f"Shank {new_shank_id} selected (index {self.current_shank_idx})")
+
+        if not self.data_status:
+            # Data not loaded yet - just update index
+            logger.info("Data not loaded yet, shank index updated")
+            return
+
+        # Data already loaded - switch view without reloading heavy data
+        logger.info("Switching shank view...")
+        self.setup_shank_view()
+
+    def on_alignment_selected(self, idx):
+        """Triggered when selecting alignment from dropdown"""
+        logger.info(f"Alignment index {idx} selected")
+
+        # Get from cached data (no disk read)
+        try:
+            self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(idx)
+        except RuntimeError as e:
+            logger.error(f"Failed to get alignment: {e}")
+            return
+
+        if not self.data_status:
+            # Data not loaded yet - just update alignment params
+            logger.info("Data not loaded yet, alignment params updated")
+            return
+
+        self.recreate_alignment_and_regions()
+
+        self.render_histology_plots()
+
+        logger.info("Alignment change complete")
 
     def compute_nearby_boundaries(self):
 
@@ -1525,8 +1633,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def filter_unit_pressed(self, type):
         self.plotdata.filter_units(type)
         self.scat_drift_data = self.plotdata.get_depth_data_scatter()
-        (self.scat_fr_data, self.scat_p2t_data,
-         self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
+        (self.scat_fr_data, self.scat_p2t_data, self.scat_amp_data) = self.plotdata.get_fr_p2t_data_scatter()
         self.img_spike_corr_data = self.plotdata.get_spike_correlation_data_img()
         self.img_fr_data = self.plotdata.get_fr_img()
         self.line_fr_data, self.line_amp_data = self.plotdata.get_fr_amp_data_line()
@@ -1862,64 +1969,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                                 max=self.probe_top + self.probe_extra, padding=self.pad)
         self.update_string()
 
-    def _find_transform_files(self) -> AntsTransformChainFiles:
-        subject_id = self.input_path.parent.parent.stem
-        smartspim_template_affine_transform = tuple(
-            self.data_root.glob(
-                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
-            )
-        )
-        if not smartspim_template_affine_transform:
-            # try legacy way
-            smartspim_template_affine_transform = tuple(
-                self.data_root.glob(
-                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat"
-                )
-            )
-            if not smartspim_template_affine_transform:
-                raise FileNotFoundError(
-                    "No affine transform from spim to template. Check attached assets"
-                )
-
-        smartspim_template_warp_transform = tuple(
-            self.data_root.glob(
-                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz"
-            )
-        )
-        if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(
-                self.data_root.glob(
-                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz"
-                )
-            )
-            if not smartspim_template_warp_transform:
-                raise FileNotFoundError(
-                    "No warp transform from spim to template. Check attached assets"
-                )
-
-        template_to_ccf_affine_transform = tuple(
-            self.data_root.glob("spim_template_to_ccf/syn_0GenericAffine.mat")
-        )
-        if not template_to_ccf_affine_transform:
-            raise FileNotFoundError(
-                "No affine transform from template to ccf. Check attached assets"
-            )
-
-        template_to_ccf_warp_transform = tuple(
-            self.data_root.glob("spim_template_to_ccf/syn_1InverseWarp.nii.gz")
-        )
-        if not template_to_ccf_warp_transform:
-            raise FileNotFoundError(
-                "No warp transform from template to ccf. Check attached assets"
-            )
-
-        return AntsTransformChainFiles(
-            smartspim_template_affine_transform=smartspim_template_affine_transform[0],
-            smartspim_template_warp_transform=smartspim_template_warp_transform[0],
-            template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
-            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0],
-        )
-
     def run_complete_button_in_thread(self):
         self.thread = QThread()
         self.worker = Worker(self.complete_button_pressed_offline)
@@ -1936,46 +1985,35 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Saves final channel locations to a JSON file
         """
         # Save histology-space to disk and update in-memory state
-        channel_dict, alignment_dict, ccf_channel_dict, multi_shank = (
-            self.loaddata.upload_data(
-                self.features[self.idx],
-                self.track[self.idx],
-                self.xyz_channels,
-                self.tx_chain_files,
-            )
+        self.loaddata.get_alignment_results(
+            self.features[self.idx],
+            self.track[self.idx],
+            self.xyz_channels,
         )
 
-        shank_saveno = self.current_shank_idx + 1
-        suffix = f"_shank{shank_saveno}" if multi_shank else ""
-        channel_loc_filename = f"channel_locations{suffix}.json"
-        prev_align_filename = f"prev_alignments{suffix}.json"
-        ccf_channel_loc_filename = f"ccf_channel_locations{suffix}.json"
+        ccf_channel_dict = self._transform_to_ccf()
+        channel_results = self.loaddata.channel_dict
+        prev_alignments = self.loaddata.alignments
 
         logger.info("Saving output files to results folder and docdb")
-        _dump_dict_to_json(channel_dict, self.output_directory / channel_loc_filename)
-        _dump_dict_to_json(alignment_dict, self.output_directory / prev_align_filename)
-        _dump_dict_to_json(
-            ccf_channel_dict, self.output_directory / ccf_channel_loc_filename
-        )
+        if self.loaddata.n_shanks > 1:
+            ccf_channel_dict_path = self.output_directory / f'ccf_channel_locations_shank{self.current_shank_idx + 1}.json'
+        else:
+            ccf_channel_dict_path = self.output_directory / 'ccf_channel_locations.json'
+        with open(ccf_channel_dict_path, "w") as f:
+            json.dump(ccf_channel_dict, f, indent=2, separators=(",", ": "))
 
-        probe_name_for_docdb = f"{self.output_directory.stem}_{self.current_shank_idx}"
+
+        probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
 
         try:
-            write_output_to_docdb(
-                self.output_directory.parent.stem,
-                probe_name_for_docdb,
-                channel_dict,
-                alignment_dict,
-                ccf_channel_dict,
-            )
+            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb,
+                                channel_results, prev_alignments, ccf_channel_dict)
         except ValueError as e:
-            logger.error(
-                f"Failed to write to docdb with error {e}. Output saved to results folder"
-            )
+            logger.error(f"Failed to write to docdb with error {e}. Output saved to results folder")
 
-        logger.info(
-            f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
-        )
+        logger.info(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
+
 
     def display_qc_options(self):
 
