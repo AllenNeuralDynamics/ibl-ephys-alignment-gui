@@ -1308,14 +1308,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             return False
         
-    # def on_load_existing_button_pressed(self):
-    #     if self.loaddata.output_directory is not None:
-    #         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Annotation Directory"),self.loaddata.output_directory)
-    #     else:
-    #         folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Annotation Directory"))
-    #     self.prev_alignments, shank_options = self.loaddata.get_previous_info(folder_path)
-    #     self.populate_lists(shank_options, self.shank_list, self.shank_combobox)
-
         
     def on_shank_selected(self, idx):
         """
