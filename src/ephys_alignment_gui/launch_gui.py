@@ -1229,7 +1229,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered in offline mode when folder button is clicked
         """
         self.data_status = False
-        #folder_path = Path(QtWidgets.QFileDialog.getExistingDirectory(None, "Select Input Directory"))
         
         if Path('/data/').is_dir():
             # Default For code ocean.
@@ -1257,13 +1256,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Make it compatible with path outside of code ocean
         self.loaddata.data_root = folder_path.parents[3]
         self.data_root = self.loaddata.data_root
+        self.tx_chain_files = self._find_transform_files()
 
         # Create the output folder if it doesn't exist
-        os.makedirs(out_folder, exist_ok=True)
+        
+        out_folder.mkdir(exist_ok=True)
         # Set the output directory based on input name.
         self.output_directory = out_folder/folder_path.parent.stem/folder_path.stem
+        self.output_directory.mkdir(parents=True, exist_ok=True)
         logger.info(f'Output dir: {self.output_directory}')
-        self.loaddata.output_directory = self.output_directory
         self.output_folder_line.setText(str(self.output_directory))
 
         if folder_path:
@@ -1934,11 +1935,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed. 
         Saves final channel locations to a JSON file
         """
-        if not self.loaddata.output_directory:
-            if not self.on_output_folder_selected():
-                logger.warning("Channels locations not saved")
-                return
-
         # Save histology-space to disk and update in-memory state
         channel_dict, alignment_dict, ccf_channel_dict, multi_shank = (
             self.loaddata.upload_data(

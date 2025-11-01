@@ -564,7 +564,7 @@ class LoadDataLocal:
         track: NDArray,
         xyz_channels: NDArray,
         tx_chain_files: AntsTransformChainFiles,
-    ) -> tuple[dict[str, dict[str, Any]], dict[str, list[list[float]]], bool]:
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, list[list[float]]], dict[str, dict[str, Any]], bool]:
         logger.info("Saving channel locations and previous alignments locally")
         logger.debug(f"Channels: {xyz_channels}")
         if self.brain_atlas is None:
