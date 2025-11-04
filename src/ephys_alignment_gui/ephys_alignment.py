@@ -123,13 +123,28 @@ class EphysAlignment:
             self.track_init = np.array([-1 * start_lims, start_lims])
             self.feature_init = np.array([-1 * start_lims, start_lims])
 
-        self.sampling_trk = np.arange(
-            self.track_extent[0], self.track_extent[-1] - 10 * 1e-6, 10 * 1e-6
-        )
+        # Fit trajectory to the track for voxel-aligned sampling
+        traj = atlas.Trajectory.fit(self.xyz_track)
 
-        self.xyz_samples = histology.interpolate_along_track(
-            self.xyz_track, self.sampling_trk - self.sampling_trk[0]
-        )
+        # Get DV range of the trajectory
+        z_min = np.min(self.xyz_track[:, 2])
+        z_max = np.max(self.xyz_track[:, 2])
+
+        # Convert to voxel indices and align to voxel boundaries
+        i_min = int(np.floor(self.brain_atlas.bc.z2i(z_min)))
+        i_max = int(np.ceil(self.brain_atlas.bc.z2i(z_max)))
+
+        # Sample at every voxel in DV (z) direction
+        z_samples = self.brain_atlas.bc.i2z(np.arange(i_min, i_max + 1))
+
+        # Evaluate trajectory at voxel-aligned DV coordinates
+        self.xyz_samples = traj.eval_z(z_samples)
+
+        # Compute cumulative distance along trajectory for compatibility
+        # (sampling_trk is used for depth_coords in get_histology_regions)
+        distances = np.sqrt(np.sum(np.diff(self.xyz_samples, axis=0)**2, axis=1))
+        self.sampling_trk = np.concatenate([[self.track_extent[0]],
+                                            self.track_extent[0] + np.cumsum(distances)])
         # ensure none of the track is outside the y or x lim of atlas
         xlim = np.sort(self.brain_atlas.bc.xlim)
         ylim = np.sort(self.brain_atlas.bc.ylim)
@@ -143,6 +158,8 @@ class EphysAlignment:
         )
         rem = np.bitwise_and(x_in_range, y_in_range)
         self.xyz_samples = self.xyz_samples[rem]
+        # Also filter sampling_trk to match filtered xyz_samples
+        self.sampling_trk = self.sampling_trk[rem]
 
         self.region, self.region_label, self.region_colour, self.region_id = (
             self.get_histology_regions(
