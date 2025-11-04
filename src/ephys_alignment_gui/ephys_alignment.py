@@ -108,7 +108,7 @@ class EphysAlignment:
         else:
             self.brain_atlas = brain_atlas
 
-        self.xyz_track, self.track_extent = self.get_insertion_track(
+        self.xyz_track, self.track_extent, self.depths_along_trk = self.get_insertion_track(
             xyz_picks, speedy=speedy
         )
 
@@ -141,11 +141,14 @@ class EphysAlignment:
         # Evaluate trajectory at voxel-aligned DV coordinates
         self.xyz_samples = traj.eval_z(z_samples)
 
+
         # Compute cumulative distance along trajectory for compatibility
         # (sampling_trk is used for depth_coords in get_histology_regions)
-        distances = np.sqrt(np.sum(np.diff(self.xyz_samples, axis=0)**2, axis=1))
-        self.sampling_trk = np.concatenate([[self.track_extent[0]],
-                                            self.track_extent[0] + np.cumsum(distances)])
+        self.sampling_trk = np.interp(
+            self.xyz_samples[:, 2],      # z-coordinates we want depths for
+            self.xyz_track[:, 2],          # z-coordinates along track
+            self.depths_along_trk         # cumulative distances along track
+        )
         # ensure none of the track is outside the y or x lim of atlas
         xlim = np.sort(self.brain_atlas.bc.xlim)
         ylim = np.sort(self.brain_atlas.bc.ylim)
@@ -212,8 +215,9 @@ class EphysAlignment:
         tip_distance = cumulative_dist[1] + TIP_SIZE_UM / 1e6
         track_length = cumulative_dist[-1]
         track_extent = np.array([0, track_length]) - tip_distance
+        depths_along_track = cumulative_dist - tip_distance
         logger.debug(f"Track extent: {track_extent}")
-        return xyz_track, track_extent
+        return xyz_track, track_extent, depths_along_track
 
     def get_track_and_feature(self):
         """
