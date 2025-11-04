@@ -1,48 +1,59 @@
-'''
+"""
 Extract channel locations from reference points of previous alignments saved in json field of
 trajectory object
 Create plot showing histology regions which channels pass through as well as coronal slice with
 channel locations shown
-'''
+"""
 
 # import modules
-from oneibl.one import ONE
-from ephys_alignment_gui.ephys_alignment import EphysAlignment
+import iblatlas.atlas as atlas
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import iblatlas.atlas as atlas
+from oneibl.one import ONE
 
+from ephys_alignment_gui.ephys_alignment import EphysAlignment
 
 # Instantiate brain atlas and one
 brain_atlas = atlas.AllenAtlas(25)
 one = ONE()
 
 # Find eid of interest
-subject = 'KS022'
+subject = "KS022"
 
 # Find the ephys aligned trajectory for eid probe combination
-trajectory = one.alyx.rest('trajectories', 'list', provenance='Ephys aligned histology track',
-                           subject=subject)
+trajectory = one.alyx.rest(
+    "trajectories",
+    "list",
+    provenance="Ephys aligned histology track",
+    subject=subject,
+)
 
 # Load in channels.localCoordinates dataset type
-chn_coords = one.load(trajectory[0]['session']['id'],
-                      dataset_types=['channels.localCoordinates'])[0]
+chn_coords = one.load(
+    trajectory[0]["session"]["id"], dataset_types=["channels.localCoordinates"]
+)[0]
 depths = chn_coords[:, 1]
 
-subject_summary = pd.DataFrame(columns={'Session', 'User', 'Scale Factor', 'Avg Scale Factor'})
+subject_summary = pd.DataFrame(
+    columns={"Session", "User", "Scale Factor", "Avg Scale Factor"}
+)
 sf = []
 sess = []
 user = []
 for traj in trajectory:
-    alignments = traj['json']
+    alignments = traj["json"]
 
-    insertion = one.alyx.rest('insertions', 'list', session=traj['session']['id'],
-                              name=traj['probe_name'])
-    xyz_picks = np.array(insertion[0]['json']['xyz_picks']) / 1e6
+    insertion = one.alyx.rest(
+        "insertions",
+        "list",
+        session=traj["session"]["id"],
+        name=traj["probe_name"],
+    )
+    xyz_picks = np.array(insertion[0]["json"]["xyz_picks"]) / 1e6
 
-    session_info = traj['session']['start_time'][:10] + '_' + traj['probe_name']
+    session_info = traj["session"]["start_time"][:10] + "_" + traj["probe_name"]
 
     for iK, key in enumerate(alignments):
         # Location of reference lines used for alignmnet
@@ -50,7 +61,9 @@ for traj in trajectory:
         track = np.array(alignments[key][1])
         user = key[:19]
         # Instantiate EphysAlignment object
-        ephysalign = EphysAlignment(xyz_picks, depths, track_prev=track, feature_prev=feature)
+        ephysalign = EphysAlignment(
+            xyz_picks, depths, track_prev=track, feature_prev=feature
+        )
         region_scaled, _ = ephysalign.scale_histology_regions(feature, track)
         _, scale_factor = ephysalign.get_scale_factor(region_scaled)
 
@@ -72,17 +85,36 @@ for traj in trajectory:
         for iS, sf in enumerate(scale_factor):
             if iS == 0:
                 subject_summary = subject_summary.append(
-                    {'Session': session_info, 'User': user, 'Scale Factor': sf,
-                     'Avg Scale Factor': avg_sf}, ignore_index=True)
+                    {
+                        "Session": session_info,
+                        "User": user,
+                        "Scale Factor": sf,
+                        "Avg Scale Factor": avg_sf,
+                    },
+                    ignore_index=True,
+                )
             else:
                 subject_summary = subject_summary.append(
-                    {'Session': session_info, 'User': user, 'Scale Factor': sf,
-                     'Avg Scale Factor': np.NaN}, ignore_index=True)
+                    {
+                        "Session": session_info,
+                        "User": user,
+                        "Scale Factor": sf,
+                        "Avg Scale Factor": np.NaN,
+                    },
+                    ignore_index=True,
+                )
 
 fig, ax = plt.subplots(figsize=(10, 8))
-sns.swarmplot(x='Session', y='Scale Factor', hue='User', data=subject_summary, ax=ax)
-sns.swarmplot(x='Session', y='Avg Scale Factor', hue='User', size=8, linewidth=1,
-                data=subject_summary, ax=ax)
+sns.swarmplot(x="Session", y="Scale Factor", hue="User", data=subject_summary, ax=ax)
+sns.swarmplot(
+    x="Session",
+    y="Avg Scale Factor",
+    hue="User",
+    size=8,
+    linewidth=1,
+    data=subject_summary,
+    ax=ax,
+)
 # ensures value in legend isn't repeated
 handles, labels = ax.get_legend_handles_labels()
 by_label = dict(zip(labels, handles))

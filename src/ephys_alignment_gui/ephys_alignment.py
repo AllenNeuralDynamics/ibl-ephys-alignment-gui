@@ -18,7 +18,10 @@ def _cumulative_distance(xyz):
 
 
 def _get_surface_intersection_override(
-    traj: Trajectory, brain_atlas: BrainAtlas, surface: str = "top", mode: str = "raise"
+    traj: Trajectory,
+    brain_atlas: BrainAtlas,
+    surface: str = "top",
+    mode: str = "raise",
 ) -> NDArray[np.float64]:
     """
     Override for atlas.Insertion._get_surface_intersection to avoid issues
@@ -68,8 +71,9 @@ def _get_surface_intersection_override(
 
     return xyz
 
+
 def get_brain_exit_override(
-    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = 'raise'
+    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = "raise"
 ) -> NDArray[np.float64]:
     """
     Given a Trajectory and a BrainAtlas object, computes the brain exit coordinate as the
@@ -78,10 +82,13 @@ def get_brain_exit_override(
     :return: 3 element array x,y,z
     """
     # Find point where trajectory intersects with bottom of brain
-    return _get_surface_intersection_override(traj, brain_atlas, surface='bottom', mode=mode)
+    return _get_surface_intersection_override(
+        traj, brain_atlas, surface="bottom", mode=mode
+    )
+
 
 def get_brain_entry_override(
-    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = 'raise'
+    traj: Trajectory, brain_atlas: BrainAtlas, mode: str = "raise"
 ) -> NDArray[np.float64]:
     """
     Given a Trajectory and a BrainAtlas object, computes the brain entry coordinate as the
@@ -90,7 +97,9 @@ def get_brain_entry_override(
     :return: 3 element array x,y,z
     """
     # Find point where trajectory intersects with top of brain
-    return _get_surface_intersection_override(traj, brain_atlas, surface='top', mode=mode)
+    return _get_surface_intersection_override(
+        traj, brain_atlas, surface="top", mode=mode
+    )
 
 
 class EphysAlignment:
@@ -102,14 +111,14 @@ class EphysAlignment:
         feature_prev=None,
         brain_atlas=None,
         speedy=False,
-    ):
+    ) -> None:
         if not brain_atlas:
             self.brain_atlas = atlas.AllenAtlas(25)
         else:
             self.brain_atlas = brain_atlas
 
-        self.xyz_track, self.track_extent, self.depths_along_trk = self.get_insertion_track(
-            xyz_picks, speedy=speedy
+        self.xyz_track, self.track_extent, self.depths_along_trk = (
+            self.get_insertion_track(xyz_picks, speedy=speedy)
         )
 
         # Initial depth estimate.
@@ -141,13 +150,12 @@ class EphysAlignment:
         # Evaluate trajectory at voxel-aligned DV coordinates
         self.xyz_samples = traj.eval_z(z_samples)
 
-
         # Compute cumulative distance along trajectory for compatibility
         # (sampling_trk is used for depth_coords in get_histology_regions)
         self.sampling_trk = np.interp(
-            self.xyz_samples[:, 2],      # z-coordinates we want depths for
-            self.xyz_track[:, 2],          # z-coordinates along track
-            self.depths_along_trk         # cumulative distances along track
+            self.xyz_samples[:, 2],  # z-coordinates we want depths for
+            self.xyz_track[:, 2],  # z-coordinates along track
+            self.depths_along_trk,  # cumulative distances along track
         )
         # ensure none of the track is outside the y or x lim of atlas
         xlim = np.sort(self.brain_atlas.bc.xlim)
@@ -189,11 +197,11 @@ class EphysAlignment:
 
         # Force the entry to be on the upper z lim of the atlas to account for cases where channels
         # may be located above the surface of the brain
-        entry_lims = (traj_entry.eval_z(self.brain_atlas.bc.zlim))
+        entry_lims = traj_entry.eval_z(self.brain_atlas.bc.zlim)
         entry_top_lim = np.argmax(entry_lims[:, 2])
         entry = entry_lims[entry_top_lim, :]
         if speedy:
-            exit_lims = (traj_exit.eval_z(self.brain_atlas.bc.zlim))
+            exit_lims = traj_exit.eval_z(self.brain_atlas.bc.zlim)
             exit_top_lim = np.argmin(entry_lims[:, 2])
             exit = exit_lims[exit_top_lim, :]
         else:
@@ -471,14 +479,14 @@ class EphysAlignment:
             xyz_coords, brain_atlas=brain_atlas
         ).trajectory.vector
         nearest_bound = dict()
-        nearest_bound["dist"] = np.zeros((xyz_coords.shape[0]))
-        nearest_bound["id"] = np.zeros((xyz_coords.shape[0]))
+        nearest_bound["dist"] = np.zeros(xyz_coords.shape[0])
+        nearest_bound["id"] = np.zeros(xyz_coords.shape[0])
         # nearest_bound['adj_id'] = np.zeros((xyz_coords.shape[0]))
         nearest_bound["col"] = []
 
         if parent:
-            nearest_bound["parent_dist"] = np.zeros((xyz_coords.shape[0]))
-            nearest_bound["parent_id"] = np.zeros((xyz_coords.shape[0]))
+            nearest_bound["parent_dist"] = np.zeros(xyz_coords.shape[0])
+            nearest_bound["parent_id"] = np.zeros(xyz_coords.shape[0])
             # nearest_bound['parent_adj_id'] = np.zeros((xyz_coords.shape[0]))
             nearest_bound["parent_col"] = []
 
@@ -496,7 +504,9 @@ class EphysAlignment:
             X, Y = np.meshgrid(x_vals, y_vals)
             Z = (d - vector[0] * X - vector[1] * Y) / vector[2]
             XYZ = np.c_[
-                np.reshape(X, X.size), np.reshape(Y, Y.size), np.reshape(Z, Z.size)
+                np.reshape(X, X.size),
+                np.reshape(Y, Y.size),
+                np.reshape(Z, Z.size),
             ]
             dist = np.sqrt(np.sum((XYZ - point) ** 2, axis=1))
 
@@ -628,7 +638,10 @@ class EphysAlignment:
                     _scale_factor = scale[-1]
                 else:
                     _scaled_region = np.array(
-                        [region[boundaries[bound - 1]][1], region[boundaries[bound]][1]]
+                        [
+                            region[boundaries[bound - 1]][1],
+                            region[boundaries[bound]][1],
+                        ]
                     )
                     _scale_factor = scale[boundaries[bound]]
                 scaled_region[bound, :] = _scaled_region
@@ -688,7 +701,8 @@ class EphysAlignment:
             point = xyz[0, :]
             vector_perp = np.array([1, 0, -1 * vector[0] / vector[2]])
             xyz_per = np.r_[
-                [point + (-1 * extent * vector_perp)], [point + (extent * vector_perp)]
+                [point + (-1 * extent * vector_perp)],
+                [point + (extent * vector_perp)],
             ]
             slice_lines.append(xyz_per)
 

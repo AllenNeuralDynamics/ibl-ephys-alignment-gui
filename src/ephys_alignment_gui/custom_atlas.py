@@ -8,7 +8,8 @@ from iblutil.numerical import ismember
 
 _logger = logging.getLogger(__name__)
 
-_BLESSED_DIRECTION : str = "IRP"
+_BLESSED_DIRECTION: str = "IRP"
+
 
 class BrainAtlasAnatomical(BrainAtlas):
     """
@@ -56,7 +57,12 @@ class BrainAtlasAnatomical(BrainAtlas):
         """
 
         # Validate that intensity and label images have the same shape and physical space
-        methods_to_check = ["GetOrigin", "GetSpacing", "GetSize", "GetDirection"]
+        methods_to_check = [
+            "GetOrigin",
+            "GetSpacing",
+            "GetSize",
+            "GetDirection",
+        ]
         for m in methods_to_check:
             intensity_val = np.array(getattr(intensity_img, m)())
             label_val = np.array(getattr(label_img, m)())

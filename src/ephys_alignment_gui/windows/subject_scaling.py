@@ -1,20 +1,18 @@
+import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui, QtWidgets
-import numpy as np
 
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
-from ephys_alignment_gui.plot_elements import replace_axis
-from ephys_alignment_gui.plot_elements import ColorBar
+from ephys_alignment_gui.plot_elements import ColorBar, replace_axis
 from ephys_alignment_gui.probe_geometry import trace_header
 
-pg.setConfigOption('background', 'w')
-pg.setConfigOption('foreground', 'k')
+pg.setConfigOption("background", "w")
+pg.setConfigOption("foreground", "k")
 
 
 class ScalingWindow(QtWidgets.QMainWindow):
-
-    def __init__(self, pid, subject, one, ba, size=(1600, 800)):
-        super(ScalingWindow, self).__init__()
+    def __init__(self, pid, subject, one, ba, size=(1600, 800)) -> None:
+        super().__init__()
 
         self.resize(size[0], size[1])
         main_widget = QtWidgets.QWidget()
@@ -23,42 +21,58 @@ class ScalingWindow(QtWidgets.QMainWindow):
         main_widget.setLayout(main_layout)
 
         self.data = []
-        depths = trace_header()['y']
+        depths = trace_header()["y"]
         idx = None
 
-        insertions = one.alyx.rest('insertions', 'list', subject=subject,
-                                   django='json__extended_qc__has_key,alignment_resolved')
+        insertions = one.alyx.rest(
+            "insertions",
+            "list",
+            subject=subject,
+            django="json__extended_qc__has_key,alignment_resolved",
+        )
 
         for i, ins in enumerate(insertions):
-            if ins['id'] == pid:
+            if ins["id"] == pid:
                 idx = i
                 continue
 
-            xyz = np.array(ins['json']['xyz_picks']) / 1e6
-            traj = one.alyx.rest('trajectories', 'list', probe_insertion=ins['id'],
-                                 provenance='Ephys aligned histology track')[0]
-            align_key = ins['json']['extended_qc']['alignment_stored']
-            feature = traj['json'][align_key][0]
-            track = traj['json'][align_key][1]
-            resolved = ins['json']['extended_qc']['alignment_resolved']
-            ephysalign = EphysAlignment(xyz, depths, track_prev=track,
-                                        feature_prev=feature,
-                                        brain_atlas=ba, speedy=True)
+            xyz = np.array(ins["json"]["xyz_picks"]) / 1e6
+            traj = one.alyx.rest(
+                "trajectories",
+                "list",
+                probe_insertion=ins["id"],
+                provenance="Ephys aligned histology track",
+            )[0]
+            align_key = ins["json"]["extended_qc"]["alignment_stored"]
+            feature = traj["json"][align_key][0]
+            track = traj["json"][align_key][1]
+            resolved = ins["json"]["extended_qc"]["alignment_resolved"]
+            ephysalign = EphysAlignment(
+                xyz,
+                depths,
+                track_prev=track,
+                feature_prev=feature,
+                brain_atlas=ba,
+                speedy=True,
+            )
 
             region_colour = ephysalign.region_colour
             region, region_label = ephysalign.scale_histology_regions(feature, track)
             scale_region, scale = ephysalign.get_scale_factor(region)
-            region_orig, label_orig = ephysalign.scale_histology_regions(ephysalign.track_extent, ephysalign.track_extent)
+            region_orig, label_orig = ephysalign.scale_histology_regions(
+                ephysalign.track_extent, ephysalign.track_extent
+            )
 
-            data = {'regions_orig': region_orig,
-                    'labels_orig': label_orig,
-                    'regions': region,
-                    'labels': region_label,
-                    'colors': region_colour,
-                    'scaled_regions': scale_region,
-                    'scale': scale,
-                    'resolved': resolved
-                    }
+            data = {
+                "regions_orig": region_orig,
+                "labels_orig": label_orig,
+                "regions": region,
+                "labels": region_label,
+                "colors": region_colour,
+                "scaled_regions": scale_region,
+                "scale": scale,
+                "resolved": resolved,
+            }
 
             self.data.append(data)
 
@@ -71,11 +85,13 @@ class ScalingWindow(QtWidgets.QMainWindow):
 
         for ins in insertions:
             info_label = QtWidgets.QLabel()
-            resolved = ins['json']['extended_qc']['alignment_resolved']
-            resolved_status = 'RESOLVED' if resolved else 'ALIGNED'
+            resolved = ins["json"]["extended_qc"]["alignment_resolved"]
+            resolved_status = "RESOLVED" if resolved else "ALIGNED"
 
-            info_label.setText(f'{ins["session_info"]["subject"]}/{ins["session_info"]["start_time"][:10]}'
-                               f'/00{ins["session_info"]["number"]} \n {ins["name"]} \n {resolved_status}')
+            info_label.setText(
+                f"{ins['session_info']['subject']}/{ins['session_info']['start_time'][:10]}"
+                f"/00{ins['session_info']['number']} \n {ins['name']} \n {resolved_status}"
+            )
             info_layout.addWidget(info_label)
 
         plot_widget = QtWidgets.QWidget()
@@ -97,18 +113,18 @@ class ScalingWindow(QtWidgets.QMainWindow):
             fig_hist = pg.PlotItem()
             fig_hist.setContentsMargins(0, 0, 0, 0)
             fig_hist.setMouseEnabled(x=False)
-            self.set_axis(fig_hist, 'bottom', pen='w')
+            self.set_axis(fig_hist, "bottom", pen="w")
 
             replace_axis(fig_hist)
-            ax_hist = self.set_axis(fig_hist, 'left', pen='k')
+            ax_hist = self.set_axis(fig_hist, "left", pen="k")
             ax_hist.setWidth(30)
             self.plots_hist.append(fig_hist)
 
             fig_scale = pg.PlotItem()
             fig_scale.setMaximumWidth(50)
             fig_scale.setMouseEnabled(x=False)
-            self.set_axis(fig_scale, 'bottom', pen='w')
-            self.set_axis(fig_scale, 'left', show=False)
+            self.set_axis(fig_scale, "bottom", pen="w")
+            self.set_axis(fig_scale, "left", show=False)
             fig_scale.setYLink(fig_hist)
             self.plots_scale.append(fig_scale)
 
@@ -116,19 +132,19 @@ class ScalingWindow(QtWidgets.QMainWindow):
             fig_scale_cb = pg.PlotItem()
             fig_scale_cb.setMouseEnabled(x=False, y=False)
             fig_scale_cb.setMaximumHeight(70)
-            self.set_axis(fig_scale_cb, 'bottom', show=False)
-            self.set_axis(fig_scale_cb, 'left', show=False)
-            self.set_axis(fig_scale_cb, 'top', pen='w')
-            self.set_axis(fig_scale_cb, 'right', show=False)
+            self.set_axis(fig_scale_cb, "bottom", show=False)
+            self.set_axis(fig_scale_cb, "left", show=False)
+            self.set_axis(fig_scale_cb, "top", pen="w")
+            self.set_axis(fig_scale_cb, "right", show=False)
             self.plots_cbar.append(fig_scale_cb)
 
             # Histology figure that will remain at initial state for reference
             fig_hist_ref = pg.PlotItem()
             fig_hist_ref.setMouseEnabled(x=False)
-            self.set_axis(fig_hist_ref, 'bottom', pen='w')
-            self.set_axis(fig_hist_ref, 'left', show=False)
-            replace_axis(fig_hist_ref, orientation='right', pos=(2, 2))
-            ax_hist_ref = self.set_axis(fig_hist_ref, 'right', pen=None)
+            self.set_axis(fig_hist_ref, "bottom", pen="w")
+            self.set_axis(fig_hist_ref, "left", show=False)
+            replace_axis(fig_hist_ref, orientation="right", pos=(2, 2))
+            ax_hist_ref = self.set_axis(fig_hist_ref, "right", pen=None)
             ax_hist_ref.setWidth(0)
             self.plots_hist_ref.append(fig_hist_ref)
 
@@ -154,10 +170,9 @@ class ScalingWindow(QtWidgets.QMainWindow):
 
         self.show()
 
-    def set_axis(self, fig, ax, show=True, label=None, pen='k', ticks=True):
-
+    def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         if not label:
-            label = ''
+            label = ""
         if type(fig) == pg.PlotItem:
             axis = fig.getAxis(ax)
         else:
@@ -168,13 +183,13 @@ class ScalingWindow(QtWidgets.QMainWindow):
             axis.setTextPen(pen)
             axis.setLabel(label)
             if not ticks:
-                axis.setTicks([[(0, ''), (0.5, ''), (1, '')]])
+                axis.setTicks([[(0, ""), (0.5, ""), (1, "")]])
         else:
             axis.hide()
 
         return axis
 
-    def plot_scale_factor(self):
+    def plot_scale_factor(self) -> None:
         """
         Plots the scale factor applied to brain regions along probe track, displayed
         alongside histology figure
@@ -188,69 +203,75 @@ class ScalingWindow(QtWidgets.QMainWindow):
             fig_scale_cb.clear()
 
             scale_regions = np.empty((0, 1))
-            scale_factor = data['scale'] - 0.5
-            color_bar = ColorBar('seismic')
-            cbar = color_bar.makeColourBar(20, 5, fig_scale_cb, min=0.5, max=1.5,
-                                           label='Scale Factor')
+            scale_factor = data["scale"] - 0.5
+            color_bar = ColorBar("seismic")
+            cbar = color_bar.makeColourBar(
+                20, 5, fig_scale_cb, min=0.5, max=1.5, label="Scale Factor"
+            )
             colours = color_bar.map.mapToQColor(scale_factor)
 
-            for ir, reg in enumerate(data['scaled_regions']):
-                region = pg.LinearRegionItem(values=(reg[0], reg[1]),
-                                             orientation=pg.LinearRegionItem.Horizontal,
-                                             brush=colours[ir], movable=False)
+            for ir, reg in enumerate(data["scaled_regions"]):
+                region = pg.LinearRegionItem(
+                    values=(reg[0], reg[1]),
+                    orientation=pg.LinearRegionItem.Horizontal,
+                    brush=colours[ir],
+                    movable=False,
+                )
                 bound = pg.InfiniteLine(pos=reg[0], angle=0, pen=colours[ir])
 
                 fig_scale.addItem(region)
                 fig_scale.addItem(bound)
                 scale_regions = np.vstack([scale_regions, region])
 
-            bound = pg.InfiniteLine(pos=data['scaled_regions'][-1][1], angle=0,
-                                    pen=colours[-1])
+            bound = pg.InfiniteLine(
+                pos=data["scaled_regions"][-1][1], angle=0, pen=colours[-1]
+            )
 
             fig_scale.addItem(bound)
 
             fig_scale.setYRange(min=0, max=3840)
-            self.set_axis(fig_scale, 'bottom', pen='w', label='blank')
+            self.set_axis(fig_scale, "bottom", pen="w", label="blank")
             fig_scale_cb.addItem(cbar)
             self.scale_regions.append(scale_regions)
 
-    def plot_histology(self, ref=False):
-
+    def plot_histology(self, ref=False) -> None:
         for iD, data in enumerate(self.data):
-
             if ref:
                 fig = self.plots_hist_ref[iD]
-                axis = 'right'
-                labels = data['labels_orig']
-                regions = data['regions_orig']
+                axis = "right"
+                labels = data["labels_orig"]
+                regions = data["regions_orig"]
             else:
                 fig = self.plots_hist[iD]
-                axis = 'left'
-                labels = data['labels']
-                regions = data['regions']
+                axis = "left"
+                labels = data["labels"]
+                regions = data["regions"]
 
             fig.clear()
 
             axis = fig.getAxis(axis)
             axis.setTicks([labels])
             axis.setZValue(10)
-            axis.setPen('k')
+            axis.setPen("k")
 
             # Plot each histology region
-            for ir, (reg, col) in enumerate(zip(regions, data['colors'])):
+            for ir, (reg, col) in enumerate(zip(regions, data["colors"])):
                 colour = QtGui.QColor(*col)
 
-                region = pg.LinearRegionItem(values=(reg[0], reg[1]),
-                                             orientation=pg.LinearRegionItem.Horizontal,
-                                             brush=colour, movable=False)
+                region = pg.LinearRegionItem(
+                    values=(reg[0], reg[1]),
+                    orientation=pg.LinearRegionItem.Horizontal,
+                    brush=colour,
+                    movable=False,
+                )
                 # Add a white line at the boundary between regions
-                bound = pg.InfiniteLine(pos=reg[0], angle=0, pen='w')
+                bound = pg.InfiniteLine(pos=reg[0], angle=0, pen="w")
                 fig.addItem(region)
                 fig.addItem(bound)
 
             fig.setYRange(min=0, max=3840)
 
-    def on_mouse_hover(self, items):
+    def on_mouse_hover(self, items) -> None:
         if len(items) > 1:
             scale_plot = False
             for idx, pl in enumerate(self.plots_scale):
@@ -261,5 +282,8 @@ class ScalingWindow(QtWidgets.QMainWindow):
             if scale_plot:
                 reg_idx = np.where(self.scale_regions[idx] == items[1])[0]
                 if len(reg_idx) > 0:
-                    ax = self.plots_cbar[idx].getAxis('top')
-                    ax.setLabel('Scale Factor = ' + str(np.around(self.data[idx]['scale'][reg_idx[0]], 2)))
+                    ax = self.plots_cbar[idx].getAxis("top")
+                    ax.setLabel(
+                        "Scale Factor = "
+                        + str(np.around(self.data[idx]["scale"][reg_idx[0]], 2))
+                    )

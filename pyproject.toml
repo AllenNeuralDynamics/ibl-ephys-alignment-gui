@@ -41,8 +41,8 @@ where = ["src"]
 version = { attr = "ephys_alignment_gui.__version__" }
 
 [tool.black]
-line-length = 79
-target_version = ['py36']
+line-length = 88
+target_version = ['py39']
 exclude = '''
 
 (
@@ -61,6 +61,27 @@ exclude = '''
 )
 '''
 
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "ANN", "PYI"]
+extend-ignore = ["ANN401"]
+per-file-ignores = { "tests/*.py" = [
+  "ANN",
+], "docs/**/*.py" = [
+  "ANN",
+], "notebooks/*.py" = [
+  "ANN",
+] }
+mccabe = { max-complexity = 14 }
+pydocstyle = { convention = "numpy" }
+
+[tool.codespell]
+skip = '.git,*.pdf,*.svg,./bonsai,*.bonsai,./docs/_build,uv.lock,./doc_template,./docs/build'
+ignore-words-list = "nd"
+
 [tool.coverage.run]
 omit = ["*__init__*"]
 source = ["ephys_alignment_gui", "tests"]
@@ -75,9 +96,44 @@ exclude_lines = [
 fail_under = 100
 
 [tool.isort]
-line_length = 79
+line_length = 88
 profile = "black"
 
+
 [tool.interrogate]
-exclude = ["setup.py", "docs", "build"]
-fail-under = 100
+ignore-init-method = true
+ignore-magic = true
+ignore_module = true
+fail-under = 30
+exclude = [
+  "__init__.py",
+  "tests",
+  "docs",
+  "build",
+  "setup.py",
+  "examples",
+  "site",
+]
+
+[tool.mypy]
+files = ["src/ibl_ephys_alignment_gui"]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+

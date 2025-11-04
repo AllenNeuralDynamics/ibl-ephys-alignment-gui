@@ -7,10 +7,11 @@ import re
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import ants
 import numpy as np
@@ -25,7 +26,10 @@ from iblutil.util import Bunch
 from numpy.typing import NDArray
 from one import alf
 
-from ephys_alignment_gui.custom_atlas import _BLESSED_DIRECTION, BrainAtlasAnatomical
+from ephys_alignment_gui.custom_atlas import (
+    _BLESSED_DIRECTION,
+    BrainAtlasAnatomical,
+)
 from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -37,7 +41,13 @@ ANTS_DIMENSION = 3
 class SmartSliceDict(dict):
     """Dict that loads images and computes slices on-demand, tracking trajectory per slice."""
 
-    def __init__(self, eager_data, lazy_channel_names, trajectory_id, load_and_slice_callback):
+    def __init__(
+        self,
+        eager_data,
+        lazy_channel_names,
+        trajectory_id,
+        load_and_slice_callback,
+    ) -> None:
         """
         Parameters:
         - eager_data: dict with pre-computed data (ccf, label, scale, offset, histology_registration)
@@ -58,7 +68,7 @@ class SmartSliceDict(dict):
     def __getitem__(self, key):
         """Load/compute slice on first access for current trajectory."""
         # Metadata keys always return directly
-        if key in ['ccf', 'label', 'scale', 'offset']:
+        if key in ["ccf", "label", "scale", "offset"]:
             return super().__getitem__(key)
 
         value = super().__getitem__(key)
@@ -122,6 +132,7 @@ class AntsTransformChainFiles:
     def which_to_invert(self) -> list[bool]:
         return [True, False, True, False]
 
+
 @dataclass(frozen=True)
 class ImageSpacePaths:
     atlas_image_path: Path
@@ -134,6 +145,7 @@ class ImageSpacePaths:
     def from_folder(cls, input_path: Path) -> ImageSpacePaths:
         def _glob_first(pattern: str) -> Path:
             return next(input_path.glob(pattern))
+
         atlas_image_path = _glob_first("ccf_in_*.nrrd")
         atlas_labels_path = _glob_first("labels_in_*.nrrd")
         pipeline_image_path = _glob_first("histology_registration_pipeline.nrrd")
@@ -151,6 +163,7 @@ class ImageSpacePaths:
             histology_image_path=histology_image_path,
             other_channel_paths=other_channel_paths,
         )
+
 
 @dataclass
 class LoadDataLocal:
@@ -173,7 +186,9 @@ class LoadDataLocal:
     prev_align: list[str] = field(default_factory=lambda: ["original"])
 
     def load_previous_alignments_docdb(
-        self, input_path: Path, shank_idx=0, 
+        self,
+        input_path: Path,
+        shank_idx=0,
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
         docdb_id = query_docdb_id(input_path.parent.stem)[0]
         quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
@@ -183,9 +198,7 @@ class LoadDataLocal:
 
         evaluations = quality_control.evaluations
 
-        evaluation_name = (
-            f"{input_path.parent.stem}_{input_path.stem}_{shank_idx}"
-        )
+        evaluation_name = f"{input_path.parent.stem}_{input_path.stem}_{shank_idx}"
         alignment_evaluations = [
             evaluation
             for evaluation in evaluations
@@ -193,7 +206,7 @@ class LoadDataLocal:
         ]
 
         n_eval = len(alignment_evaluations)
-        
+
         if n_eval == 0:
             logger.info(f"No alignment found in docdb for {evaluation_name}")
             return None
@@ -204,9 +217,7 @@ class LoadDataLocal:
         latest_alignment_evaluation = max(
             alignment_evaluations, key=lambda x: x.created
         )  # pull latest alignment evaluation
-        curation_metric = latest_alignment_evaluation.metrics[0].value[
-            "curations"
-        ]
+        curation_metric = latest_alignment_evaluation.metrics[0].value["curations"]
         alignments = json.loads(curation_metric[0])[
             "previous_alignments"
         ]  # load in the previous alignment
@@ -216,11 +227,13 @@ class LoadDataLocal:
         return alignments, prev_align
 
     def load_previous_alignments_local(
-        self, input_path: Path | None = None, shank_idx: int=0,
+        self,
+        input_path: Path | None = None,
+        shank_idx: int = 0,
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
         input_path = self._check_input_path_arg(input_path)
         suffix = f"_shank{shank_idx + 1}" if self.n_shanks > 1 else ""
-        prev_align_filename =  f"prev_alignments{suffix}.json"
+        prev_align_filename = f"prev_alignments{suffix}.json"
         if input_path.joinpath(prev_align_filename).exists():
             with open(input_path.joinpath(prev_align_filename)) as f:
                 alignments: dict[str, list[list[float]]] = json.load(f)
@@ -230,7 +243,6 @@ class LoadDataLocal:
         else:
             return None
         return alignments, prev_align
-
 
     def load_previous_alignments(
         self, shank_idx=0, input_path: Path | None = None, use_docdb=True
@@ -264,7 +276,7 @@ class LoadDataLocal:
 
         return None
 
-    def get_alignment_idx( self, idx: int) -> tuple[NDArray | None, NDArray | None]:
+    def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """
         Find out the starting alignment
         """
@@ -283,7 +295,9 @@ class LoadDataLocal:
     def _check_input_path_arg(self, input_path: Path | None) -> Path:
         if input_path is None:
             if self.input_path is None:
-                raise RuntimeError("input_path must be provided if not set in the class")
+                raise RuntimeError(
+                    "input_path must be provided if not set in the class"
+                )
             input_path = self.input_path
         return input_path
 
@@ -312,7 +326,9 @@ class LoadDataLocal:
         self.data_root = data_root
         maybe_tx_chain = self._find_transform_files()
         if maybe_tx_chain is None:
-            raise FileNotFoundError("No transform chain files found in input directory.")
+            raise FileNotFoundError(
+                "No transform chain files found in input directory."
+            )
         self.tx_chain_files = maybe_tx_chain
         histology_path: Path = self.input_path.parent.parent / "image_space_histology"
         if histology_path != self.histology_path:
@@ -322,14 +338,14 @@ class LoadDataLocal:
             # Invalidate histology image cache
             self.histology_images = {}
             # Invalidate lazy loading metadata
-            if hasattr(self, '_lazy_channel_paths'):
-                delattr(self, '_lazy_channel_paths')
-            if hasattr(self, '_lazy_channel_reorient'):
-                delattr(self, '_lazy_channel_reorient')
-            if hasattr(self, '_slice_index'):
-                delattr(self, '_slice_index')
+            if hasattr(self, "_lazy_channel_paths"):
+                delattr(self, "_lazy_channel_paths")
+            if hasattr(self, "_lazy_channel_reorient"):
+                delattr(self, "_lazy_channel_reorient")
+            if hasattr(self, "_slice_index"):
+                delattr(self, "_slice_index")
         self.image_space_paths = ImageSpacePaths.from_folder(histology_path)
-    
+
     def get_shank_list(self) -> list[str] | None:
         """
         Generate shank list without setting n_shanks
@@ -343,11 +359,13 @@ class LoadDataLocal:
         else:
             shank_list = None
         return shank_list
-    
+
     def load_atlas_and_histology(self) -> None:
         logger.debug(f"Loading atlas and histology from {self.histology_path}")
         if self.image_space_paths is None:
-            raise RuntimeError("Image space paths not set, cannot load atlas and histology")
+            raise RuntimeError(
+                "Image space paths not set, cannot load atlas and histology"
+            )
         intensity_image = sitk.ReadImage(self.image_space_paths.atlas_image_path)
         label_image = sitk.ReadImage(self.image_space_paths.atlas_labels_path)
         if label_image.GetPixelID() is not sitk.sitkInt32:
@@ -355,9 +373,7 @@ class LoadDataLocal:
             unq_annotations = np.load(
                 "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
             )["unique_labels"]
-            label_image = expand_compacted_image(
-                label_image, unq_annotations
-            )
+            label_image = expand_compacted_image(label_image, unq_annotations)
         pipeline_image = sitk.ReadImage(self.image_space_paths.pipeline_image_path)
         self.brain_atlas = BrainAtlasAnatomical(
             intensity_img=intensity_image,
@@ -375,9 +391,7 @@ class LoadDataLocal:
             reorient = False
         else:
             reorient = True
-            histology_image = sitk.DICOMOrient(
-                histology_image, _BLESSED_DIRECTION
-            )
+            histology_image = sitk.DICOMOrient(histology_image, _BLESSED_DIRECTION)
         self.histology_images["histology_registration"] = histology_image
 
         # Store metadata for lazy loading other channels
@@ -410,7 +424,6 @@ class LoadDataLocal:
         self.chn_coords = chn_coords
 
         return chn_coords[:, 1]  # Return depths
-
 
     def get_ephys_data(self, shank_idx, input_path: Path | None = None):
         input_path = self._check_input_path_arg(input_path)
@@ -479,7 +492,7 @@ class LoadDataLocal:
 
         # Read in notes for this experiment see if file exists in directory
         if input_path.joinpath("session_notes.txt").exists():
-            with open(input_path.joinpath("session_notes.txt"), "r") as f:
+            with open(input_path.joinpath("session_notes.txt")) as f:
                 sess_notes = f.read()
         else:
             sess_notes = "No notes for this session"
@@ -513,7 +526,7 @@ class LoadDataLocal:
                 f"Multiple trajectory files found: {[f.name for f in xyz_file]}. "
                 "Please ensure only one exists."
             )
-        with open(xyz_file[0], "r") as f:
+        with open(xyz_file[0]) as f:
             user_picks = json.load(f)
 
         xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6  # convert to meters
@@ -587,19 +600,21 @@ class LoadDataLocal:
                 index,  # type: ignore
             )
             eager_data["histology_registration"] = hist_slice
-            logger.debug(f"Computed eager slice for histology_registration")
+            logger.debug("Computed eager slice for histology_registration")
 
         # --- Setup lazy loading for other channels ---
         lazy_channel_names = []
-        if hasattr(self, '_lazy_channel_paths'):
+        if hasattr(self, "_lazy_channel_paths"):
             lazy_channel_names = list(self._lazy_channel_paths.keys())
-            logger.debug(f"Setting up lazy loading for {len(lazy_channel_names)} channels")
+            logger.debug(
+                f"Setting up lazy loading for {len(lazy_channel_names)} channels"
+            )
 
         slice_data = SmartSliceDict(
             eager_data=eager_data,
             lazy_channel_names=lazy_channel_names,
             trajectory_id=trajectory_id,
-            load_and_slice_callback=self._load_and_slice_channel
+            load_and_slice_callback=self._load_and_slice_channel,
         )
 
         return slice_data, None
@@ -634,7 +649,7 @@ class LoadDataLocal:
             logger.debug(f"Using cached image for {channel_name}")
 
         # Compute slice for current trajectory
-        if not hasattr(self, '_slice_index') or self._slice_index is None:
+        if not hasattr(self, "_slice_index") or self._slice_index is None:
             raise RuntimeError("Cannot compute slice: trajectory index not set")
 
         hist_image = self.histology_images[channel_name]
@@ -666,38 +681,64 @@ class LoadDataLocal:
 
         return description, region_lookup
 
-
     def _find_transform_files(self) -> AntsTransformChainFiles:
         logger.info("Loading transforms from stitched smartspim asset ...")
         subject_id = self.input_path.parent.parent.stem
-        smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat'))
+        smartspim_template_affine_transform = tuple(
+            self.data_root.glob(
+                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
+            )
+        )
         if not smartspim_template_affine_transform:
             # try legacy way
-            smartspim_template_affine_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat'))
+            smartspim_template_affine_transform = tuple(
+                self.data_root.glob(
+                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat"
+                )
+            )
             if not smartspim_template_affine_transform:
-                raise FileNotFoundError('No affine transform from spim to template. Check attached assets')
+                raise FileNotFoundError(
+                    "No affine transform from spim to template. Check attached assets"
+                )
 
-        smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz'))
+        smartspim_template_warp_transform = tuple(
+            self.data_root.glob(
+                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz"
+            )
+        )
         if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(self.data_root.glob(f'SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz'))
+            smartspim_template_warp_transform = tuple(
+                self.data_root.glob(
+                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz"
+                )
+            )
             if not smartspim_template_warp_transform:
-                raise FileNotFoundError('No warp transform from spim to template. Check attached assets')
+                raise FileNotFoundError(
+                    "No warp transform from spim to template. Check attached assets"
+                )
 
-        template_to_ccf_affine_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_0GenericAffine.mat'))
+        template_to_ccf_affine_transform = tuple(
+            self.data_root.glob("spim_template_to_ccf/syn_0GenericAffine.mat")
+        )
         if not template_to_ccf_affine_transform:
-            raise FileNotFoundError('No affine transform from template to ccf. Check attached assets')
+            raise FileNotFoundError(
+                "No affine transform from template to ccf. Check attached assets"
+            )
 
-        template_to_ccf_warp_transform = tuple(self.data_root.glob('spim_template_to_ccf/syn_1InverseWarp.nii.gz'))
+        template_to_ccf_warp_transform = tuple(
+            self.data_root.glob("spim_template_to_ccf/syn_1InverseWarp.nii.gz")
+        )
         if not template_to_ccf_warp_transform:
-            raise FileNotFoundError('No warp transform from template to ccf. Check attached assets')
+            raise FileNotFoundError(
+                "No warp transform from template to ccf. Check attached assets"
+            )
 
         return AntsTransformChainFiles(
             smartspim_template_affine_transform=smartspim_template_affine_transform[0],
             smartspim_template_warp_transform=smartspim_template_warp_transform[0],
             template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
-            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0]
+            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0],
         )
-
 
     def _transform_to_ccf(
         self,
@@ -774,7 +815,12 @@ class LoadDataLocal:
         feature: NDArray,
         track: NDArray,
         xyz_channels: NDArray,
-    ) -> tuple[dict[str, dict[str, Any]], dict[str, list[list[float]]], dict[str, dict[str, Any]], bool]:
+    ) -> tuple[
+        dict[str, dict[str, Any]],
+        dict[str, list[list[float]]],
+        dict[str, dict[str, Any]],
+        bool,
+    ]:
         logger.info("Saving channel locations and previous alignments locally")
         logger.debug(f"Channels: {xyz_channels}")
         if self.brain_atlas is None:
@@ -789,9 +835,7 @@ class LoadDataLocal:
         channel_dict = self.create_channel_dict(brain_regions)
         self.channel_dict = channel_dict
 
-        ccf_channel_dict = self._transform_to_ccf(
-            xyz_channels, channel_dict
-        )
+        ccf_channel_dict = self._transform_to_ccf(xyz_channels, channel_dict)
 
         date = datetime.now().replace(microsecond=0).isoformat()
         self.alignments[date] = [feature.tolist(), track.tolist()]

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def _fcn_extrap(x, f, bounds):
     """
     Extrapolates a flat value before and after bounds
@@ -22,8 +23,10 @@ def fcn_cosine(bounds):
     :param bounds:
     :return: lambda function
     """
+
     def _cos(x):
         return (1 - np.cos((x - bounds[0]) / (bounds[1] - bounds[0]) * np.pi)) / 2
+
     func = lambda x: _fcn_extrap(x, _cos, bounds)  # noqa
     return func
 
@@ -87,6 +90,7 @@ def bincount2D(x, y, xbin=0, ybin=0, xlim=None, ylim=None, weights=None):
 
     return r, xscale, yscale
 
+
 def probes_description(ses_path, one):
     """
     Aggregate probes information into ALF files
@@ -97,10 +101,10 @@ def probes_description(ses_path, one):
         alf/probes.description.npy
     """
 
-    eid = one.path2eid(ses_path, query_type='remote')
+    eid = one.path2eid(ses_path, query_type="remote")
     ses_path = Path(ses_path)
-    meta_files = spikeglx.glob_ephys_files(ses_path, ext='meta')
-    ap_meta_files = [(ep.ap.parent, ep.label, ep) for ep in meta_files if ep.get('ap')]
+    meta_files = spikeglx.glob_ephys_files(ses_path, ext="meta")
+    ap_meta_files = [(ep.ap.parent, ep.label, ep) for ep in meta_files if ep.get("ap")]
     # If we don't detect any meta files exit function
     if len(ap_meta_files) == 0:
         return
@@ -108,19 +112,33 @@ def probes_description(ses_path, one):
     subdirs, labels, efiles_sorted = zip(*sorted(ap_meta_files))
 
     def _create_insertion(md, label, eid):
-
         # create json description
-        description = {'label': label, 'model': md.neuropixelVersion, 'serial': int(md.serial), 'raw_file_name': md.fileName}
+        description = {
+            "label": label,
+            "model": md.neuropixelVersion,
+            "serial": int(md.serial),
+            "raw_file_name": md.fileName,
+        }
 
         # create or update probe insertion on alyx
-        alyx_insertion = {'session': eid, 'model': md.neuropixelVersion, 'serial': md.serial, 'name': label}
-        pi = one.alyx.rest('insertions', 'list', session=eid, name=label)
+        alyx_insertion = {
+            "session": eid,
+            "model": md.neuropixelVersion,
+            "serial": md.serial,
+            "name": label,
+        }
+        pi = one.alyx.rest("insertions", "list", session=eid, name=label)
         if len(pi) == 0:
-            qc_dict = {'qc': 'NOT_SET', 'extended_qc': {}}
-            alyx_insertion.update({'json': qc_dict})
-            insertion = one.alyx.rest('insertions', 'create', data=alyx_insertion)
+            qc_dict = {"qc": "NOT_SET", "extended_qc": {}}
+            alyx_insertion.update({"json": qc_dict})
+            insertion = one.alyx.rest("insertions", "create", data=alyx_insertion)
         else:
-            insertion = one.alyx.rest('insertions', 'partial_update', data=alyx_insertion, id=pi[0]['id'])
+            insertion = one.alyx.rest(
+                "insertions",
+                "partial_update",
+                data=alyx_insertion,
+                id=pi[0]["id"],
+            )
 
         return description, insertion
 
@@ -128,14 +146,14 @@ def probes_description(ses_path, one):
     probe_description = []
     alyx_insertions = []
     for label, ef in zip(labels, efiles_sorted):
-        md = spikeglx.read_meta_data(ef.ap.with_suffix('.meta'))
-        if md.neuropixelVersion == 'NP2.4':
+        md = spikeglx.read_meta_data(ef.ap.with_suffix(".meta"))
+        if md.neuropixelVersion == "NP2.4":
             # NP2.4 meta that hasn't been split
-            if md.get('NP2.4_shank', None) is None:
-                geometry = spikeglx.read_geometry(ef.ap.with_suffix('.meta'))
-                nshanks = np.unique(geometry['shank'])
+            if md.get("NP2.4_shank", None) is None:
+                geometry = spikeglx.read_geometry(ef.ap.with_suffix(".meta"))
+                nshanks = np.unique(geometry["shank"])
                 for shank in nshanks:
-                    label_ext = f'{label}{chr(97 + int(shank))}'
+                    label_ext = f"{label}{chr(97 + int(shank))}"
                     description, insertion = _create_insertion(md, label_ext, eid)
                     probe_description.append(description)
                     alyx_insertions.append(insertion)
@@ -149,10 +167,10 @@ def probes_description(ses_path, one):
             probe_description.append(description)
             alyx_insertions.append(insertion)
 
-    alf_path = ses_path.joinpath('alf')
+    alf_path = ses_path.joinpath("alf")
     alf_path.mkdir(exist_ok=True, parents=True)
-    probe_description_file = alf_path.joinpath('probes.description.json')
-    with open(probe_description_file, 'w+') as fid:
+    probe_description_file = alf_path.joinpath("probes.description.json")
+    with open(probe_description_file, "w+") as fid:
         fid.write(json.dumps(probe_description))
 
     return [probe_description_file]
