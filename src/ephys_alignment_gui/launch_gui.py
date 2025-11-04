@@ -3,7 +3,6 @@ import logging
 import os
 import platform
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 if platform.system() == 'Darwin':
@@ -34,23 +33,16 @@ logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
 
-@dataclass(frozen=True)
-class AntsTransformChainFiles:
-    smartspim_template_affine_transform: Path
-    smartspim_template_warp_transform: Path
-    template_to_ccf_affine_transform: Path
-    template_to_ccf_warp_transform: Path
-
-    def as_list(self) -> list[str]:
-        return [
-            self.smartspim_template_affine_transform.as_posix(),
-            self.smartspim_template_warp_transform.as_posix(),
-            self.template_to_ccf_affine_transform.as_posix(),
-            self.template_to_ccf_warp_transform.as_posix(),
-        ]
-
-    def which_to_invert(self) -> list[bool]:
-        return [True, False, True, False]
+def _write_dict_to_json(file_path: Path, data_dict: dict):
+    """
+    Write dictionary to JSON file
+    :param file_path: path to JSON file
+    :type file_path: Path
+    :param data_dict: dictionary to write to JSON file
+    :type data_dict: dict
+    """
+    with open(file_path, 'w') as fp:
+        json.dump(data_dict, fp, indent=2, separators=(',', ': '))
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
@@ -1984,35 +1976,37 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed. 
         Saves final channel locations to a JSON file
         """
+        if self.output_directory is None:
+            logger.error("Output directory not set. Please select an output directory.")
+            return
         # Save histology-space to disk and update in-memory state
-        self.loaddata.get_alignment_results(
+        channel_results, alignments, ccf_channel_dict, multi_shank = self.loaddata.get_alignment_results(
             self.features[self.idx],
             self.track[self.idx],
             self.xyz_channels,
         )
 
-        ccf_channel_dict = self._transform_to_ccf()
-        channel_results = self.loaddata.channel_dict
-        prev_alignments = self.loaddata.alignments
 
-        logger.info("Saving output files to results folder and docdb")
-        if self.loaddata.n_shanks > 1:
-            ccf_channel_dict_path = self.output_directory / f'ccf_channel_locations_shank{self.current_shank_idx + 1}.json'
-        else:
-            ccf_channel_dict_path = self.output_directory / 'ccf_channel_locations.json'
-        with open(ccf_channel_dict_path, "w") as f:
-            json.dump(ccf_channel_dict, f, indent=2, separators=(",", ": "))
+        logger.info("Saving output files to results folder...")
+        suffix = f'_shank{self.current_shank_idx + 1}' if multi_shank else ''
+        channel_results_path = self.output_directory / f'channel_locations{suffix}.json'
+        prev_alignments_path = self.output_directory / f'prev_alignments{suffix}.json'
+        ccf_channel_dict_path = self.output_directory / f'ccf_channel_locations{suffix}.json'
 
+        _write_dict_to_json(channel_results_path, channel_results)
+        _write_dict_to_json(prev_alignments_path, alignments)
+        _write_dict_to_json(ccf_channel_dict_path, ccf_channel_dict)
+        logger.info("Channel locations saved to results folder")
 
-        probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
-
-        try:
-            write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb,
-                                channel_results, prev_alignments, ccf_channel_dict)
-        except ValueError as e:
-            logger.error(f"Failed to write to docdb with error {e}. Output saved to results folder")
-
-        logger.info(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
+        if self.use_docdb:
+            logger.info("Writing channel locations to DocDB...")
+            probe_name_for_docdb = f'{self.output_directory.stem}_{self.current_shank_idx}'
+            try:
+                write_output_to_docdb(self.output_directory.parent.stem, probe_name_for_docdb,
+                                    channel_results, alignments, ccf_channel_dict)
+            except ValueError as e:
+                logger.error(f"Failed to write to docdb with error {e}. Output saved to results folder")
+            logger.info(f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}")
 
 
     def display_qc_options(self):
