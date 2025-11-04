@@ -131,11 +131,12 @@ class EphysAlignment:
         z_max = np.max(self.xyz_track[:, 2])
 
         # Convert to voxel indices and align to voxel boundaries
-        i_min = int(np.floor(self.brain_atlas.bc.z2i(z_min)))
-        i_max = int(np.ceil(self.brain_atlas.bc.z2i(z_max)))
+        i_min, i_max = np.sort(self.brain_atlas.bc.z2i(np.array([z_min, z_max])))
+        i_min = int(i_min)
+        i_max = int(i_max)
 
         # Sample at every voxel in DV (z) direction
-        z_samples = self.brain_atlas.bc.i2z(np.arange(i_min, i_max + 1))
+        z_samples = np.sort(self.brain_atlas.bc.i2z(np.arange(i_min, i_max + 1)))
 
         # Evaluate trajectory at voxel-aligned DV coordinates
         self.xyz_samples = traj.eval_z(z_samples)
