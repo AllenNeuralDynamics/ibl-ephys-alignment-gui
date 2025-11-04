@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
-
-from aind_data_access_api.document_db import MetadataDbClient
-from aind_data_schema_models.modalities import Modality
-from aind_data_schema.core.quality_control import QCEvaluation, Stage, QCMetric, QCStatus, Status
-from aind_qcportal_schema.metric_value import CurationMetric, CurationHistory
 from datetime import datetime
-import requests
+
 import boto3
+import requests
+from aind_data_access_api.document_db import MetadataDbClient
+from aind_data_schema.core.quality_control import (
+    QCEvaluation,
+    QCMetric,
+    QCStatus,
+    Stage,
+    Status,
+)
+from aind_data_schema_models.modalities import Modality
+from aind_qcportal_schema.metric_value import CurationHistory, CurationMetric
 from aws_requests_auth.aws_auth import AWSRequestsAuth
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -20,53 +26,50 @@ API_GATEWAY_HOST = "api.allenneuraldynamics.org"
 DATABASE = "metadata_index"
 COLLECTION = "data_assets"
 
-# Configure robust session with timeout and retry logic
-retry_strategy = Retry(
-    total=3,                           # 3 retry attempts
-    connect=3,                         # 3 connection retries
-    read=3,                           # 3 read retries
-    backoff_factor=1,                 # Exponential backoff (1s, 2s, 4s)
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-)
 
-adapter = HTTPAdapter(
-    max_retries=retry_strategy,
-    pool_connections=10,              # Connection pool size
-    pool_maxsize=10,                  # Max connections in pool
-)
+def _default_docdb_api_client() -> MetadataDbClient:
+    docdb_api_client = MetadataDbClient(
+        host=API_GATEWAY_HOST,
+        database=DATABASE,
+        collection=COLLECTION,
+    )
+    return docdb_api_client
 
-session = requests.Session()
-session.timeout = 30                 # 30 second timeout per request
-session.mount("http://", adapter)
-session.mount("https://", adapter)
 
-docdb_api_client = MetadataDbClient(
-    host=API_GATEWAY_HOST,
-    database=DATABASE,
-    collection=COLLECTION,
-    session=session,                  # Use custom session with timeout/retry
-)
-
-def query_docdb_id(session_name: str) -> tuple[str, dict]:
+def query_docdb_id(
+    session_name: str, docdb_api_client: MetadataDbClient | None = None
+) -> tuple[str, dict]:
     """
     Returns docdb_id and record for asset_name.
     """
-
+    if docdb_api_client is None:
+        docdb_api_client = _default_docdb_api_client()
     response = docdb_api_client.retrieve_docdb_records(
-        filter_query={"data_description.data_level": "derived", "data_description.name": {"$regex": session_name},
-                      "data_description.modality.abbreviation": "ecephys"}
+        filter_query={
+            "data_description.data_level": "derived",
+            "data_description.name": {"$regex": session_name},
+            "data_description.modality.abbreviation": "ecephys",
+        }
     )
     if len(response) == 0:
         raise ValueError(f"No ephys sorted record found in docdb for {session_name}")
-    
-    latest_record = max(response, key=lambda x: x['created']) # pull the most recent ephys sorting record
+
+    latest_record = max(
+        response, key=lambda x: x["created"]
+    )  # pull the most recent ephys sorting record
 
     docdb_id = latest_record["_id"]
     return docdb_id, latest_record
 
-def write_output_to_docdb(session_name: str, probe: str,
-                          channel_results: dict, previous_alignments: dict, ccf_channel_results: dict) -> None:
+
+def write_output_to_docdb(
+    session_name: str,
+    probe: str,
+    channel_results: dict,
+    previous_alignments: dict,
+    ccf_channel_results: dict,
+    docdb_api_client: MetadataDbClient | None = None,
+) -> None:
     """
     writes the output of the IBL gui to docdb. Pulls the latest ephys sorted record and appends qc evaluation
 
@@ -80,53 +83,71 @@ def write_output_to_docdb(session_name: str, probe: str,
 
     channel_results : dict
         Dictionary containing the current channel results from the IBL GUI.
-    
+
     previous_alignments : dict
         Dictionary containing previously stored alignment information, used for comparison or update.
 
     ccf_channel_results : dict
         Dictionary containing the results aligned to the common coordinate framework (CCF).
     """
-    docdb_id = query_docdb_id(session_name)[0]
+    if docdb_api_client is None:
+        docdb_api_client = _default_docdb_api_client()
+    docdb_id = query_docdb_id(session_name, docdb_api_client)[0]
     # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
-    curation_history = CurationHistory(curator=os.getenv("username"), timestamp=datetime.now())
+    curation_history = CurationHistory(
+        curator=os.getenv("username"), timestamp=datetime.now()
+    )
     # use dict
-    curations = {'channel_results': channel_results, 'previous_alignments': previous_alignments, 
-                 'ccf_channel_results': ccf_channel_results}
-    
-    curation_metric = CurationMetric(curations=[json.dumps(curations)], curation_history=[curation_history])
-    evaluation_name = f'Probe Alignment for {session_name}_{probe}'
-    description = 'Probe Alignment of Ephys with Histology'
-    qc_metric = QCMetric(name=evaluation_name, description=description, 
-                         value=curation_metric, 
-                         status_history=[QCStatus(evaluator=curation_history.curator, status=Status.PASS, timestamp=datetime.now())])
-    
+    curations = {
+        "channel_results": channel_results,
+        "previous_alignments": previous_alignments,
+        "ccf_channel_results": ccf_channel_results,
+    }
+
+    curation_metric = CurationMetric(
+        curations=[json.dumps(curations)], curation_history=[curation_history]
+    )
+    evaluation_name = f"Probe Alignment for {session_name}_{probe}"
+    description = "Probe Alignment of Ephys with Histology"
+    qc_metric = QCMetric(
+        name=evaluation_name,
+        description=description,
+        value=curation_metric,
+        status_history=[
+            QCStatus(
+                evaluator=curation_history.curator,
+                status=Status.PASS,
+                timestamp=datetime.now(),
+            )
+        ],
+    )
+
     evaluation = QCEvaluation(
         modality=Modality.ECEPHYS,
         stage=Stage.PROCESSING,
         name=evaluation_name,
         description=description,
-        metrics=[qc_metric]
+        metrics=[qc_metric],
     )
 
     session = boto3.Session()
     credentials = session.get_credentials()
     host = "api.allenneuraldynamics.org"
 
-
     auth = AWSRequestsAuth(
         aws_access_key=credentials.access_key,
         aws_secret_access_key=credentials.secret_key,
         aws_token=credentials.token,
         aws_host="api.allenneuraldynamics.org",
-        aws_region='us-west-2',
-        aws_service='execute-api'
+        aws_region="us-west-2",
+        aws_service="execute-api",
     )
     url = f"https://{host}/v1/add_qc_evaluation"
-    post_request_content = {"data_asset_id": docdb_id,
-                            "qc_evaluation": evaluation.model_dump(mode='json')}
-    response = requests.post(url=url, auth=auth, 
-                            json=post_request_content)
+    post_request_content = {
+        "data_asset_id": docdb_id,
+        "qc_evaluation": evaluation.model_dump(mode="json"),
+    }
+    response = requests.post(url=url, auth=auth, json=post_request_content)
 
     if response.status_code != 200:
         logger.error(f"Failed to write {session_name} with {probe} to docdb")
