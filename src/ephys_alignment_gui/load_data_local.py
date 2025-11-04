@@ -34,6 +34,45 @@ logger = logging.getLogger(__name__)
 ANTS_DIMENSION = 3
 
 
+class SmartSliceDict(dict):
+    """Dict that loads images and computes slices on-demand, tracking trajectory per slice."""
+
+    def __init__(self, eager_data, lazy_channel_names, trajectory_id, load_and_slice_callback):
+        """
+        Parameters:
+        - eager_data: dict with pre-computed data (ccf, label, scale, offset, histology_registration)
+        - lazy_channel_names: list of channel names for lazy loading
+        - trajectory_id: unique ID for current trajectory
+        - load_and_slice_callback: callable(channel_name) -> slice_array
+        """
+        super().__init__(eager_data)
+        self._lazy_channel_names = set(lazy_channel_names)
+        self._trajectory_id = trajectory_id
+        self._load_and_slice_callback = load_and_slice_callback
+
+        # Add lazy channel keys with None values (enables menu creation)
+        for channel in lazy_channel_names:
+            if channel not in self:
+                super().__setitem__(channel, None)
+
+    def __getitem__(self, key):
+        """Load/compute slice on first access for current trajectory."""
+        # Metadata keys always return directly
+        if key in ['ccf', 'label', 'scale', 'offset']:
+            return super().__getitem__(key)
+
+        value = super().__getitem__(key)
+
+        # Lazy channels: trigger load if None
+        if key in self._lazy_channel_names and value is None:
+            logger.info(f"Lazy loading and slicing channel: {key}")
+            slice_data = self._load_and_slice_callback(key)
+            super().__setitem__(key, slice_data)
+            return slice_data
+
+        return value
+
+
 def _cut_slice_from_atlas_image(
     atlas_array: NDArray,
     xyz_channel_indices: NDArray,
@@ -277,9 +316,18 @@ class LoadDataLocal:
         self.tx_chain_files = maybe_tx_chain
         histology_path: Path = self.input_path.parent.parent / "image_space_histology"
         if histology_path != self.histology_path:
-            logger.debug("Atlas and histology path changed, resetting image space paths")
+            logger.debug("Atlas and histology path changed, invalidating cached data")
             self.brain_atlas = None
             self.histology_path = histology_path
+            # Invalidate histology image cache
+            self.histology_images = {}
+            # Invalidate lazy loading metadata
+            if hasattr(self, '_lazy_channel_paths'):
+                delattr(self, '_lazy_channel_paths')
+            if hasattr(self, '_lazy_channel_reorient'):
+                delattr(self, '_lazy_channel_reorient')
+            if hasattr(self, '_slice_index'):
+                delattr(self, '_slice_index')
         self.image_space_paths = ImageSpacePaths.from_folder(histology_path)
     
     def get_shank_list(self) -> list[str] | None:
@@ -331,13 +379,14 @@ class LoadDataLocal:
                 histology_image, _BLESSED_DIRECTION
             )
         self.histology_images["histology_registration"] = histology_image
+
+        # Store metadata for lazy loading other channels
+        self._lazy_channel_paths = {}
+        self._lazy_channel_reorient = reorient
         for other_channel in self.image_space_paths.other_channel_paths:
             channel_name = other_channel.stem
-            if channel_name not in self.histology_images:
-                channel_image = sitk.ReadImage(str(other_channel))
-                if reorient:
-                    channel_image = sitk.DICOMOrient(channel_image, "SRA")
-                self.histology_images[channel_name] = channel_image
+            self._lazy_channel_paths[channel_name] = other_channel
+        logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
 
     def set_channels_for_shank(self, shank_idx: int):
         """Filter cached channel coordinates for selected shank. No disk I/O."""
@@ -485,6 +534,10 @@ class LoadDataLocal:
         # coordinates to image indices, and then permutes to match atlas image
         # orientation
         index = self.brain_atlas.bc.xyz2i(xyz_channels)[:, self.brain_atlas.xyz2dims]
+        # Store for lazy loading
+        self._slice_index = index
+        trajectory_id = id(xyz_channels)  # Unique ID for this trajectory
+
         # Build a tilted slice by getting horizontal lines at each index,
         # N x image.shape[1]
         ccf_slice = _cut_slice_from_atlas_image(
@@ -510,8 +563,10 @@ class LoadDataLocal:
             self.brain_atlas.bc.i2z(index[-1, 2]),
         ]
 
-        logger.debug(f"Ccf slice: {ccf_slice.shape}")
-        slice_data = {
+        logger.debug(f"CCF slice: {ccf_slice.shape}")
+
+        # Eager data: ccf, label, metadata, and default histology
+        eager_data = {
             "ccf": ccf_slice,
             "label": label_slice,
             "scale": np.array(
@@ -523,16 +578,74 @@ class LoadDataLocal:
             "offset": np.array([width[0], height[0]]),
         }
 
-        # --- Get the histology slices in image space ---
-        for channel_name, hist_image in self.histology_images.items():
+        # --- Compute default histology slice (eager) ---
+        if "histology_registration" in self.histology_images:
+            hist_image = self.histology_images["histology_registration"]
             hist_arr = sitk.GetArrayViewFromImage(hist_image)
             hist_slice = _cut_slice_from_atlas_image(
                 hist_arr,
                 index,  # type: ignore
             )
-            slice_data[channel_name] = hist_slice
+            eager_data["histology_registration"] = hist_slice
+            logger.debug(f"Computed eager slice for histology_registration")
+
+        # --- Setup lazy loading for other channels ---
+        lazy_channel_names = []
+        if hasattr(self, '_lazy_channel_paths'):
+            lazy_channel_names = list(self._lazy_channel_paths.keys())
+            logger.debug(f"Setting up lazy loading for {len(lazy_channel_names)} channels")
+
+        slice_data = SmartSliceDict(
+            eager_data=eager_data,
+            lazy_channel_names=lazy_channel_names,
+            trajectory_id=trajectory_id,
+            load_and_slice_callback=self._load_and_slice_channel
+        )
 
         return slice_data, None
+
+    def _load_and_slice_channel(self, channel_name: str) -> NDArray:
+        """
+        Load histology channel image (if needed) and compute slice for current trajectory.
+        Called lazily when user selects channel from menu.
+
+        Parameters:
+        - channel_name: Channel to load/slice
+
+        Returns:
+        - slice_array: 2D slice along current trajectory
+        """
+        # Load image if not already cached
+        if channel_name not in self.histology_images:
+            if channel_name not in self._lazy_channel_paths:
+                raise ValueError(f"Unknown channel: {channel_name}")
+
+            channel_path = self._lazy_channel_paths[channel_name]
+            logger.info(f"Loading channel image from disk: {channel_path.name}")
+            channel_image = sitk.ReadImage(str(channel_path))
+
+            if self._lazy_channel_reorient:
+                channel_image = sitk.DICOMOrient(channel_image, _BLESSED_DIRECTION)
+
+            # Cache image for future use
+            self.histology_images[channel_name] = channel_image
+            logger.debug(f"Cached {channel_name} in histology_images")
+        else:
+            logger.debug(f"Using cached image for {channel_name}")
+
+        # Compute slice for current trajectory
+        if not hasattr(self, '_slice_index') or self._slice_index is None:
+            raise RuntimeError("Cannot compute slice: trajectory index not set")
+
+        hist_image = self.histology_images[channel_name]
+        hist_arr = sitk.GetArrayViewFromImage(hist_image)
+        hist_slice = _cut_slice_from_atlas_image(
+            hist_arr,
+            self._slice_index,  # type: ignore
+        )
+
+        logger.debug(f"Computed slice for {channel_name}: shape {hist_slice.shape}")
+        return hist_slice
 
     def get_region_description(self, region_idx):
         struct_idx = np.where(self.allen["id"] == region_idx)[0][0]
