@@ -1,55 +1,43 @@
+from __future__ import annotations
+
 import json
 import os
-
-from aind_data_access_api.document_db import MetadataDbClient
-from aind_data_schema_models.modalities import Modality
-from aind_data_schema.core.quality_control import QCEvaluation, Stage, QCMetric, QCStatus, Status
-from aind_qcportal_schema.metric_value import CurationMetric, CurationHistory
 from datetime import datetime
-import requests
+
 import boto3
+import requests
+from aind_data_access_api.document_db import MetadataDbClient
+from aind_data_schema.core.quality_control import (
+    QCEvaluation,
+    QCMetric,
+    QCStatus,
+    Stage,
+    Status,
+)
+from aind_data_schema_models.modalities import Modality
+from aind_qcportal_schema.metric_value import CurationHistory, CurationMetric
 from aws_requests_auth.aws_auth import AWSRequestsAuth
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 # Resolve DocDB id of data asset
 API_GATEWAY_HOST = "api.allenneuraldynamics.org"
 DATABASE = "metadata_index"
 COLLECTION = "data_assets"
 
-# Configure robust session with timeout and retry logic
-retry_strategy = Retry(
-    total=3,                           # 3 retry attempts
-    connect=3,                         # 3 connection retries
-    read=3,                           # 3 read retries
-    backoff_factor=1,                 # Exponential backoff (1s, 2s, 4s)
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-)
+def _default_docdb_api_client() -> MetadataDbClient:
+    docdb_api_client = MetadataDbClient(
+        host=API_GATEWAY_HOST,
+        database=DATABASE,
+        collection=COLLECTION,
+    )
+    return docdb_api_client
 
-adapter = HTTPAdapter(
-    max_retries=retry_strategy,
-    pool_connections=10,              # Connection pool size
-    pool_maxsize=10,                  # Max connections in pool
-)
 
-session = requests.Session()
-session.timeout = 30                 # 30 second timeout per request
-session.mount("http://", adapter)
-session.mount("https://", adapter)
-
-docdb_api_client = MetadataDbClient(
-    host=API_GATEWAY_HOST,
-    database=DATABASE,
-    collection=COLLECTION,
-    session=session,                  # Use custom session with timeout/retry
-)
-
-def query_docdb_id(session_name: str) -> tuple[str, dict]:
+def query_docdb_id(session_name: str, docdb_api_client: MetadataDbClient | None = None) -> tuple[str, dict]:
     """
     Returns docdb_id and record for asset_name.
     """
-
+    if docdb_api_client is None:
+        docdb_api_client = _default_docdb_api_client()
     response = docdb_api_client.retrieve_docdb_records(
         filter_query={"data_description.data_level": "derived", "data_description.name": {"$regex": session_name},
                       "data_description.modality.abbreviation": "ecephys"}
@@ -62,8 +50,14 @@ def query_docdb_id(session_name: str) -> tuple[str, dict]:
     docdb_id = latest_record["_id"]
     return docdb_id, latest_record
 
-def write_output_to_docdb(session_name: str, probe: str,
-                          channel_results: dict, previous_alignments: dict, ccf_channel_results: dict) -> None:
+def write_output_to_docdb(
+    session_name: str,
+    probe: str,
+    channel_results: dict,
+    previous_alignments: dict,
+    ccf_channel_results: dict,
+    docdb_api_client: MetadataDbClient | None = None,
+) -> None:
     """
     writes the output of the IBL gui to docdb. Pulls the latest ephys sorted record and appends qc evaluation
 
@@ -84,7 +78,9 @@ def write_output_to_docdb(session_name: str, probe: str,
     ccf_channel_results : dict
         Dictionary containing the results aligned to the common coordinate framework (CCF).
     """
-    docdb_id = query_docdb_id(session_name)[0]
+    if docdb_api_client is None:
+        docdb_api_client = _default_docdb_api_client()
+    docdb_id = query_docdb_id(session_name, docdb_api_client)[0]
     # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
     curation_history = CurationHistory(curator=os.getenv("username"), timestamp=datetime.now())
     # use dict
