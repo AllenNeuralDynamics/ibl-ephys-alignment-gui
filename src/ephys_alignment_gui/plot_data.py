@@ -10,6 +10,9 @@ import numpy as np
 # import neuropixel
 import scipy
 from matplotlib import cm
+from numpy.typing import NDArray
+from one.alf.io import AlfBunch
+from pandas import DataFrame
 from PyQt5 import QtGui
 
 from ephys_alignment_gui.utils import bincount2D
@@ -90,52 +93,55 @@ class PlotData:
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
 
-    def filter_units(self, type) -> None:
+    def filter_units(self, subset: str) -> None:
         try:
-            if type == "all":
-                self.spike_idx = np.arange(self.data["spikes"]["clusters"].size)
+            # Pre-fetch commonly used data structures (avoid repeated indexing)
+            spikes: AlfBunch = self.data["spikes"]
+            clusters: AlfBunch = self.data["clusters"]
+            metrics: DataFrame = clusters["metrics"]
+            spike_clusters: NDArray = spikes["clusters"]
 
-            elif type == "KS good":
-                clust = np.where(self.data["clusters"].metrics.ks2_label == "good")
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
+            if subset == "all":
+                self.spike_idx = np.arange(spike_clusters.size)
+            else:
+                # Map unit type string to a boolean mask over cluster metrics
+                # Each mask selects clusters to keep; we then map spikes via spike_clusters
+                conditions: dict[str, NDArray] = {}
+                # Kilosort labels
+                if "ks2_label" in metrics:
+                    conditions["KS good"] = metrics.ks2_label == "good"
+                    conditions["KS mua"] = metrics.ks2_label == "mua"
+                # IBL curation label (1 == good)
+                if "label" in metrics:
+                    conditions["IBL good"] = metrics.label == 1
+                # AIND QC default flag (already boolean)
+                if "default_qc" in metrics:
+                    conditions["aind_qc"] = metrics["default_qc"]
+                # UnitRefine labels
+                if "unitrefine_label" in metrics:
+                    conditions["unitrefine_sua"] = metrics["unitrefine_label"] == "sua"
+                    conditions["unitrefine_neural"] = (
+                        metrics["unitrefine_label"] != "noise"
+                    )
 
-            elif type == "KS mua":
-                clust = np.where(self.data["clusters"].metrics.ks2_label == "mua")
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
-
-            elif type == "IBL good":
-                clust = np.where(self.data["clusters"].metrics.label == 1)
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
-
-            elif type == "aind_qc":
-                clust = np.where(self.data["clusters"].metrics["default_qc"])
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
-
-            elif type == "unitrefine_sua":
-                clust = np.where(
-                    self.data["clusters"].metrics["unitrefine_label"] == "sua"
-                )
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
-
-            elif type == "unitrefine_neural":
-                clust = np.where(
-                    self.data["clusters"].metrics["unitrefine_label"] != "noise"
-                )
-                self.spike_idx = np.where(
-                    np.isin(self.data["spikes"]["clusters"], clust)
-                )[0]
+                if subset in conditions:
+                    mask = conditions[subset]
+                    # Convert mask to cluster indices
+                    cluster_indices = np.where(mask)[0]
+                    # Select spikes whose cluster id is in the kept set
+                    self.spike_idx = np.where(np.isin(spike_clusters, cluster_indices))[
+                        0
+                    ]
+                else:
+                    # Fallback if unknown type requested
+                    logger.warning(
+                        f"Unknown unit filter '{subset}', returning all units"
+                    )
+                    self.spike_idx = np.arange(spike_clusters.size)
         except Exception:
-            logger.warning(f"{type} metrics not found, returning all units instead")
+            logger.warning(
+                f"{subset} metrics not found or invalid, returning all units instead"
+            )
             self.spike_idx = np.arange(self.data["spikes"]["clusters"].size)
 
         # Filter for nans in depths and also in amps

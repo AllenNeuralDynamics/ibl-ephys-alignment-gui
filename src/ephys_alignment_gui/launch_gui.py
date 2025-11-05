@@ -1227,6 +1227,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.data_plot = plot
             self.xrange = data["xrange"]
 
+            # TODO: is this right? Seems like it would clobber
             if data["cluster"]:
                 self.data = data["x"]
                 self.data_plot.sigClicked.connect(self.cluster_clicked)
