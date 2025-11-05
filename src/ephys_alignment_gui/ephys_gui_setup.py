@@ -669,6 +669,7 @@ class Setup:
 
         self.load_data_button = QtWidgets.QToolButton()
         self.load_data_button.setText("Load Data")
+        self.load_data_button.setEnabled(False)  # Disabled until input path is set
         self.load_data_button.clicked.connect(self.on_load_data_button_pressed)
 
         # Arrange interaction features into three different layout groups

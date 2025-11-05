@@ -16,7 +16,8 @@ import numpy as np
 import pyqtgraph as pg
 from numpy.typing import NDArray
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 import ephys_alignment_gui.plot_data as pd
@@ -46,6 +47,116 @@ def _write_dict_to_json(file_path: Path, data_dict: dict) -> None:
     """
     with open(file_path, "w") as fp:
         json.dump(data_dict, fp, indent=2, separators=(",", ": "))
+
+
+class BusyContext:
+    """Context manager for long-running operations with visual feedback.
+
+    Provides busy cursor, status messages, and UI element disabling with
+    automatic cleanup and error handling.
+
+    Example usage:
+        # Simple usage - just busy cursor
+        with BusyContext(self):
+            do_work()
+
+        # With status message and success confirmation
+        with BusyContext(self, "Loading data...", "Data loaded successfully"):
+            do_work()
+
+        # Disable widgets during operation
+        with BusyContext(self, "Loading...",
+                         disable_widgets=[self.button1, self.button2]):
+            do_work()
+
+        # Multi-stage operation with progress updates
+        with BusyContext(self, "Loading...", "All data loaded") as ctx:
+            ctx.update_message("Loading ephys data...")
+            load_ephys()
+            ctx.update_message("Loading atlas...")
+            load_atlas()
+    """
+
+    def __init__(self, window, message=None, success_message=None,
+                 disable_widgets=None, success_timeout_ms=3000):
+        """
+        Initialize context manager for busy state.
+
+        :param window: MainWindow instance (for statusBar access)
+        :param message: Status message to show while running
+        :param success_message: Message to show on success (None = no message)
+        :param disable_widgets: Widget or list of widgets to disable during operation
+        :param success_timeout_ms: Timeout for success message in ms (0 = permanent)
+        """
+        self.window = window
+        self.message = message
+        self.success_message = success_message
+        self.success_timeout_ms = success_timeout_ms
+
+        # Normalize to list
+        if disable_widgets is None:
+            self.disable_widgets = []
+        elif not isinstance(disable_widgets, list):
+            self.disable_widgets = [disable_widgets]
+        else:
+            self.disable_widgets = disable_widgets
+
+        self.widget_states = {}
+
+    def __enter__(self):
+        """Enter busy state: set cursor, show message, disable widgets."""
+        # Set busy cursor
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        # Show status message (no processEvents to avoid reentrancy)
+        if self.message:
+            self.window.statusBar().showMessage(self.message)
+
+        # Disable widgets and save their states
+        for widget in self.disable_widgets:
+            self.widget_states[widget] = widget.isEnabled()
+            widget.setEnabled(False)
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit busy state: restore cursor, widgets, and handle status messages."""
+        # Restore cursor
+        QApplication.restoreOverrideCursor()
+
+        # Restore widget states
+        for widget, was_enabled in self.widget_states.items():
+            widget.setEnabled(was_enabled)
+
+        # Handle status message based on outcome
+        if exc_type is not None:
+            # Error occurred - show error message
+            error_msg = f"Error: {str(exc_val)}"
+            self.window.statusBar().showMessage(error_msg, 5000)
+        elif self.success_message:
+            # Success - show success message
+            self.window.statusBar().showMessage(
+                self.success_message,
+                self.success_timeout_ms
+            )
+        else:
+            # Clear status
+            self.window.statusBar().clearMessage()
+
+        # Don't suppress exceptions
+        return False
+
+    def update_message(self, new_message):
+        """
+        Update status message during a long operation.
+
+        Use sparingly - calls processEvents() which can cause reentrancy issues.
+
+        :param new_message: New message to display
+        """
+        if new_message:
+            self.window.statusBar().showMessage(new_message)
+            QApplication.processEvents()
 
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
@@ -1441,38 +1552,43 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def load_heavy_data(self) -> None:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
 
-        logger.info("=== Starting heavy data load ===")
-        self.clear_plots()
-        self.init_session_variables()
+        with BusyContext(self, "Loading heavy data...", "Data loaded successfully",
+                         disable_widgets=self.load_data_button) as ctx:
+            logger.info("=== Starting heavy data load ===")
+            self.clear_plots()
+            self.init_session_variables()
 
-        # Load ephys data (session-specific, always reload)
-        logger.info("Loading ephys data...")
-        self.probe_path, self.chn_depths, self.sess_notes, data = (
-            self.loaddata.get_ephys_data(self.current_shank_idx)
-        )
-        self.data = data
+            # Load ephys data (session-specific, always reload)
+            ctx.update_message("Loading ephys data...")
+            logger.info("Loading ephys data...")
+            self.probe_path, self.chn_depths, self.sess_notes, data = (
+                self.loaddata.get_ephys_data(self.current_shank_idx)
+            )
+            self.data = data
 
-        if not self.probe_path:
-            logger.error("Failed to load ephys data")
-            return
+            if not self.probe_path:
+                logger.error("Failed to load ephys data")
+                return
 
-        logger.info(f"Loaded ephys data from {self.probe_path}")
+            logger.info(f"Loaded ephys data from {self.probe_path}")
 
-        # Load atlas and histology (subject-level, cached if same subject)
-        if self.loaddata.brain_atlas is None:
-            try:
-                logger.info("Loading atlas and histology...")
-                self.loaddata.load_atlas_and_histology()
-                logger.info("Atlas and histology loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load atlas/histology: {e}")
-                self.histology_exists = False
+            # Load atlas and histology (subject-level, cached if same subject)
+            if self.loaddata.brain_atlas is None:
+                try:
+                    ctx.update_message("Loading atlas and histology...")
+                    logger.info("Loading atlas and histology...")
+                    self.loaddata.load_atlas_and_histology()
+                    logger.info("Atlas and histology loaded successfully")
+                except Exception as e:
+                    logger.error(f"Failed to load atlas/histology: {e}")
+                    self.histology_exists = False
 
-        # Setup view for current shank (common with switch_shank_view)
-        self.setup_session_view()
+            # Setup view for current shank (common with switch_shank_view)
+            ctx.update_message("Setting up visualization...")
+            self.setup_session_view()
 
-        self.data_status = True
-        logger.info("=== Heavy data load complete ===")
+            self.data_status = True
+            logger.info("=== Heavy data load complete ===")
 
     def load_existing_alignments(self) -> bool:
         if self.loaddata.n_shanks == 0:
@@ -1487,24 +1603,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
         self.reload_folder_line.setText(str(folder_path))
 
-        logger.info(
-            f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
-        )
-        self.prev_alignments = self.loaddata.load_previous_alignments(
-            shank_idx=self.current_shank_idx,
-            input_path=folder_path,
-            use_docdb=self.use_docdb,
-        )
-        self.populate_lists(self.prev_alignments, self.align_list, self.align_combobox)
+        with BusyContext(self, "Loading alignments...", "Alignments loaded",
+                         disable_widgets=self.reload_folder_button):
+            logger.info(
+                f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
+            )
+            self.prev_alignments = self.loaddata.load_previous_alignments(
+                shank_idx=self.current_shank_idx,
+                input_path=folder_path,
+                use_docdb=self.use_docdb,
+            )
+            self.populate_lists(self.prev_alignments, self.align_list, self.align_combobox)
 
-        # Get starting alignment (from cached data, no disk read)
-        if self.prev_alignments:
-            self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
-            logger.info(f"Loaded {len(self.prev_alignments)} previous alignments")
-        else:
-            self.feature_prev = None
-            self.track_prev = None
-            logger.info("No previous alignments found")
+            # Get starting alignment (from cached data, no disk read)
+            if self.prev_alignments:
+                self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
+                logger.info(f"Loaded {len(self.prev_alignments)} previous alignments")
+            else:
+                self.feature_prev = None
+                self.track_prev = None
+                logger.info("No previous alignments found")
 
         return True
 
@@ -1531,48 +1649,53 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(f"Invalid input path: {e}")
             return False
 
-        self.data_status = False
+        with BusyContext(self, "Loading channel info...", "Ready",
+                         disable_widgets=[self.input_folder_button, self.input_folder_line]):
+            self.data_status = False
 
-        # Set up output directory (Code Ocean-specific logic)
-        we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
+            # Set up output directory (Code Ocean-specific logic)
+            we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
 
-        if we_are_in_code_ocean:
-            out_folder = Path("/results/").joinpath(input_path.parent.stem)
-            string_folder_path = input_path.parent.stem
-            subject_id_path = string_folder_path[string_folder_path.index("_") + 1 :]
-            subject_id = subject_id_path[0 : subject_id_path.index("_")]
+            if we_are_in_code_ocean:
+                out_folder = Path("/results/").joinpath(input_path.parent.stem)
+                string_folder_path = input_path.parent.stem
+                subject_id_path = string_folder_path[string_folder_path.index("_") + 1 :]
+                subject_id = subject_id_path[0 : subject_id_path.index("_")]
 
-            out_folder = Path("/results").joinpath(subject_id)
-            logger.info(f"Output folder: {out_folder}")
-        else:
-            out_folder = input_path.parent / "out"
+                out_folder = Path("/results").joinpath(subject_id)
+                logger.info(f"Output folder: {out_folder}")
+            else:
+                out_folder = input_path.parent / "out"
 
-        # Create the output directory structure
-        out_folder.mkdir(exist_ok=True)
-        output_directory = out_folder / input_path.parent.stem / input_path.stem
-        output_directory.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Output dir: {output_directory}")
-        self.output_directory = output_directory
+            # Create the output directory structure
+            out_folder.mkdir(exist_ok=True)
+            output_directory = out_folder / input_path.parent.stem / input_path.stem
+            output_directory.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Output dir: {output_directory}")
+            self.output_directory = output_directory
 
-        # Update UI
-        self.output_folder_line.setText(str(output_directory))
-        self.input_folder_line.setText(str(input_path))
+            # Update UI
+            self.output_folder_line.setText(str(output_directory))
+            self.input_folder_line.setText(str(input_path))
 
-        # Load only channel info and shank list initially
-        self.loaddata.set_input_paths(input_path, we_are_in_code_ocean)
-        self.loaddata.load_channel_info(input_path)
-        shanklist = self.loaddata.get_shank_list()
-        if shanklist is not None:
-            self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
-            logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
+            # Load only channel info and shank list initially
+            self.loaddata.set_input_paths(input_path, we_are_in_code_ocean)
+            self.loaddata.load_channel_info(input_path)
+            shanklist = self.loaddata.get_shank_list()
+            if shanklist is not None:
+                self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
+                logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
 
-        self.current_shank_idx = 0
-        self.feature_prev = None
-        self.track_prev = None
+            self.current_shank_idx = 0
+            self.feature_prev = None
+            self.track_prev = None
 
-        logger.info(
-            "Input directory loaded, ready to load data or existing alignments."
-        )
+            logger.info(
+                "Input directory loaded, ready to load data or existing alignments."
+            )
+
+        # Enable Load Data button now that input path is set
+        self.load_data_button.setEnabled(True)
         return True
 
     def on_folder_selected(self) -> bool:
@@ -1658,12 +1781,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when user finishes editing input_folder_line text field
         """
         text = self.input_folder_line.text().strip()
-        if text:
-            try:
-                input_path = Path(text)
-                self.set_input_folder(input_path)
-            except Exception as e:
-                logger.error(f"Invalid input path: {e}")
+        if not text:
+            # User cleared the field - disable Load Data button
+            self.load_data_button.setEnabled(False)
+            return
+
+        try:
+            input_path = Path(text)
+            success = self.set_input_folder(input_path)
+            # Button enabled/disabled based on success in set_input_folder()
+            if not success:
+                self.load_data_button.setEnabled(False)
+        except Exception as e:
+            logger.error(f"Invalid input path: {e}")
+            self.load_data_button.setEnabled(False)
 
     def on_output_folder_edited(self) -> None:
         """
@@ -2329,48 +2460,51 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.output_directory is None:
             logger.error("Output directory not set. Please select an output directory.")
             return
-        # Save histology-space to disk and update in-memory state
-        channel_results, alignments, ccf_channel_dict, multi_shank = (
-            self.loaddata.get_alignment_results(
-                self.features[self.idx],
-                self.track[self.idx],
-                self.channel_locations_ras,
-            )
-        )
 
-        logger.info("Saving output files to results folder...")
-        suffix = f"_shank{self.current_shank_idx + 1}" if multi_shank else ""
-        channel_results_path = self.output_directory / f"channel_locations{suffix}.json"
-        prev_alignments_path = self.output_directory / f"prev_alignments{suffix}.json"
-        ccf_channel_dict_path = (
-            self.output_directory / f"ccf_channel_locations{suffix}.json"
-        )
-
-        _write_dict_to_json(channel_results_path, channel_results)
-        _write_dict_to_json(prev_alignments_path, alignments)
-        _write_dict_to_json(ccf_channel_dict_path, ccf_channel_dict)
-        logger.info("Channel locations saved to results folder")
-
-        if self.use_docdb:
-            logger.info("Writing channel locations to DocDB...")
-            probe_name_for_docdb = (
-                f"{self.output_directory.stem}_{self.current_shank_idx}"
-            )
-            try:
-                write_output_to_docdb(
-                    self.output_directory.parent.stem,
-                    probe_name_for_docdb,
-                    channel_results,
-                    alignments,
-                    ccf_channel_dict,
+        with BusyContext(self, "Saving...", "Saved successfully",
+                         disable_widgets=self.complete_button):
+            # Save histology-space to disk and update in-memory state
+            channel_results, alignments, ccf_channel_dict, multi_shank = (
+                self.loaddata.get_alignment_results(
+                    self.features[self.idx],
+                    self.track[self.idx],
+                    self.channel_locations_ras,
                 )
-            except ValueError as e:
-                logger.error(
-                    f"Failed to write to docdb with error {e}. Output saved to results folder"
-                )
-            logger.info(
-                f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
             )
+
+            logger.info("Saving output files to results folder...")
+            suffix = f"_shank{self.current_shank_idx + 1}" if multi_shank else ""
+            channel_results_path = self.output_directory / f"channel_locations{suffix}.json"
+            prev_alignments_path = self.output_directory / f"prev_alignments{suffix}.json"
+            ccf_channel_dict_path = (
+                self.output_directory / f"ccf_channel_locations{suffix}.json"
+            )
+
+            _write_dict_to_json(channel_results_path, channel_results)
+            _write_dict_to_json(prev_alignments_path, alignments)
+            _write_dict_to_json(ccf_channel_dict_path, ccf_channel_dict)
+            logger.info("Channel locations saved to results folder")
+
+            if self.use_docdb:
+                logger.info("Writing channel locations to DocDB...")
+                probe_name_for_docdb = (
+                    f"{self.output_directory.stem}_{self.current_shank_idx}"
+                )
+                try:
+                    write_output_to_docdb(
+                        self.output_directory.parent.stem,
+                        probe_name_for_docdb,
+                        channel_results,
+                        alignments,
+                        ccf_channel_dict,
+                    )
+                except ValueError as e:
+                    logger.error(
+                        f"Failed to write to docdb with error {e}. Output saved to results folder"
+                    )
+                logger.info(
+                    f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
+                )
 
     def display_qc_options(self) -> None:
         # If not histology don't show
