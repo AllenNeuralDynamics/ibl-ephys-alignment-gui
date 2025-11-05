@@ -1703,7 +1703,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered in offline mode when folder button is clicked
         """
         we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
-        start_dir = "/data/" if we_are_in_code_ocean else None
+
+        # Start at current input directory if set, otherwise use Code Ocean /data/ or None
+        if self.loaddata.input_path and self.loaddata.input_path.exists():
+            start_dir = str(self.loaddata.input_path)
+        elif we_are_in_code_ocean:
+            start_dir = "/data/"
+        else:
+            start_dir = None
+
         input_path = Path(
             QtWidgets.QFileDialog.getExistingDirectory(
                 None, "Select Input Directory", directory=start_dir

@@ -574,7 +574,7 @@ class Setup:
                 continue
             else:
                 this_slice_action = QtWidgets.QAction(
-                    key, self, checkable=True, checked=True
+                    key, self, checkable=True, checked=False
                 )
                 this_slice_action.triggered.connect(
                     lambda checked, item=key: self.plot_slice(self.slice_data, item)
