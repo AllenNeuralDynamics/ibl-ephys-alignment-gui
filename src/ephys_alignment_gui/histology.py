@@ -171,28 +171,28 @@ def plot3d_all(trajectories, tracks, brain_atlas=None) -> None:
         plt_trj.append(plt)
 
 
-def interpolate_along_track(xyz_track, depths):
+def interpolate_along_track(track_annos_and_ends_ras, depths):
     """
     Get the coordinates of points along a track according to their distances from the first
     point.
-    :param xyz_track: np.array [npoints, 3]. Usually the first point is the deepest
+    :param track_annos_and_ends_ras: np.array [npoints, 3]. Usually the first point is the deepest
     :param depths: distance from the first point of the track, usually the convention is the
     deepest point is 0 and going up
-    :return: xyz_channels
+    :return: channel_locations_ras
     """
     # from scipy.interpolate import interp1d
     # this is the cumulative distance from the lowest picked point (first)
     distance = np.cumsum(
-        np.r_[0, np.sqrt(np.sum(np.diff(xyz_track, axis=0) ** 2, axis=1))]
+        np.r_[
+            0, np.sqrt(np.sum(np.diff(track_annos_and_ends_ras, axis=0) ** 2, axis=1))
+        ]
     )
-    xyz_channels = np.zeros((depths.shape[0], 3))
+    channel_locations_ras = np.zeros((depths.shape[0], 3))
     for m in np.arange(3):
-        xyz_channels[:, m] = np.interp(depths, distance, xyz_track[:, m])
-        # xyz_channels[:, m] = interp1d(distance, xyz[:, m], kind='cubic')(chdepths / 1e6)
-    # plt.figure()
-    # plt.plot(xyz_track[:, 0] * 1e6, xyz_track[:, 2] * 1e6, 'k*'), plt.axis('equal')
-    # plt.plot(xyz_channels[:, 0] * 1e6, xyz_channels[:, 2] * 1e6, '.'), plt.axis('equal')
-    return xyz_channels
+        channel_locations_ras[:, m] = np.interp(
+            depths, distance, track_annos_and_ends_ras[:, m]
+        )
+    return channel_locations_ras
 
 
 def get_brain_regions(xyz, channels_positions=None, brain_atlas=None):

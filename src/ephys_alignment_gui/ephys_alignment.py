@@ -1,10 +1,10 @@
 import logging
 
 import numpy as np
-import scipy
 from iblatlas import atlas
 from iblatlas.atlas import BrainAtlas, Trajectory
 from numpy.typing import NDArray
+from scipy.interpolate import interp1d
 
 import ephys_alignment_gui.histology as histology
 
@@ -105,7 +105,7 @@ def get_brain_entry_override(
 class EphysAlignment:
     def __init__(
         self,
-        xyz_picks,
+        track_annotations_ras: NDArray[np.floating],
         chn_depths=None,
         track_prev=None,
         feature_prev=None,
@@ -117,8 +117,8 @@ class EphysAlignment:
         else:
             self.brain_atlas = brain_atlas
 
-        self.xyz_track, self.track_extent, self.depths_along_trk = (
-            self.get_insertion_track(xyz_picks, speedy=speedy)
+        self.track_annos_and_ends_ras, self.track_extent, self.depths_along_trk = (
+            self.get_insertion_track(track_annotations_ras, speedy=speedy)
         )
 
         # Initial depth estimate.
@@ -133,11 +133,11 @@ class EphysAlignment:
             self.feature_init = np.array([-1 * start_lims, start_lims])
 
         # Fit trajectory to the track for voxel-aligned sampling
-        traj = atlas.Trajectory.fit(self.xyz_track)
+        traj = atlas.Trajectory.fit(self.track_annos_and_ends_ras)
 
         # Get DV range of the trajectory
-        z_min = np.min(self.xyz_track[:, 2])
-        z_max = np.max(self.xyz_track[:, 2])
+        z_min = np.min(self.track_annos_and_ends_ras[:, 2])
+        z_max = np.max(self.track_annos_and_ends_ras[:, 2])
 
         # Convert to voxel indices and align to voxel boundaries
         i_min, i_max = np.sort(self.brain_atlas.bc.z2i(np.array([z_min, z_max])))
@@ -148,55 +148,58 @@ class EphysAlignment:
         z_samples = np.sort(self.brain_atlas.bc.i2z(np.arange(i_min, i_max + 1)))
 
         # Evaluate trajectory at voxel-aligned DV coordinates
-        self.xyz_samples = traj.eval_z(z_samples)
+        self.track_interpolation_ras = traj.eval_z(z_samples)
 
         # Compute cumulative distance along trajectory for compatibility
-        # (sampling_trk is used for depth_coords in get_histology_regions)
-        self.sampling_trk = np.interp(
-            self.xyz_samples[:, 2],  # z-coordinates we want depths for
-            self.xyz_track[:, 2],  # z-coordinates along track
+        # (ephys_depths_along_track is used for depth_coords in get_histology_regions)
+        self.ephys_depths_along_track = np.interp(
+            self.track_interpolation_ras[:, 2],  # z-coordinates we want depths for
+            self.track_annos_and_ends_ras[:, 2],  # z-coordinates along track
             self.depths_along_trk,  # cumulative distances along track
         )
         # ensure none of the track is outside the y or x lim of atlas
         xlim = np.sort(self.brain_atlas.bc.xlim)
         ylim = np.sort(self.brain_atlas.bc.ylim)
         x_in_range = np.bitwise_and(
-            self.xyz_samples[:, 0] >= xlim[0],
-            self.xyz_samples[:, 0] <= xlim[1],
+            self.track_interpolation_ras[:, 0] >= xlim[0],
+            self.track_interpolation_ras[:, 0] <= xlim[1],
         )
         y_in_range = np.bitwise_and(
-            self.xyz_samples[:, 1] >= ylim[0],
-            self.xyz_samples[:, 1] <= ylim[1],
+            self.track_interpolation_ras[:, 1] >= ylim[0],
+            self.track_interpolation_ras[:, 1] <= ylim[1],
         )
         rem = np.bitwise_and(x_in_range, y_in_range)
-        self.xyz_samples = self.xyz_samples[rem]
-        # Also filter sampling_trk to match filtered xyz_samples
-        self.sampling_trk = self.sampling_trk[rem]
+        self.track_interpolation_ras = self.track_interpolation_ras[rem]
+        # Also filter ephys_depths_along_track to match filtered track_interpolation_ras
+        self.ephys_depths_along_track = self.ephys_depths_along_track[rem]
 
         self.region, self.region_label, self.region_colour, self.region_id = (
             self.get_histology_regions(
-                self.xyz_samples, self.sampling_trk, self.brain_atlas
+                self.track_interpolation_ras,
+                self.ephys_depths_along_track,
+                self.brain_atlas,
             )
         )
 
-    def get_insertion_track(self, xyz_picks, speedy=False):
+    def get_insertion_track(self, track_annotations_ras, speedy=False):
         """
         Extends probe trajectory from bottom of brain to upper bound of allen atlas
-        :param xyz_picks: points defining probe trajectory in 3D space (xyz)
-        :type xyz_picks: np.array((n, 3)) - n: no. of unique points
-        :return xyz_track: points defining extended trajectory in 3D space (xyz)
-        :type xyz_track: np.array((n+2, 3))
-        :return track_extent: cumulative distance between two extremes of xyz_track (bottom of
+        :param track_annotations_ras: points defining probe trajectory in 3D space (Right Anterior Superior)
+        :type track_annotations_ras: np.array((n, 3)) - n: no. of unique points
+        :return track_annos_and_ends_ras: points defining extended trajectory in 3D space (RAS)
+        :type track_annos_and_ends_ras: np.array((n+2, 3))
+        :return track_extent: cumulative distance between two extremes of track_annos_and_ends_ras (bottom of
         brain and top of atlas) offset by distance to probe tip
         :type track_extent: np.array((2))
         """
-        # Use the first and last quarter of xyz_picks to estimate the trajectory beyond xyz_picks
-        n_picks = np.max([4, round(xyz_picks.shape[0] / 4)])
-        traj_entry = atlas.Trajectory.fit(xyz_picks[:n_picks, :])
-        traj_exit = atlas.Trajectory.fit(xyz_picks[-1 * n_picks :, :])
+        # Use the first and last quarter of track_annotations_ras to estimate
+        # the trajectory beyond track_annotations_ras
+        n_picks = np.max([4, round(track_annotations_ras.shape[0] / 4)])
+        traj_entry = atlas.Trajectory.fit(track_annotations_ras[:n_picks, :])
+        traj_exit = atlas.Trajectory.fit(track_annotations_ras[-1 * n_picks :, :])
 
-        # Force the entry to be on the upper z lim of the atlas to account for cases where channels
-        # may be located above the surface of the brain
+        # Force the entry to be on the upper z lim of the atlas to account for
+        # cases where channels may be located above the surface of the brain
         entry_lims = traj_entry.eval_z(self.brain_atlas.bc.zlim)
         entry_top_lim = np.argmax(entry_lims[:, 2])
         entry = entry_lims[entry_top_lim, :]
@@ -213,58 +216,59 @@ class EphysAlignment:
         if any(np.isnan(exit)):
             exit = (traj_exit.eval_z(self.brain_atlas.bc.zlim))[1, :]
 
-        xyz_track = np.r_[exit[np.newaxis, :], xyz_picks, entry[np.newaxis, :]]
+        track_annos_and_ends_ras = np.r_[
+            exit[np.newaxis, :], track_annotations_ras, entry[np.newaxis, :]
+        ]
         # Sort so that most ventral coordinate is first
-        indices = np.argsort(xyz_track[:, 2])
-        xyz_track = xyz_track[indices, :]
+        indices = np.argsort(track_annos_and_ends_ras[:, 2])
+        track_annos_and_ends_ras = track_annos_and_ends_ras[indices, :]
 
         # Compute distance to first electrode from bottom coordinate
-        cumulative_dist = _cumulative_distance(xyz_track)
+        cumulative_dist = _cumulative_distance(track_annos_and_ends_ras)
         tip_distance = cumulative_dist[1] + TIP_SIZE_UM / 1e6
         track_length = cumulative_dist[-1]
         track_extent = np.array([0, track_length]) - tip_distance
         depths_along_track = cumulative_dist - tip_distance
         logger.debug(f"Track extent: {track_extent}")
-        return xyz_track, track_extent, depths_along_track
+        return track_annos_and_ends_ras, track_extent, depths_along_track
 
     def get_track_and_feature(self):
         """
-        Return track, feature and xyz_track variables
+        Return track, feature and track_annos_and_ends_ras variables
         """
-        return self.feature_init, self.track_init, self.xyz_track
+        return self.feature_init, self.track_init, self.track_annos_and_ends_ras
 
     @staticmethod
-    def feature2track(trk, feature, track):
+    def feature2track(feature_new, feature_ref, track_ref):
         """
-        Estimate new values of trk according to interpolated fit between feature and track space
-        :param trk: points in track space to convert feature space
-        :type trk: np.array
-        :param feature: reference coordinates in feature space (ephys plots)
-        :type feature: np.array((n_lines + 2)) n_lines: no. of user reference lines
-        :param track: reference coordinates in track space (histology track)
-        :type track: np.array((n_lines + 2))
-        :return fcn(trk): interpolated values of trk
-        :type fcn(trk): np.array
+        Estimate new values of feature_new according to interpolated fit between feature and track space
+        :param feature_new: points in FEATURE space to convert TO track space
+        :type feature_new: np.array
+        :param feature_ref: reference coordinates in feature space (ephys plots)
+        :type feature_ref: np.array((n_lines + 2)) n_lines: no. of user reference lines
+        :param track_ref: reference coordinates in track space (histology track)
+        :type track_ref: np.array((n_lines + 2))
+        :return track_new: interpolated values of trk IN TRACK SPACE
+        :type track_new: np.array
         """
-
-        fcn = scipy.interpolate.interp1d(feature, track, fill_value="extrapolate")
-        return fcn(trk)
+        fcn = interp1d(feature_ref, track_ref, fill_value="extrapolate")
+        return fcn(feature_new)
 
     @staticmethod
-    def track2feature(ft, feature, track):
+    def track2feature(track_new, feature_ref, track_ref):
         """
-        Estimate new values of ft according to interpolated fit between track and feature space
-        :param ft: points in feature space to convert track space
-        :type ft: np.array
-        :param feature: reference coordinates in feature space (ephys plots)
-        :type feature: np.array((n_lines + 2)) n_lines: no. of user reference lines
+        Estimate new values of track_new according to interpolated fit between track and feature space
+        :param track_new: points in track space to convert feature space
+        :type track_new: np.array
+        :param feature_ref: reference coordinates in feature space (ephys plots)
+        :type feature_ref: np.array((n_lines + 2)) n_lines: no. of user reference lines
         :param track: reference coordinates in track space (histology track)
         :type track: np.array((n_lines + 2))
-        :return fcn(ft): interpolated values of ft
-        :type fcn(ft): np.array
+        :return fcn(track_new): interpolated values of track_new
+        :type fcn(track_new): np.array
         """
-        fcn = scipy.interpolate.interp1d(track, feature, fill_value="extrapolate")
-        return fcn(ft)
+        fcn = interp1d(track_ref, feature_ref, fill_value="extrapolate")
+        return fcn(track_new)
 
     @staticmethod
     def feature2track_lin(trk, feature, track):
@@ -654,29 +658,31 @@ class EphysAlignment:
         1) interpolate from the electrophys features depths space to the probe depth space
         2) interpolate from the probe depth space to the true 3D coordinates
         if depths is not provided, defaults to channels local coordinates depths
+
+        feature : reference coordinates in feature space (ephys plots)
+        track : reference coordinates in track space (histology track)
         """
         if depths is None:
             depths = self.chn_depths / 1e6
-        # nb using scipy here so we can change to cubic spline if needed
         channel_depths_track = (
             self.feature2track(depths, feature, track) - self.track_extent[0]
         )
 
-        xyz_channels = histology.interpolate_along_track(
-            self.xyz_track, channel_depths_track
+        channel_locations_ras = histology.interpolate_along_track(
+            self.track_annos_and_ends_ras, channel_depths_track
         )
-        return xyz_channels
+        return channel_locations_ras
 
-    def get_brain_locations(self, xyz_channels):
+    def get_brain_locations(self, channel_locations_ras):
         """
         Finds the brain regions from 3D coordinates of electrode locations
-        :param xyz_channels: 3D coordinates of electrodes on probe
-        :type xyz_channels: np.array((n_elec, 3)) n_elec: no. of electrodes (384)
+        :param channel_locations_ras: 3D coordinates of electrodes on probe
+        :type channel_locations_ras: np.array((n_elec, 3)) n_elec: no. of electrodes (384)
         :return brain_regions: brain region object for each electrode
         :type dict
         """
         brain_regions = self.brain_atlas.regions.get(
-            self.brain_atlas.get_labels(xyz_channels)
+            self.brain_atlas.get_labels(channel_locations_ras)
         )
         return brain_regions
 

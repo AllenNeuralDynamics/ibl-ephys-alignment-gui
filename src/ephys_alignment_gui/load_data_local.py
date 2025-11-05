@@ -30,7 +30,7 @@ from ephys_alignment_gui.custom_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
-from ephys_alignment_gui.docdb import _default_docdb_api_client, query_docdb_id
+from ephys_alignment_gui.docdb import _default_doc_db_api_client, query_docdb_id
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ class LoadDataLocal:
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
         docdb_id = query_docdb_id(input_path.parent.stem)[0]
         quality_control = get_quality_control_by_id(
-            _default_docdb_api_client(), docdb_id
+            _default_doc_db_api_client(), docdb_id
         )
 
         if quality_control is None:
@@ -507,7 +507,7 @@ class LoadDataLocal:
 
         return self.allen
 
-    def get_xyzpicks(
+    def get_track_annotations(
         self, shank_idx: int, input_path: Path | None = None
     ) -> NDArray[np.floating]:
         # Read in local xyz_picks file
@@ -531,14 +531,16 @@ class LoadDataLocal:
         with open(xyz_file[0]) as f:
             user_picks = json.load(f)
 
-        xyz_picks = np.array(user_picks["xyz_picks"]) / 1e6  # convert to meters
+        track_annotations_ras = (
+            np.array(user_picks["xyz_picks"]) / 1e6
+        )  # convert to meters
 
-        return xyz_picks
+        return track_annotations_ras
 
-    def get_slice_images(self, xyz_channels):
+    def get_slice_images(self, track_interpolation_ras):
         # Load the CCF images
         """
-        index = self.brain_atlas.bc.xyz2i(xyz_channels)[
+        index = self.brain_atlas.bc.xyz2i(channel_locations_ras)[
             :, self.brain_atlas.xyz2dims
         ]
         """
@@ -548,10 +550,12 @@ class LoadDataLocal:
         # doesn't handle permutations (xyz2dim). This converts world
         # coordinates to image indices, and then permutes to match atlas image
         # orientation
-        index = self.brain_atlas.bc.xyz2i(xyz_channels)[:, self.brain_atlas.xyz2dims]
+        index = self.brain_atlas.bc.xyz2i(track_interpolation_ras)[
+            :, self.brain_atlas.xyz2dims
+        ]
         # Store for lazy loading
         self._slice_index = index
-        trajectory_id = id(xyz_channels)  # Unique ID for this trajectory
+        trajectory_id = id(track_interpolation_ras)  # Unique ID for this trajectory
 
         # Build a tilted slice by getting horizontal lines at each index,
         # N x image.shape[1]
@@ -744,12 +748,12 @@ class LoadDataLocal:
 
     def _transform_to_ccf(
         self,
-        xyz_channels: NDArray,
+        channel_locations_ras: NDArray,
         channel_dict: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         if self.tx_chain_files is None:
             raise RuntimeError("Transform chain files not set, cannot transform to CCF")
-        channel_coords_mm = 1e-3 * xyz_channels  # convert to mm
+        channel_coords_mm = 1e-3 * channel_locations_ras  # convert to mm
 
         # Have to convert these to the physical space of the pipeline image first
         # We will do that go going through simpleITK indices for the paired images
@@ -816,7 +820,7 @@ class LoadDataLocal:
         self,
         feature: NDArray,
         track: NDArray,
-        xyz_channels: NDArray,
+        channel_locations_ras: NDArray,
     ) -> tuple[
         dict[str, dict[str, Any]],
         dict[str, list[list[float]]],
@@ -824,12 +828,12 @@ class LoadDataLocal:
         bool,
     ]:
         logger.info("Saving channel locations and previous alignments locally")
-        logger.debug(f"Channels: {xyz_channels}")
+        logger.debug(f"Channels: {channel_locations_ras}")
         if self.brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
         regions: BrainRegions = self.brain_atlas.regions
-        brain_regions = regions.get(self.brain_atlas.get_labels(xyz_channels))
-        brain_regions["xyz"] = xyz_channels
+        brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
+        brain_regions["xyz"] = channel_locations_ras
         brain_regions["lateral"] = self.chn_coords[:, 0]
         brain_regions["axial"] = self.chn_coords[:, 1]
 
@@ -837,7 +841,7 @@ class LoadDataLocal:
         channel_dict = self.create_channel_dict(brain_regions)
         self.channel_dict = channel_dict
 
-        ccf_channel_dict = self._transform_to_ccf(xyz_channels, channel_dict)
+        ccf_channel_dict = self._transform_to_ccf(channel_locations_ras, channel_dict)
 
         date = datetime.now().replace(microsecond=0).isoformat()
         self.alignments[date] = [feature.tolist(), track.tolist()]

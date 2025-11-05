@@ -183,9 +183,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.nearby = None
 
-        self.xyz_picks: NDArray[np.floating] | None = None
-        self.xyz_track: NDArray[np.floating] | None = None
-        self.xyz_channels: NDArray[np.floating] | None = None
+        self.track_annotations_ras: NDArray[np.floating] | None = None
+        self.track_annos_and_ends_ras: NDArray[np.floating] | None = None
+        self.channel_locations_ras: NDArray[np.floating] | None = None
         self.probe_path: Path | None = None
         self.chn_depths: NDArray[np.floating] | None = None
         self.sess_notes: str = ""
@@ -567,8 +567,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         while plot != start_plot:
             self.toggle_channel_button_pressed()
             self.traj_line.setData(
-                x=self.xyz_channels[:, 0],
-                y=self.xyz_channels[:, 2],
+                x=self.channel_locations_ras[:, 0],
+                y=self.channel_locations_ras[:, 2],
                 pen=self.rpen_dot,
             )
             self.fig_slice.addItem(self.traj_line)
@@ -591,8 +591,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         while plot != start_plot:
             self.toggle_channel_button_pressed()
             self.traj_line.setData(
-                x=self.xyz_channels[:, 0],
-                y=self.xyz_channels[:, 2],
+                x=self.channel_locations_ras[:, 0],
+                y=self.channel_locations_ras[:, 2],
                 pen=self.rpen_dot,
             )
             self.fig_slice.addItem(self.traj_line)
@@ -600,12 +600,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             slice_name = self.slice_options_group.checkedAction().text()
             self.fig_slice.setXRange(
-                min=np.min(self.xyz_channels[:, 0]) - 200 / 1e6,
-                max=np.max(self.xyz_channels[:, 0]) + 200 / 1e6,
+                min=np.min(self.channel_locations_ras[:, 0]) - 200 / 1e6,
+                max=np.max(self.channel_locations_ras[:, 0]) + 200 / 1e6,
             )
             self.fig_slice.setYRange(
-                min=np.min(self.xyz_channels[:, 2]) - 500 / 1e6,
-                max=np.max(self.xyz_channels[:, 2]) + 500 / 1e6,
+                min=np.min(self.channel_locations_ras[:, 2]) - 500 / 1e6,
+                max=np.max(self.channel_locations_ras[:, 2]) + 500 / 1e6,
             )
             self.fig_slice.resize(50, self.slice_height)
             exporter = pg.exporters.ImageExporter(self.fig_slice)
@@ -1098,7 +1098,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_slice.addItem(img)
         self.traj_line = pg.PlotCurveItem()
         self.traj_line.setData(
-            x=self.xyz_track[:, 0], y=self.xyz_track[:, 2], pen=self.kpen_solid
+            x=self.track_annos_and_ends_ras[:, 0],
+            y=self.track_annos_and_ends_ras[:, 2],
+            pen=self.kpen_solid,
         )
         self.fig_slice.addItem(self.traj_line)
         self.plot_channels()
@@ -1109,7 +1111,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.channel_status = True
-        self.xyz_channels = self.ephysalign.get_channel_locations(
+        self.channel_locations_ras = self.ephysalign.get_channel_locations(
             self.features[self.idx], self.track[self.idx]
         )
 
@@ -1117,8 +1119,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.slice_lines = []
             self.slice_chns = pg.ScatterPlotItem()
             self.slice_chns.setData(
-                x=self.xyz_channels[:, 0],
-                y=self.xyz_channels[:, 2],
+                x=self.channel_locations_ras[:, 0],
+                y=self.channel_locations_ras[:, 2],
                 pen="r",
                 brush="r",
             )
@@ -1157,8 +1159,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.fig_slice.addItem(line)
                 self.slice_lines.append(line)
             self.slice_chns.setData(
-                x=self.xyz_channels[:, 0],
-                y=self.xyz_channels[:, 2],
+                x=self.channel_locations_ras[:, 0],
+                y=self.channel_locations_ras[:, 2],
                 pen="r",
                 brush="r",
             )
@@ -1607,7 +1609,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Create alignment
         if np.any(self.feature_prev):
             self.ephysalign = EphysAlignment(
-                self.xyz_picks,
+                self.track_annotations_ras,
                 self.chn_depths,
                 track_prev=self.track_prev,
                 feature_prev=self.feature_prev,
@@ -1615,7 +1617,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
         else:
             self.ephysalign = EphysAlignment(
-                self.xyz_picks,
+                self.track_annotations_ras,
                 self.chn_depths,
                 brain_atlas=self.loaddata.brain_atlas,
             )
@@ -1623,13 +1625,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Get histology regions
         self.region_fp, self.region_label_fp, self.region_colour_fp, _ = (
             EphysAlignment.get_histology_regions(
-                self.ephysalign.xyz_samples,
-                self.ephysalign.sampling_trk,
+                self.ephysalign.track_interpolation_ras,
+                self.ephysalign.ephys_depths_along_track,
                 self.loaddata.brain_atlas,
             )
         )
 
-        self.features[self.idx], self.track[self.idx], self.xyz_track = (
+        self.features[self.idx], self.track[self.idx], self.track_annos_and_ends_ras = (
             self.ephysalign.get_track_and_feature()
         )
 
@@ -1671,9 +1673,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Only process histology if it exists
         if self.histology_exists:
-            # Load xyz_picks for this shank
-            self.xyz_picks = self.loaddata.get_xyzpicks(self.current_shank_idx)
-            logger.debug("Loaded xyz_picks for shank")
+            # Load track_annotations_ras for this shank
+            self.track_annotations_ras = self.loaddata.get_track_annotations(
+                self.current_shank_idx
+            )
+            logger.debug("Loaded track_annotations_ras for shank")
 
             # Get alignment for this shank (from cached alignments, no disk read)
             self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
@@ -1724,7 +1728,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if self.histology_exists:
             self.slice_data, self.fp_slice_data = self.loaddata.get_slice_images(
-                self.ephysalign.xyz_samples
+                self.ephysalign.track_interpolation_ras
             )
         else:
             self.slice_data = {}
@@ -1805,14 +1809,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         nearby_bounds = self.ephysalign.get_nearest_boundary(
-            self.ephysalign.xyz_samples,
+            self.ephysalign.track_interpolation_ras,
             self.allen,
             steps=6,
             brain_atlas=self.loaddata.brain_atlas,
         )
         [self.hist_nearby_x, self.hist_nearby_y, self.hist_nearby_col] = (
             self.ephysalign.arrange_into_regions(
-                self.ephysalign.sampling_trk,
+                self.ephysalign.ephys_depths_along_track,
                 nearby_bounds["id"],
                 nearby_bounds["dist"],
                 nearby_bounds["col"],
@@ -1824,7 +1828,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.hist_nearby_parent_y,
             self.hist_nearby_parent_col,
         ] = self.ephysalign.arrange_into_regions(
-            self.ephysalign.sampling_trk,
+            self.ephysalign.ephys_depths_along_track,
             nearby_bounds["parent_id"],
             nearby_bounds["parent_dist"],
             nearby_bounds["parent_col"],
@@ -2254,7 +2258,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.loaddata.get_alignment_results(
                 self.features[self.idx],
                 self.track[self.idx],
-                self.xyz_channels,
+                self.channel_locations_ras,
             )
         )
 
