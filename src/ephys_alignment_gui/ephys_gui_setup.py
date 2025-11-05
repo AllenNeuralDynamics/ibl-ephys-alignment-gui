@@ -28,11 +28,11 @@ class Setup:
         main_layout = QtWidgets.QGridLayout()
         main_layout.addWidget(self.fig_data_area, 0, 0, 10, 1)
         main_layout.addWidget(self.fig_hist_area, 0, 1, 10, 1)
-        main_layout.addLayout(self.interaction_layout3, 0, 2, 1, 1)
-        main_layout.addWidget(self.fig_slice_area, 1, 2, 3, 1)
-        main_layout.addLayout(self.interaction_layout1, 4, 2, 1, 1)
-        main_layout.addWidget(self.fig_fit, 5, 2, 3, 1)
-        main_layout.addLayout(self.interaction_layout2, 8, 2, 2, 1)
+        main_layout.addLayout(self.interaction_layout1, 0, 2, 2, 1)
+        main_layout.addWidget(self.fig_slice_area, 2, 2, 2, 1)
+        main_layout.addLayout(self.interaction_layout2, 4, 2, 2, 1)
+        main_layout.addWidget(self.fig_fit, 6, 2, 2, 1)
+        main_layout.addLayout(self.interaction_layout3, 8, 2, 2, 1)
         main_layout.setColumnStretch(0, 5)
         main_layout.setColumnStretch(1, 2)
         main_layout.setColumnStretch(2, 3)
@@ -640,7 +640,7 @@ class Setup:
 
             self.reload_folder_line = QtWidgets.QLineEdit()
             self.reload_folder_button = QtWidgets.QToolButton()
-            self.reload_folder_button.setText("Load Existing Alignment Directory")
+            self.reload_folder_button.setText("Load Alignments")
             self.reload_folder_button.clicked.connect(self.load_existing_alignments)
 
         # Drop down list to select shank
@@ -661,7 +661,7 @@ class Setup:
         self.output_folder_button.clicked.connect(self.on_output_folder_selected)
 
         # After output_folder_button creation (around line 573):
-        self.use_docdb_checkbox = QtWidgets.QCheckBox("Use DocDB")
+        self.use_docdb_checkbox = QtWidgets.QCheckBox("DocDB")
         self.use_docdb_checkbox.setChecked(True)  # Default: try DocDB
         self.use_docdb_checkbox.stateChanged.connect(self.on_use_docdb_changed)
 
@@ -670,42 +670,53 @@ class Setup:
         self.load_data_button.clicked.connect(self.on_load_data_button_pressed)
 
         # Arrange interaction features into three different layout groups
-        # Group 1
-        hlayout1 = QtWidgets.QHBoxLayout()
-        hlayout2 = QtWidgets.QHBoxLayout()
-        hlayout1.addWidget(self.fit_button, stretch=1)
-        hlayout1.addWidget(self.offset_button, stretch=1)
-        hlayout1.addWidget(self.tot_idx_string, stretch=2)
-        hlayout2.addWidget(self.prev_button, stretch=1)
-        hlayout2.addWidget(self.next_button, stretch=1)
-        hlayout2.addWidget(self.idx_string, stretch=2)
-        self.interaction_layout1 = QtWidgets.QVBoxLayout()
-        self.interaction_layout1.addLayout(hlayout1)
-        self.interaction_layout1.addLayout(hlayout2)
-
-        # Group 2 -- saving data
-        self.interaction_layout2 = QtWidgets.QHBoxLayout()
-        self.interaction_layout2.addWidget(self.output_folder_button, stretch=1)
-        self.interaction_layout2.addWidget(self.output_folder_line, stretch=2)
-        self.interaction_layout2.addWidget(self.reset_button, stretch=1)
-        self.interaction_layout2.addWidget(self.complete_button, stretch=1)
-
-        # Group 3 -- loading data
-        self.interaction_layout3 = QtWidgets.QHBoxLayout()
+        # Group 1 -- loading data
         if not self.offline:
-            self.interaction_layout3.addWidget(self.subj_combobox, stretch=1)
-            self.interaction_layout3.addWidget(self.sess_combobox, stretch=2)
-            self.interaction_layout3.addWidget(self.align_combobox, stretch=2)
-            self.interaction_layout3.addWidget(self.data_button, stretch=1)
+            self.interaction_layout1 = QtWidgets.QHBoxLayout()
+            self.interaction_layout1.addWidget(self.subj_combobox, stretch=1)
+            self.interaction_layout1.addWidget(self.sess_combobox, stretch=2)
+            self.interaction_layout1.addWidget(self.align_combobox, stretch=2)
+            self.interaction_layout1.addWidget(self.data_button, stretch=1)
         else:
-            self.interaction_layout3.addWidget(self.input_folder_button, stretch=1)
-            self.interaction_layout3.addWidget(self.input_folder_line, stretch=2)
-            self.interaction_layout3.addWidget(self.shank_combobox, stretch=1)
-            self.interaction_layout3.addWidget(self.align_combobox, stretch=1)
-            self.interaction_layout3.addWidget(self.reload_folder_button, stretch=1)
-            self.interaction_layout3.addWidget(self.reload_folder_line, stretch=2)
-            self.interaction_layout3.addWidget(self.use_docdb_checkbox, stretch=1)
-            self.interaction_layout3.addWidget(self.load_data_button, stretch=1)
+            interact_1_h_1 = QtWidgets.QHBoxLayout()
+            interact_1_h_1.addWidget(self.input_folder_button, stretch=0)
+            interact_1_h_1.addWidget(self.input_folder_line, stretch=2)
+            interact_1_h_1.addWidget(self.shank_combobox, stretch=1)
+            interact_1_h_1.addWidget(self.load_data_button, stretch=0)
+
+            interact_1_h_2 = QtWidgets.QHBoxLayout()
+            interact_1_h_2.addWidget(self.align_combobox, stretch=1)
+            interact_1_h_2.addWidget(self.use_docdb_checkbox, stretch=0)
+            interact_1_h_2.addWidget(self.reload_folder_button, stretch=0)
+            interact_1_h_2.addWidget(self.reload_folder_line, stretch=2)
+
+            self.interaction_layout1 = QtWidgets.QVBoxLayout()
+            self.interaction_layout1.addLayout(interact_1_h_1)
+            self.interaction_layout1.addLayout(interact_1_h_2)
+
+        # Group 2 -- fitting and navigation
+        interact_2_h_1 = QtWidgets.QHBoxLayout()
+        interact_2_h_1.addWidget(self.fit_button, stretch=1)
+        interact_2_h_1.addWidget(self.offset_button, stretch=1)
+        interact_2_h_1.addWidget(self.tot_idx_string, stretch=2)
+        interact_2_h_2 = QtWidgets.QHBoxLayout()
+        interact_2_h_2.addWidget(self.prev_button, stretch=1)
+        interact_2_h_2.addWidget(self.next_button, stretch=1)
+        interact_2_h_2.addWidget(self.idx_string, stretch=2)
+        self.interaction_layout2 = QtWidgets.QVBoxLayout()
+        self.interaction_layout2.addLayout(interact_2_h_1)
+        self.interaction_layout2.addLayout(interact_2_h_2)
+
+        # Group 3 -- saving data
+        interact_3_h_1 = QtWidgets.QHBoxLayout()
+        interact_3_h_1.addWidget(self.output_folder_button, stretch=0)
+        interact_3_h_1.addWidget(self.output_folder_line, stretch=1)
+        interact_3_h_2 = QtWidgets.QHBoxLayout()
+        interact_3_h_2.addWidget(self.reset_button, stretch=0)
+        interact_3_h_2.addWidget(self.complete_button, stretch=0)
+        self.interaction_layout3 = QtWidgets.QVBoxLayout()
+        self.interaction_layout3.addLayout(interact_3_h_1)
+        self.interaction_layout3.addLayout(interact_3_h_2)
 
         # Pop up dialog for qc results to datajoint, only for online mode
         if not self.offline:
