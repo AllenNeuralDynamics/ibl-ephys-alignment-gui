@@ -1508,25 +1508,34 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         return True
 
-    def on_folder_selected(self) -> bool:
+    def set_input_folder(self, input_path: Path) -> bool:
         """
-        Triggered in offline mode when folder button is clicked
+        Set the input folder to the given path. Updates UI, internal state, and creates output directory.
+
+        :param input_path: Path to the input directory
+        :return: True if successful, False otherwise
         """
-        self.data_status = False
-
-        # Get folder from dialog (with Code Ocean logic)
-
-        we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
-        start_dir = "/data/" if we_are_in_code_ocean else None
-        input_path = Path(
-            QtWidgets.QFileDialog.getExistingDirectory(
-                None, "Select Input Directory", directory=start_dir
-            )
-        )
-        if not input_path:
+        if not input_path or str(input_path).strip() == "":
+            logger.warning("Empty input path provided")
             return False
 
+        try:
+            input_path = Path(input_path)
+            if not input_path.exists():
+                logger.error(f"Input path does not exist: {input_path}")
+                return False
+            if not input_path.is_dir():
+                logger.error(f"Input path is not a directory: {input_path}")
+                return False
+        except Exception as e:
+            logger.error(f"Invalid input path: {e}")
+            return False
+
+        self.data_status = False
+
         # Set up output directory (Code Ocean-specific logic)
+        we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
+
         if we_are_in_code_ocean:
             out_folder = Path("/results/").joinpath(input_path.parent.stem)
             string_folder_path = input_path.parent.stem
@@ -1566,6 +1575,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         return True
 
+    def on_folder_selected(self) -> bool:
+        """
+        Triggered in offline mode when folder button is clicked
+        """
+        we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
+        start_dir = "/data/" if we_are_in_code_ocean else None
+        input_path = Path(
+            QtWidgets.QFileDialog.getExistingDirectory(
+                None, "Select Input Directory", directory=start_dir
+            )
+        )
+        if not input_path:
+            return False
+
+        return self.set_input_folder(input_path)
+
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
         self.use_docdb = state == QtCore.Qt.Checked
@@ -1586,6 +1611,35 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         logger.info("Load Data button pressed")
         self.load_heavy_data()
 
+    def set_output_folder(self, output_path: Path) -> bool:
+        """
+        Set the output folder to the given path. Updates UI and internal state.
+        Does NOT create the directory - validates it exists.
+
+        :param output_path: Path to the output directory
+        :return: True if successful, False otherwise
+        """
+        if not output_path or str(output_path).strip() == "":
+            logger.warning("Empty output path provided")
+            return False
+
+        try:
+            output_path = Path(output_path)
+            if not output_path.exists():
+                logger.error(f"Output path does not exist: {output_path}")
+                return False
+            if not output_path.is_dir():
+                logger.error(f"Output path is not a directory: {output_path}")
+                return False
+
+            self.output_directory = output_path
+            self.output_folder_line.setText(str(output_path))
+            logger.info(f"Output directory set to: {output_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set output folder: {e}")
+            return False
+
     def on_output_folder_selected(self) -> bool:
         """
         Triggered in offline mode when folder button is clicked
@@ -1595,11 +1649,33 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
         if folder_path:
-            self.output_folder_line.setText(str(folder_path))
-            self.output_directory = folder_path
-            return True
+            return self.set_output_folder(folder_path)
         else:
             return False
+
+    def on_input_folder_edited(self) -> None:
+        """
+        Triggered when user finishes editing input_folder_line text field
+        """
+        text = self.input_folder_line.text().strip()
+        if text:
+            try:
+                input_path = Path(text)
+                self.set_input_folder(input_path)
+            except Exception as e:
+                logger.error(f"Invalid input path: {e}")
+
+    def on_output_folder_edited(self) -> None:
+        """
+        Triggered when user finishes editing output_folder_line text field
+        """
+        text = self.output_folder_line.text().strip()
+        if text:
+            try:
+                output_path = Path(text)
+                self.set_output_folder(output_path)
+            except Exception as e:
+                logger.error(f"Invalid output path: {e}")
 
     def recreate_alignment_and_regions(self) -> None:
         """Create EphysAlignment and compute histology regions. Common code."""

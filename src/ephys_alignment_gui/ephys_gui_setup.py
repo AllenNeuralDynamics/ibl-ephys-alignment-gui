@@ -637,6 +637,7 @@ class Setup:
             self.input_folder_button = QtWidgets.QToolButton()
             self.input_folder_button.setText("Input Directory")
             self.input_folder_button.clicked.connect(self.on_folder_selected)
+            self.input_folder_line.editingFinished.connect(self.on_input_folder_edited)
 
             self.reload_folder_line = QtWidgets.QLineEdit()
             self.reload_folder_button = QtWidgets.QToolButton()
@@ -659,6 +660,7 @@ class Setup:
         self.output_folder_button = QtWidgets.QToolButton()
         self.output_folder_button.setText("Output Directory")
         self.output_folder_button.clicked.connect(self.on_output_folder_selected)
+        self.output_folder_line.editingFinished.connect(self.on_output_folder_edited)
 
         # After output_folder_button creation (around line 573):
         self.use_docdb_checkbox = QtWidgets.QCheckBox("DocDB")
