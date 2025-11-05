@@ -423,7 +423,7 @@ class PlotData:
                     self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
                 ]
             )
-            R, times, depths = bincount2D(
+            R, _, depths = bincount2D(
                 self.data["spikes"]["times"][self.spike_idx][self.kp_idx],
                 self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
                 T_BIN,
@@ -432,6 +432,7 @@ class PlotData:
             )
             corr = np.corrcoef(R)
             corr[np.isnan(corr)] = 0
+            np.fill_diagonal(corr, 0)
             scale = (np.max(depths) - np.min(depths)) / corr.shape[0]
             data_img = {
                 "img": corr,
