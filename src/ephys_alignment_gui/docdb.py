@@ -27,7 +27,7 @@ DATABASE = "metadata_index"
 COLLECTION = "data_assets"
 
 
-def _default_docdb_api_client() -> MetadataDbClient:
+def _default_doc_db_api_client() -> MetadataDbClient:
     docdb_api_client = MetadataDbClient(
         host=API_GATEWAY_HOST,
         database=DATABASE,
@@ -43,7 +43,7 @@ def query_docdb_id(
     Returns docdb_id and record for asset_name.
     """
     if docdb_api_client is None:
-        docdb_api_client = _default_docdb_api_client()
+        docdb_api_client = _default_doc_db_api_client()
     response = docdb_api_client.retrieve_docdb_records(
         filter_query={
             "data_description.data_level": "derived",
@@ -91,7 +91,7 @@ def write_output_to_docdb(
         Dictionary containing the results aligned to the common coordinate framework (CCF).
     """
     if docdb_api_client is None:
-        docdb_api_client = _default_docdb_api_client()
+        docdb_api_client = _default_doc_db_api_client()
     docdb_id = query_docdb_id(session_name, docdb_api_client)[0]
     # TODO: GET NAME FROM CODEOOCEAN FOR CURATOR
     curation_history = CurationHistory(

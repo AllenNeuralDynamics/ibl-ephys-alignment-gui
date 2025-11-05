@@ -30,7 +30,7 @@ from ephys_alignment_gui.custom_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
-from ephys_alignment_gui.docdb import docdb_api_client, query_docdb_id
+from ephys_alignment_gui.docdb import _default_doc_db_api_client, query_docdb_id
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
@@ -191,7 +191,9 @@ class LoadDataLocal:
         shank_idx=0,
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
         docdb_id = query_docdb_id(input_path.parent.stem)[0]
-        quality_control = get_quality_control_by_id(docdb_api_client, docdb_id)
+        quality_control = get_quality_control_by_id(
+            _default_doc_db_api_client(), docdb_id
+        )
 
         if quality_control is None:
             return None
