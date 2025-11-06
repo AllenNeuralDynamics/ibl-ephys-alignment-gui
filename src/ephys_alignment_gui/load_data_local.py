@@ -688,8 +688,8 @@ class LoadDataLocal:
         return description, region_lookup
 
     def _find_transform_files(self) -> AntsTransformChainFiles:
-        logger.info("Loading transforms from stitched smartspim asset ...")
         subject_id = self.input_path.parent.parent.stem
+        logger.info(f"Loading transforms from stitched smartspim asset for {subject_id}...")
         smartspim_template_affine_transform = tuple(
             self.data_root.glob(
                 f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
