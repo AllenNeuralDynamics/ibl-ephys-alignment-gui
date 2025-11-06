@@ -267,6 +267,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.scale_regions = np.empty((0, 1))
         self.slice_lines = []
         self.slice_items = []
+        self.slice_chns = []  # Channel locations scatter plot
+        self.slice_tip = None  # Tip location scatter plot
         self.probe_bounds = []
 
         # Variables to keep track of popup plots
@@ -297,6 +299,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.track_annotations_ras: NDArray[np.floating] | None = None
         self.track_annos_and_ends_ras: NDArray[np.floating] | None = None
         self.channel_locations_ras: NDArray[np.floating] | None = None
+        self.tip_location_ras: NDArray[np.floating] | None = None
         self.probe_path: Path | None = None
         self.chn_depths: NDArray[np.floating] | None = None
         self.sess_notes: str = ""
@@ -1225,9 +1228,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.channel_locations_ras = self.ephysalign.get_channel_locations(
             self.features[self.idx], self.track[self.idx]
         )
+        # Compute tip location (200 μm below first electrode)
+        self.tip_location_ras = self.ephysalign.get_tip_location(
+            self.features[self.idx], self.track[self.idx]
+        )
 
         if not self.slice_chns:
             self.slice_lines = []
+            # Plot channels (red dots)
             self.slice_chns = pg.ScatterPlotItem()
             self.slice_chns.setData(
                 x=self.channel_locations_ras[:, 0],
@@ -1236,6 +1244,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 brush="r",
             )
             self.fig_slice.addItem(self.slice_chns)
+
+            # Plot tip (pink/magenta dot, larger size)
+            self.slice_tip = pg.ScatterPlotItem()
+            self.slice_tip.setData(
+                x=[self.tip_location_ras[0]],
+                y=[self.tip_location_ras[2]],
+                pen="m",  # Magenta
+                brush="m",
+                size=10,  # Larger than default
+            )
+            self.fig_slice.addItem(self.slice_tip)
+
             track_lines = self.ephysalign.get_perp_vector(
                 self.features[self.idx], self.track[self.idx]
             )
@@ -1269,11 +1289,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 )
                 self.fig_slice.addItem(line)
                 self.slice_lines.append(line)
+            # Update channels
             self.slice_chns.setData(
                 x=self.channel_locations_ras[:, 0],
                 y=self.channel_locations_ras[:, 2],
                 pen="r",
                 brush="r",
+            )
+            # Update tip
+            self.slice_tip.setData(
+                x=[self.tip_location_ras[0]],
+                y=[self.tip_location_ras[2]],
+                pen="m",
+                brush="m",
+                size=10,
             )
 
     def plot_scatter(self, data) -> None:
@@ -2258,7 +2287,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def toggle_channel_button_pressed(self) -> None:
         """
-        Triggered when Shift+C key pressed. Shows/hides channels and trajectory on slice image
+        Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
         """
         # If no histology we can't plot histology
         if not self.histology_exists:
@@ -2268,12 +2297,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.channel_status:
             self.fig_slice.removeItem(self.traj_line)
             self.fig_slice.removeItem(self.slice_chns)
+            if self.slice_tip is not None:
+                self.fig_slice.removeItem(self.slice_tip)
             for line in self.slice_lines:
                 self.fig_slice.removeItem(line)
 
         else:
             self.fig_slice.addItem(self.traj_line)
             self.fig_slice.addItem(self.slice_chns)
+            if self.slice_tip is not None:
+                self.fig_slice.addItem(self.slice_tip)
             for line in self.slice_lines:
                 self.fig_slice.addItem(line)
 

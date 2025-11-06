@@ -673,6 +673,36 @@ class EphysAlignment:
         )
         return channel_locations_ras
 
+    def get_tip_location(self, feature, track):
+        """
+        Gets 3D coordinates of the probe tip.
+        The tip is TIP_SIZE_UM (200 μm) below the first electrode.
+        Uses the same feature-track transformation as channels, so the tip
+        position updates dynamically as the user adjusts alignment.
+
+        feature : reference coordinates in feature space (ephys plots)
+        track : reference coordinates in track space (histology track)
+
+        Returns
+        -------
+        tip_location_ras : np.array, shape (3,)
+            3D coordinates of the tip in RAS space (x, y, z)
+        """
+        # Tip is at negative depth (200 μm below first electrode)
+        tip_depth = np.array([-TIP_SIZE_UM / 1e6])
+
+        # Transform from feature space to track space using same mapping as channels
+        tip_depth_track = (
+            self.feature2track(tip_depth, feature, track) - self.track_extent[0]
+        )
+
+        # Interpolate 3D position along the trajectory
+        tip_location_ras = histology.interpolate_along_track(
+            self.track_annos_and_ends_ras, tip_depth_track
+        )
+
+        return tip_location_ras[0]  # Return single 3D point
+
     def get_brain_locations(self, channel_locations_ras):
         """
         Finds the brain regions from 3D coordinates of electrode locations

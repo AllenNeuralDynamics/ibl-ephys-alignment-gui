@@ -2,7 +2,7 @@
 
 ![GUI Screenshot](src/ephys_alignment_gui/ephys_atlas_image.png)
 
-GUI developed by the International Brain Laboratory for aligning electrophysiology data with histology data. 
+GUI developed by the International Brain Laboratory for aligning electrophysiology data with histology data.
 
 Usage instructions can be found on the [`iblapps` wiki](https://github.com/int-brain-lab/iblapps/wiki)
 
