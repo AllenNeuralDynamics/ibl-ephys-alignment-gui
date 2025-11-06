@@ -293,6 +293,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.track = [0] * (self.max_idx + 1)
         self.features = [0] * (self.max_idx + 1)
+        self.lin_fit_history = [True] * (self.max_idx + 1)  # Track lin_fit state in history
 
         self.nearby = None
 
@@ -1154,12 +1155,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             x=self.features[self.idx] * 1e6, y=self.track[self.idx] * 1e6
         )
 
-        depth_lin = self.ephysalign.feature2track_lin(
-            self.depth / 1e6, self.features[self.idx], self.track[self.idx]
-        )
-        if np.any(depth_lin):
-            self.fit_plot_lin.setData(x=self.depth, y=depth_lin * 1e6)
+        # Only show linear fit line if checkbox is checked and we have enough points
+        if self.lin_fit and (self.features[self.idx].size >= 5):
+            depth_lin = self.ephysalign.feature2track_lin(
+                self.depth / 1e6, self.features[self.idx], self.track[self.idx]
+            )
+            if np.any(depth_lin):
+                self.fit_plot_lin.setData(x=self.depth, y=depth_lin * 1e6)
+            else:
+                self.fit_plot_lin.setData()
         else:
+            # Hide the linear fit line when checkbox is unchecked or not enough points
             self.fit_plot_lin.setData()
 
     def plot_slice(self, data, img_type) -> None:
@@ -2171,6 +2177,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.current_idx += 1
         self.idx_prev = np.copy(self.idx)
         self.idx = np.mod(self.current_idx, self.max_idx)
+        self.lin_fit_history[self.idx] = self.lin_fit  # Save checkbox state
         self.scale_hist_data()
         self.plot_histology(self.fig_hist)
         self.plot_scale_factor()
@@ -2213,6 +2220,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.current_idx += 1
         self.idx_prev = np.copy(self.idx)
         self.idx = np.mod(self.current_idx, self.max_idx)
+        self.lin_fit_history[self.idx] = self.lin_fit  # Save checkbox state
         self.offset_hist_data()
         self.plot_histology(self.fig_hist)
         self.plot_scale_factor()
@@ -2399,6 +2407,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         ):
             self.current_idx += 1
             self.idx = np.mod(self.current_idx, self.max_idx)
+
+            # Restore lin_fit state from history and update checkbox without triggering signal
+            self.lin_fit = self.lin_fit_history[self.idx]
+            self.lin_fit_option.blockSignals(True)
+            self.lin_fit_option.setChecked(self.lin_fit)
+            self.lin_fit_option.blockSignals(False)
+
             self.remove_lines_points()
             self.add_lines_points()
             self.get_scaled_histology()
@@ -2426,6 +2441,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.current_idx > np.max([0, self.total_idx - self.diff_idx]):
             self.current_idx -= 1
             self.idx = np.mod(self.current_idx, self.max_idx)
+
+            # Restore lin_fit state from history and update checkbox without triggering signal
+            self.lin_fit = self.lin_fit_history[self.idx]
+            self.lin_fit_option.blockSignals(True)
+            self.lin_fit_option.setChecked(self.lin_fit)
+            self.lin_fit_option.blockSignals(False)
+
             self.remove_lines_points()
             self.add_lines_points()
             self.get_scaled_histology()
@@ -2465,6 +2487,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.total_idx += 1
         self.current_idx += 1
         self.idx = np.mod(self.current_idx, self.max_idx)
+        self.lin_fit_history[self.idx] = self.lin_fit  # Save checkbox state
         self.track[self.idx] = np.copy(self.ephysalign.track_init)
         self.features[self.idx] = np.copy(self.ephysalign.feature_init)
 
@@ -2671,12 +2694,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.activateWindow()
 
     def lin_fit_option_changed(self, state) -> None:
-        if state == 0:
-            self.lin_fit = False
-            self.fit_button_pressed()
-        else:
-            self.lin_fit = True
-            self.fit_button_pressed()
+        """
+        Triggered when Linear fit checkbox state changes.
+        Updates the flag and recomputes alignment by calling fit_button_pressed.
+        """
+        # Update the flag
+        self.lin_fit = (state != 0)
+
+        # Only recompute if we have reference lines and histology
+        # If no lines yet, just update the flag for future use
+        if not self.histology_exists or len(self.lines_features) == 0:
+            return
+
+        # Recompute alignment with new setting using existing fit logic
+        self.fit_button_pressed()
 
     def cluster_clicked(self, item, point):
         point_pos = point[0].pos()
