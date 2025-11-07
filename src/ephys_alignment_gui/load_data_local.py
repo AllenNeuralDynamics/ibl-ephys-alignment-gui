@@ -541,9 +541,7 @@ class LoadDataLocal:
     def get_slice_images(self, track_interpolation_ras):
         # Load the CCF images
         """
-        index = self.brain_atlas.bc.xyz2i(channel_locations_ras)[
-            :, self.brain_atlas.xyz2dims
-        ]
+        Get slice images
         """
         # --- Get the ccf slice in image space ---
         #
@@ -551,9 +549,9 @@ class LoadDataLocal:
         # doesn't handle permutations (xyz2dim). This converts world
         # coordinates to image indices, and then permutes to match atlas image
         # orientation
-        index = self.brain_atlas.bc.xyz2i(track_interpolation_ras)[
-            :, self.brain_atlas.xyz2dims
-        ]
+        index = self.brain_atlas.physical_points_to_indices(
+            track_interpolation_ras, round=True
+        )
         # Store for lazy loading
         self._slice_index = index
         trajectory_id = id(track_interpolation_ras)  # Unique ID for this trajectory
@@ -690,7 +688,9 @@ class LoadDataLocal:
 
     def _find_transform_files(self) -> AntsTransformChainFiles:
         subject_id = self.input_path.parent.parent.stem
-        logger.info(f"Loading transforms from stitched smartspim asset for {subject_id}...")
+        logger.info(
+            f"Loading transforms from stitched smartspim asset for {subject_id}..."
+        )
         smartspim_template_affine_transform = tuple(
             self.data_root.glob(
                 f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
@@ -754,21 +754,16 @@ class LoadDataLocal:
     ) -> dict[str, dict[str, Any]]:
         if self.tx_chain_files is None:
             raise RuntimeError("Transform chain files not set, cannot transform to CCF")
-        channel_coords_mm = 1e-3 * channel_locations_ras  # convert to mm
-
+        channel_indices = self.brain_atlas.physical_points_to_indices(
+            channel_locations_ras, round=False
+        )
         # Have to convert these to the physical space of the pipeline image first
         # We will do that go going through simpleITK indices for the paired images
-        intensity_img = self.brain_atlas.intensity_sitk_image
         pipeline_img = self.brain_atlas.pipeline_sitk_image
 
         reg_pipeline_physical_points: list[list[float]] = []
-        for point in channel_coords_mm:
-            intensity_index = intensity_img.TransformPhysicalPointToContinuousIndex(
-                tuple(point.tolist())
-            )
-            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(
-                intensity_index
-            )
+        for point in channel_indices:
+            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(point)
             reg_pipeline_physical_points.append(list(pipeline_point))
 
         reg_pipeline_physical_points_array = np.array(reg_pipeline_physical_points)

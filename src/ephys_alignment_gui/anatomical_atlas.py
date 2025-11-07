@@ -174,3 +174,37 @@ class BrainAtlasAnatomical(BrainAtlas):
         # with CCF transforms
         self.intensity_sitk_image = intensity_img_blessed
         self.pipeline_sitk_image = pipeline_img_blessed
+
+    def physical_points_to_indices(
+        self, channel_ndxs: np.ndarray, round: bool = False
+    ) -> np.ndarray:
+        """
+        Convert physical points in the atlas space to voxel indices in this atlas.
+
+        Parameters
+        ----------
+        channel_ndxs : np.ndarray
+            An (N, 3) array of physical points in the atlas space.
+
+        Returns
+        -------
+        np.ndarray
+            An (N, 3) array of voxel indices in this atlas.
+        """
+        return self.bc.xyz2i(channel_ndxs, round=round)[:, self.xyz2dims]
+
+    def indices_to_physical_points(self, channel_ndxs: np.ndarray) -> np.ndarray:
+        """
+        Convert voxel indices in this atlas to physical points in the atlas space.
+
+        Parameters
+        ----------
+        channel_ndxs : np.ndarray
+            An (N, 3) array of voxel indices in this atlas.
+
+        Returns
+        -------
+        np.ndarray
+            An (N, 3) array of physical points in the atlas space.
+        """
+        return self.bc.i2xyz(channel_ndxs[:, self.dims2xyz])
