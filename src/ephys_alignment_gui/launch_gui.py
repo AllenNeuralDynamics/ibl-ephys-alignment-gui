@@ -77,8 +77,11 @@ class BusyContext:
             load_atlas()
     """
 
-    def __init__(self, window, message=None, success_message=None,
-                 disable_widgets=None, success_timeout_ms=3000):
+    def __init__(
+            self, window, message:str|None =None, success_message:str|None=None,
+            error_message:str|None=None, disable_widgets:list|None=None,
+            success_timeout_ms=3000, error_timeout_ms=5000,
+    ):
         """
         Initialize context manager for busy state.
 
@@ -91,7 +94,9 @@ class BusyContext:
         self.window = window
         self.message = message
         self.success_message = success_message
+        self.error_message = error_message
         self.success_timeout_ms = success_timeout_ms
+        self.error_timeout_ms = error_timeout_ms
 
         # Normalize to list
         if disable_widgets is None:
@@ -131,8 +136,11 @@ class BusyContext:
         # Handle status message based on outcome
         if exc_type is not None:
             # Error occurred - show error message
-            error_msg = f"Error: {str(exc_val)}"
-            self.window.statusBar().showMessage(error_msg, 5000)
+            if self.error_message is None:
+                error_msg = f"Error: {str(exc_val)}"
+            else:
+                error_msg = self.error_message
+            self.window.statusBar().showMessage(error_msg, self.error_timeout_ms)
         elif self.success_message:
             # Success - show success message
             self.window.statusBar().showMessage(
@@ -146,7 +154,7 @@ class BusyContext:
         # Don't suppress exceptions
         return False
 
-    def update_message(self, new_message):
+    def update_message(self, new_message: str):
         """
         Update status message during a long operation.
 
@@ -1634,29 +1642,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         folder_path = Path(
             QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments")
         )
-        if not folder_path:
+        if not folder_path and not self.use_docdb:
             return False
         self.reload_folder_line.setText(str(folder_path))
 
         with BusyContext(self, "Loading alignments...", "Alignments loaded",
-                         disable_widgets=self.reload_folder_button):
+                         disable_widgets=self.reload_folder_button) as ctx:
             logger.info(
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
-            self.prev_alignments = self.loaddata.load_previous_alignments(
+            success = self.loaddata.load_previous_alignments(
                 shank_idx=self.current_shank_idx,
                 input_path=folder_path,
                 use_docdb=self.use_docdb,
             )
-            self.populate_lists(self.prev_alignments, self.align_list, self.align_combobox)
-
-            # Get starting alignment (from cached data, no disk read)
-            if self.prev_alignments:
+            if success:
+                self.populate_lists(self.loaddata.prev_align, self.align_list, self.align_combobox)
                 self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
-                logger.info(f"Loaded {len(self.prev_alignments)} previous alignments")
+                logger.info(f"Loaded {len(self.loaddata.prev_align)} previous alignments")
             else:
-                self.feature_prev = None
-                self.track_prev = None
                 logger.info("No previous alignments found")
 
         return True

@@ -248,7 +248,7 @@ class LoadDataLocal:
 
     def load_previous_alignments(
         self, shank_idx=0, input_path: Path | None = None, use_docdb=True
-    ) -> None:
+    ) -> bool:
         input_path = self._check_input_path_arg(input_path)
 
         maybe_alignments = None
@@ -271,12 +271,13 @@ class LoadDataLocal:
             maybe_alignments = self.load_previous_alignments_local(
                 input_path=input_path, shank_idx=shank_idx
             )
-        if maybe_alignments is not None:
+        if maybe_alignments is None:
+            return False
+        else:
             alignments, prev_align = maybe_alignments
             self.alignments = alignments
             self.prev_align = prev_align
-
-        return None
+        return True
 
     def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """
