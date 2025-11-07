@@ -26,7 +26,7 @@ from iblutil.util import Bunch
 from numpy.typing import NDArray
 from one import alf
 
-from ephys_alignment_gui.custom_atlas import (
+from ephys_alignment_gui.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
