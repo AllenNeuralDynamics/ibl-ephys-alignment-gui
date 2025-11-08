@@ -78,9 +78,14 @@ class BusyContext:
     """
 
     def __init__(
-            self, window, message:str|None =None, success_message:str|None=None,
-            error_message:str|None=None, disable_widgets:list|None=None,
-            success_timeout_ms=3000, error_timeout_ms=5000,
+        self,
+        window,
+        message: str | None = None,
+        success_message: str | None = None,
+        error_message: str | None = None,
+        disable_widgets: list | None = None,
+        success_timeout_ms=3000,
+        error_timeout_ms=5000,
     ):
         """
         Initialize context manager for busy state.
@@ -144,8 +149,7 @@ class BusyContext:
         elif self.success_message:
             # Success - show success message
             self.window.statusBar().showMessage(
-                self.success_message,
-                self.success_timeout_ms
+                self.success_message, self.success_timeout_ms
             )
         else:
             # Clear status
@@ -301,7 +305,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.track = [0] * (self.max_idx + 1)
         self.features = [0] * (self.max_idx + 1)
-        self.lin_fit_history = [True] * (self.max_idx + 1)  # Track lin_fit state in history
+        self.lin_fit_history = [True] * (
+            self.max_idx + 1
+        )  # Track lin_fit state in history
 
         self.nearby = None
 
@@ -1595,8 +1601,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def load_heavy_data(self) -> None:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
 
-        with BusyContext(self, "Loading heavy data...", "Data loaded successfully",
-                         disable_widgets=self.load_data_button) as ctx:
+        with BusyContext(
+            self,
+            "Loading heavy data...",
+            "Data loaded successfully",
+            disable_widgets=self.load_data_button,
+        ) as ctx:
             logger.info("=== Starting heavy data load ===")
             self.clear_plots()
             self.init_session_variables()
@@ -1646,8 +1656,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
         self.reload_folder_line.setText(str(folder_path))
 
-        with BusyContext(self, "Loading alignments...", "Alignments loaded",
-                         disable_widgets=self.reload_folder_button) as ctx:
+        with BusyContext(
+            self,
+            "Loading alignments...",
+            "Alignments loaded",
+            disable_widgets=self.reload_folder_button,
+        ) as ctx:
             logger.info(
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
@@ -1657,9 +1671,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 use_docdb=self.use_docdb,
             )
             if success:
-                self.populate_lists(self.loaddata.prev_align, self.align_list, self.align_combobox)
-                self.feature_prev, self.track_prev = self.loaddata.get_alignment_idx(0)
-                logger.info(f"Loaded {len(self.loaddata.prev_align)} previous alignments")
+                self.populate_lists(
+                    self.loaddata.prev_align, self.align_list, self.align_combobox
+                )
+                self.on_alignment_selected(0)
+                logger.info(
+                    f"Loaded {len(self.loaddata.prev_align)} previous alignments"
+                )
             else:
                 logger.info("No previous alignments found")
 
@@ -1688,17 +1706,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(f"Invalid input path: {e}")
             return False
 
-        with BusyContext(self, "Loading channel info...", "Ready",
-                         disable_widgets=[self.input_folder_button, self.input_folder_line]):
+        with BusyContext(
+            self,
+            "Loading channel info...",
+            "Ready",
+            disable_widgets=[self.input_folder_button, self.input_folder_line],
+        ):
             self.data_status = False
 
             # Set up output directory (Code Ocean-specific logic)
-            we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
+            we_are_in_code_ocean = (
+                Path("/results/").is_dir() and Path("/data/").is_dir()
+            )
 
             if we_are_in_code_ocean:
                 out_folder = Path("/results/").joinpath(input_path.parent.stem)
                 string_folder_path = input_path.parent.stem
-                subject_id_path = string_folder_path[string_folder_path.index("_") + 1 :]
+                subject_id_path = string_folder_path[
+                    string_folder_path.index("_") + 1 :
+                ]
                 subject_id = subject_id_path[0 : subject_id_path.index("_")]
 
                 out_folder = Path("/results").joinpath(subject_id)
@@ -2529,8 +2555,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error("Output directory not set. Please select an output directory.")
             return
 
-        with BusyContext(self, "Saving...", "Saved successfully",
-                         disable_widgets=self.complete_button):
+        with BusyContext(
+            self,
+            "Saving...",
+            "Saved successfully",
+            disable_widgets=self.complete_button,
+        ):
             # Save histology-space to disk and update in-memory state
             channel_results, alignments, ccf_channel_dict, multi_shank = (
                 self.loaddata.get_alignment_results(
@@ -2542,8 +2572,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             logger.info("Saving output files to results folder...")
             suffix = f"_shank{self.current_shank_idx + 1}" if multi_shank else ""
-            channel_results_path = self.output_directory / f"channel_locations{suffix}.json"
-            prev_alignments_path = self.output_directory / f"prev_alignments{suffix}.json"
+            channel_results_path = (
+                self.output_directory / f"channel_locations{suffix}.json"
+            )
+            prev_alignments_path = (
+                self.output_directory / f"prev_alignments{suffix}.json"
+            )
             ccf_channel_dict_path = (
                 self.output_directory / f"ccf_channel_locations{suffix}.json"
             )
@@ -2700,10 +2734,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def lin_fit_option_changed(self, state) -> None:
         """
         Triggered when Linear fit checkbox state changes.
-        Updates the flag and recomputes alignment by calling fit_button_pressed.
+        Updates the flag and recomputes alignment by calling
+        fit_button_pressed.
         """
         # Update the flag
-        self.lin_fit = (state != 0)
+        self.lin_fit = state != 0
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use
