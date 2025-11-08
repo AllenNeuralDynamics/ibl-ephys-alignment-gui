@@ -838,11 +838,29 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fig.addItem(bound)
         # Add dotted lines to plot to indicate region along probe track where electrode
         # channels are distributed
+        # Transform probe electrode positions from feature space to track space
+        # to match the current alignment
+        tip_pos_track = (
+            self.ephysalign.feature2track(
+                self.probe_tip / 1e6,
+                self.features[self.idx],
+                self.track[self.idx],
+            )
+            * 1e6
+        )
+        top_pos_track = (
+            self.ephysalign.feature2track(
+                self.probe_top / 1e6,
+                self.features[self.idx],
+                self.track[self.idx],
+            )
+            * 1e6
+        )
         self.tip_pos = pg.InfiniteLine(
-            pos=self.probe_tip, angle=0, pen=self.kpen_dot, movable=movable
+            pos=tip_pos_track, angle=0, pen=self.kpen_dot, movable=movable
         )
         self.top_pos = pg.InfiniteLine(
-            pos=self.probe_top, angle=0, pen=self.kpen_dot, movable=movable
+            pos=top_pos_track, angle=0, pen=self.kpen_dot, movable=movable
         )
 
         # Lines can be moved to adjust location of channels along the probe track
@@ -998,8 +1016,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        self.track[self.idx] = self.track[self.idx_prev] + self.tip_pos.value() / 1e6
-        self.features[self.idx] = self.features[self.idx_prev]
+        # Calculate the offset delta from the current tip line position
+        # The tip line position is in track space after transformation
+        tip_pos_initial_track = (
+            self.ephysalign.feature2track(
+                self.probe_tip / 1e6,
+                self.features[self.idx_prev],
+                self.track[self.idx_prev],
+            )
+            * 1e6
+        )
+        offset_delta = (self.tip_pos.value() - tip_pos_initial_track) / 1e6
+
+        # Copy the track and features arrays
+        self.track[self.idx] = np.copy(self.track[self.idx_prev])
+        self.features[self.idx] = np.copy(self.features[self.idx_prev])
+
+        # Only shift the boundary points (first and last) of the track array
+        # This preserves user-defined feature-track correspondences in the middle
+        self.track[self.idx][0] += offset_delta
+        self.track[self.idx][-1] += offset_delta
 
         self.get_scaled_histology()
 
