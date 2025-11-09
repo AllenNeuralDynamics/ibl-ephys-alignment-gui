@@ -754,16 +754,17 @@ class LoadDataLocal:
     ) -> dict[str, dict[str, Any]]:
         if self.tx_chain_files is None:
             raise RuntimeError("Transform chain files not set, cannot transform to CCF")
-        channel_indices = self.brain_atlas.physical_points_to_indices(
-            channel_locations_ras, round=False
-        )
         # Have to convert these to the physical space of the pipeline image first
         # We will do that go going through simpleITK indices for the paired images
+        histology_img = self.brain_atlas.intensity_sitk_image
         pipeline_img = self.brain_atlas.pipeline_sitk_image
-
+        ras_to_lps = np.array([-1, -1, 1])
+        # Convert IBL app world coordinates, RAS m, to ITK world coordinates, LPS mm
+        channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras
         reg_pipeline_physical_points: list[list[float]] = []
-        for point in channel_indices:
-            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(point)
+        for point in channel_locations_lps_mm:
+            index = histology_img.TransformPhysicalPointToContinuousIndex(point)
+            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(index)
             reg_pipeline_physical_points.append(list(pipeline_point))
 
         reg_pipeline_physical_points_array = np.array(reg_pipeline_physical_points)
