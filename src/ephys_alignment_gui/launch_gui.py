@@ -838,48 +838,60 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fig.addItem(bound)
         # Add dotted lines to plot to indicate region along probe track where electrode
         # channels are distributed
-        # Transform probe electrode positions from feature space to track space
-        # to match the current alignment
-        tip_pos_track = (
-            self.ephysalign.feature2track(
-                self.probe_tip / 1e6,
-                self.features[self.idx],
-                self.track[self.idx],
-            )
-            * 1e6
-        )
-        top_pos_track = (
-            self.ephysalign.feature2track(
-                self.probe_top / 1e6,
-                self.features[self.idx],
-                self.track[self.idx],
-            )
-            * 1e6
-        )
+        # Create InfiniteLines at probe tip and top positions
+        # These are in feature space (distance from probe tip in um)
+        # since fig_hist displays in feature space
         self.tip_pos = pg.InfiniteLine(
-            pos=tip_pos_track, angle=0, pen=self.kpen_dot, movable=movable
+            pos=self.probe_tip, angle=0, pen=self.kpen_dot, movable=movable
         )
         self.top_pos = pg.InfiniteLine(
-            pos=top_pos_track, angle=0, pen=self.kpen_dot, movable=movable
+            pos=self.probe_top, angle=0, pen=self.kpen_dot, movable=movable
         )
 
         # Lines can be moved to adjust location of channels along the probe track
-        # Ensure distance between bottom and top channel is always constant at 3840um and that
+        # Ensure distance between bottom and top channel is always constant and that
         # lines can't be moved outside interpolation bounds
         # Add offset of 1um to keep within bounds of interpolation
         offset = 1
-        self.tip_pos.setBounds(
-            (
-                self.track[self.idx][0] * 1e6 + offset,
-                self.track[self.idx][-1] * 1e6 - (self.probe_top + offset),
+
+        # Calculate bounds in feature space (not track space)
+        # since fig_hist displays in feature space
+        feature_top_um = 1e6 * self.features[self.idx][-1] - offset
+
+        # Validation: Check if probe span exceeds available feature range
+        if self.probe_top > feature_top_um:
+            logger.warning(
+                f"Probe span ({self.probe_top:.0f} μm) exceeds feature range "
+                f"({feature_top_um:.0f} μm). Using safe fallback bounds. "
+                f"Consider recording with larger channel span or adjusting initialization range."
             )
-        )
-        self.top_pos.setBounds(
-            (
-                self.track[self.idx][0] * 1e6 + (self.probe_top + offset),
-                self.track[self.idx][-1] * 1e6 - offset,
+            # Use safe fallback bounds - just constrain to feature range
+            self.tip_pos.setBounds(
+                (
+                    self.features[self.idx][0] * 1e6 + offset,
+                    self.features[self.idx][-1] * 1e6 - offset,
+                )
             )
-        )
+            self.top_pos.setBounds(
+                (
+                    self.features[self.idx][0] * 1e6 + offset,
+                    self.features[self.idx][-1] * 1e6 - offset,
+                )
+            )
+        else:
+            # Normal bounds calculation using feature space
+            self.tip_pos.setBounds(
+                (
+                    self.features[self.idx][0] * 1e6 + offset,
+                    self.features[self.idx][-1] * 1e6 - (self.probe_top + offset),
+                )
+            )
+            self.top_pos.setBounds(
+                (
+                    self.features[self.idx][0] * 1e6 + (self.probe_top + offset),
+                    self.features[self.idx][-1] * 1e6 - offset,
+                )
+            )
         self.tip_pos.sigPositionChanged.connect(self.tip_line_moved)
         self.top_pos.sigPositionChanged.connect(self.top_line_moved)
 
@@ -1017,16 +1029,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         # Calculate the offset delta from the current tip line position
-        # The tip line position is in track space after transformation
-        tip_pos_initial_track = (
-            self.ephysalign.feature2track(
-                self.probe_tip / 1e6,
-                self.features[self.idx_prev],
-                self.track[self.idx_prev],
-            )
-            * 1e6
-        )
-        offset_delta = (self.tip_pos.value() - tip_pos_initial_track) / 1e6
+        # The tip line position is in feature space (distance from probe tip)
+        # since fig_hist displays in feature space
+        offset_delta = (self.tip_pos.value() - self.probe_tip) / 1e6
 
         # Copy the track and features arrays
         self.track[self.idx] = np.copy(self.track[self.idx_prev])
@@ -3194,7 +3199,6 @@ def main() -> None:
     setup_logging(log_level=log_level, log_file=args.log_file)
 
     # Get logger for main module
-    logger = logging.getLogger(__name__)
     logger.info(f"Arguments: {args}")
 
     app = QtWidgets.QApplication([])

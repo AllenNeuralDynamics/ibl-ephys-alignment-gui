@@ -111,6 +111,7 @@ class EphysAlignment:
         feature_prev=None,
         brain_atlas=None,
         speedy=False,
+        track_margin_m=6e-3,
     ) -> None:
         if not brain_atlas:
             self.brain_atlas = atlas.AllenAtlas(25)
@@ -128,9 +129,19 @@ class EphysAlignment:
             self.track_init = track_prev
             self.feature_init = feature_prev
         else:
-            start_lims = 6000 / 1e6
-            self.track_init = np.array([-1 * start_lims, start_lims])
-            self.feature_init = np.array([-1 * start_lims, start_lims])
+            # Determine required range based on probe geometry
+            tip_track_m = -track_margin_m
+            if chn_depths is not None and len(chn_depths) > 0:
+                probe_span = 1e-6 * np.max(chn_depths)  # meters
+                # Add 50% margin for alignment flexibility
+                margin_factor = 1.5
+                top_track_m = max(track_margin_m, probe_span * margin_factor)
+            else:
+                # Default to 6mm if no channel information available
+                top_track_m = track_margin_m
+
+            self.track_init = np.array([tip_track_m, top_track_m])
+            self.feature_init = np.copy(self.track_init)
 
         # Fit trajectory to the track for voxel-aligned sampling
         traj = atlas.Trajectory.fit(self.track_annos_and_ends_ras)
