@@ -550,10 +550,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if save_path:
             image_path_overview = Path(save_path)
         else:
-            if self.loaddata.output_directory is None:
+            if self.output_directory is None:
                 self.on_output_folder_selected()
             image_path_overview = Path(
-                self.loaddata.output_directory
+                self.output_directory
                 / f"Plots_Shank_{self.current_shank_idx + 1}"
             )
 
