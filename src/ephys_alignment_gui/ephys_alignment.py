@@ -151,7 +151,9 @@ class EphysAlignment:
         z_max = np.max(self.track_annos_and_ends_ras[:, 2])
 
         # Convert to voxel indices and align to voxel boundaries
-        i_min, i_max = np.sort(self.brain_atlas.bc.z2i(np.array([z_min, z_max])))
+        i_min, i_max = np.sort(
+            self.brain_atlas.bc.z2i(np.array([z_min, z_max]), mode="clip")
+        )
         i_min = int(i_min)
         i_max = int(i_max)
 
