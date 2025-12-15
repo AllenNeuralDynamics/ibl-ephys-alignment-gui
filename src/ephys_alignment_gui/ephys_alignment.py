@@ -144,32 +144,32 @@ class EphysAlignment:
             self.feature_init = np.copy(self.track_init)
 
         # Fit trajectory to the track for voxel-aligned sampling
-        traj = atlas.Trajectory.fit(self.track_annos_and_ends_ras)
-
         # Get DV range of the trajectory
         z_min = np.min(self.track_annos_and_ends_ras[:, 2])
         z_max = np.max(self.track_annos_and_ends_ras[:, 2])
-
         # Convert to voxel indices and align to voxel boundaries
         i_min, i_max = np.sort(
             self.brain_atlas.bc.z2i(np.array([z_min, z_max]), mode="clip")
         )
         i_min = int(i_min)
         i_max = int(i_max)
-
         # Sample at every voxel in DV (z) direction
         z_samples = np.sort(self.brain_atlas.bc.i2z(np.arange(i_min, i_max + 1)))
 
         # Evaluate trajectory at voxel-aligned DV coordinates
-        self.track_interpolation_ras = traj.eval_z(z_samples)
-
+        track_cumulative_distance = _cumulative_distance(self.track_annos_and_ends_ras)
+        depths_at_z_samples = np.interp(
+            z_samples,
+            self.track_annos_and_ends_ras[:, 2],
+            track_cumulative_distance
+        )
+        self.track_interpolation_ras = histology.interpolate_along_track(
+            self.track_annos_and_ends_ras, depths_at_z_samples
+        )
         # Compute cumulative distance along trajectory for compatibility
         # (ephys_depths_along_track is used for depth_coords in get_histology_regions)
-        self.ephys_depths_along_track = np.interp(
-            self.track_interpolation_ras[:, 2],  # z-coordinates we want depths for
-            self.track_annos_and_ends_ras[:, 2],  # z-coordinates along track
-            self.depths_along_trk,  # cumulative distances along track
-        )
+        first_electrode_dist = track_cumulative_distance[1] + 1e-6 * TIP_SIZE_UM
+        self.ephys_depths_along_track = depths_at_z_samples - first_electrode_dist
         # ensure none of the track is outside the y or x lim of atlas
         xlim = np.sort(self.brain_atlas.bc.xlim)
         ylim = np.sort(self.brain_atlas.bc.ylim)
@@ -238,10 +238,11 @@ class EphysAlignment:
 
         # Compute distance to first electrode from bottom coordinate
         cumulative_dist = _cumulative_distance(track_annos_and_ends_ras)
-        tip_distance = cumulative_dist[1] + TIP_SIZE_UM / 1e6
+        tip_cumulative_distance = cumulative_dist[1]
+        first_electrode_dist = tip_cumulative_distance + 1e-6 * TIP_SIZE_UM
         track_length = cumulative_dist[-1]
-        track_extent = np.array([0, track_length]) - tip_distance
-        depths_along_track = cumulative_dist - tip_distance
+        track_extent = np.array([0, track_length]) - first_electrode_dist
+        depths_along_track = cumulative_dist - first_electrode_dist
         logger.debug(f"Track extent: {track_extent}")
         return track_annos_and_ends_ras, track_extent, depths_along_track
 
