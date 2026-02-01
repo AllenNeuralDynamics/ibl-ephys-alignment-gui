@@ -731,7 +731,7 @@ class PlotData:
             this_corr = np.load(file)
             if this_corr.shape[0] != len(self.chn_ind):
                 logger.info(
-                    f"Multi-shank probe. Using {self.chn_ind}"
+                    f"Multi-shank probe. Using subset of indices"
                     " to index LFP correlation"
                 )
                 this_corr = this_corr[np.ix_(self.chn_ind, self.chn_ind)]
