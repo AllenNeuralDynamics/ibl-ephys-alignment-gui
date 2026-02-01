@@ -736,12 +736,12 @@ class PlotData:
                 )
                 this_corr = this_corr[np.ix_(self.chn_ind, self.chn_ind)]
                 
-            scale = (self.chn_max - self.chn_min) / len(self.chn_ind)
+            scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
             max_corr = np.quantile(np.abs(this_corr), 0.95)  # Exclude extreme values
             all_data[band_name] = {
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
-                "levels": np.array([-max_corr, max_corr]),
+                "levels": np.array([-3, 3]),
                 "offset": np.array([0, 0]),
                 "xrange": np.array([self.chn_min, self.chn_max]),
                 "cmap": "RdBu_r",
