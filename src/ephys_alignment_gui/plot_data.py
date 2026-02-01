@@ -728,6 +728,10 @@ class PlotData:
             band_name = file.stem.replace("_mean_corr", "")
             this_corr = np.load(file)
             if this_corr.shape[0] != len(self.chn_ind):
+                logger.info(
+                    f"Multi-shank probe. Using {self.chn_ind}"
+                    " to index LFP correlation"
+                )
                 this_corr = np.take(
                     np.take(this_corr, self.chn_ind, axis=0),
                     self.chn_ind,
