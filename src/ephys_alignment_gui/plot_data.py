@@ -741,7 +741,7 @@ class PlotData:
             all_data[band_name] = {
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
-                "levels": np.array([-3, 3]),
+                "levels": np.array([-max_corr, max_corr]),
                 "offset": np.array([0, 0]),
                 "xrange": np.array([self.chn_min, self.chn_max]),
                 "cmap": "RdBu_r",
