@@ -734,11 +734,8 @@ class PlotData:
                     f"Multi-shank probe. Using {self.chn_ind}"
                     " to index LFP correlation"
                 )
-                this_corr = np.take(
-                    np.take(this_corr, self.chn_ind, axis=0),
-                    self.chn_ind,
-                    axis=1
-                )
+                this_corr = this_corr[np.ix_(self.chn_ind, self.chn_ind)]
+                
             scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
             max_corr = np.quantile(np.abs(this_corr), 0.95)  # Exclude extreme values
             all_data[band_name] = {
