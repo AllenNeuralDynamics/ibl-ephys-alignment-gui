@@ -58,6 +58,8 @@ class PlotData:
             )
             self.chn_coords = self.chn_coords_all[shank_chns, :]
             self.chn_ind = self.chn_ind_all[shank_chns]
+            self.chn_min = np.min(self.chn_coords)
+            self.chn_max = np.max(self.chn_coords)
         else:
             self.chn_coords = self.chn_coords_all
             self.chn_ind = self.chn_ind_all
