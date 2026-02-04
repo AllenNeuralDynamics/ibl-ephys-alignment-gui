@@ -19,7 +19,6 @@ import one.alf.io as alfio
 import pandas
 import SimpleITK as sitk
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
-from aind_registration_utils.annotations import expand_compacted_image
 from iblatlas import atlas
 from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
@@ -371,12 +370,6 @@ class LoadDataLocal:
             )
         intensity_image = sitk.ReadImage(self.image_space_paths.atlas_image_path)
         label_image = sitk.ReadImage(self.image_space_paths.atlas_labels_path)
-        if label_image.GetPixelID() is not sitk.sitkInt32:
-            # This is a hack that I need to fix in the processing pipeline
-            unq_annotations = np.load(
-                "/data/allen_mouse_ccf_annotations_lateralized_compact/ccf_2017_annotation_25_lateralized_unique_vals.npz"
-            )["unique_labels"]
-            label_image = expand_compacted_image(label_image, unq_annotations)
         pipeline_image = sitk.ReadImage(self.image_space_paths.pipeline_image_path)
         self.brain_atlas = BrainAtlasAnatomical(
             intensity_img=intensity_image,
