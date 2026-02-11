@@ -31,6 +31,7 @@ class PlotData:
     def __init__(self, probe_path, data, shank_idx) -> None:
         self.probe_path = probe_path
         self.data = deepcopy(data)
+        self.shank_idx = shank_idx
 
         self.chn_coords_all = self.data["channels"]["localCoordinates"]
         self.chn_ind_all = self.data["channels"]["rawInd"].astype(int)
@@ -719,7 +720,7 @@ class PlotData:
             return {}
 
         # Load all npy files in the folder into the data dictionary
-        lfp_corr_files = list(lfp_corr_folder.glob("*.npy"))
+        lfp_corr_files = list(lfp_corr_folder.glob(f"*shank{self.shank_idx}*.npy"))
         if not lfp_corr_files:
             logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
             return {}
@@ -729,19 +730,13 @@ class PlotData:
             # Extract the band name from the file name
             band_name = file.stem.replace("_mean_corr", "")
             this_corr = np.load(file)
-            if this_corr.shape[0] != len(self.chn_ind):
-                logger.info(
-                    f"Multi-shank probe. Using subset of indices {self.chn_ind}"
-                    " to index LFP correlation"
-                )
-                this_corr = this_corr[np.ix_(self.chn_ind, self.chn_ind)]
                 
             scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
             max_corr = np.quantile(np.abs(this_corr), 0.95)  # Exclude extreme values
             all_data[band_name] = {
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
-                "levels": np.array([-1, 1]),
+                "levels": np.array([-max_corr, max_corr]),
                 "offset": np.array([0, 0]),
                 "xrange": np.array([self.chn_min, self.chn_max]),
                 "cmap": "RdBu_r",
