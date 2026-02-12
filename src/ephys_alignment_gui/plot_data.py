@@ -59,8 +59,6 @@ class PlotData:
             )
             self.chn_coords = self.chn_coords_all[shank_chns, :]
             self.chn_ind = self.chn_ind_all[shank_chns]
-            self.chn_min = np.min(self.chn_coords[:, 1])
-            self.chn_max = np.max(self.chn_coords[:, 1])
         else:
             self.chn_coords = self.chn_coords_all
             self.chn_ind = self.chn_ind_all
@@ -767,8 +765,11 @@ class PlotData:
 
             # Combine in order: expected sequence first, then others unsorted
             sorted_keys = expected_keys + other_keys
+            lfp_dict = {key: all_data[key] for key in sorted_keys}
+            # Sort by key and create a new dictionary
+            sorted_dict = dict(sorted(lfp_dict.items()))
 
-            return {key: all_data[key] for key in sorted_keys}
+            return sorted_dict
 
         data_img_lfp_corr = _sort_lfp_correlation_keys(all_data)
         logger.info(
