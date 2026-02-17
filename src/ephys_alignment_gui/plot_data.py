@@ -735,7 +735,7 @@ class PlotData:
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
                 "levels": np.array([-max_corr, max_corr]),
-                "offset": np.array([0, 0]),
+                "offset": np.array([0, self.chn_min]),
                 "xrange": np.array([self.chn_min, self.chn_max]),
                 "cmap": "RdBu_r",
                 "title": f"LFP correlation ({band_name})",
