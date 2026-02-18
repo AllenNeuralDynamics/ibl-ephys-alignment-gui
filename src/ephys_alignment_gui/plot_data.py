@@ -718,7 +718,7 @@ class PlotData:
             return {}
 
         # Load all npy files in the folder into the data dictionary
-        lfp_corr_files = list(lfp_corr_folder.glob(f"*shank*.npy"))
+        lfp_corr_files = list(lfp_corr_folder.glob(f"*.npy"))
         if not lfp_corr_files:
             logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
             return {}
