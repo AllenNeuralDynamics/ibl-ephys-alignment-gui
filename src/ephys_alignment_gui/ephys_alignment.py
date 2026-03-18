@@ -159,9 +159,7 @@ class EphysAlignment:
         # Evaluate trajectory at voxel-aligned DV coordinates
         track_cumulative_distance = _cumulative_distance(self.track_annos_and_ends_ras)
         depths_at_z_samples = np.interp(
-            z_samples,
-            self.track_annos_and_ends_ras[:, 2],
-            track_cumulative_distance
+            z_samples, self.track_annos_and_ends_ras[:, 2], track_cumulative_distance
         )
         self.track_interpolation_ras = histology.interpolate_along_track(
             self.track_annos_and_ends_ras, depths_at_z_samples

@@ -553,8 +553,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if self.output_directory is None:
                 self.on_output_folder_selected()
             image_path_overview = Path(
-                self.output_directory
-                / f"Plots_Shank_{self.current_shank_idx + 1}"
+                self.output_directory / f"Plots_Shank_{self.current_shank_idx + 1}"
             )
 
         image_path_overview.mkdir(exist_ok=True)

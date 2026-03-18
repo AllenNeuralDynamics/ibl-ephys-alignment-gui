@@ -191,7 +191,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         np.ndarray
             An (N, 3) array of voxel indices in this atlas.
         """
-        return self.bc.xyz2i(channel_ndxs, round=round,mode = 'clip')[:, self.xyz2dims]
+        return self.bc.xyz2i(channel_ndxs, round=round, mode="clip")[:, self.xyz2dims]
 
     def indices_to_physical_points(self, channel_ndxs: np.ndarray) -> np.ndarray:
         """

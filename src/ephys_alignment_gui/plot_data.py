@@ -728,7 +728,7 @@ class PlotData:
             # Extract the band name from the file name
             band_name = file.stem.replace("_mean_corr", "")
             this_corr = np.load(file)
-                
+
             scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
             max_corr = np.quantile(np.abs(this_corr), 0.95)  # Exclude extreme values
             all_data[band_name] = {
