@@ -1,30 +1,35 @@
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ibl-ephys-alignment-gui"
 description = "Tool for aligning electrophysiological features to anatomical landmarks."
-license = {text = "MIT"}
-requires-python = ">=3.7"
-authors = [
-    {name = "International Brain Laboratory"}
-]
-classifiers = [
-    "Programming Language :: Python :: 3"
-]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "International Brain Laboratory" }]
+classifiers = ["Programming Language :: Python :: 3"]
 readme = "README.md"
 
-dynamic = ["dependencies", "version"]
+dependencies = [
+  "aind-data-schema<2.0",
+  "aind-data-access-api",
+  "aind-qcportal-schema",
+  "aind-registration-utils",
+  "antspyx",
+  "aws-requests-auth",
+  "iblatlas",
+  "iblutil",
+  "nibabel",
+  "PyQt5",
+  "pyqtgraph",
+  "SimpleITK",
+]
+
+dynamic = ["version"]
 
 [project.optional-dependencies]
-dev = [
-    'black',
-    'coverage',
-    'flake8',
-    'interrogate',
-    'isort'
-]
+dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort']
 
 [project.scripts]
 launch = 'ephys_alignment_gui.launch_gui:main'
@@ -33,12 +38,11 @@ launch = 'ephys_alignment_gui.launch_gui:main'
 where = ["src"]
 
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-version = {attr = "ephys_alignment_gui.__version__"}
+version = { attr = "ephys_alignment_gui.__version__" }
 
 [tool.black]
-line-length = 79
-target_version = ['py36']
+line-length = 88
+target_version = ['py39']
 exclude = '''
 
 (
@@ -57,23 +61,79 @@ exclude = '''
 )
 '''
 
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "ANN", "PYI"]
+extend-ignore = ["ANN401"]
+per-file-ignores = { "tests/*.py" = [
+  "ANN",
+], "docs/**/*.py" = [
+  "ANN",
+], "notebooks/*.py" = [
+  "ANN",
+] }
+mccabe = { max-complexity = 14 }
+pydocstyle = { convention = "numpy" }
+
+[tool.codespell]
+skip = '.git,*.pdf,*.svg,./bonsai,*.bonsai,./docs/_build,uv.lock,./doc_template,./docs/build'
+ignore-words-list = "nd"
+
 [tool.coverage.run]
 omit = ["*__init__*"]
 source = ["ephys_alignment_gui", "tests"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "if __name__ == .__main__.:",
-    "from",
-    "import",
-    "pragma: no cover"
+  "if __name__ == .__main__.:",
+  "from",
+  "import",
+  "pragma: no cover",
 ]
 fail_under = 100
 
 [tool.isort]
-line_length = 79
+line_length = 88
 profile = "black"
 
+
 [tool.interrogate]
-exclude = ["setup.py", "docs", "build"]
-fail-under = 100
+ignore-init-method = true
+ignore-magic = true
+ignore_module = true
+fail-under = 30
+exclude = [
+  "__init__.py",
+  "tests",
+  "docs",
+  "build",
+  "setup.py",
+  "examples",
+  "site",
+]
+
+[tool.mypy]
+files = ["src/ibl_ephys_alignment_gui"]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+

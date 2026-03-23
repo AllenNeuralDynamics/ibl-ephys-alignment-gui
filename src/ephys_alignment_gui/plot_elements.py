@@ -1,16 +1,15 @@
+import matplotlib
+import numpy as np
 import pyqtgraph as pg
+from PyQt5 import QtCore, QtGui, QtWidgets
 from pyqtgraph import debug as debug
 from pyqtgraph.functions import makeARGB
-import numpy as np
-
-from PyQt5 import QtCore, QtGui, QtWidgets
-
-import matplotlib
 
 # Originated from
 # https://www.mail-archive.com/pyqt@riverbankcomputing.com/msg22889.html
 # Modification refered from
 # https://gist.github.com/Riateche/27e36977f7d5ea72cf4f
+
 
 class QRangeSlider(QtWidgets.QSlider):
     sliderMoved = QtCore.pyqtSignal(int, int)
@@ -22,12 +21,12 @@ class QRangeSlider(QtWidgets.QSlider):
         maximum and minimum, as is a normal slider, but instead of having a
         single slider value, there are 2 slider values.
 
-        This class emits the same signals as the QSlider base class, with the 
+        This class emits the same signals as the QSlider base class, with the
         exception of valueChanged
     """
 
-    def __init__(self, *args):
-        super(QRangeSlider, self).__init__(*args)
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
 
         self._low = self.minimum()
         self._high = self.maximum()
@@ -45,21 +44,21 @@ class QRangeSlider(QtWidgets.QSlider):
     def low(self):
         return self._low
 
-    def setLow(self, low: int):
+    def setLow(self, low: int) -> None:
         self._low = low
         self.update()
 
     def high(self):
         return self._high
 
-    def setHigh(self, high):
+    def setHigh(self, high) -> None:
         self._high = high
         self.update()
 
-    def allowMove(self, allow):
+    def allowMove(self, allow) -> None:
         self._allow_move = allow
 
-    def paintEvent(self, event):
+    def paintEvent(self, event) -> None:
         # based on http://qt.gitorious.org/qt/qt/blobs/master/src/gui/widgets/qslider.cpp
 
         painter = QtGui.QPainter(self)
@@ -74,7 +73,12 @@ class QRangeSlider(QtWidgets.QSlider):
         if self.tickPosition() != self.NoTicks:
             opt.subControls |= QtWidgets.QStyle.SC_SliderTickmarks
         style.drawComplexControl(QtWidgets.QStyle.CC_Slider, opt, painter, self)
-        groove = style.subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderGroove, self)
+        groove = style.subControlRect(
+            QtWidgets.QStyle.CC_Slider,
+            opt,
+            QtWidgets.QStyle.SC_SliderGroove,
+            self,
+        )
 
         # drawSpan
         # opt = QtWidgets.QStyleOptionSlider()
@@ -85,9 +89,19 @@ class QRangeSlider(QtWidgets.QSlider):
         opt.siderValue = 0
         # print(self._low)
         opt.sliderPosition = self._low
-        low_rect = style.subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderHandle, self)
+        low_rect = style.subControlRect(
+            QtWidgets.QStyle.CC_Slider,
+            opt,
+            QtWidgets.QStyle.SC_SliderHandle,
+            self,
+        )
         opt.sliderPosition = self._high
-        high_rect = style.subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderHandle, self)
+        high_rect = style.subControlRect(
+            QtWidgets.QStyle.CC_Slider,
+            opt,
+            QtWidgets.QStyle.SC_SliderHandle,
+            self,
+        )
 
         # print(low_rect, high_rect)
         low_pos = self.__pick(low_rect.center())
@@ -99,9 +113,15 @@ class QRangeSlider(QtWidgets.QSlider):
         c = QtCore.QRect(low_rect.center(), high_rect.center()).center()
         # print(min_pos, max_pos, c)
         if opt.orientation == QtCore.Qt.Horizontal:
-            span_rect = QtCore.QRect(QtCore.QPoint(min_pos, c.y() - 2), QtCore.QPoint(max_pos, c.y() + 1))
+            span_rect = QtCore.QRect(
+                QtCore.QPoint(min_pos, c.y() - 2),
+                QtCore.QPoint(max_pos, c.y() + 1),
+            )
         else:
-            span_rect = QtCore.QRect(QtCore.QPoint(c.x() - 2, min_pos), QtCore.QPoint(c.x() + 1, max_pos))
+            span_rect = QtCore.QRect(
+                QtCore.QPoint(c.x() - 2, min_pos),
+                QtCore.QPoint(c.x() + 1, max_pos),
+            )
 
         # self.initStyleOption(opt)
         # print(groove.x(), groove.y(), groove.width(), groove.height())
@@ -115,12 +135,12 @@ class QRangeSlider(QtWidgets.QSlider):
             painter.setBrush(QtGui.QBrush(highlight))
             painter.setPen(QtGui.QPen(highlight, 0))
             # painter.setPen(QtGui.QPen(self.palette().color(QtGui.QPalette.Dark), 0))
-            '''
+            """
             if opt.orientation == QtCore.Qt.Horizontal:
                 self.setupPainter(painter, opt.orientation, groove.center().x(), groove.top(), groove.center().x(), groove.bottom())
             else:
                 self.setupPainter(painter, opt.orientation, groove.left(), groove.center().y(), groove.right(), groove.center().y())
-            '''
+            """
             # spanRect =
             painter.drawRect(span_rect.intersected(groove))
             # painter.drawRect(groove)
@@ -132,7 +152,9 @@ class QRangeSlider(QtWidgets.QSlider):
             # Only draw the groove for the first slider so it doesn't get drawn
             # on top of the existing ones every time
             if i == 0:
-                opt.subControls = QtWidgets.QStyle.SC_SliderHandle  # | QtWidgets.QStyle.SC_SliderGroove
+                opt.subControls = (
+                    QtWidgets.QStyle.SC_SliderHandle
+                )  # | QtWidgets.QStyle.SC_SliderGroove
             else:
                 opt.subControls = QtWidgets.QStyle.SC_SliderHandle
 
@@ -148,8 +170,7 @@ class QRangeSlider(QtWidgets.QSlider):
             opt.sliderValue = value
             style.drawComplexControl(QtWidgets.QStyle.CC_Slider, opt, painter, self)
 
-    def mousePressEvent(self, event):
-
+    def mousePressEvent(self, event) -> None:
         if not self._allow_move:
             return
 
@@ -172,7 +193,9 @@ class QRangeSlider(QtWidgets.QSlider):
 
             for i, value in enumerate([self._low, self._high]):
                 opt.sliderPosition = value
-                hit = style.hitTestComplexControl(style.CC_Slider, opt, event.pos(), self)
+                hit = style.hitTestComplexControl(
+                    style.CC_Slider, opt, event.pos(), self
+                )
                 if hit == style.SC_SliderHandle:
                     self.active_slider = i
                     self.pressed_control = hit
@@ -184,13 +207,15 @@ class QRangeSlider(QtWidgets.QSlider):
 
             if self.active_slider < 0:
                 self.pressed_control = QtWidgets.QStyle.SC_SliderHandle
-                self.click_offset = self.__pixelPosToRangeValue(self.__pick(event.pos()))
+                self.click_offset = self.__pixelPosToRangeValue(
+                    self.__pick(event.pos())
+                )
                 self.triggerAction(self.SliderMove)
                 self.setRepeatAction(self.SliderNoAction)
         else:
             event.ignore()
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event) -> None:
         if self.pressed_control != QtWidgets.QStyle.SC_SliderHandle:
             event.ignore()
             return
@@ -255,13 +280,17 @@ class QRangeSlider(QtWidgets.QSlider):
             slider_min = gr.y()
             slider_max = gr.bottom() - slider_length + 1
 
-        return style.sliderValueFromPosition(self.minimum(), self.maximum(),
-                                             pos - slider_min, slider_max - slider_min,
-                                             opt.upsideDown)
+        return style.sliderValueFromPosition(
+            self.minimum(),
+            self.maximum(),
+            pos - slider_min,
+            slider_max - slider_min,
+            opt.upsideDown,
+        )
+
 
 class ColorBar(pg.GraphicsWidget):
-
-    def __init__(self, cmap_name, cbin=256, parent=None, data=None):
+    def __init__(self, cmap_name, cbin=256, parent=None, data=None) -> None:
         pg.GraphicsWidget.__init__(self)
 
         # Create colour map from matplotlib colourmap name
@@ -272,7 +301,7 @@ class ColorBar(pg.GraphicsWidget):
             colors = (cmap(cbins)[np.newaxis, :, :3][0]).tolist()
         else:
             colors = cmap.colors
-        colors = [(np.array(c) * 255).astype(int).tolist() + [255.] for c in colors]
+        colors = [(np.array(c) * 255).astype(int).tolist() + [255.0] for c in colors]
         positions = np.linspace(0, 1, len(colors))
         self.map = pg.ColorMap(positions, colors)
         self.lut = self.map.getLookupTable()
@@ -281,30 +310,50 @@ class ColorBar(pg.GraphicsWidget):
     def getBrush(self, data, levels=None):
         if levels is None:
             levels = [np.min(data), np.max(data)]
-        brush_rgb, _ = makeARGB(data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True)
+        brush_rgb, _ = makeARGB(
+            data[:, np.newaxis], levels=levels, lut=self.lut, useRGBA=True
+        )
         brush = [QtGui.QColor(*col) for col in np.squeeze(brush_rgb)]
         return brush
 
     def getColourMap(self):
         return self.lut
 
-    def makeColourBar(self, width, height, fig, min=0, max=1, label='', lim=False):
+    def makeColourBar(self, width, height, fig, min=0, max=1, label="", lim=False):
         self.cbar = HorizontalBar(width, height, self.grad)
-        ax = fig.getAxis('top')
-        ax.setPen('k')
-        ax.setTextPen('k')
+        ax = fig.getAxis("top")
+        ax.setPen("k")
+        ax.setTextPen("k")
         ax.setStyle(stopAxisAtTick=((True, True)))
         # labelStyle = {'font-size': '8pt'}
         ax.setLabel(label)
         ax.setHeight(30)
         if lim:
-            ax.setTicks([[(0, str(np.around(min, 2))), (width, str(np.around(max, 2)))]])
+            ax.setTicks(
+                [
+                    [
+                        (0, str(np.around(min, 2))),
+                        (width, str(np.around(max, 2))),
+                    ]
+                ]
+            )
         else:
-            ax.setTicks([[(0, str(np.around(min, 2))), (width / 2,
-                        str(np.around(min + (max - min) / 2, 2))),
-                       (width, str(np.around(max, 2)))],
-                [(width / 4, str(np.around(min + (max - min) / 4, 2))),
-                 (3 * width / 4, str(np.around(min + (3 * (max - min) / 4), 2)))]])
+            ax.setTicks(
+                [
+                    [
+                        (0, str(np.around(min, 2))),
+                        (width / 2, str(np.around(min + (max - min) / 2, 2))),
+                        (width, str(np.around(max, 2))),
+                    ],
+                    [
+                        (width / 4, str(np.around(min + (max - min) / 4, 2))),
+                        (
+                            3 * width / 4,
+                            str(np.around(min + (3 * (max - min) / 4), 2)),
+                        ),
+                    ],
+                ]
+            )
         fig.setXRange(0, width)
         fig.setYRange(0, height)
 
@@ -312,14 +361,14 @@ class ColorBar(pg.GraphicsWidget):
 
 
 class HorizontalBar(pg.GraphicsWidget):
-    def __init__(self, width, height, grad):
+    def __init__(self, width, height, grad) -> None:
         pg.GraphicsWidget.__init__(self)
         self.width = width
         self.height = height
         self.grad = grad
         QtGui.QPainter()
 
-    def paint(self, p, *args):
+    def paint(self, p, *args) -> None:
         p.setPen(QtCore.Qt.NoPen)
         self.grad.setStart(0, self.height / 2)
         self.grad.setFinalStop(self.width, self.height / 2)
@@ -328,14 +377,14 @@ class HorizontalBar(pg.GraphicsWidget):
 
 
 class VerticalBar(pg.GraphicsWidget):
-    def __init__(self, width, height, grad):
+    def __init__(self, width, height, grad) -> None:
         pg.GraphicsWidget.__init__(self)
         self.width = width
         self.height = height
         self.grad = grad
         QtGui.QPainter()
 
-    def paint(self, p, *args):
+    def paint(self, p, *args) -> None:
         p.setPen(QtCore.Qt.NoPen)
         self.grad.setStart(self.width / 2, self.height)
         self.grad.setFinalStop(self.width / 2, 0)
@@ -344,11 +393,15 @@ class VerticalBar(pg.GraphicsWidget):
 
 
 class AdaptedAxisItem(pg.AxisItem):
-    def __init__(self, orientation, parent=None,):
+    def __init__(
+        self,
+        orientation,
+        parent=None,
+    ) -> None:
         pg.AxisItem.__init__(self, orientation, parent=parent)
-        self.style['hideOverlappingLabels'] = False
+        self.style["hideOverlappingLabels"] = False
 
-    def drawPicture(self, p, axisSpec, tickSpecs, textSpecs):
+    def drawPicture(self, p, axisSpec, tickSpecs, textSpecs) -> None:
         profiler = debug.Profiler()
 
         p.setRenderHint(p.Antialiasing, False)
@@ -364,16 +417,16 @@ class AdaptedAxisItem(pg.AxisItem):
         for pen, p1, p2 in tickSpecs:
             p.setPen(pen)
             p.drawLine(p1, p2)
-        profiler('draw ticks')
+        profiler("draw ticks")
 
         # Draw all text
-        if self.style['tickFont'] is not None:
-            p.setFont(self.style['tickFont'])
+        if self.style["tickFont"] is not None:
+            p.setFont(self.style["tickFont"])
         p.setPen(self.textPen())
         for rect, flags, text in textSpecs:
             p.drawText(rect, int(flags), text)
 
-        profiler('draw text')
+        profiler("draw text")
 
     def generateDrawSpecs(self, p):
         """
@@ -382,8 +435,8 @@ class AdaptedAxisItem(pg.AxisItem):
         interpreted by drawPicture().
         """
         profiler = debug.Profiler()
-        if self.style['tickFont'] is not None:
-            p.setFont(self.style['tickFont'])
+        if self.style["tickFont"] is not None:
+            p.setFont(self.style["tickFont"])
         bounds = self.mapRectFromParent(self.geometry())
 
         linkedView = self.linkedView()
@@ -392,32 +445,34 @@ class AdaptedAxisItem(pg.AxisItem):
         else:
             tickBounds = linkedView.mapRectToItem(self, linkedView.boundingRect())
 
-        if self.orientation == 'left':
+        if self.orientation == "left":
             span = (bounds.topRight(), bounds.bottomRight())
             tickStart = tickBounds.right()
             tickStop = bounds.right()
             tickDir = -1
             axis = 0
-        elif self.orientation == 'right':
+        elif self.orientation == "right":
             span = (bounds.topLeft(), bounds.bottomLeft())
             tickStart = tickBounds.left()
             tickStop = bounds.left()
             tickDir = 1
             axis = 0
-        elif self.orientation == 'top':
+        elif self.orientation == "top":
             span = (bounds.bottomLeft(), bounds.bottomRight())
             tickStart = tickBounds.bottom()
             tickStop = bounds.bottom()
             tickDir = -1
             axis = 1
-        elif self.orientation == 'bottom':
+        elif self.orientation == "bottom":
             span = (bounds.topLeft(), bounds.topRight())
             tickStart = tickBounds.top()
             tickStop = bounds.top()
             tickDir = 1
             axis = 1
         else:
-            raise ValueError("self.orientation must be in ('left', 'right', 'top', 'bottom')")
+            raise ValueError(
+                "self.orientation must be in ('left', 'right', 'top', 'bottom')"
+            )
         # print tickStart, tickStop, span
 
         ## determine size of this item in pixels
@@ -462,7 +517,7 @@ class AdaptedAxisItem(pg.AxisItem):
         xMin = min(xRange)
         xMax = max(xRange)
 
-        profiler('init')
+        profiler("init")
 
         tickPositions = []  # remembers positions of previously drawn ticks
 
@@ -474,13 +529,21 @@ class AdaptedAxisItem(pg.AxisItem):
             ticks = tickLevels[i][1]
 
             ## length of tick
-            tickLength = self.style['tickLength'] / ((i * 0.5) + 1.0)
+            tickLength = self.style["tickLength"] / ((i * 0.5) + 1.0)
 
             lineAlpha = self.style["tickAlpha"]
             if lineAlpha is None:
                 lineAlpha = 255 / (i + 1)
                 if self.grid is not False:
-                    lineAlpha *= self.grid / 255. * pg.functions.clip_scalar((0.05 * lengthInPixels / (len(ticks) + 1)), 0., 1.)
+                    lineAlpha *= (
+                        self.grid
+                        / 255.0
+                        * pg.functions.clip_scalar(
+                            (0.05 * lengthInPixels / (len(ticks) + 1)),
+                            0.0,
+                            1.0,
+                        )
+                    )
             elif isinstance(lineAlpha, float):
                 lineAlpha *= 255
                 lineAlpha = max(0, int(round(lineAlpha)))
@@ -494,7 +557,9 @@ class AdaptedAxisItem(pg.AxisItem):
             for v in ticks:
                 # determine actual position to draw this tick
                 x = (v * xScale) - offset
-                if x < xMin or x > xMax:  # last check to make sure no out-of-bounds ticks are drawn
+                if (
+                    x < xMin or x > xMax
+                ):  # last check to make sure no out-of-bounds ticks are drawn
                     tickPositions[i].append(None)
                     continue
                 tickPositions[i].append(x)
@@ -510,9 +575,9 @@ class AdaptedAxisItem(pg.AxisItem):
                 color.setAlpha(int(lineAlpha))
                 tickPen.setColor(color)
                 tickSpecs.append((tickPen, pg.Point(p1), pg.Point(p2)))
-        profiler('compute ticks')
+        profiler("compute ticks")
 
-        if self.style['stopAxisAtTick'][0] is True:
+        if self.style["stopAxisAtTick"][0] is True:
             minTickPosition = min(map(min, tickPositions))
             if axis == 0:
                 stop = max(span[0].y(), minTickPosition)
@@ -520,7 +585,7 @@ class AdaptedAxisItem(pg.AxisItem):
             else:
                 stop = max(span[0].x(), minTickPosition)
                 span[0].setX(stop)
-        if self.style['stopAxisAtTick'][1] is True:
+        if self.style["stopAxisAtTick"][1] is True:
             maxTickPosition = max(map(max, tickPositions))
             if axis == 0:
                 stop = min(span[1].y(), maxTickPosition)
@@ -530,7 +595,7 @@ class AdaptedAxisItem(pg.AxisItem):
                 span[1].setX(stop)
         axisSpec = (self.pen(), span[0], span[1])
 
-        textOffset = self.style['tickTextOffset'][axis]  # spacing between axis and text
+        textOffset = self.style["tickTextOffset"][axis]  # spacing between axis and text
         # if self.style['autoExpandTextSpace'] is True:
         # textWidth = self.textWidth
         # textHeight = self.textHeight
@@ -544,14 +609,16 @@ class AdaptedAxisItem(pg.AxisItem):
         textSpecs = []  # list of draw
 
         # If values are hidden, return early
-        if not self.style['showValues']:
+        if not self.style["showValues"]:
             return (axisSpec, tickSpecs, textSpecs)
 
-        for i in range(min(len(tickLevels), self.style['maxTextLevel'] + 1)):
+        for i in range(min(len(tickLevels), self.style["maxTextLevel"] + 1)):
             ## Get the list of strings to display for this level
             if tickStrings is None:
                 spacing, values = tickLevels[i]
-                strings = self.tickStrings(values, self.autoSIPrefixScale * self.scale, spacing)
+                strings = self.tickStrings(
+                    values, self.autoSIPrefixScale * self.scale, spacing
+                )
             else:
                 strings = tickStrings[i]
 
@@ -569,7 +636,11 @@ class AdaptedAxisItem(pg.AxisItem):
                 if s is None:
                     rects.append(None)
                 else:
-                    br = p.boundingRect(pg.QtCore.QRectF(0, 0, 100, 100), pg.QtCore.Qt.AlignmentFlag.AlignCenter, s)
+                    br = p.boundingRect(
+                        pg.QtCore.QRectF(0, 0, 100, 100),
+                        pg.QtCore.Qt.AlignmentFlag.AlignCenter,
+                        s,
+                    )
                     ## boundingRect is usually just a bit too large
                     ## (but this probably depends on per-font metrics?)
                     br.setHeight(br.height() * 0.8)
@@ -595,7 +666,7 @@ class AdaptedAxisItem(pg.AxisItem):
                 # of texts drawn so far.
                 textFillRatio = float(textSize) / lengthInPixels
                 finished = False
-                for nTexts, limit in self.style['textFillLimits']:
+                for nTexts, limit in self.style["textFillLimits"]:
                     if len(textSpecs) >= nTexts and textFillRatio >= limit:
                         finished = True
                         break
@@ -617,21 +688,47 @@ class AdaptedAxisItem(pg.AxisItem):
                 height = textRect.height()
                 width = textRect.width()
                 # self.textHeight = height
-                offset = max(0, self.style['tickLength']) + textOffset
+                offset = max(0, self.style["tickLength"]) + textOffset
 
                 rect = pg.QtCore.QRectF()
-                if self.orientation == 'left':
-                    alignFlags = pg.QtCore.Qt.AlignmentFlag.AlignRight | pg.QtCore.Qt.AlignmentFlag.AlignVCenter
-                    rect = pg.QtCore.QRectF(tickStop - offset - width, x - (height / 2), width, height)
-                elif self.orientation == 'right':
-                    alignFlags = pg.QtCore.Qt.AlignmentFlag.AlignLeft | pg.QtCore.Qt.AlignmentFlag.AlignVCenter
-                    rect = pg.QtCore.QRectF(tickStop + offset, x - (height / 2), width, height)
-                elif self.orientation == 'top':
-                    alignFlags = pg.QtCore.Qt.AlignmentFlag.AlignHCenter | pg.QtCore.Qt.AlignmentFlag.AlignBottom
-                    rect = pg.QtCore.QRectF(x - width / 2., tickStop - offset - height, width, height)
-                elif self.orientation == 'bottom':
-                    alignFlags = pg.QtCore.Qt.AlignmentFlag.AlignHCenter | pg.QtCore.Qt.AlignmentFlag.AlignTop
-                    rect = pg.QtCore.QRectF(x - width / 2., tickStop + offset, width, height)
+                if self.orientation == "left":
+                    alignFlags = (
+                        pg.QtCore.Qt.AlignmentFlag.AlignRight
+                        | pg.QtCore.Qt.AlignmentFlag.AlignVCenter
+                    )
+                    rect = pg.QtCore.QRectF(
+                        tickStop - offset - width,
+                        x - (height / 2),
+                        width,
+                        height,
+                    )
+                elif self.orientation == "right":
+                    alignFlags = (
+                        pg.QtCore.Qt.AlignmentFlag.AlignLeft
+                        | pg.QtCore.Qt.AlignmentFlag.AlignVCenter
+                    )
+                    rect = pg.QtCore.QRectF(
+                        tickStop + offset, x - (height / 2), width, height
+                    )
+                elif self.orientation == "top":
+                    alignFlags = (
+                        pg.QtCore.Qt.AlignmentFlag.AlignHCenter
+                        | pg.QtCore.Qt.AlignmentFlag.AlignBottom
+                    )
+                    rect = pg.QtCore.QRectF(
+                        x - width / 2.0,
+                        tickStop - offset - height,
+                        width,
+                        height,
+                    )
+                elif self.orientation == "bottom":
+                    alignFlags = (
+                        pg.QtCore.Qt.AlignmentFlag.AlignHCenter
+                        | pg.QtCore.Qt.AlignmentFlag.AlignTop
+                    )
+                    rect = pg.QtCore.QRectF(
+                        x - width / 2.0, tickStop + offset, width, height
+                    )
 
                 textFlags = alignFlags | pg.QtCore.Qt.TextFlag.TextDontClip
                 # p.setPen(self.pen())
@@ -642,7 +739,7 @@ class AdaptedAxisItem(pg.AxisItem):
                 #     continue
 
                 textSpecs.append((rect, textFlags, vstr))
-        profiler('compute text')
+        profiler("compute text")
 
         ## update max text size if needed.
         self._updateMaxTextSize(lastTextSize2)
@@ -650,15 +747,14 @@ class AdaptedAxisItem(pg.AxisItem):
         return (axisSpec, tickSpecs, textSpecs)
 
 
-def replace_axis(plot_item, orientation='left', pos=(2, 0)):
-
+def replace_axis(plot_item, orientation="left", pos=(2, 0)) -> None:
     new_axis = AdaptedAxisItem(orientation, parent=plot_item)
-    oldAxis = plot_item.axes[orientation]['item']
+    oldAxis = plot_item.axes[orientation]["item"]
     plot_item.layout.removeItem(oldAxis)
     oldAxis.unlinkFromView()
     #
     new_axis.linkToView(plot_item.vb)
-    plot_item.axes[orientation] = {'item': new_axis, 'pos': pos}
+    plot_item.axes[orientation] = {"item": new_axis, "pos": pos}
     plot_item.layout.addItem(new_axis, *pos)
     new_axis.setZValue(-1000)
     new_axis.setFlag(new_axis.ItemNegativeZStacksBehindParent)
