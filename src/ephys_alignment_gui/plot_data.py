@@ -1,5 +1,4 @@
 import logging
-from copy import deepcopy
 
 import numpy as np
 
@@ -30,7 +29,7 @@ np.seterr(divide="ignore", invalid="ignore")
 class PlotData:
     def __init__(self, probe_path, data, shank_idx) -> None:
         self.probe_path = probe_path
-        self.data = deepcopy(data)
+        self.data = data
         self.shank_idx = shank_idx
 
         self.chn_coords_all = self.data["channels"]["localCoordinates"]
@@ -74,22 +73,11 @@ class PlotData:
             self.max_spike_time = np.max(self.data["spikes"]["times"])
 
         if self.data["clusters"]["exists"]:
-            shank_spikes_subset = np.where(self.data["spike_shanks"] == shank_idx)
-            """
-            shank_spikes_clusters = self.data['spikes'].clusters[shank_spikes_subset]
-            shank_units_subset = np.where(self.data['unit_shank_indices'] == shank_idx)
-
-            shank_cluster_channels = self.data['clusters'].channels[shank_units_subset]
-            shank_spike_channels = shank_cluster_channels[shank_spikes_clusters]
-            shank_spikes = np.isin(self.chn_ind_all[self.data['clusters'].channels[self.data['spikes'].clusters]],
-                                  self.chn_ind)"
-            """
-            for key in self.data["spikes"].keys():
-                if key == "exists":
-                    continue
-                self.data["spikes"][key] = self.data["spikes"][key][shank_spikes_subset]
+            self._shank_spike_indices = np.where(self.data["spike_shanks"] == shank_idx)[0]
             self.filter_units("all")
             self.compute_timescales()
+        else:
+            self._shank_spike_indices = None
 
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
@@ -144,6 +132,10 @@ class PlotData:
                 f"{subset} metrics not found or invalid, returning all units instead"
             )
             self.spike_idx = np.arange(self.data["spikes"]["clusters"].size)
+
+        # Restrict to current shank (multi-shank probes)
+        if self._shank_spike_indices is not None:
+            self.spike_idx = np.intersect1d(self.spike_idx, self._shank_spike_indices)
 
         # Filter for nans in depths and also in amps
         self.kp_idx = np.where(
