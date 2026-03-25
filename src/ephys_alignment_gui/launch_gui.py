@@ -1,3 +1,4 @@
+import gc
 import json
 import logging
 import os
@@ -318,6 +319,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.probe_path: Path | None = None
         self.chn_depths: NDArray[np.floating] | None = None
         self.sess_notes: str = ""
+
+        # Large per-session objects (nulled by _teardown_session)
+        self.data = None
+        self.plotdata = None
+        self.ephysalign = None
+        self.slice_data = None
+        self.fp_slice_data = None
 
         # Shank tracking for multi-shank probes (0-based index)
         self.current_shank_idx = 0
@@ -1638,6 +1646,57 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fit_scatter.setData()
         self.remove_lines_points()
 
+    def _teardown_session(self) -> None:
+        """Break reference cycles from the previous probe session.
+
+        Disconnects PyQt signal connections on per-session plot items and
+        nulls large data references so the garbage collector can free them.
+        Must be called *before* ``clear_plots`` / ``init_session_variables``.
+        """
+        # Disconnect InfiniteLine signals (tip/top position markers)
+        for attr in ("tip_pos", "top_pos"):
+            item = getattr(self, attr, None)
+            if item is not None:
+                try:
+                    item.sigPositionChanged.disconnect()
+                except TypeError:
+                    pass
+
+        # Disconnect signals on user-drawn reference lines
+        for arr in (self.lines_features, self.lines_tracks):
+            for group in arr:
+                for item in group if hasattr(group, "__iter__") else [group]:
+                    try:
+                        item.sigPositionChanged.disconnect()
+                    except (TypeError, AttributeError, RuntimeError):
+                        pass
+
+        # Disconnect scatter click signal
+        if hasattr(self, "data_plot") and self.data_plot is not None:
+            try:
+                self.data_plot.sigClicked.disconnect()
+            except (TypeError, AttributeError):
+                pass
+
+        # Close popup windows
+        for popup_list in (self.cluster_popups, self.label_popup):
+            for pop in popup_list:
+                try:
+                    pop.blockSignals(True)
+                    pop.close()
+                except RuntimeError:
+                    pass
+
+        # Null large data references
+        self.data = None
+        self.plotdata = None
+        self.ephysalign = None
+        self.slice_data = None
+        self.fp_slice_data = None
+
+        # Force cycle collection
+        gc.collect()
+
     def load_heavy_data(self) -> None:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
 
@@ -1648,6 +1707,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=self.load_data_button,
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
+            self._teardown_session()
             self.clear_plots()
             self.init_session_variables()
 
