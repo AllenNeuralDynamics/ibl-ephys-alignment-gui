@@ -26,6 +26,31 @@ FS = 30000
 np.seterr(divide="ignore", invalid="ignore")
 
 
+def _safe_take(arr, indices, axis=0):
+    """np.take that fills out-of-bounds positions with NaN.
+
+    When channel indices exceed the data array (e.g. main-block RMS
+    has fewer channels than the combined channel set), valid indices
+    are taken normally and out-of-bounds positions are filled with NaN.
+    """
+    max_idx = arr.shape[axis] - 1
+    oob = indices > max_idx
+    if np.any(oob):
+        logger.warning(
+            f"Channel indices exceed data size "
+            f"(max_idx={max_idx}, max_chn_ind={indices.max()}). "
+            f"Filling {np.sum(oob)} channels with NaN."
+        )
+        safe_indices = np.clip(indices, 0, max_idx)
+        result = np.take(arr, safe_indices, axis=axis).astype(float)
+        # Build a slicer that targets the OOB positions along `axis`
+        slices = [slice(None)] * result.ndim
+        slices[axis] = oob
+        result[tuple(slices)] = np.nan
+        return result
+    return np.take(arr, indices, axis=axis)
+
+
 class PlotData:
     def __init__(self, probe_path, data, shank_idx) -> None:
         self.probe_path = probe_path
@@ -34,14 +59,6 @@ class PlotData:
 
         self.chn_coords_all = self.data["channels"]["localCoordinates"]
         self.chn_ind_all = self.data["channels"]["rawInd"].astype(int)
-
-        self.chn_min = np.min(self.chn_coords_all[:, 1])
-        self.chn_max = np.max(self.chn_coords_all[:, 1])
-        self.chn_diff = np.min(np.abs(np.diff(np.unique(self.chn_coords_all[:, 1]))))
-
-        self.chn_full = np.arange(
-            self.chn_min, self.chn_max + self.chn_diff, self.chn_diff
-        )
 
         chn_x = np.unique(self.chn_coords_all[:, 0])
         chn_x_diff = np.diff(chn_x)
@@ -61,6 +78,20 @@ class PlotData:
         else:
             self.chn_coords = self.chn_coords_all
             self.chn_ind = self.chn_ind_all
+
+        # Remove duplicate (x, y) coordinates (e.g. overlapping surface-finding
+        # channels on multi-shank probes), keeping the first occurrence.
+        _, unique_idx = np.unique(self.chn_coords, axis=0, return_index=True)
+        unique_idx = np.sort(unique_idx)
+        self.chn_coords = self.chn_coords[unique_idx]
+        self.chn_ind = self.chn_ind[unique_idx]
+
+        self.chn_min = np.min(self.chn_coords[:, 1])
+        self.chn_max = np.max(self.chn_coords[:, 1])
+        self.chn_diff = np.min(np.abs(np.diff(np.unique(self.chn_coords[:, 1]))))
+        self.chn_full = np.arange(
+            self.chn_min, self.chn_max + self.chn_diff, self.chn_diff
+        )
 
         chn_sort = np.argsort(self.chn_coords[:, 1])
         self.chn_coords = self.chn_coords[chn_sort]
@@ -448,11 +479,10 @@ class PlotData:
             data_probe = None
             return data_img, data_probe
 
-        _rms = np.take(
+        _rms = _safe_take(
             self.data[f"rms_{format}"]["rms"],
             self.chn_ind,
             axis=1,
-            mode="clip",
         )
         _, self.chn_depth, chn_count = np.unique(
             self.chn_coords[:, 1], return_index=True, return_counts=True
@@ -464,20 +494,20 @@ class PlotData:
             return np.mean([a[self.chn_depth], a[self.chn_depth_eq]], axis=0)
 
         def get_median(a):
-            return np.median(a)
+            return np.nanmedian(a)
 
         def median_subtract(a):
-            return a - np.median(a)
+            return a - np.nanmedian(a)
 
         img = np.apply_along_axis(avg_chn_depth, 1, _rms * 1e6)
-        median = np.mean(np.apply_along_axis(get_median, 1, img))
+        median = np.nanmean(np.apply_along_axis(get_median, 1, img))
         # Medium subtract to remove bands, but add back average median so values make sense
         img = np.apply_along_axis(median_subtract, 1, img) + median
 
         img_full = np.full((img.shape[0], self.chn_full.shape[0]), np.nan)
         img_full[:, self.idx_full] = img
 
-        levels = np.quantile(img, [0.1, 0.9])
+        levels = np.nanquantile(img, [0.1, 0.9])
         xscale = (
             self.data[f"rms_{format}"]["timestamps"][-1]
             - self.data[f"rms_{format}"]["timestamps"][0]
@@ -507,13 +537,12 @@ class PlotData:
 
         # Probe data
         rms_avg = (
-            np.take(
+            _safe_take(
                 np.mean(self.data[f"rms_{format}"]["rms"], axis=0),
                 indices=self.chn_ind,
-                mode="clip",
-            )
+                )
         ) * 1e6
-        probe_levels = np.quantile(rms_avg, [0.1, 0.9])
+        probe_levels = np.nanquantile(rms_avg, [0.1, 0.9])
         probe_img, probe_scale, probe_offset = self.arrange_channels2banks(rms_avg)
 
         data_probe = {
@@ -591,14 +620,23 @@ class PlotData:
 
             return data_img, data_probe
         else:
-            # Power spectrum image
-            freq_range = [0, 300]
+            # Power spectrum image — log frequency, per-freq normalized
+            freq_range = [0.5, 300]  # start at delta lower edge
             freq_idx = np.where(
                 (self.data["psd_lf"]["freqs"] >= freq_range[0])
                 & (self.data["psd_lf"]["freqs"] < freq_range[1])
             )[0]
-            _lfp = np.take(self.data["psd_lf"]["power"][freq_idx], self.chn_ind, axis=1)
-            _lfp_dB = 10 * np.log10(_lfp)
+            _lfp = _safe_take(
+                self.data["psd_lf"]["power"][freq_idx],
+                self.chn_ind,
+                axis=1,
+                )
+            _lfp_dB = 10 * np.log10(np.maximum(_lfp, 1e-20))
+
+            # Per-frequency normalization: subtract channel median
+            # to remove 1/f slope and highlight spatial variation
+            _lfp_dB -= np.median(_lfp_dB, axis=1, keepdims=True)
+
             _, self.chn_depth, chn_count = np.unique(
                 self.chn_coords[:, 1], return_index=True, return_counts=True
             )
@@ -606,25 +644,56 @@ class PlotData:
             self.chn_depth_eq[np.where(chn_count == 2)] += 1
 
             def avg_chn_depth(a):
-                return np.mean([a[self.chn_depth], a[self.chn_depth_eq]], axis=0)
+                return np.mean(
+                    [a[self.chn_depth], a[self.chn_depth_eq]], axis=0
+                )
 
             img = np.apply_along_axis(avg_chn_depth, 1, _lfp_dB)
-            img_full = np.full((img.shape[0], self.chn_full.shape[0]), np.nan)
-            img_full[:, self.idx_full] = img
 
-            levels = np.quantile(img, [0.1, 0.9])
-            xscale = (freq_range[-1] - freq_range[0]) / img_full.shape[0]
+            # Resample to log-spaced frequency axis
+            freqs_linear = self.data["psd_lf"]["freqs"][freq_idx]
+            freqs_log = np.geomspace(
+                freq_range[0], freq_range[1], num=img.shape[0]
+            )
+            from scipy.interpolate import interp1d
+
+            interp_fn = interp1d(
+                freqs_linear,
+                img,
+                axis=0,
+                kind="linear",
+                bounds_error=False,
+                fill_value=np.nan,
+            )
+            img_log = interp_fn(freqs_log)
+
+            img_full = np.full(
+                (img_log.shape[0], self.chn_full.shape[0]), np.nan
+            )
+            img_full[:, self.idx_full] = img_log
+
+            finite_vals = img_log[np.isfinite(img_log)]
+            if len(finite_vals) > 0:
+                max_abs = np.quantile(np.abs(finite_vals), 0.95)
+            else:
+                max_abs = 1.0
+            levels = np.array([-max_abs, max_abs])
+
+            # Map to log10(freq) coordinates
+            log_min = np.log10(freq_range[0])
+            log_max = np.log10(freq_range[1])
+            xscale = (log_max - log_min) / img_full.shape[0]
             yscale = (self.chn_max - self.chn_min) / img_full.shape[1]
 
             data_img = {
                 "img": img_full,
                 "scale": np.array([xscale, yscale]),
                 "levels": levels,
-                "offset": np.array([0, self.chn_min]),
-                "cmap": "viridis",
-                "xrange": np.array([freq_range[0], freq_range[-1]]),
-                "xaxis": "Frequency (Hz)",
-                "title": "PSD (dB)",
+                "offset": np.array([log_min, self.chn_min]),
+                "cmap": "RdBu_r",
+                "xrange": np.array([log_min, log_max]),
+                "xaxis": "Frequency (log10 Hz)",
+                "title": "PSD deviation (dB)",
             }
 
             # Power spectrum in bands on probe
@@ -633,12 +702,13 @@ class PlotData:
                     (self.data["psd_lf"]["freqs"] >= freq[0])
                     & (self.data["psd_lf"]["freqs"] < freq[1])
                 )[0]
-                lfp_avg = np.mean(self.data["psd_lf"]["power"][freq_idx], axis=0)[
-                    self.chn_ind
-                ]
-                lfp_avg_dB = 10 * np.log10(lfp_avg)
-                probe_img, probe_scale, probe_offset = self.arrange_channels2banks(
-                    lfp_avg_dB
+                lfp_avg = _safe_take(
+                    np.mean(self.data["psd_lf"]["power"][freq_idx], axis=0),
+                    self.chn_ind,
+                        )
+                lfp_avg_dB = 10 * np.log10(np.maximum(lfp_avg, 1e-20))
+                probe_img, probe_scale, probe_offset = (
+                    self.arrange_channels2banks(lfp_avg_dB)
                 )
                 probe_levels = np.quantile(lfp_avg_dB, [0.1, 0.9])
 
@@ -650,7 +720,9 @@ class PlotData:
                         "levels": probe_levels,
                         "cmap": "viridis",
                         "xaxis": "Time (s)",
-                        "xrange": np.array([0 * BNK_SIZE, (self.N_BNK) * BNK_SIZE]),
+                        "xrange": np.array(
+                            [0 * BNK_SIZE, (self.N_BNK) * BNK_SIZE]
+                        ),
                         "title": f"{freq[0]} - {freq[1]} Hz (dB)",
                     }
                 }
@@ -681,25 +753,10 @@ class PlotData:
         # TODO: Generate LFP correlation data, together with other custom metrics like spike waveform statistics,
         #   automatically in the IBL pipeline, and use a json file to specify what we want to add as plugins to the GUI.
 
-        # Locate the CO /data folder (or couterpart outside of CO)
-        co_data_folder = self.probe_path.parents[3]
-        probe_name = self.probe_path.parts[-1]
-
-        # Get the session prefix (subject + date). We should exclude the session time since in some cases LFP (ephys PC)
-        # has different time stamps as the ephys session (metadata from behavior PC)
-        subject_date = self.probe_path.parts[-2].rsplit("_", 1)[0]
-
-        # Looking for all folders that match the subject_date in the CO data folder
-        # This will capture LFP correlation data either in a separate attached asset or in the same spike sorting folder
-        this_session_same_folder = tuple(co_data_folder.glob(f"*/*/{subject_date}*"))
-        this_session_seperate_asset = tuple(co_data_folder.glob(f"*/{subject_date}*"))
-        this_session_folders = this_session_same_folder + this_session_seperate_asset
-
-        # Inside each this_session_folders, looking for a folder named "band_corr" under the {probe name}
-        for session_folder in this_session_folders:
-            lfp_corr_folder = session_folder.joinpath(probe_name, "band_corr")
-            if lfp_corr_folder.exists():
-                return lfp_corr_folder
+        lfp_corr_folder = self.probe_path / "band_corr"
+        logger.debug(f"LFP corr search: {lfp_corr_folder}")
+        if lfp_corr_folder.exists():
+            return lfp_corr_folder
 
     def get_lfp_correlation_data_img(self):
         """Load LFP correlation data from the band_corr folder."""
@@ -709,30 +766,159 @@ class PlotData:
         if lfp_corr_folder is None:
             return {}
 
-        # Load all npy files in the folder into the data dictionary
-        lfp_corr_files = list(lfp_corr_folder.glob("*.npy"))
+        # Load channel_blocks.json if available (for depth mapping)
+        import json
+
+        channel_blocks = None
+        cb_path = lfp_corr_folder / "channel_blocks.json"
+        if cb_path.exists():
+            try:
+                with open(cb_path) as f:
+                    channel_blocks = json.load(f)
+                logger.debug(
+                    f"Loaded channel_blocks.json: "
+                    f"{len(channel_blocks.get('blocks', []))} blocks"
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to load channel_blocks.json",
+                    exc_info=True,
+                )
+
+        # Load only real-valued correlation files for the current shank
+        shank_glob = f"*_shank{self.shank_idx + 1}_mean_corr.npy"
+        lfp_corr_files = list(lfp_corr_folder.glob(shank_glob))
+        if not lfp_corr_files:
+            # Fall back to unsharded files (single-shank probes)
+            lfp_corr_files = list(lfp_corr_folder.glob("*_mean_corr.npy"))
         if not lfp_corr_files:
             logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
             return {}
 
         all_data = {}
+        import re
+
+        _shank_suffix = re.compile(r"_shank\d+$")
         for file in lfp_corr_files:
             # Extract the band name from the file name
-            band_name = file.stem.replace("_mean_corr", "")
+            band_name = _shank_suffix.sub("", file.stem.replace("_mean_corr", ""))
             this_corr = np.load(file)
 
-            scale = (self.chn_max - self.chn_min) / this_corr.shape[0]
-            max_corr = np.quantile(np.abs(this_corr), 0.95)  # Exclude extreme values
+            logger.debug(
+                f"LFP corr file: {file.name}, shape: {this_corr.shape}, "
+                f"range: [{this_corr.min():.4f}, {this_corr.max():.4f}]"
+            )
+
+            # Zero out diagonal (self-correlation is trivially 1)
+            np.fill_diagonal(this_corr, 0.0)
+
+            # Use channel coordinates for depth mapping if matrix
+            # size matches the current shank's channel count
+            n_matrix = this_corr.shape[0]
+            if n_matrix == len(self.chn_coords):
+                # Matrix rows correspond to channels — use actual
+                # depth range from the (sorted) channel coordinates
+                depths = self.chn_coords[:, 1]
+                depth_min = np.min(depths)
+                depth_max = np.max(depths)
+                depth_range = max(depth_max - depth_min, 1.0)
+                scale = depth_range / n_matrix
+                offset_y = depth_min
+            else:
+                # Fallback: linear mapping over full probe range
+                scale = (self.chn_max - self.chn_min) / n_matrix
+                offset_y = self.chn_min
+
+            # Set color range from 95th percentile of off-diagonal values
+            mask = ~np.eye(n_matrix, dtype=bool)
+            max_corr = np.quantile(np.abs(this_corr[mask]), 0.95)
+            logger.debug(
+                f"LFP corr {band_name}: n={n_matrix}, "
+                f"off-diag q95={max_corr:.4f}, scale={scale:.4f}"
+            )
             all_data[band_name] = {
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
                 "levels": np.array([-max_corr, max_corr]),
-                "offset": np.array([0, self.chn_min]),
-                "xrange": np.array([self.chn_min, self.chn_max]),
+                "offset": np.array([0, offset_y]),
+                "xrange": np.array([offset_y, offset_y + scale * n_matrix]),
                 "cmap": "RdBu_r",
                 "title": f"LFP correlation ({band_name})",
                 "xaxis": "Distance from probe tip (um)",
             }
+
+        # Load complex coherency files and render as HSV phase images
+        coh_glob = f"*_shank{self.shank_idx + 1}_coherency.npy"
+        coherency_files = list(lfp_corr_folder.glob(coh_glob))
+        if not coherency_files:
+            coherency_files = list(lfp_corr_folder.glob("*_coherency.npy"))
+        for file in coherency_files:
+            try:
+                band_name = _shank_suffix.sub(
+                    "", file.stem.replace("_coherency", "")
+                )
+                coh = np.load(file)
+
+                magnitude = np.abs(coh)
+                phase = np.angle(coh)  # radians, [-pi, pi]
+
+                # Scale saturation: map 95th percentile of
+                # off-diagonal magnitude to full saturation
+                off_diag = ~np.eye(coh.shape[0], dtype=bool)
+                max_mag = np.quantile(magnitude[off_diag], 0.95)
+                if max_mag > 0:
+                    magnitude = magnitude / max_mag
+
+                # HSV: hue = phase (0 rad → red),
+                # saturation = scaled magnitude, value = 1.
+                hue = (phase / (2 * np.pi)) % 1.0
+                sat = np.clip(magnitude, 0, 1)
+                val = np.ones_like(hue)
+
+                hsv = np.stack([hue, sat, val], axis=-1)
+                from matplotlib.colors import hsv_to_rgb
+
+                rgb = hsv_to_rgb(hsv)
+                rgba = np.ones(
+                    (*rgb.shape[:2], 4), dtype=np.float32
+                )
+                rgba[:, :, :3] = rgb.astype(np.float32)
+
+                # Zero out diagonal (self-coherency is trivially 1)
+                np.fill_diagonal(rgba[:, :, 3], 0.0)
+
+                # Depth mapping — same logic as correlation
+                n_coh = coh.shape[0]
+                if n_coh == len(self.chn_coords):
+                    depths = self.chn_coords[:, 1]
+                    d_min = np.min(depths)
+                    d_max = np.max(depths)
+                    d_range = max(d_max - d_min, 1.0)
+                    coh_scale = d_range / n_coh
+                    coh_offset = d_min
+                else:
+                    coh_scale = (
+                        (self.chn_max - self.chn_min) / n_coh
+                    )
+                    coh_offset = self.chn_min
+
+                all_data[f"{band_name}_phase"] = {
+                    "img": (rgba * 255).astype(np.uint8),
+                    "scale": np.array([coh_scale, coh_scale]),
+                    "levels": None,
+                    "offset": np.array([0, coh_offset]),
+                    "xrange": np.array(
+                        [coh_offset, coh_offset + coh_scale * n_coh]
+                    ),
+                    "cmap": None,
+                    "title": f"LFP coherency phase ({band_name})",
+                    "xaxis": "Distance from probe tip (um)",
+                }
+            except Exception:
+                logger.warning(
+                    f"Failed to load coherency file: {file}",
+                    exc_info=True,
+                )
 
         def _sort_lfp_correlation_keys(all_data):
             """Sort LFP correlation data keys by epoch and frequency band."""
@@ -764,8 +950,8 @@ class PlotData:
             return sorted_dict
 
         data_img_lfp_corr = _sort_lfp_correlation_keys(all_data)
-        logger.info(
-            f"LFP correlation data loaded with {len(data_img_lfp_corr)} epoch_bands"
+        logger.debug(
+            f"LFP correlation data loaded: {len(data_img_lfp_corr)} epoch_bands"
         )
         return data_img_lfp_corr
 
@@ -923,39 +1109,27 @@ class PlotData:
             bnk_idx = np.where(self.chn_coords[:, 0] == x)[0]
 
             bnk_ycoords = self.chn_coords[bnk_idx, 1]
-            bnk_diff = np.min(np.abs(np.diff(bnk_ycoords)))
+            bnk_ycoords_unique = np.unique(bnk_ycoords)
+            bnk_diff = np.min(np.abs(np.diff(bnk_ycoords_unique)))
+            logger.debug(
+                f"x={x}: bnk_diff={bnk_diff}, chn_diff={self.chn_diff}, "
+                f"n_chns={len(bnk_ycoords)}"
+            )
+            bnk_full = np.arange(
+                np.min(bnk_ycoords),
+                np.max(bnk_ycoords) + bnk_diff,
+                bnk_diff,
+            )
+            _bnk_vals = np.full((bnk_full.shape[0]), np.nan)
+            idx_full = np.where(np.isin(bnk_full, bnk_ycoords_unique))[0]
+            _bnk_vals[idx_full] = data[bnk_idx]
 
-            # NP1.0 checkerboard
-            if bnk_diff != self.chn_diff:
-                bnk_full = np.arange(
-                    np.min(bnk_ycoords),
-                    np.max(bnk_ycoords) + bnk_diff,
-                    bnk_diff,
-                )
-                _bnk_vals = np.full((bnk_full.shape[0]), np.nan)
-                idx_full = np.where(np.isin(bnk_full, bnk_ycoords))
-                _bnk_vals[idx_full] = data[bnk_idx]
+            _bnk_data = _bnk_vals[np.newaxis, :]
 
-                # Detect where the nans are, whether it is odd or even
-                _bnk_data = _bnk_vals[np.newaxis, :]
-
-                _bnk_yscale = (self.chn_max - self.chn_min) / _bnk_data.shape[1]
-                _bnk_xscale = BNK_SIZE / _bnk_data.shape[0]
-
-                _bnk_yoffset = np.min(bnk_ycoords)
-                _bnk_xoffset = BNK_SIZE * iX
-
-            else:  # NP2.0
-                _bnk_vals = np.full((self.chn_full.shape[0]), np.nan)
-                idx_full = np.where(np.isin(self.chn_full, bnk_ycoords))
-                _bnk_vals[idx_full] = data[bnk_idx]
-
-                _bnk_data = _bnk_vals[np.newaxis, :]
-
-                _bnk_yscale = (self.chn_max - self.chn_min) / _bnk_data.shape[1]
-                _bnk_xscale = BNK_SIZE / _bnk_data.shape[0]
-                _bnk_yoffset = self.chn_min
-                _bnk_xoffset = BNK_SIZE * iX
+            _bnk_yscale = (self.chn_max - self.chn_min) / _bnk_data.shape[1]
+            _bnk_xscale = BNK_SIZE / _bnk_data.shape[0]
+            _bnk_yoffset = np.min(bnk_ycoords)
+            _bnk_xoffset = BNK_SIZE * iX
 
             bnk_data.append(_bnk_data)
             bnk_scale[iX, :] = np.array([_bnk_xscale, _bnk_yscale])

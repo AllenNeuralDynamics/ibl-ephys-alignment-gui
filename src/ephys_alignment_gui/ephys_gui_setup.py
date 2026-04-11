@@ -61,39 +61,39 @@ class Setup:
         scatter_drift = QtWidgets.QAction(
             "Amplitude", self, checkable=True, checked=False
         )
-        scatter_drift.triggered.connect(lambda: self.plot_scatter(self.scat_drift_data))
+        scatter_drift.triggered.connect(lambda: self.plot_scatter(self.session.scat_drift_data))
         scatter_fr = QtWidgets.QAction(
             "Cluster Amp vs Depth vs FR", self, checkable=True, checked=False
         )
-        scatter_fr.triggered.connect(lambda: self.plot_scatter(self.scat_fr_data))
+        scatter_fr.triggered.connect(lambda: self.plot_scatter(self.session.scat_fr_data))
         scatter_p2t = QtWidgets.QAction(
             "Cluster Amp vs Depth vs Duration",
             self,
             checkable=True,
             checked=False,
         )
-        scatter_p2t.triggered.connect(lambda: self.plot_scatter(self.scat_p2t_data))
+        scatter_p2t.triggered.connect(lambda: self.plot_scatter(self.session.scat_p2t_data))
         scatter_amp = QtWidgets.QAction(
             "Cluster FR vs Depth vs Amp", self, checkable=True, checked=False
         )
-        scatter_amp.triggered.connect(lambda: self.plot_scatter(self.scat_amp_data))
+        scatter_amp.triggered.connect(lambda: self.plot_scatter(self.session.scat_amp_data))
         img_fr = QtWidgets.QAction("Firing Rate", self, checkable=True, checked=True)
-        img_fr.triggered.connect(lambda: self.plot_image(self.img_fr_data))
+        img_fr.triggered.connect(lambda: self.plot_image(self.session.img_fr_data))
         img_spike_corr = QtWidgets.QAction(
             "Spike Correlation", self, checkable=True, checked=False
         )
         img_spike_corr.triggered.connect(
-            lambda: self.plot_image(self.img_spike_corr_data)
+            lambda: self.plot_image(self.session.img_spike_corr_data)
         )
         img_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=False)
-        img_rmsAP.triggered.connect(lambda: self.plot_image(self.img_rms_APdata))
+        img_rmsAP.triggered.connect(lambda: self.plot_image(self.session.img_rms_APdata))
         img_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        img_rmsLFP.triggered.connect(lambda: self.plot_image(self.img_rms_LFPdata))
+        img_rmsLFP.triggered.connect(lambda: self.plot_image(self.session.img_rms_LFPdata))
         img_LFP = QtWidgets.QAction("LFP Spectrum", self, checkable=True, checked=False)
-        img_LFP.triggered.connect(lambda: self.plot_image(self.img_lfp_data))
+        img_LFP.triggered.connect(lambda: self.plot_image(self.session.img_lfp_data))
 
         img_lfp_corr_list = []
-        for lfp_corr_key, img_data in self.img_lfp_corr_data.items():
+        for lfp_corr_key in self.session.img_lfp_corr_data:
             img_lfp_corr = QtWidgets.QAction(
                 f"LFP Correlation ({lfp_corr_key})",
                 self,
@@ -101,7 +101,9 @@ class Setup:
                 checked=False,
             )
             img_lfp_corr.triggered.connect(
-                lambda checked, img_data=img_data: self.plot_image(img_data)
+                lambda checked, key=lfp_corr_key: self.plot_image(
+                    self.session.img_lfp_corr_data[key]
+                )
             )
             img_lfp_corr_list.append(img_lfp_corr)
 
@@ -109,18 +111,18 @@ class Setup:
             "RMS AP Main Rec", self, checkable=True, checked=False
         )
         img_rmsAP_main.triggered.connect(
-            lambda: self.plot_image(self.img_rms_APdata_main)
+            lambda: self.plot_image(self.session.img_rms_APdata_main)
         )
         img_rmsLFP_main = QtWidgets.QAction(
             "RMS LFP Main Rec", self, checkable=True, checked=False
         )
         img_rmsLFP_main.triggered.connect(
-            lambda: self.plot_image(self.img_rms_LFPdata_main)
+            lambda: self.plot_image(self.session.img_rms_LFPdata_main)
         )
         img_LFP_main = QtWidgets.QAction(
             "LFP Spectrum Main Rec", self, checkable=True, checked=False
         )
-        img_LFP_main.triggered.connect(lambda: self.plot_image(self.img_lfp_data_main))
+        img_LFP_main.triggered.connect(lambda: self.plot_image(self.session.img_lfp_data_main))
 
         # Initialise with firing rate 2D plot
         self.img_init = img_fr
@@ -161,20 +163,20 @@ class Setup:
         img_options.addAction(scatter_amp)
         self.img_options_group.addAction(scatter_amp)
 
-        raw_type = list(self.img_raw_data.keys())
+        raw_type = list(self.session.img_raw_data.keys())
         for raw in raw_type:
             img = QtWidgets.QAction(raw, self, checkable=True, checked=False)
             img.triggered.connect(
-                lambda checked, item=raw: self.plot_image(self.img_raw_data[item])
+                lambda checked, item=raw: self.plot_image(self.session.img_raw_data[item])
             )
             img_options.addAction(img)
             self.img_options_group.addAction(img)
 
-        stim_type = list(self.img_stim_data.keys())
+        stim_type = list(self.session.img_stim_data.keys())
         for stim in stim_type:
             img = QtWidgets.QAction(stim, self, checkable=True, checked=False)
             img.triggered.connect(
-                lambda checked, item=stim: self.plot_image(self.img_stim_data[item])
+                lambda checked, item=stim: self.plot_image(self.session.img_stim_data[item])
             )
             img_options.addAction(img)
             self.img_options_group.addAction(img)
@@ -188,9 +190,9 @@ class Setup:
         # LINE PLOTS MENU BAR
         # Define all 1D line plot options
         line_fr = QtWidgets.QAction("Firing Rate", self, checkable=True, checked=True)
-        line_fr.triggered.connect(lambda: self.plot_line(self.line_fr_data))
+        line_fr.triggered.connect(lambda: self.plot_line(self.session.line_fr_data))
         line_amp = QtWidgets.QAction("Amplitude", self, checkable=True, checked=False)
-        line_amp.triggered.connect(lambda: self.plot_line(self.line_amp_data))
+        line_amp.triggered.connect(lambda: self.plot_line(self.session.line_amp_data))
         # Initialise with firing rate 1D plot
         self.line_init = line_fr
         # Add menu bar for 1D line plot options
@@ -212,9 +214,9 @@ class Setup:
         # Define all 2D probe plot options
         # In two stages 1) RMS plots manually, 2) frequency plots in for loop
         probe_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=True)
-        probe_rmsAP.triggered.connect(lambda: self.plot_probe(self.probe_rms_APdata))
+        probe_rmsAP.triggered.connect(lambda: self.plot_probe(self.session.probe_rms_APdata))
         probe_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        probe_rmsLFP.triggered.connect(lambda: self.plot_probe(self.probe_rms_LFPdata))
+        probe_rmsLFP.triggered.connect(lambda: self.plot_probe(self.session.probe_rms_LFPdata))
 
         # Initialise with rms of AP probe plot
         self.probe_init = probe_rmsAP
@@ -240,19 +242,19 @@ class Setup:
             band = f"{freq[0]} - {freq[1]} Hz"
             probe = QtWidgets.QAction(band, self, checkable=True, checked=False)
             probe.triggered.connect(
-                lambda checked, item=band: self.plot_probe(self.probe_lfp_data[item])
+                lambda checked, item=band: self.plot_probe(self.session.probe_lfp_data[item])
             )
             probe_options.addAction(probe)
             self.probe_options_group.addAction(probe)
 
-        sub_types = list(self.probe_rfmap.keys())
+        sub_types = list(self.session.probe_rfmap.keys())
         for sub in sub_types:
             probe = QtWidgets.QAction(
                 f"RF Map - {sub}", self, checkable=True, checked=False
             )
             probe.triggered.connect(
                 lambda checked, item=sub: self.plot_probe(
-                    self.probe_rfmap[item], bounds=self.rfmap_boundaries
+                    self.session.probe_rfmap[item], bounds=self.session.rfmap_boundaries
                 )
             )
             probe_options.addAction(probe)
@@ -525,17 +527,17 @@ class Setup:
         # Define all coronal slice plot options
         # These are always present, regardless of histology alignment
         slice_ccf = QtWidgets.QAction("CCF", self, checkable=True, checked=False)
-        slice_ccf.triggered.connect(lambda: self.plot_slice(self.slice_data, "ccf"))
+        slice_ccf.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "ccf"))
         slice_label = QtWidgets.QAction(
             "Annotation", self, checkable=True, checked=False
         )
-        slice_label.triggered.connect(lambda: self.plot_slice(self.slice_data, "label"))
-        if self.fp_slice_data is not None:
+        slice_label.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "label"))
+        if self.session.fp_slice_data is not None:
             fp_slice_label = QtWidgets.QAction(
                 "Annotation FP", self, checkable=True, checked=False
             )
             fp_slice_label.triggered.connect(
-                lambda: self.plot_slice(self.fp_slice_data, "label")
+                lambda: self.plot_slice(self.session.fp_slice_data, "label")
             )
         if not self.offline:
             slice_hist_cb = QtWidgets.QAction(
@@ -545,7 +547,7 @@ class Setup:
                 checked=False,
             )
             slice_hist_cb.triggered.connect(
-                lambda: self.plot_slice(self.slice_data, "hist_cb")
+                lambda: self.plot_slice(self.session.slice_data, "hist_cb")
             )
 
         # Add menu bar for slice plot
@@ -557,7 +559,7 @@ class Setup:
         self.slice_options_group.addAction(slice_ccf)
         slice_options.addAction(slice_label)
         self.slice_options_group.addAction(slice_label)
-        if self.fp_slice_data is not None:
+        if self.session.fp_slice_data is not None:
             slice_options.addAction(fp_slice_label)
             self.slice_options_group.addAction(fp_slice_label)
 
@@ -569,7 +571,7 @@ class Setup:
         self.slice_init = slice_ccf
 
         # These are accessed sepperatly so have conditional activation
-        for key in self.slice_data.keys():
+        for key in self.session.slice_data.keys():
             if key in ["ccf", "label", "scale", "offset"]:
                 continue
             else:
@@ -577,7 +579,7 @@ class Setup:
                     key, self, checkable=True, checked=False
                 )
                 this_slice_action.triggered.connect(
-                    lambda checked, item=key: self.plot_slice(self.slice_data, item)
+                    lambda checked, item=key: self.plot_slice(self.session.slice_data, item)
                 )
                 slice_options.addAction(this_slice_action)
                 self.slice_options_group.addAction(this_slice_action)
@@ -829,16 +831,16 @@ class Setup:
         # 2D scatter/ image plot
         self.fig_img = pg.PlotItem()
         self.fig_img.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
         self.fig_img.setMouseEnabled(x=False, y=True)
         self.probe_tip_lines.append(
-            self.fig_img.addLine(y=self.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_img.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_img.addLine(y=self.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_img.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_img, "bottom")
         self.fig_data_ax = self.set_axis(
@@ -856,15 +858,15 @@ class Setup:
         self.fig_line = pg.PlotItem()
         self.fig_line.setMouseEnabled(x=False, y=True)
         self.fig_line.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
         self.probe_tip_lines.append(
-            self.fig_line.addLine(y=self.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_line.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_line.addLine(y=self.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_line.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_line, "bottom")
         self.set_axis(self.fig_line, "left", show=False)
@@ -874,15 +876,15 @@ class Setup:
         self.fig_probe.setMouseEnabled(x=False, y=False)
         self.fig_probe.setMaximumWidth(50)
         self.fig_probe.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
         self.probe_tip_lines.append(
-            self.fig_probe.addLine(y=self.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_probe.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_probe.addLine(y=self.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_probe.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_probe, "bottom", pen="w")
         self.set_axis(self.fig_probe, "left", show=False)
@@ -920,8 +922,8 @@ class Setup:
         self.fig_hist.setContentsMargins(0, 0, 0, 0)
         self.fig_hist.setMouseEnabled(x=False)
         self.fig_hist.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
         self.set_axis(self.fig_hist, "bottom", pen="w")
@@ -957,8 +959,8 @@ class Setup:
         self.fig_hist_ref = pg.PlotItem()
         self.fig_hist_ref.setMouseEnabled(x=False)
         self.fig_hist_ref.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
         self.set_axis(self.fig_hist_ref, "bottom", pen="w")
@@ -977,8 +979,8 @@ class Setup:
         self.fig_hist_extra_yaxis.setMouseEnabled(x=False, y=False)
         self.fig_hist_extra_yaxis.setMaximumWidth(2)
         self.fig_hist_extra_yaxis.setYRange(
-            min=self.probe_tip - self.probe_extra,
-            max=self.probe_top + self.probe_extra,
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
 
@@ -1017,12 +1019,12 @@ class Setup:
         self.fig_fit.setMouseEnabled(x=False, y=False)
         self.fig_fit_exporter = pg.exporters.ImageExporter(self.fig_fit.plotItem)
         self.fig_fit.sigDeviceRangeChanged.connect(self.on_fig_size_changed)
-        self.fig_fit.setXRange(min=self.view_total[0], max=self.view_total[1])
-        self.fig_fit.setYRange(min=self.view_total[0], max=self.view_total[1])
+        self.fig_fit.setXRange(min=self.session.view_total[0], max=self.session.view_total[1])
+        self.fig_fit.setYRange(min=self.session.view_total[0], max=self.session.view_total[1])
         self.set_axis(self.fig_fit, "bottom", label="Original coordinates (um)")
         self.set_axis(self.fig_fit, "left", label="New coordinates (um)")
         plot = pg.PlotCurveItem()
-        plot.setData(x=self.depth, y=self.depth, pen=self.kpen_dot)
+        plot.setData(x=self.session.depth, y=self.session.depth, pen=self.kpen_dot)
         self.fit_plot = pg.PlotCurveItem(pen=self.bpen_solid)
         self.fit_scatter = pg.ScatterPlotItem(size=7, symbol="o", brush="w", pen="b")
         self.fit_plot_lin = pg.PlotCurveItem(pen=self.rpen_dot)

@@ -318,8 +318,9 @@ class LoadDataLocal:
     def set_input_paths(self, input_path: Path, we_are_in_code_ocean: bool) -> None:
         if not we_are_in_code_ocean:
             raise RuntimeError("Only Code Ocean path resolution is supported currently")
+        logger.info(f"set_input_paths: new={input_path}, current={self.input_path}")
         if self.input_path == input_path:
-            logger.debug("Input path already set, skipping reset")
+            logger.info("Input path already set, skipping reset")
             return
         self.we_are_in_code_ocean = we_are_in_code_ocean
         self.input_path = input_path
@@ -423,6 +424,7 @@ class LoadDataLocal:
 
     def get_ephys_data(self, shank_idx, input_path: Path | None = None):
         input_path = self._check_input_path_arg(input_path)
+        logger.info(f"get_ephys_data: loading from {input_path}, shank_idx={shank_idx}")
         if self.chn_coords_all is None:
             raise RuntimeError("Must call load_channel_info() first")
         chn_x = np.unique(self.chn_coords_all[:, 0])
