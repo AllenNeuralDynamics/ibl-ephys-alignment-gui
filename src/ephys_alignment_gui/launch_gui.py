@@ -1724,8 +1724,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session = None
 
         # Reset persistent widgets that aren't owned by the session
-        self.ax_hist.setTicks([])
-        self.ax_hist_ref.setTicks([])
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
