@@ -752,59 +752,52 @@ class LoadDataLocal:
 
     def get_perpendicular_slice_image(
         self,
-        track_samples_ras,
-        channel_name="histology_registration",
-        perpendicular_extent_um=100,
-    ):
+        ephysalign,
+        feature_ref: NDArray,
+        track_ref: NDArray,
+        feature_grid_m: NDArray,
+        channel_name: str = "histology_registration",
+        extent_m: float = 500e-6,
+        n_perp_samples: int = 41,
+        sigma_samples: float = 2.0,
+    ) -> NDArray[np.float64]:
+        """Build the perpendicular slice image for the current alignment.
+
+        See :func:`ephys_alignment_gui.perpendicular_slice.build_perpendicular_slice`
+        for the full contract. This wrapper handles channel resolution (lazy
+        loading via :meth:`_load_and_slice_channel`) and sources the atlas
+        volume that matches the blessed orientation used by the rest of the
+        GUI.
+
+        Returns
+        -------
+        NDArray (n_perp_samples, len(feature_grid_m))
+            NaN for samples that fall outside the rotated histology volume.
         """
-        Generate 2D image by sampling histology perpendicular to probe at each depth.
+        from ephys_alignment_gui.perpendicular_slice import build_perpendicular_slice
 
-        Parameters:
-        - track_interpolation_ras: track space coordinats to sample (N_depths, 3)
-        - channel_name: Which histology channel to sample
+        if self.brain_atlas is None:
+            raise RuntimeError("brain_atlas not yet loaded")
 
-        Returns:
-        - perp_image: 2D array (N_depths, N_perp_samples)
-          Shape: rows=depth positions, cols=perpendicular samples
-        - extent_um: Perpendicular extent in μm (for X-axis: ±extent_um)
-        """
-        extent = perpendicular_extent_um * 1e-6  # Convert to meters
-        n_samples = int(2e-6 * perpendicular_extent_um / self.brain_atlas.bc.dxyz[0])
-        actual_extent = n_samples * self.brain_atlas.bc.dxyz[0] / 2
-
-        perp_image = np.zeros((len(track_samples_ras), n_samples))
-
-        # Get histology image (trigger lazy load if needed)
+        # Ensure the requested channel is cached; _load_and_slice_channel is
+        # idempotent and already applies the rotation to lazy channels.
         if channel_name not in self.histology_images:
             self._load_and_slice_channel(channel_name)
         hist_image = self.histology_images[channel_name]
-        hist_arr = sitk.GetArrayViewFromImage(hist_image)
+        volume_arr = sitk.GetArrayFromImage(hist_image)
 
-        for i, point in enumerate(track_samples_ras):
-            # Compute probe direction
-            if i < len(track_samples_ras) - 1:
-                vector = track_samples_ras[i + 1] - point
-            else:
-                vector = point - track_samples_ras[i - 1]
-            vector = vector / np.linalg.norm(vector)
-
-            # Perpendicular vector (ML-DV plane, parallel to coronal)
-            vector_perp = np.array([-vector[2], 0, vector[0]])
-            vector_perp = vector_perp / np.linalg.norm(vector_perp)
-            if vector_perp[0] < 0:
-                vector_perp = -vector_perp
-
-            # Sample along perpendicular (-extent to +extent)
-            distances = np.linspace(-extent, extent, n_samples)
-            perp_points = point + distances[:, np.newaxis] * vector_perp
-
-            # Convert to indices and sample
-            indices = self.brain_atlas.physical_points_to_indices(
-                perp_points, round=True, mode="clip"
-            )
-            perp_image[i, :] = hist_arr[indices[:, 0], indices[:, 1], indices[:, 2]]
-
-        return perp_image, actual_extent
+        return build_perpendicular_slice(
+            volume_arr=volume_arr,
+            brain_atlas=self.brain_atlas,
+            track_interpolation_ras=ephysalign.track_interpolation_ras,
+            ephys_depths_along_track=ephysalign.ephys_depths_along_track,
+            feature_ref=np.asarray(feature_ref, dtype=np.float64),
+            track_ref=np.asarray(track_ref, dtype=np.float64),
+            feature_grid_m=np.asarray(feature_grid_m, dtype=np.float64),
+            extent_m=extent_m,
+            n_perp_samples=n_perp_samples,
+            sigma_samples=sigma_samples,
+        )
 
     def get_region_description(self, region_idx):
         struct_idx = np.where(self.allen["id"] == region_idx)[0][0]
