@@ -47,7 +47,7 @@ class ProbeSession:
         self.hist_bound_status: bool = True
 
         # -- Reference lines / points --
-        self.lines_features: NDArray[Any] = np.empty((0, 3))
+        self.lines_features: NDArray[Any] = np.empty((0, 4))
         self.lines_tracks: NDArray[Any] = np.empty((0, 1))
         self.points: NDArray[Any] = np.empty((0, 1))
         self.y_scale: float = 1
@@ -65,6 +65,16 @@ class ProbeSession:
         self.slice_chns: list[Any] = []
         self.slice_tip: Any = None
         self.probe_bounds: list[Any] = []
+        self.hist_label_items: list[Any] = []
+        self.hist_ref_label_items: list[Any] = []
+
+        # -- Perpendicular slice plot items --
+        self.perp_image_item: Any = None
+        self.perp_probe_line: Any = None
+        self.perp_channel_dots: Any = None
+        self.perp_tip_marker: Any = None
+        self.slice_color_bar: Any = None
+        self.slice_hist_levels: Any = None
 
         # -- Popups --
         self.cluster_popups: list[Any] = []
@@ -227,7 +237,7 @@ class ProbeSession:
                 figures["probe"].removeItem(plot)
             for cbar in self.probe_cbars:
                 figures["probe"].removeItem(cbar)
-        for key in ("slice", "hist", "hist_ref", "scale"):
+        for key in ("slice", "hist", "hist_ref", "hist_perp", "scale"):
             fig = figures.get(key)
             if fig is not None:
                 fig.clear()
@@ -242,6 +252,8 @@ class ProbeSession:
                 figures["line"].removeItem(line_feature[1])
             if "probe" in figures:
                 figures["probe"].removeItem(line_feature[2])
+            if "hist_perp" in figures and len(line_feature) > 3:
+                figures["hist_perp"].removeItem(line_feature[3])
             if "hist" in figures:
                 figures["hist"].removeItem(line_track[0])
             if "fit" in figures:

@@ -942,7 +942,7 @@ class Setup:
         replace_axis(self.fig_hist)
         self.ax_hist = self.set_axis(self.fig_hist, "left", pen=None)
         self.ax_hist.setWidth(0)
-        self.ax_hist.setStyle(tickTextOffset=-70)
+        # Region labels will be added as TextItems in plot_histology()
 
         self.fig_scale = pg.PlotItem()
         self.fig_scale.setMaximumWidth(50)
@@ -977,7 +977,18 @@ class Setup:
         replace_axis(self.fig_hist_ref, orientation="right", pos=(2, 2))
         self.ax_hist_ref = self.set_axis(self.fig_hist_ref, "right", pen=None)
         self.ax_hist_ref.setWidth(0)
-        self.ax_hist_ref.setStyle(tickTextOffset=-70)
+        # Region labels will be added as TextItems in plot_histology_ref()
+
+        # Perpendicular histology slice plot
+        self.fig_hist_perp = pg.PlotItem()
+        self.fig_hist_perp.setMouseEnabled(x=False)
+        self.fig_hist_perp.setYRange(
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
+            padding=self.pad,
+        )
+        self.set_axis(self.fig_hist_perp, "left", show=False)
+        self.fig_hist_perp.setYLink(self.fig_hist)
 
         self.fig_hist_area = pg.GraphicsLayoutWidget()
         self.fig_hist_area.setMouseTracking(True)
@@ -998,15 +1009,17 @@ class Setup:
         self.ax_hist2.setWidth(10)
 
         self.fig_hist_layout = pg.GraphicsLayout()
-        self.fig_hist_layout.addItem(self.fig_scale_cb, 0, 0, 1, 4)
+        self.fig_hist_layout.addItem(self.fig_scale_cb, 0, 0, 1, 5)  # Span all 5 columns
         self.fig_hist_layout.addItem(self.fig_hist_extra_yaxis, 1, 0)
         self.fig_hist_layout.addItem(self.fig_hist, 1, 1)
-        self.fig_hist_layout.addItem(self.fig_scale, 1, 2)
-        self.fig_hist_layout.addItem(self.fig_hist_ref, 1, 3)
+        self.fig_hist_layout.addItem(self.fig_hist_perp, 1, 2)  # NEW: Perpendicular slice
+        self.fig_hist_layout.addItem(self.fig_scale, 1, 3)        # Moved from column 2
+        self.fig_hist_layout.addItem(self.fig_hist_ref, 1, 4)     # Moved from column 3
         self.fig_hist_layout.layout.setColumnStretchFactor(0, 1)
         self.fig_hist_layout.layout.setColumnStretchFactor(1, 4)
-        self.fig_hist_layout.layout.setColumnStretchFactor(2, 1)
-        self.fig_hist_layout.layout.setColumnStretchFactor(3, 4)
+        self.fig_hist_layout.layout.setColumnStretchFactor(2, 3)  # Perpendicular slice
+        self.fig_hist_layout.layout.setColumnStretchFactor(3, 1)  # Scale
+        self.fig_hist_layout.layout.setColumnStretchFactor(4, 4)  # Ref
         self.fig_hist_layout.layout.setRowStretchFactor(0, 1)
         self.fig_hist_layout.layout.setRowStretchFactor(1, 10)
         self.fig_hist_area.addItem(self.fig_hist_layout)
