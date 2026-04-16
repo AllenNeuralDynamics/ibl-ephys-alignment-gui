@@ -137,3 +137,8 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
