@@ -5,6 +5,7 @@ import SimpleITK as sitk
 from iblatlas.atlas import BrainAtlas, BrainCoordinates
 from iblatlas.regions import BrainRegions
 from iblutil.numerical import ismember
+from numpy.typing import NDArray
 
 _logger = logging.getLogger(__name__)
 
@@ -21,18 +22,46 @@ class BrainAtlasAnatomical(BrainAtlas):
         The pipeline image associated with this atlas for CCF conversion.
     intensity_sitk_image: sitk.Image
         The anatomical intensity image.
+    display_rotation, display_rotation_center: np.ndarray | None
+        The rigid rotation (``R``) and its physical-space center applied to the
+        input SPIM volumes to produce the rotated canonical frame this atlas
+        represents. Downstream consumers apply ``R^T`` about this center to
+        unrotate back to SPIM-native coordinates (saving xyz_picks, composing
+        with the SPIM-native ANTs CCF transform chain). ``None`` means the
+        atlas was built directly from SPIM-native images without rotation.
     """
 
-    # Pipeline image associated with this atlas for CCF conversion
+    # Pipeline image associated with this atlas for CCF conversion.
+    # After the canonical rotation has been applied upstream, this image is in
+    # the rotated canonical frame (same as ``intensity_sitk_image``). The
+    # SPIM-native version is kept as ``pipeline_sitk_image_spim_native`` for
+    # downstream ANTs-chain coord math (which requires pre-rotation inputs).
     pipeline_sitk_image: sitk.Image
-    # Anatomical intensity image
+    # Anatomical intensity image in the canonical (rotated) frame.
     intensity_sitk_image: sitk.Image
+    # Pre-rotation SPIM-native versions, retained for composition with the
+    # SPIM-native ANTs CCF transform chain. Equal to the rotated images when
+    # no rotation is configured.
+    intensity_sitk_image_spim_native: sitk.Image
+    pipeline_sitk_image_spim_native: sitk.Image
+    # Rotation applied to go from SPIM-native to canonical frame (None == identity).
+    # Stored in SimpleITK-native (LPS, mm) units; the rotate/unrotate helpers
+    # handle the conversion to the IBL GUI's RAS-metres working frame.
+    display_rotation: NDArray[np.float64] | None
+    display_rotation_center: NDArray[np.float64] | None
+
+    # LPS <-> RAS axis flip (X and Y flip sign).
+    _LPS_RAS_FLIP: NDArray[np.float64] = np.diag([-1.0, -1.0, 1.0])
 
     def __init__(
         self,
         intensity_img: sitk.Image,
         label_img: sitk.Image,
         pipeline_img: sitk.Image,
+        display_rotation: NDArray[np.float64] | None = None,
+        display_rotation_center: NDArray[np.float64] | None = None,
+        intensity_img_spim_native: sitk.Image | None = None,
+        pipeline_img_spim_native: sitk.Image | None = None,
     ) -> None:
         """
         Initialize the BrainAtlasAnatomical class.
@@ -174,6 +203,76 @@ class BrainAtlasAnatomical(BrainAtlas):
         # with CCF transforms
         self.intensity_sitk_image = intensity_img_blessed
         self.pipeline_sitk_image = pipeline_img_blessed
+        # Retain pre-rotation versions for the SPIM-native ANTs chain path.
+        # If the caller didn't supply them, we weren't rotated — reuse the
+        # already-blessed rotated images as both.
+        self.intensity_sitk_image_spim_native = (
+            intensity_img_spim_native
+            if intensity_img_spim_native is not None
+            else intensity_img_blessed
+        )
+        self.pipeline_sitk_image_spim_native = (
+            pipeline_img_spim_native
+            if pipeline_img_spim_native is not None
+            else pipeline_img_blessed
+        )
+        # Rotation applied upstream to get here (None means identity).
+        if (display_rotation is None) != (display_rotation_center is None):
+            raise ValueError(
+                "display_rotation and display_rotation_center must both be set "
+                "or both be None"
+            )
+        self.display_rotation = (
+            None if display_rotation is None else np.asarray(display_rotation, dtype=np.float64)
+        )
+        self.display_rotation_center = (
+            None
+            if display_rotation_center is None
+            else np.asarray(display_rotation_center, dtype=np.float64)
+        )
+
+    def _rotation_ras_m(self) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+        """Return (R_ras, center_ras_m) in the IBL GUI's native frame.
+
+        Derived from the stored LPS-mm (R, c) via
+        ``R_ras = S @ R_lps @ S`` and ``c_ras_m = S @ c_lps_mm * 1e-3``
+        where ``S = diag(-1, -1, 1)``. Returns ``None`` when no rotation is
+        configured (identity case).
+        """
+        if self.display_rotation is None or self.display_rotation_center is None:
+            return None
+        S = self._LPS_RAS_FLIP
+        R_ras = S @ self.display_rotation @ S
+        center_ras_m = (S @ self.display_rotation_center) * 1e-3
+        return R_ras, center_ras_m
+
+    def unrotate_to_spim_native(self, points_ras_m: np.ndarray) -> np.ndarray:
+        """Map RAS-metre points from the canonical (rotated) frame back to SPIM native.
+
+        For atlases built without rotation this is the identity. Used at I/O
+        boundaries: saving xyz_picks back to disk, composing with the
+        SPIM-native ANTs CCF transform chain.
+        """
+        ras = self._rotation_ras_m()
+        pts = np.asarray(points_ras_m, dtype=np.float64)
+        if ras is None:
+            return pts
+        R_ras, c_ras = ras
+        return (pts - c_ras) @ R_ras + c_ras
+
+    def rotate_to_canonical(self, points_ras_m: np.ndarray) -> np.ndarray:
+        """Map SPIM-native RAS-metre points into the canonical (rotated) frame.
+
+        Inverse of :meth:`unrotate_to_spim_native`. Called when loading
+        xyz_picks off disk so the rest of the GUI sees them in the rotated
+        canonical frame used by the rotated atlas.
+        """
+        ras = self._rotation_ras_m()
+        pts = np.asarray(points_ras_m, dtype=np.float64)
+        if ras is None:
+            return pts
+        R_ras, c_ras = ras
+        return (pts - c_ras) @ R_ras.T + c_ras
 
     def physical_points_to_indices(
         self, channel_ndxs: np.ndarray, round: bool = False, mode: str = "clip"

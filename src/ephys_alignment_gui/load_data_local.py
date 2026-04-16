@@ -30,6 +30,12 @@ from ephys_alignment_gui.anatomical_atlas import (
     BrainAtlasAnatomical,
 )
 from ephys_alignment_gui.docdb import _default_doc_db_api_client, query_docdb_id
+from ephys_alignment_gui.rigid_rotation import (
+    image_center_physical,
+    load_affine_matrix,
+    polar_rotation,
+    rotate_image,
+)
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
@@ -138,6 +144,7 @@ class ImageSpacePaths:
     atlas_labels_path: Path
     pipeline_image_path: Path
     histology_image_path: Path
+    ls_to_template_affine_path: Path
     other_channel_paths: list[Path] = field(default_factory=list)
 
     @classmethod
@@ -150,6 +157,24 @@ class ImageSpacePaths:
         pipeline_image_path = _glob_first("histology_registration_pipeline.nrrd")
         histology_image_path = _glob_first("histology_registration.nrrd")
 
+        # Sibling image_atlas_alignment/<reg_channel>/ holds the SPIM->template affine.
+        # Invariant: exactly one reg-channel subdir per capsule output.
+        alignment_root = input_path.parent / "image_atlas_alignment"
+        affine_matches = list(
+            alignment_root.glob("*/ls_to_template_SyN_0GenericAffine.mat")
+        )
+        if not affine_matches:
+            raise FileNotFoundError(
+                "Could not locate SPIM->template affine. Expected "
+                f"{alignment_root}/<reg_channel>/ls_to_template_SyN_0GenericAffine.mat"
+            )
+        if len(affine_matches) > 1:
+            raise RuntimeError(
+                f"Expected exactly one reg-channel subdir under {alignment_root}, "
+                f"found {len(affine_matches)}: {[p.parent.name for p in affine_matches]}"
+            )
+        ls_to_template_affine_path = affine_matches[0]
+
         pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
         other_channel_paths: list[Path] = []
         for other_channel in input_path.iterdir():
@@ -160,6 +185,7 @@ class ImageSpacePaths:
             atlas_labels_path=atlas_labels_path,
             pipeline_image_path=pipeline_image_path,
             histology_image_path=histology_image_path,
+            ls_to_template_affine_path=ls_to_template_affine_path,
             other_channel_paths=other_channel_paths,
         )
 
@@ -372,28 +398,62 @@ class LoadDataLocal:
         intensity_image = sitk.ReadImage(self.image_space_paths.atlas_image_path)
         label_image = sitk.ReadImage(self.image_space_paths.atlas_labels_path)
         pipeline_image = sitk.ReadImage(self.image_space_paths.pipeline_image_path)
-        self.brain_atlas = BrainAtlasAnatomical(
-            intensity_img=intensity_image,
-            label_img=label_image,
-            pipeline_img=pipeline_image,
+        histology_image = sitk.ReadImage(self.image_space_paths.histology_image_path)
+
+        # Extract the rotational part of the SPIM->template affine and apply
+        # it to every image-space asset, so the canonical in-memory frame has
+        # atlas-aligned axes. SPIM-native recovery (for saving xyz_picks and
+        # composing with the ANTs CCF chain) is done via R^T through the
+        # BrainAtlasAnatomical.unrotate_to_spim_native helper.
+        linear, _ = load_affine_matrix(
+            self.image_space_paths.ls_to_template_affine_path
+        )
+        R = polar_rotation(linear)
+        rotation_center = image_center_physical(intensity_image)
+        logger.debug(
+            f"Computed SPIM->template display rotation (det={np.linalg.det(R):.6f})"
         )
 
-        histology_image = sitk.ReadImage(self.image_space_paths.histology_image_path)
+        intensity_image_rot = rotate_image(
+            intensity_image, R, rotation_center, interpolator="linear"
+        )
+        label_image_rot = rotate_image(
+            label_image, R, rotation_center, interpolator="nearest"
+        )
+        pipeline_image_rot = rotate_image(
+            pipeline_image, R, rotation_center, interpolator="linear"
+        )
+        histology_image_rot = rotate_image(
+            histology_image, R, rotation_center, interpolator="linear"
+        )
+
+        self.brain_atlas = BrainAtlasAnatomical(
+            intensity_img=intensity_image_rot,
+            label_img=label_image_rot,
+            pipeline_img=pipeline_image_rot,
+            display_rotation=R,
+            display_rotation_center=rotation_center,
+            intensity_img_spim_native=intensity_image,
+            pipeline_img_spim_native=pipeline_image,
+        )
+
+        # Ensure the rotated histology is in the blessed DICOM orientation
+        # consumed by the rest of the pipeline (rotate_image emits identity
+        # direction, so DICOMOrient only does a cheap axis permutation).
         dicom_orient_str = (
             sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
-                histology_image.GetDirection()
+                histology_image_rot.GetDirection()
             )
         )
-        if dicom_orient_str == _BLESSED_DIRECTION:
-            reorient = False
-        else:
-            reorient = True
-            histology_image = sitk.DICOMOrient(histology_image, _BLESSED_DIRECTION)
-        self.histology_images["histology_registration"] = histology_image
+        if dicom_orient_str != _BLESSED_DIRECTION:
+            histology_image_rot = sitk.DICOMOrient(
+                histology_image_rot, _BLESSED_DIRECTION
+            )
+        self.histology_images["histology_registration"] = histology_image_rot
 
-        # Store metadata for lazy loading other channels
+        # Store metadata for lazy loading other channels. They'll be rotated
+        # with the same (R, center) when first requested.
         self._lazy_channel_paths = {}
-        self._lazy_channel_reorient = reorient
         for other_channel in self.image_space_paths.other_channel_paths:
             channel_name = other_channel.stem
             self._lazy_channel_paths[channel_name] = other_channel
@@ -527,10 +587,18 @@ class LoadDataLocal:
         with open(xyz_file[0]) as f:
             user_picks = json.load(f)
 
-        track_annotations_ras = (
-            np.array(user_picks["xyz_picks"]) / 1e6
-        )  # convert to meters
-
+        # xyz_picks on disk are SPIM-native image-space RAS, in microns.
+        # The rest of the GUI operates in the rotated canonical frame, so
+        # rotate into canonical here. If no rotation is configured the helper
+        # returns the input unchanged.
+        track_annotations_ras_spim = np.array(user_picks["xyz_picks"]) / 1e6
+        if self.brain_atlas is None:
+            raise RuntimeError(
+                "brain_atlas not yet loaded; call load_atlas_and_histology() first"
+            )
+        track_annotations_ras = self.brain_atlas.rotate_to_canonical(
+            track_annotations_ras_spim
+        )
         return track_annotations_ras
 
     def get_slice_images(self, track_interpolation_ras):
@@ -639,7 +707,27 @@ class LoadDataLocal:
             logger.info(f"Loading channel image from disk: {channel_path.name}")
             channel_image = sitk.ReadImage(str(channel_path))
 
-            if self._lazy_channel_reorient:
+            # Apply the same rigid rotation as the main atlas assets so this
+            # channel shares the canonical (rotated) frame. Uses whatever
+            # (R, center) the atlas was built with.
+            if (
+                self.brain_atlas is not None
+                and self.brain_atlas.display_rotation is not None
+                and self.brain_atlas.display_rotation_center is not None
+            ):
+                channel_image = rotate_image(
+                    channel_image,
+                    self.brain_atlas.display_rotation,
+                    self.brain_atlas.display_rotation_center,
+                    interpolator="linear",
+                )
+
+            dicom_orient_str = (
+                sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
+                    channel_image.GetDirection()
+                )
+            )
+            if dicom_orient_str != _BLESSED_DIRECTION:
                 channel_image = sitk.DICOMOrient(channel_image, _BLESSED_DIRECTION)
 
             # Cache image for future use
@@ -805,13 +893,18 @@ class LoadDataLocal:
     ) -> dict[str, dict[str, Any]]:
         if self.tx_chain_files is None:
             raise RuntimeError("Transform chain files not set, cannot transform to CCF")
-        # Have to convert these to the physical space of the pipeline image first
-        # We will do that go going through simpleITK indices for the paired images
-        histology_img = self.brain_atlas.intensity_sitk_image
-        pipeline_img = self.brain_atlas.pipeline_sitk_image
+        # Unrotate from the canonical (rotated) frame back to SPIM-native, then
+        # use the pre-rotation (SPIM-native) sitk images for the index<->physical
+        # math. The ANTs CCF chain was computed in SPIM-native coords and is
+        # invalid for rotated inputs.
+        channel_locations_ras_spim = self.brain_atlas.unrotate_to_spim_native(
+            channel_locations_ras
+        )
+        histology_img = self.brain_atlas.intensity_sitk_image_spim_native
+        pipeline_img = self.brain_atlas.pipeline_sitk_image_spim_native
         ras_to_lps = np.array([-1, -1, 1])
         # Convert IBL app world coordinates, RAS m, to ITK world coordinates, LPS mm
-        channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras
+        channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras_spim
         reg_pipeline_physical_points: list[list[float]] = []
         for point in channel_locations_lps_mm:
             index = histology_img.TransformPhysicalPointToContinuousIndex(point)
@@ -881,7 +974,11 @@ class LoadDataLocal:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
         regions: BrainRegions = self.brain_atlas.regions
         brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
-        brain_regions["xyz"] = channel_locations_ras
+        # Persist xyz in SPIM-native coords so external tools reading the
+        # output don't need to know about the GUI's display rotation.
+        brain_regions["xyz"] = self.brain_atlas.unrotate_to_spim_native(
+            channel_locations_ras
+        )
         brain_regions["lateral"] = self.chn_coords[:, 0]
         brain_regions["axial"] = self.chn_coords[:, 1]
 
