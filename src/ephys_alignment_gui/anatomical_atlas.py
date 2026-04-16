@@ -176,7 +176,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         self.pipeline_sitk_image = pipeline_img_blessed
 
     def physical_points_to_indices(
-        self, channel_ndxs: np.ndarray, round: bool = False
+        self, channel_ndxs: np.ndarray, round: bool = False, mode: str = "clip"
     ) -> np.ndarray:
         """
         Convert physical points in the atlas space to voxel indices in this atlas.
@@ -191,7 +191,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         np.ndarray
             An (N, 3) array of voxel indices in this atlas.
         """
-        return self.bc.xyz2i(channel_ndxs, round=round, mode="clip")[:, self.xyz2dims]
+        return self.bc.xyz2i(channel_ndxs, round=round, mode=mode)[:, self.xyz2dims]
 
     def indices_to_physical_points(self, channel_ndxs: np.ndarray) -> np.ndarray:
         """

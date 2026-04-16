@@ -23,7 +23,7 @@ import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
-from ephys_alignment_gui.ephys_alignment import EphysAlignment
+from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
@@ -726,10 +726,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         fig.clear()
         self.session.hist_regions = np.empty((0, 1))
-        axis = fig.getAxis(ax)
-        axis.setTicks([self.session.hist_data["axis_label"]])
-        axis.setTickFont(QtGui.QFont("Arial", 8))
-        axis.setZValue(10)
+        self.session.hist_label_items = []
         self.set_axis(self.fig_hist, "bottom", pen="w", label="blank")
 
         # Plot each histology region
@@ -747,6 +744,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             fig.addItem(bound)
             # Need to keep track of each histology region for label pressed interaction
             self.session.hist_regions = np.vstack([self.session.hist_regions, region])
+
+            region_center_y = (reg[0] + reg[1]) / 2
+            label_text = self.session.hist_data["axis_label"][ir][1]
+            text_item = pg.TextItem(
+                text=label_text,
+                anchor=(0.5, 0.5),
+                color="white",
+            )
+            text_item.setPos(0, region_center_y)
+            fig.addItem(text_item)
+            self.session.hist_label_items.append(text_item)
 
         self.session.selected_region = self.session.hist_regions[-2]
 
@@ -843,9 +851,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         fig.clear()
         self.session.hist_ref_regions = np.empty((0, 1))
-        axis = fig.getAxis(ax)
-        axis.setTicks([self.session.hist_data_ref["axis_label"]])
-        axis.setZValue(10)
+        self.session.hist_ref_label_items = []
         self.set_axis(self.fig_hist_ref, "bottom", pen="w", label="blank")
 
         # Plot each histology region
@@ -861,6 +867,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             fig.addItem(region)
             fig.addItem(bound)
             self.session.hist_ref_regions = np.vstack([self.session.hist_ref_regions, region])
+
+            region_center_y = (reg[0] + reg[1]) / 2
+            label_text = self.session.hist_data_ref["axis_label"][ir][1]
+            text_item = pg.TextItem(
+                text=label_text,
+                anchor=(0.5, 0.5),
+                color="white",
+            )
+            text_item.setPos(0, region_center_y)
+            fig.addItem(text_item)
+            self.session.hist_ref_label_items.append(text_item)
 
         bound = pg.InfiniteLine(
             pos=self.session.hist_data_ref["region"][-1][1], angle=0, pen="w"
@@ -896,9 +913,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         fig.clear()
         self.session.hist_ref_regions = np.empty((0, 1))
-        axis = fig.getAxis(ax)
-        axis.setTicks([self.session.hist_data_ref["axis_label"]])
-        axis.setZValue(10)
+        # hist_ref_label_items is shared with plot_histology_ref
 
         self.set_axis(fig, "bottom", label="dist to boundary (um)")
         fig.setXRange(min=0, max=100)
@@ -945,6 +960,101 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Add lines to figure
         fig.addItem(self.session.tip_pos)
         fig.addItem(self.session.top_pos)
+
+    def plot_perpendicular_histology(self) -> None:
+        """
+        Plots perpendicular histology slice - 2D image where each row shows tissue
+        perpendicular to probe at each depth along the trajectory.
+        """
+        if not self.histology_exists:
+            return
+
+        self.fig_hist_perp.clear()
+
+        channel_name = "histology_registration"
+        perp_image, extent_um = self.loaddata.get_perpendicular_slice_image(
+            self.session.ephysalign.track_interpolation_ras,
+            channel_name=channel_name,
+        )
+
+        self.session.perp_image_item = pg.ImageItem()
+        self.session.perp_image_item.setImage(perp_image)
+
+        # Transform track-space depths to feature space to match fig_hist
+        depths_feature_space = self.session.ephysalign.track2feature(
+            self.session.ephysalign.ephys_depths_along_track,
+            self.session.features[self.session.idx],
+            self.session.track[self.session.idx],
+        ) * 1e6
+
+        depth_min_um = depths_feature_space[0]
+        depth_max_um = depths_feature_space[-1]
+        n_depths = perp_image.shape[0]
+        n_perp = perp_image.shape[1]
+
+        scale_y = (depth_max_um - depth_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
+        scale_x = (2 * extent_um) / (n_perp - 1) if n_perp > 1 else 1.0
+
+        transform = [
+            scale_x, 0.0, 0.0,
+            0.0, scale_y, 0.0,
+            -extent_um, depth_min_um, 1.0,
+        ]
+        self.session.perp_image_item.setTransform(QtGui.QTransform(*transform))
+
+        if self.session.slice_color_bar is None:
+            self.session.slice_color_bar = ColorBar("cividis")
+        lut = self.session.slice_color_bar.getColourMap()
+        self.session.perp_image_item.setLookupTable(lut)
+
+        if self.session.slice_hist_levels is not None:
+            self.session.perp_image_item.setLevels(self.session.slice_hist_levels)
+
+        self.fig_hist_perp.addItem(self.session.perp_image_item)
+
+        self.fig_hist_perp.setXRange(min=-extent_um, max=extent_um, padding=0)
+        self.fig_hist_perp.setYRange(
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
+            padding=self.pad,
+        )
+
+        if self.session.channel_status:
+            self.session.perp_probe_line = pg.InfiniteLine(
+                pos=0, angle=90, pen=self.kpen_dot
+            )
+            self.fig_hist_perp.addItem(self.session.perp_probe_line)
+
+            self.session.perp_channel_dots = pg.ScatterPlotItem()
+            self.session.perp_channel_dots.setData(
+                x=np.zeros(len(self.session.chn_depths)),
+                y=self.session.chn_depths,
+                pen="r",
+                brush="r",
+            )
+            self.fig_hist_perp.addItem(self.session.perp_channel_dots)
+
+            self.session.perp_tip_marker = pg.ScatterPlotItem()
+            self.session.perp_tip_marker.setData(
+                x=[0],
+                y=[-TIP_SIZE_UM],
+                pen="m",
+                brush="m",
+                size=10,
+            )
+            self.fig_hist_perp.addItem(self.session.perp_tip_marker)
+
+    def update_perpendicular_levels(self) -> None:
+        """
+        Sync perpendicular plot levels with main slice histogram levels.
+        """
+        if self.session.perp_image_item is None:
+            return
+        if getattr(self, "fig_slice_hist", None) is None:
+            return
+        levels = self.fig_slice_hist.getLevels()
+        self.session.perp_image_item.setLevels(levels)
+        self.session.slice_hist_levels = levels
 
     def offset_hist_data(self) -> None:
         """
@@ -1185,13 +1295,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # no colormap or histogram needed
             pass
         else:
-            color_bar = ColorBar("cividis")
-            lut = color_bar.getColourMap()
+            self.session.slice_color_bar = ColorBar("cividis")
+            lut = self.session.slice_color_bar.getColourMap()
             img.setLookupTable(lut)
             self.fig_slice_hist = pg.HistogramLUTItem()
             self.fig_slice_hist.axis.hide()
             self.fig_slice_hist.setImageItem(img)
-            self.fig_slice_hist.gradient.setColorMap(color_bar.map)
+            self.fig_slice_hist.gradient.setColorMap(self.session.slice_color_bar.map)
             self.fig_slice_hist.autoHistogramRange()
             self.fig_slice_layout.addItem(self.fig_slice_hist, 0, 1)
             hist_levels = self.fig_slice_hist.getLevels()
@@ -1200,6 +1310,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             upper_val = hist_val[upper_idx]
             if hist_levels[0] != 0:
                 self.fig_slice_hist.setLevels(min=hist_levels[0], max=upper_val)
+
+            self.session.slice_hist_levels = self.fig_slice_hist.getLevels()
+
+            if self.session.perp_image_item is not None:
+                self.session.perp_image_item.setLevels(self.session.slice_hist_levels)
+
+            self.fig_slice_hist.sigLevelChangeFinished.connect(self.update_perpendicular_levels)
+
             self.slice_item = self.fig_slice_hist
 
         self.fig_slice.addItem(img)
@@ -1600,6 +1718,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "slice": self.fig_slice,
             "hist": self.fig_hist,
             "hist_ref": self.fig_hist_ref,
+            "hist_perp": self.fig_hist_perp,
             "scale": self.fig_scale,
             "fit": self.fig_fit,
         }
@@ -1928,6 +2047,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.plot_histology_ref(self.fig_hist_ref)
         self.plot_histology(self.fig_hist)
+        self.plot_perpendicular_histology()
         # force labels off then on to refresh
         # TODO better way to do this?
         self.session.label_status = False
@@ -2394,6 +2514,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def toggle_channel_button_pressed(self) -> None:
         """
         Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
+        and perpendicular slice image
         """
         # If no histology we can't plot histology
         if not self.histology_exists:
@@ -2408,6 +2529,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             for line in self.session.slice_lines:
                 self.fig_slice.removeItem(line)
 
+            if self.session.perp_probe_line is not None:
+                self.fig_hist_perp.removeItem(self.session.perp_probe_line)
+            if self.session.perp_channel_dots is not None:
+                self.fig_hist_perp.removeItem(self.session.perp_channel_dots)
+            if self.session.perp_tip_marker is not None:
+                self.fig_hist_perp.removeItem(self.session.perp_tip_marker)
+
         else:
             self.fig_slice.addItem(self.session.traj_line)
             self.fig_slice.addItem(self.session.slice_chns)
@@ -2415,6 +2543,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.fig_slice.addItem(self.session.slice_tip)
             for line in self.session.slice_lines:
                 self.fig_slice.addItem(line)
+
+            if self.session.perp_probe_line is not None:
+                self.fig_hist_perp.addItem(self.session.perp_probe_line)
+            if self.session.perp_channel_dots is not None:
+                self.fig_hist_perp.addItem(self.session.perp_channel_dots)
+            if self.session.perp_tip_marker is not None:
+                self.fig_hist_perp.addItem(self.session.perp_tip_marker)
 
     def delete_line_button_pressed(self) -> None:
         """
@@ -2431,6 +2566,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.removeItem(self.session.lines_features[line_idx][0])
             self.fig_line.removeItem(self.session.lines_features[line_idx][1])
             self.fig_probe.removeItem(self.session.lines_features[line_idx][2])
+            if len(self.session.lines_features[line_idx]) > 3:
+                self.fig_hist_perp.removeItem(self.session.lines_features[line_idx][3])
             self.fig_hist.removeItem(self.session.lines_tracks[line_idx, 0])
             self.fig_fit.removeItem(self.session.points[line_idx, 0])
             self.session.lines_features = np.delete(self.session.lines_features, line_idx, axis=0)
@@ -2972,10 +3109,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         idx = np.where(self.session.lines_features == line)
         line_idx = idx[0][0]
-        fig_idx = np.setdiff1d(np.arange(0, 3), idx[1][0])
+        fig_idx = np.setdiff1d(
+            np.arange(0, self.session.lines_features.shape[1]), idx[1][0]
+        )
 
-        self.session.lines_features[line_idx][fig_idx[0]].setPos(line.value())
-        self.session.lines_features[line_idx][fig_idx[1]].setPos(line.value())
+        for j in fig_idx:
+            self.session.lines_features[line_idx][j].setPos(line.value())
 
         self.session.points[line_idx][0].setData(
             x=[self.session.lines_features[line_idx][0].pos().y()],
@@ -3020,6 +3159,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.removeItem(line_feature[0])
             self.fig_line.removeItem(line_feature[1])
             self.fig_probe.removeItem(line_feature[2])
+            if len(line_feature) > 3:  # Has perpendicular slice line
+                self.fig_hist_perp.removeItem(line_feature[3])
             self.fig_hist.removeItem(line_track[0])
             self.fig_fit.removeItem(point[0])
 
@@ -3033,6 +3174,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.addItem(line_feature[0])
             self.fig_line.addItem(line_feature[1])
             self.fig_probe.addItem(line_feature[2])
+            if len(line_feature) > 3:  # Has perpendicular slice line
+                self.fig_hist_perp.addItem(line_feature[3])
             self.fig_hist.addItem(line_track[0])
             self.fig_fit.addItem(point[0])
 
@@ -3064,15 +3207,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             line_feature3 = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
             line_feature3.setZValue(100)
             line_feature3.sigPositionChanged.connect(self.update_lines_features)
+            line_feature_perp = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_feature_perp.setZValue(100)
+            line_feature_perp.sigPositionChanged.connect(self.update_lines_features)
             self.fig_hist.addItem(line_track)
             self.fig_img.addItem(line_feature1)
             self.fig_line.addItem(line_feature2)
             self.fig_probe.addItem(line_feature3)
+            self.fig_hist_perp.addItem(line_feature_perp)
 
             self.session.lines_features = np.vstack(
                 [
                     self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3],
+                    [line_feature1, line_feature2, line_feature3, line_feature_perp],
                 ]
             )
             self.session.lines_tracks = np.vstack([self.session.lines_tracks, line_track])
