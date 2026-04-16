@@ -963,42 +963,56 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_perpendicular_histology(self) -> None:
         """
-        Plots perpendicular histology slice - 2D image where each row shows tissue
-        perpendicular to probe at each depth along the trajectory.
+        Plot the perpendicular histology slice for the current alignment.
+
+        Each column of the image is a line of voxels perpendicular to the
+        (smoothed) probe trajectory at a feature-space depth. Feature-space
+        y-axis lines up with ``fig_hist`` via the shared ``fig_hist_perp``
+        Y-link.
         """
         if not self.histology_exists:
             return
 
         self.fig_hist_perp.clear()
 
-        channel_name = "histology_registration"
-        perp_image, extent_um = self.loaddata.get_perpendicular_slice_image(
-            self.session.ephysalign.track_interpolation_ras,
-            channel_name=channel_name,
+        # Build a uniform feature-space grid in metres covering the current
+        # fig_hist display range. Sampling density matches the atlas DV voxel
+        # size so the rows line up row-for-row with the histology plot.
+        dv_voxel_m = abs(self.loaddata.brain_atlas.bc.dxyz[2])
+        feat_min_um = self.session.probe_tip - self.session.probe_extra
+        feat_max_um = self.session.probe_top + self.session.probe_extra
+        n_depths = int(round((feat_max_um - feat_min_um) * 1e-6 / dv_voxel_m)) + 1
+        feature_grid_um = np.linspace(feat_min_um, feat_max_um, n_depths)
+        feature_grid_m = feature_grid_um * 1e-6
+
+        extent_m = 500e-6
+        n_perp_samples = int(round(2 * extent_m / dv_voxel_m)) + 1
+        extent_um = extent_m * 1e6
+
+        perp_image = self.loaddata.get_perpendicular_slice_image(
+            ephysalign=self.session.ephysalign,
+            feature_ref=self.session.features[self.session.idx],
+            track_ref=self.session.track[self.session.idx],
+            feature_grid_m=feature_grid_m,
+            channel_name="histology_registration",
+            extent_m=extent_m,
+            n_perp_samples=n_perp_samples,
         )
 
+        # pyqtgraph's ImageItem default axisOrder is col-major: axis 0 -> x.
+        # Our sampler returns (n_perp, n_depths) so axis 0 is perpendicular
+        # (= x) and axis 1 is depth (= y) — exactly what we want.
         self.session.perp_image_item = pg.ImageItem()
         self.session.perp_image_item.setImage(perp_image)
 
-        # Transform track-space depths to feature space to match fig_hist
-        depths_feature_space = self.session.ephysalign.track2feature(
-            self.session.ephysalign.ephys_depths_along_track,
-            self.session.features[self.session.idx],
-            self.session.track[self.session.idx],
-        ) * 1e6
-
-        depth_min_um = depths_feature_space[0]
-        depth_max_um = depths_feature_space[-1]
-        n_depths = perp_image.shape[0]
-        n_perp = perp_image.shape[1]
-
-        scale_y = (depth_max_um - depth_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
-        scale_x = (2 * extent_um) / (n_perp - 1) if n_perp > 1 else 1.0
-
+        scale_x = (2 * extent_um) / (n_perp_samples - 1) if n_perp_samples > 1 else 1.0
+        scale_y = (
+            (feat_max_um - feat_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
+        )
         transform = [
             scale_x, 0.0, 0.0,
             0.0, scale_y, 0.0,
-            -extent_um, depth_min_um, 1.0,
+            -extent_um, feat_min_um, 1.0,
         ]
         self.session.perp_image_item.setTransform(QtGui.QTransform(*transform))
 
