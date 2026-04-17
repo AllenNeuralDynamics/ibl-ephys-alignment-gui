@@ -634,12 +634,24 @@ class Setup:
             self.sess_combobox.setModel(self.sess_list)
             self.sess_combobox.activated.connect(self.on_session_selected)
         else:
-            # If offline mode is True, provide dialog to select local folder that holds data
-            self.input_folder_line = QtWidgets.QLineEdit()
-            self.input_folder_button = QtWidgets.QToolButton()
-            self.input_folder_button.setText("Input Directory")
-            self.input_folder_button.clicked.connect(self.on_folder_selected)
-            self.input_folder_line.editingFinished.connect(self.on_input_folder_edited)
+            # Offline mode: user points the GUI at a preprocessed mouse-root
+            # directory (containing ``datapackage.json``) and selects the
+            # session + probe from dropdowns populated from the manifest.
+            self.mouse_root_line = QtWidgets.QLineEdit()
+            self.mouse_root_button = QtWidgets.QToolButton()
+            self.mouse_root_button.setText("Mouse Root")
+            self.mouse_root_button.clicked.connect(self.on_mouse_root_selected)
+            self.mouse_root_line.editingFinished.connect(self.on_mouse_root_edited)
+
+            self.session_list = QtGui.QStandardItemModel()
+            self.session_combobox = QtWidgets.QComboBox()
+            self.session_combobox.setModel(self.session_list)
+            self.session_combobox.activated.connect(self.on_session_combobox_activated)
+
+            self.probe_list = QtGui.QStandardItemModel()
+            self.probe_combobox = QtWidgets.QComboBox()
+            self.probe_combobox.setModel(self.probe_list)
+            self.probe_combobox.activated.connect(self.on_probe_combobox_activated)
 
             self.reload_folder_line = QtWidgets.QLineEdit()
             self.reload_folder_button = QtWidgets.QToolButton()
@@ -684,20 +696,25 @@ class Setup:
             self.interaction_layout1.addWidget(self.data_button, stretch=1)
         else:
             interact_1_h_1 = QtWidgets.QHBoxLayout()
-            interact_1_h_1.addWidget(self.input_folder_button, stretch=0)
-            interact_1_h_1.addWidget(self.input_folder_line, stretch=2)
-            interact_1_h_1.addWidget(self.shank_combobox, stretch=1)
-            interact_1_h_1.addWidget(self.load_data_button, stretch=0)
+            interact_1_h_1.addWidget(self.mouse_root_button, stretch=0)
+            interact_1_h_1.addWidget(self.mouse_root_line, stretch=2)
 
             interact_1_h_2 = QtWidgets.QHBoxLayout()
-            interact_1_h_2.addWidget(self.align_combobox, stretch=1)
-            interact_1_h_2.addWidget(self.use_docdb_checkbox, stretch=0)
-            interact_1_h_2.addWidget(self.reload_folder_button, stretch=0)
-            interact_1_h_2.addWidget(self.reload_folder_line, stretch=2)
+            interact_1_h_2.addWidget(self.session_combobox, stretch=2)
+            interact_1_h_2.addWidget(self.probe_combobox, stretch=2)
+            interact_1_h_2.addWidget(self.shank_combobox, stretch=1)
+            interact_1_h_2.addWidget(self.load_data_button, stretch=0)
+
+            interact_1_h_3 = QtWidgets.QHBoxLayout()
+            interact_1_h_3.addWidget(self.align_combobox, stretch=1)
+            interact_1_h_3.addWidget(self.use_docdb_checkbox, stretch=0)
+            interact_1_h_3.addWidget(self.reload_folder_button, stretch=0)
+            interact_1_h_3.addWidget(self.reload_folder_line, stretch=2)
 
             self.interaction_layout1 = QtWidgets.QVBoxLayout()
             self.interaction_layout1.addLayout(interact_1_h_1)
             self.interaction_layout1.addLayout(interact_1_h_2)
+            self.interaction_layout1.addLayout(interact_1_h_3)
 
         # Group 2 -- fitting and navigation
         interact_2_h_1 = QtWidgets.QHBoxLayout()

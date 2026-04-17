@@ -29,6 +29,12 @@ from ephys_alignment_gui.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
+from ephys_alignment_gui.datapackage_loader import (
+    DataPackageError,
+    MouseRoot,
+    ProbeInfo,
+    load_mouse_root,
+)
 from ephys_alignment_gui.docdb import _default_doc_db_api_client, query_docdb_id
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -113,83 +119,108 @@ def _cut_slice_from_atlas_image(
     return slice
 
 
-@dataclass(frozen=True)
-class AntsTransformChainFiles:
-    smartspim_template_affine_transform: Path
-    smartspim_template_warp_transform: Path
-    template_to_ccf_affine_transform: Path
-    template_to_ccf_warp_transform: Path
-
-    def as_list(self) -> list[str]:
-        return [
-            self.smartspim_template_affine_transform.as_posix(),
-            self.smartspim_template_warp_transform.as_posix(),
-            self.template_to_ccf_affine_transform.as_posix(),
-            self.template_to_ccf_warp_transform.as_posix(),
-        ]
-
-    def which_to_invert(self) -> list[bool]:
-        return [True, False, True, False]
-
-
-@dataclass(frozen=True)
-class ImageSpacePaths:
-    atlas_image_path: Path
-    atlas_labels_path: Path
-    pipeline_image_path: Path
-    histology_image_path: Path
-    other_channel_paths: list[Path] = field(default_factory=list)
-
-    @classmethod
-    def from_folder(cls, input_path: Path) -> ImageSpacePaths:
-        def _glob_first(pattern: str) -> Path:
-            return next(input_path.glob(pattern))
-
-        atlas_image_path = _glob_first("ccf_in_*.nrrd")
-        atlas_labels_path = _glob_first("labels_in_*.nrrd")
-        pipeline_image_path = _glob_first("histology_registration_pipeline.nrrd")
-        histology_image_path = _glob_first("histology_registration.nrrd")
-
-        pattern = re.compile(r"^Ex_\d+_Em_\d+\.nrrd$")
-        other_channel_paths: list[Path] = []
-        for other_channel in input_path.iterdir():
-            if pattern.match(other_channel.name):
-                other_channel_paths.append(other_channel)
-        return cls(
-            atlas_image_path=atlas_image_path,
-            atlas_labels_path=atlas_labels_path,
-            pipeline_image_path=pipeline_image_path,
-            histology_image_path=histology_image_path,
-            other_channel_paths=other_channel_paths,
-        )
-
-
 @dataclass
 class LoadDataLocal:
-    image_space_paths: ImageSpacePaths | None = None
+    """Loader driven by a preprocessed mouse-root directory.
+
+    The entry-point is :meth:`set_mouse_root`, which reads ``datapackage.json``
+    and surfaces the sessions and probes available. :meth:`select_probe` picks
+    one for subsequent loading. All file paths come from the datapackage; the
+    loader makes no assumptions about directory layout beyond that contract.
+    """
+
+    mouse_root: MouseRoot | None = None
+    probe_info: ProbeInfo | None = None
     brain_atlas: BrainAtlasAnatomical | None = None
-    input_path: Path | None = None
-    data_root: Path | None = None
-    histology_path: Path | None = None
-    we_are_in_code_ocean: bool = True
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
-    sess_path: Path | None = None
     n_shanks: int = 0
-    previous_directory: Path | None = None
-    tx_chain_files: AntsTransformChainFiles | None = None
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
     channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
     alignments: dict[str, list[list[float]]] = field(default_factory=dict)
     prev_align: list[str] = field(default_factory=lambda: ["original"])
 
+    # ------------------------------------------------------------------
+    # Mouse-root / probe selection
+    # ------------------------------------------------------------------
+
+    def set_mouse_root(self, mouse_root: Path) -> MouseRoot:
+        """Load a mouse-root directory. Resets probe-specific state.
+
+        Parameters
+        ----------
+        mouse_root : Path
+            Directory containing ``datapackage.json``.
+
+        Returns
+        -------
+        MouseRoot
+            Resolved view of the mouse-root.
+        """
+        logger.info(f"set_mouse_root: {mouse_root}")
+        mr = load_mouse_root(Path(mouse_root))
+        if self.mouse_root is not None and self.mouse_root.root != mr.root:
+            # Invalidate atlas/histology caches on mouse switch.
+            self.brain_atlas = None
+            self.histology_images = {}
+            if hasattr(self, "_lazy_channel_paths"):
+                delattr(self, "_lazy_channel_paths")
+            if hasattr(self, "_lazy_channel_reorient"):
+                delattr(self, "_lazy_channel_reorient")
+            if hasattr(self, "_slice_index"):
+                delattr(self, "_slice_index")
+        self.mouse_root = mr
+        self.probe_info = None
+        self.chn_coords = None
+        self.chn_coords_all = None
+        self.n_shanks = 0
+        return mr
+
+    def list_sessions(self) -> list[str]:
+        """Recording IDs available in the current mouse root."""
+        if self.mouse_root is None:
+            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
+        return self.mouse_root.sessions
+
+    def list_probes(self, recording_id: str) -> list[str]:
+        """Probe names for a given recording in the current mouse root."""
+        if self.mouse_root is None:
+            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
+        return self.mouse_root.probes_for_session(recording_id)
+
+    def select_probe(self, recording_id: str, probe_name: str) -> ProbeInfo:
+        """Select a probe for loading. Resets per-probe data caches."""
+        if self.mouse_root is None:
+            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
+        probe = self.mouse_root.get_probe(recording_id, probe_name)
+        logger.info(
+            f"select_probe: recording={recording_id!r}, probe={probe_name!r}, "
+            f"num_shanks={probe.num_shanks}, ephys_dir={probe.ephys_dir}"
+        )
+        self.probe_info = probe
+        self.chn_coords = None
+        self.chn_coords_all = None
+        self.n_shanks = probe.num_shanks
+        return probe
+
+    @property
+    def probe_id(self) -> str | None:
+        """Shortcut for the current probe ID (if selected)."""
+        return self.probe_info.probe_id if self.probe_info is not None else None
+
+    # ------------------------------------------------------------------
+    # Previous alignments
+    # ------------------------------------------------------------------
+
     def load_previous_alignments_docdb(
         self,
-        input_path: Path,
-        shank_idx=0,
+        recording_id: str,
+        probe_name: str,
+        shank_idx: int = 0,
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
-        docdb_id = query_docdb_id(input_path.parent.stem)[0]
+        """Fetch alignment history from DocDB keyed by (recording, probe, shank)."""
+        docdb_id = query_docdb_id(recording_id)[0]
         quality_control = get_quality_control_by_id(
             _default_doc_db_api_client(), docdb_id
         )
@@ -199,7 +230,7 @@ class LoadDataLocal:
 
         evaluations = quality_control.evaluations
 
-        evaluation_name = f"{input_path.parent.stem}_{input_path.stem}_{shank_idx}"
+        evaluation_name = f"{recording_id}_{probe_name}_{shank_idx}"
         alignment_evaluations = [
             evaluation
             for evaluation in evaluations
@@ -229,26 +260,42 @@ class LoadDataLocal:
 
     def load_previous_alignments_local(
         self,
-        input_path: Path | None = None,
+        folder: Path,
         shank_idx: int = 0,
     ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
-        input_path = self._check_input_path_arg(input_path)
+        """Load ``prev_alignments.json`` (or shank variant) from *folder*."""
         suffix = f"_shank{shank_idx + 1}" if self.n_shanks > 1 else ""
         prev_align_filename = f"prev_alignments{suffix}.json"
-        if input_path.joinpath(prev_align_filename).exists():
-            with open(input_path.joinpath(prev_align_filename)) as f:
-                alignments: dict[str, list[list[float]]] = json.load(f)
-            prev_align = list(alignments.keys())
-            prev_align = sorted(prev_align, reverse=True)
-            prev_align.append("original")
-        else:
+        p = folder / prev_align_filename
+        if not p.exists():
             return None
+        with open(p) as f:
+            alignments: dict[str, list[list[float]]] = json.load(f)
+        prev_align = list(alignments.keys())
+        prev_align = sorted(prev_align, reverse=True)
+        prev_align.append("original")
         return alignments, prev_align
 
     def load_previous_alignments(
-        self, shank_idx=0, input_path: Path | None = None, use_docdb=True
+        self,
+        folder: Path,
+        shank_idx: int = 0,
+        use_docdb: bool = True,
     ) -> bool:
-        input_path = self._check_input_path_arg(input_path)
+        """Load previous alignments for the selected probe.
+
+        Parameters
+        ----------
+        folder : Path
+            Directory to check for ``prev_alignments.json`` on the local-file
+            fallback path.
+        shank_idx : int
+            0-based shank index.
+        use_docdb : bool
+            Attempt DocDB first; fall back to local file if unavailable.
+        """
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
 
         maybe_alignments = None
         load_local = not use_docdb
@@ -256,7 +303,9 @@ class LoadDataLocal:
             logger.debug("Using docdb to get previous alignments")
             try:
                 maybe_alignments = self.load_previous_alignments_docdb(
-                    input_path=input_path, shank_idx=shank_idx
+                    recording_id=self.probe_info.recording_id,
+                    probe_name=self.probe_info.probe_name,
+                    shank_idx=shank_idx,
                 )
                 if maybe_alignments is None:
                     load_local = True
@@ -268,14 +317,13 @@ class LoadDataLocal:
                 load_local = True
         if load_local:
             maybe_alignments = self.load_previous_alignments_local(
-                input_path=input_path, shank_idx=shank_idx
+                folder=folder, shank_idx=shank_idx
             )
         if maybe_alignments is None:
             return False
-        else:
-            alignments, prev_align = maybe_alignments
-            self.alignments = alignments
-            self.prev_align = prev_align
+        alignments, prev_align = maybe_alignments
+        self.alignments = alignments
+        self.prev_align = prev_align
         return True
 
     def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
@@ -294,91 +342,59 @@ class LoadDataLocal:
 
         return feature, track
 
-    def _check_input_path_arg(self, input_path: Path | None) -> Path:
-        if input_path is None:
-            if self.input_path is None:
-                raise RuntimeError(
-                    "input_path must be provided if not set in the class"
-                )
-            input_path = self.input_path
-        return input_path
+    # ------------------------------------------------------------------
+    # Channel info / ephys / atlas loading
+    # ------------------------------------------------------------------
 
-    def load_channel_info(self, input_path: Path | None = None) -> None:
-        """
-        Load channel local coordinates from the alf files
-        """
-        input_path = self._check_input_path_arg(input_path)
-        self.chn_coords_all = np.load(
-            input_path.joinpath("channels.localCoordinates.npy")
-        )
+    def load_channel_info(self) -> None:
+        """Load channel local coordinates from the selected probe's ephys ALF."""
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
+        if self.probe_info.ephys_dir is None:
+            raise DataPackageError(
+                f"Probe {self.probe_info.probe_name!r} has no ephys dir "
+                "(preprocessing ran with skip_ephys=true)."
+            )
+        path = self.probe_info.ephys_dir / "channels.localCoordinates.npy"
+        self.chn_coords_all = np.load(path)
+
         chn_x = np.unique(self.chn_coords_all[:, 0])
         chn_x_diff = np.diff(chn_x)
-        self.n_shanks = np.sum(chn_x_diff > 100) + 1
-
-    def set_input_paths(self, input_path: Path, we_are_in_code_ocean: bool) -> None:
-        if not we_are_in_code_ocean:
-            raise RuntimeError("Only Code Ocean path resolution is supported currently")
-        logger.info(f"set_input_paths: new={input_path}, current={self.input_path}")
-        if self.input_path == input_path:
-            logger.info("Input path already set, skipping reset")
-            return
-        self.we_are_in_code_ocean = we_are_in_code_ocean
-        self.input_path = input_path
-        self.chn_coords_all = None
-        data_root = input_path.parents[3]
-        self.data_root = data_root
-        maybe_tx_chain = self._find_transform_files()
-        if maybe_tx_chain is None:
-            raise FileNotFoundError(
-                "No transform chain files found in input directory."
+        geom_n_shanks = int(np.sum(chn_x_diff > 100) + 1)
+        if geom_n_shanks != self.probe_info.num_shanks:
+            logger.warning(
+                "Channel geometry implies %d shanks but manifest says %d; "
+                "trusting manifest.",
+                geom_n_shanks,
+                self.probe_info.num_shanks,
             )
-        self.tx_chain_files = maybe_tx_chain
-        histology_path: Path = self.input_path.parent.parent / "image_space_histology"
-        if histology_path != self.histology_path:
-            logger.debug("Atlas and histology path changed, invalidating cached data")
-            self.brain_atlas = None
-            self.histology_path = histology_path
-            # Invalidate histology image cache
-            self.histology_images = {}
-            # Invalidate lazy loading metadata
-            if hasattr(self, "_lazy_channel_paths"):
-                delattr(self, "_lazy_channel_paths")
-            if hasattr(self, "_lazy_channel_reorient"):
-                delattr(self, "_lazy_channel_reorient")
-            if hasattr(self, "_slice_index"):
-                delattr(self, "_slice_index")
-        self.image_space_paths = ImageSpacePaths.from_folder(histology_path)
+        self.n_shanks = self.probe_info.num_shanks
 
     def get_shank_list(self) -> list[str] | None:
-        """
-        Generate shank list without setting n_shanks
-        """
+        """Build the shank-picker list for the current probe."""
         if self.n_shanks == 1:
-            shank_list = ["1/1"]
-        elif self.n_shanks > 1:
-            shank_list = [
-                f"{iShank + 1}/{self.n_shanks}" for iShank in range(self.n_shanks)
-            ]
-        else:
-            shank_list = None
-        return shank_list
+            return ["1/1"]
+        if self.n_shanks > 1:
+            return [f"{i + 1}/{self.n_shanks}" for i in range(self.n_shanks)]
+        return None
 
     def load_atlas_and_histology(self) -> None:
-        logger.debug(f"Loading atlas and histology from {self.histology_path}")
-        if self.image_space_paths is None:
-            raise RuntimeError(
-                "Image space paths not set, cannot load atlas and histology"
-            )
-        intensity_image = sitk.ReadImage(self.image_space_paths.atlas_image_path)
-        label_image = sitk.ReadImage(self.image_space_paths.atlas_labels_path)
-        pipeline_image = sitk.ReadImage(self.image_space_paths.pipeline_image_path)
+        """Load atlas + default histology channel from the mouse-root datapackage."""
+        if self.mouse_root is None:
+            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
+        hist = self.mouse_root.histology
+        logger.debug(f"Loading atlas and histology from {hist.registration.parent}")
+
+        intensity_image = sitk.ReadImage(str(hist.ccf_template))
+        label_image = sitk.ReadImage(str(hist.labels))
+        pipeline_image = sitk.ReadImage(str(hist.registration_pipeline))
         self.brain_atlas = BrainAtlasAnatomical(
             intensity_img=intensity_image,
             label_img=label_image,
             pipeline_img=pipeline_image,
         )
 
-        histology_image = sitk.ReadImage(self.image_space_paths.histology_image_path)
+        histology_image = sitk.ReadImage(str(hist.registration))
         dicom_orient_str = (
             sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
                 histology_image.GetDirection()
@@ -391,13 +407,12 @@ class LoadDataLocal:
             histology_image = sitk.DICOMOrient(histology_image, _BLESSED_DIRECTION)
         self.histology_images["histology_registration"] = histology_image
 
-        # Store metadata for lazy loading other channels
-        self._lazy_channel_paths = {}
+        # Store metadata for lazy loading other channels.
+        self._lazy_channel_paths = dict(hist.additional_channels)
         self._lazy_channel_reorient = reorient
-        for other_channel in self.image_space_paths.other_channel_paths:
-            channel_name = other_channel.stem
-            self._lazy_channel_paths[channel_name] = other_channel
-        logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
+        logger.debug(
+            f"Setup lazy loading for {len(self._lazy_channel_paths)} channels"
+        )
 
     def set_channels_for_shank(self, shank_idx: int):
         """Filter cached channel coordinates for selected shank. No disk I/O."""
@@ -408,39 +423,53 @@ class LoadDataLocal:
 
         if self.n_shanks > 1:
             shanks = {}
-            for iShank in range(self.n_shanks):
-                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
-
-            shank_chns = np.bitwise_and(
+            for i in range(self.n_shanks):
+                shanks[i] = [chn_x[i * 2], chn_x[(i * 2) + 1]]
+            mask = np.bitwise_and(
                 chn_coords_all[:, 0] >= shanks[shank_idx][0],
                 chn_coords_all[:, 0] <= shanks[shank_idx][1],
             )
-            chn_coords = chn_coords_all[shank_chns, :]
+            chn_coords = chn_coords_all[mask, :]
         else:
             chn_coords = chn_coords_all
         self.chn_coords = chn_coords
 
         return chn_coords[:, 1]  # Return depths
 
-    def get_ephys_data(self, shank_idx, input_path: Path | None = None):
-        input_path = self._check_input_path_arg(input_path)
-        logger.info(f"get_ephys_data: loading from {input_path}, shank_idx={shank_idx}")
+    def get_ephys_data(self, shank_idx: int):
+        """Load ephys ALF for the current probe + shank.
+
+        Returns
+        -------
+        tuple
+            ``(ephys_dir, chn_depths, sess_notes, data)``. The ``ephys_dir`` is
+            what downstream plot code stores as ``probe_path`` (it contains
+            ``band_corr/`` etc.).
+        """
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
+        if self.probe_info.ephys_dir is None:
+            raise DataPackageError(
+                f"Probe {self.probe_info.probe_name!r} has no ephys dir"
+            )
         if self.chn_coords_all is None:
             raise RuntimeError("Must call load_channel_info() first")
+
+        ephys_dir = self.probe_info.ephys_dir
+        logger.info(f"get_ephys_data: loading from {ephys_dir}, shank_idx={shank_idx}")
+
         chn_x = np.unique(self.chn_coords_all[:, 0])
         if self.n_shanks > 1:
             shanks = {}
-            for iShank in range(self.n_shanks):
-                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
-
-            shank_chns = np.bitwise_and(
+            for i in range(self.n_shanks):
+                shanks[i] = [chn_x[i * 2], chn_x[(i * 2) + 1]]
+            mask = np.bitwise_and(
                 self.chn_coords_all[:, 0] >= shanks[shank_idx][0],
                 self.chn_coords_all[:, 0] <= shanks[shank_idx][1],
             )
-            self.chn_coords = self.chn_coords_all[shank_chns, :]
+            self.chn_coords = self.chn_coords_all[mask, :]
         else:
             self.chn_coords = self.chn_coords_all
-
         chn_depths = self.chn_coords[:, 1]
 
         data = {}
@@ -468,7 +497,7 @@ class LoadDataLocal:
         ]
         for v, o in zip(values, objects):
             try:
-                data[v] = alfio.load_object(input_path, o)
+                data[v] = alfio.load_object(ephys_dir, o)
                 data[v]["exists"] = True
                 if "rms" in v:
                     data[v]["xaxis"] = "Time (s)"
@@ -480,58 +509,45 @@ class LoadDataLocal:
         data["pass_stim"] = {"exists": False}
         data["gabor"] = {"exists": False}
 
-        shank_indices_file = input_path / "spike_shank_indices.npy"
+        shank_indices_file = ephys_dir / "spike_shank_indices.npy"
         if shank_indices_file.exists():
             data["spike_shanks"] = np.load(shank_indices_file)
 
-        unit_shank_indices_file = input_path / "unit_shank_indices.npy"
+        unit_shank_indices_file = ephys_dir / "unit_shank_indices.npy"
         if unit_shank_indices_file.exists():
             data["unit_shank_indices"] = np.load(unit_shank_indices_file)
 
-        # Read in notes for this experiment see if file exists in directory
-        if input_path.joinpath("session_notes.txt").exists():
-            with open(input_path.joinpath("session_notes.txt")) as f:
-                sess_notes = f.read()
+        notes_file = ephys_dir / "session_notes.txt"
+        if notes_file.exists():
+            sess_notes = notes_file.read_text()
         else:
             sess_notes = "No notes for this session"
 
-        return input_path, chn_depths, sess_notes, data
+        return ephys_dir, chn_depths, sess_notes, data
 
     def load_allen_csv(self):
         allen_path = Path(Path(atlas.__file__).parent, "allen_structure_tree.csv")
         self.allen = alfio.load_file_content(allen_path)
-
         return self.allen
 
-    def get_track_annotations(
-        self, shank_idx: int, input_path: Path | None = None
-    ) -> NDArray[np.floating]:
-        # Read in local xyz_picks file
-        # This file must exist, otherwise we don't know where probe was
-        input_path = self._check_input_path_arg(input_path)
-        glob_suffix = "" if self.n_shanks == 1 else f"_shank{shank_idx + 1}"
-        xyz_glob_str = f"*xyz_picks{glob_suffix}_image_space.json"
-        xyz_file = sorted(input_path.glob(xyz_glob_str))
-
-        if len(xyz_file) == 0:
+    def get_track_annotations(self, shank_idx: int) -> NDArray[np.floating]:
+        """Read xyz-picks (image space) for the current probe + shank."""
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
+        picks = self.probe_info.picks_for_shank(shank_idx)
+        path = picks.image_space
+        if not path.is_file():
             raise FileNotFoundError(
-                f"Missing required probe trajectory file: {xyz_glob_str}\n"
-                f"Expected location: {input_path}\n"
+                f"Missing probe trajectory file: {path}. "
                 "This file must contain probe insertion coordinates in image space."
             )
-        elif len(xyz_file) > 1:
-            raise ValueError(
-                f"Multiple trajectory files found: {[f.name for f in xyz_file]}. "
-                "Please ensure only one exists."
-            )
-        with open(xyz_file[0]) as f:
+        with open(path) as f:
             user_picks = json.load(f)
+        return np.array(user_picks["xyz_picks"]) / 1e6  # µm -> m
 
-        track_annotations_ras = (
-            np.array(user_picks["xyz_picks"]) / 1e6
-        )  # convert to meters
-
-        return track_annotations_ras
+    # ------------------------------------------------------------------
+    # Slice images
+    # ------------------------------------------------------------------
 
     def get_slice_images(self, track_interpolation_ras):
         # Load the CCF images
@@ -549,10 +565,9 @@ class LoadDataLocal:
         )
         # Store for lazy loading
         self._slice_index = index
-        trajectory_id = id(track_interpolation_ras)  # Unique ID for this trajectory
+        trajectory_id = id(track_interpolation_ras)
 
-        # Build a tilted slice by getting horizontal lines at each index,
-        # N x image.shape[1]
+        # Build a tilted slice by getting horizontal lines at each index.
         ccf_slice = _cut_slice_from_atlas_image(
             self.brain_atlas.image,
             index,  # type: ignore
@@ -563,14 +578,10 @@ class LoadDataLocal:
             self.brain_atlas._label2rgb,  # type: ignore
         )
         x_dimno = self.brain_atlas.xyz2dims[0]
-        # ML span of the slice in world coordinates
         width = [
             self.brain_atlas.bc.i2x(0),
-            self.brain_atlas.bc.i2x(
-                self.brain_atlas.image.shape[x_dimno]
-            ),  # was 456: CCF 25 width
+            self.brain_atlas.bc.i2x(self.brain_atlas.image.shape[x_dimno]),
         ]
-        # DV span of the slice in world coordinates
         height = [
             self.brain_atlas.bc.i2z(index[0, 2]),
             self.brain_atlas.bc.i2z(index[-1, 2]),
@@ -578,7 +589,6 @@ class LoadDataLocal:
 
         logger.debug(f"CCF slice: {ccf_slice.shape}")
 
-        # Eager data: ccf, label, metadata, and default histology
         eager_data = {
             "ccf": ccf_slice,
             "label": label_slice,
@@ -591,7 +601,6 @@ class LoadDataLocal:
             "offset": np.array([width[0], height[0]]),
         }
 
-        # --- Compute default histology slice (eager) ---
         if "histology_registration" in self.histology_images:
             hist_image = self.histology_images["histology_registration"]
             hist_arr = sitk.GetArrayViewFromImage(hist_image)
@@ -602,8 +611,7 @@ class LoadDataLocal:
             eager_data["histology_registration"] = hist_slice
             logger.debug("Computed eager slice for histology_registration")
 
-        # --- Setup lazy loading for other channels ---
-        lazy_channel_names = []
+        lazy_channel_names: list[str] = []
         if hasattr(self, "_lazy_channel_paths"):
             lazy_channel_names = list(self._lazy_channel_paths.keys())
             logger.debug(
@@ -620,35 +628,20 @@ class LoadDataLocal:
         return slice_data, None
 
     def _load_and_slice_channel(self, channel_name: str) -> NDArray:
-        """
-        Load histology channel image (if needed) and compute slice for current trajectory.
-        Called lazily when user selects channel from menu.
-
-        Parameters:
-        - channel_name: Channel to load/slice
-
-        Returns:
-        - slice_array: 2D slice along current trajectory
-        """
-        # Load image if not already cached
+        """Load histology channel (if needed) and slice for the current trajectory."""
         if channel_name not in self.histology_images:
             if channel_name not in self._lazy_channel_paths:
                 raise ValueError(f"Unknown channel: {channel_name}")
-
             channel_path = self._lazy_channel_paths[channel_name]
             logger.info(f"Loading channel image from disk: {channel_path.name}")
             channel_image = sitk.ReadImage(str(channel_path))
-
             if self._lazy_channel_reorient:
                 channel_image = sitk.DICOMOrient(channel_image, _BLESSED_DIRECTION)
-
-            # Cache image for future use
             self.histology_images[channel_name] = channel_image
             logger.debug(f"Cached {channel_name} in histology_images")
         else:
             logger.debug(f"Using cached image for {channel_name}")
 
-        # Compute slice for current trajectory
         if not hasattr(self, "_slice_index") or self._slice_index is None:
             raise RuntimeError("Cannot compute slice: trajectory index not set")
 
@@ -658,14 +651,11 @@ class LoadDataLocal:
             hist_arr,
             self._slice_index,  # type: ignore
         )
-
         logger.debug(f"Computed slice for {channel_name}: shape {hist_slice.shape}")
         return hist_slice
 
     def get_region_description(self, region_idx):
         struct_idx = np.where(self.allen["id"] == region_idx)[0][0]
-        # Haven't yet incorporated how to have region descriptions when not on Alyx
-        # For now always have this as blank
         description = ""
         region_lookup = (
             self.allen["acronym"][struct_idx] + ": " + self.allen["name"][struct_idx]
@@ -681,80 +671,24 @@ class LoadDataLocal:
 
         return description, region_lookup
 
-    def _find_transform_files(self) -> AntsTransformChainFiles:
-        subject_id = self.input_path.parent.parent.stem
-        logger.info(
-            f"Loading transforms from stitched smartspim asset for {subject_id}..."
-        )
-        smartspim_template_affine_transform = tuple(
-            self.data_root.glob(
-                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_0GenericAffine.mat"
-            )
-        )
-        if not smartspim_template_affine_transform:
-            # try legacy way
-            smartspim_template_affine_transform = tuple(
-                self.data_root.glob(
-                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_0GenericAffine.mat"
-                )
-            )
-            if not smartspim_template_affine_transform:
-                raise FileNotFoundError(
-                    "No affine transform from spim to template. Check attached assets"
-                )
-
-        smartspim_template_warp_transform = tuple(
-            self.data_root.glob(
-                f"SmartSPIM_{subject_id}*/image_atlas_alignment/*/ls_to_template_SyN_1InverseWarp.nii.gz"
-            )
-        )
-        if not smartspim_template_warp_transform:
-            smartspim_template_warp_transform = tuple(
-                self.data_root.glob(
-                    f"SmartSPIM_{subject_id}*/registration/ls_to_template_SyN_1InverseWarp.nii.gz"
-                )
-            )
-            if not smartspim_template_warp_transform:
-                raise FileNotFoundError(
-                    "No warp transform from spim to template. Check attached assets"
-                )
-
-        template_to_ccf_affine_transform = tuple(
-            self.data_root.glob("spim_template_to_ccf/syn_0GenericAffine.mat")
-        )
-        if not template_to_ccf_affine_transform:
-            raise FileNotFoundError(
-                "No affine transform from template to ccf. Check attached assets"
-            )
-
-        template_to_ccf_warp_transform = tuple(
-            self.data_root.glob("spim_template_to_ccf/syn_1InverseWarp.nii.gz")
-        )
-        if not template_to_ccf_warp_transform:
-            raise FileNotFoundError(
-                "No warp transform from template to ccf. Check attached assets"
-            )
-
-        return AntsTransformChainFiles(
-            smartspim_template_affine_transform=smartspim_template_affine_transform[0],
-            smartspim_template_warp_transform=smartspim_template_warp_transform[0],
-            template_to_ccf_affine_transform=template_to_ccf_affine_transform[0],
-            template_to_ccf_warp_transform=template_to_ccf_warp_transform[0],
-        )
+    # ------------------------------------------------------------------
+    # CCF transform + alignment result export
+    # ------------------------------------------------------------------
 
     def _transform_to_ccf(
         self,
         channel_locations_ras: NDArray,
         channel_dict: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        if self.tx_chain_files is None:
-            raise RuntimeError("Transform chain files not set, cannot transform to CCF")
-        # Have to convert these to the physical space of the pipeline image first
-        # We will do that go going through simpleITK indices for the paired images
+        if self.mouse_root is None or self.brain_atlas is None:
+            raise RuntimeError(
+                "Mouse root or brain atlas not loaded; cannot transform to CCF"
+            )
+        # Convert from the alignment-GUI physical space (SimpleITK-rotated
+        # intensity image) back to the pipeline image's physical space.
         histology_img = self.brain_atlas.intensity_sitk_image
         pipeline_img = self.brain_atlas.pipeline_sitk_image
         ras_to_lps = np.array([-1, -1, 1])
-        # Convert IBL app world coordinates, RAS m, to ITK world coordinates, LPS mm
         channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras
         reg_pipeline_physical_points: list[list[float]] = []
         for point in channel_locations_lps_mm:
@@ -769,19 +703,27 @@ class LoadDataLocal:
             reg_pipeline_physical_points_array, columns=list("xyz")
         )
 
+        tx = self.mouse_root.transforms
+        tx_list = [
+            str(tx.image_to_template_affine),
+            str(tx.image_to_template_warp),
+            str(tx.template_to_ccf_affine),
+            str(tx.template_to_ccf_warp),
+        ]
+        invert_list = [True, False, True, False]
+
         logger.info("applying transforms ...")
         ccf_coordinates_dataframe: pandas.DataFrame = ants.apply_transforms_to_points(
             ANTS_DIMENSION,
             this_probe_df,
-            self.tx_chain_files.as_list(),
-            whichtoinvert=self.tx_chain_files.which_to_invert(),
+            tx_list,
+            whichtoinvert=invert_list,
         )
         logger.info("Done warping to ccf")
 
-        ccf_channel_dict = {}
+        ccf_channel_dict: dict[str, dict[str, Any]] = {}
         pattern = re.compile(r"channel_(\d+)")
 
-        # Collect indices and vectorize extraction of coordinates
         channel_indices = []
         channel_names = []
         for ch in channel_dict.keys():
@@ -790,7 +732,6 @@ class LoadDataLocal:
                 channel_indices.append(int(m.group(1)))
                 channel_names.append(ch)
 
-        # Slice once, ensure float64
         xyz_array = ccf_coordinates_dataframe.loc[
             channel_indices, ["x", "y", "z"]
         ].to_numpy(dtype=np.float64)
@@ -823,6 +764,8 @@ class LoadDataLocal:
         logger.debug(f"Channels: {channel_locations_ras}")
         if self.brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
+        if self.chn_coords is None:
+            raise RuntimeError("Must call set_channels_for_shank() first")
         regions: BrainRegions = self.brain_atlas.regions
         brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
         brain_regions["xyz"] = channel_locations_ras

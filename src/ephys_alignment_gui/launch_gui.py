@@ -211,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.offline: bool = True
         self.histology_exists: bool = True
         self.data_status: bool = False
+        self.save_root: Path | None = None
         self.output_directory: Path | None = None
         self.use_docdb: bool = True
 
@@ -1692,8 +1693,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
             success = self.loaddata.load_previous_alignments(
+                folder=folder_path,
                 shank_idx=self.session.current_shank_idx,
-                input_path=folder_path,
                 use_docdb=self.use_docdb,
             )
             if success:
@@ -1709,69 +1710,121 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         return True
 
-    def set_input_folder(self, input_path: Path) -> bool:
-        """
-        Set the input folder to the given path. Updates UI, internal state, and creates output directory.
+    def set_mouse_root(self, mouse_root: Path) -> bool:
+        """Point the GUI at a preprocessed mouse-root directory.
 
-        :param input_path: Path to the input directory
-        :return: True if successful, False otherwise
+        Loads ``datapackage.json``, populates the session dropdown, and clears
+        probe/shank state. The user then picks a session + probe, at which
+        point channel info is read from the corresponding ephys ALF.
+
+        :param mouse_root: Directory containing ``datapackage.json``.
+        :return: ``True`` on success.
         """
-        if not input_path or str(input_path).strip() == "":
-            logger.warning("Empty input path provided")
+        if not mouse_root or str(mouse_root).strip() == "":
+            logger.warning("Empty mouse-root path provided")
+            return False
+        mouse_root = Path(mouse_root)
+        if not mouse_root.is_dir():
+            logger.error(f"Mouse-root is not a directory: {mouse_root}")
             return False
 
+        with BusyContext(
+            self,
+            "Loading datapackage...",
+            "Mouse root loaded",
+            disable_widgets=[self.mouse_root_button, self.mouse_root_line],
+        ):
+            self.data_status = False
+            try:
+                mr = self.loaddata.set_mouse_root(mouse_root)
+            except Exception as e:
+                logger.error(f"Failed to load mouse root {mouse_root}: {e}")
+                return False
+
+            self.mouse_root_line.setText(str(mouse_root))
+
+            sessions = mr.sessions
+            self.populate_lists(sessions, self.session_list, self.session_combobox)
+            self.probe_list.clear()
+            self.shank_list.clear()
+            self.load_data_button.setEnabled(False)
+            logger.info(
+                f"Loaded mouse {mr.mouse_id!r} with "
+                f"{len(sessions)} session(s), {len(mr.probes)} probe(s)"
+            )
+            # Auto-select the first session + probe, if any.
+            if sessions:
+                self.session_combobox.setCurrentIndex(0)
+                self.on_session_combobox_activated(0)
+        return True
+
+    def on_mouse_root_selected(self) -> bool:
+        """Open a QFileDialog for the mouse-root directory."""
+        start_dir = None
+        if self.loaddata.mouse_root is not None:
+            start_dir = str(self.loaddata.mouse_root.root)
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            None, "Select Mouse Root", directory=start_dir or ""
+        )
+        if not folder:
+            return False
+        return self.set_mouse_root(Path(folder))
+
+    def on_mouse_root_edited(self) -> None:
+        """Triggered when the user finishes editing the mouse-root text field."""
+        text = self.mouse_root_line.text().strip()
+        if not text:
+            self.load_data_button.setEnabled(False)
+            return
         try:
-            input_path = Path(input_path)
-            if not input_path.exists():
-                logger.error(f"Input path does not exist: {input_path}")
-                return False
-            if not input_path.is_dir():
-                logger.error(f"Input path is not a directory: {input_path}")
-                return False
+            path = Path(text)
+            ok = self.set_mouse_root(path)
         except Exception as e:
-            logger.error(f"Invalid input path: {e}")
-            return False
+            logger.error(f"Invalid mouse-root path: {e}")
+            self.load_data_button.setEnabled(False)
+            return
+        if not ok:
+            self.load_data_button.setEnabled(False)
+
+    def on_session_combobox_activated(self, _idx: int) -> None:
+        """Populate the probe dropdown for the selected session."""
+        if self.loaddata.mouse_root is None:
+            return
+        session = self.session_combobox.currentText()
+        if not session:
+            return
+        probes = self.loaddata.list_probes(session)
+        self.populate_lists(probes, self.probe_list, self.probe_combobox)
+        self.shank_list.clear()
+        self.load_data_button.setEnabled(False)
+        if probes:
+            self.probe_combobox.setCurrentIndex(0)
+            self.on_probe_combobox_activated(0)
+
+    def on_probe_combobox_activated(self, _idx: int) -> None:
+        """Select a probe: load channel info, populate shank list, derive output dir."""
+        if self.loaddata.mouse_root is None:
+            return
+        session = self.session_combobox.currentText()
+        probe_name = self.probe_combobox.currentText()
+        if not session or not probe_name:
+            return
 
         with BusyContext(
             self,
             "Loading channel info...",
             "Ready",
-            disable_widgets=[self.input_folder_button, self.input_folder_line],
+            disable_widgets=[self.probe_combobox, self.session_combobox],
         ):
             self.data_status = False
+            try:
+                self.loaddata.select_probe(session, probe_name)
+                self.loaddata.load_channel_info()
+            except Exception as e:
+                logger.error(f"Failed to select probe {probe_name}: {e}")
+                self.load_data_button.setEnabled(False)
+                return
 
-            # Set up output directory (Code Ocean-specific logic)
-            we_are_in_code_ocean = (
-                Path("/results/").is_dir() and Path("/data/").is_dir()
-            )
-
-            if we_are_in_code_ocean:
-                out_folder = Path("/results/").joinpath(input_path.parent.stem)
-                string_folder_path = input_path.parent.stem
-                subject_id_path = string_folder_path[
-                    string_folder_path.index("_") + 1 :
-                ]
-                subject_id = subject_id_path[0 : subject_id_path.index("_")]
-
-                out_folder = Path("/results").joinpath(subject_id)
-                logger.info(f"Output folder: {out_folder}")
-            else:
-                out_folder = input_path.parent / "out"
-
-            # Create the output directory structure
-            out_folder.mkdir(exist_ok=True)
-            output_directory = out_folder / input_path.parent.stem / input_path.stem
-            output_directory.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Output dir: {output_directory}")
-            self.output_directory = output_directory
-
-            # Update UI
-            self.output_folder_line.setText(str(output_directory))
-            self.input_folder_line.setText(str(input_path))
-
-            # Load only channel info and shank list initially
-            self.loaddata.set_input_paths(input_path, we_are_in_code_ocean)
-            self.loaddata.load_channel_info(input_path)
             shanklist = self.loaddata.get_shank_list()
             if shanklist is not None:
                 self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
@@ -1781,35 +1834,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.feature_prev = None
             self.session.track_prev = None
 
-            logger.info(
-                "Input directory loaded, ready to load data or existing alignments."
-            )
+            self._derive_output_directory()
 
-        # Enable Load Data button now that input path is set
         self.load_data_button.setEnabled(True)
-        return True
 
-    def on_folder_selected(self) -> bool:
-        """
-        Triggered in offline mode when folder button is clicked
-        """
-        we_are_in_code_ocean = Path("/results/").is_dir() and Path("/data/").is_dir()
-
-        # Start at current input directory if set, otherwise use Code Ocean /data/ or None
-        if self.loaddata.input_path and self.loaddata.input_path.exists():
-            start_dir = str(self.loaddata.input_path)
-        elif we_are_in_code_ocean:
-            start_dir = "/data/"
-        else:
-            start_dir = None
-
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            None, "Select Input Directory", directory=start_dir
-        )
-        if not folder:
-            return False
-
-        return self.set_input_folder(Path(folder))
+    def _derive_output_directory(self) -> None:
+        """If a save-root and a probe are both set, compute the output dir."""
+        probe = self.loaddata.probe_info
+        if self.save_root is None or probe is None:
+            return
+        output_directory = self.save_root / probe.recording_id / probe.probe_name
+        output_directory.mkdir(parents=True, exist_ok=True)
+        self.output_directory = output_directory
+        self.output_folder_line.setText(str(output_directory))
+        logger.info(f"Output dir: {output_directory}")
 
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
@@ -1818,92 +1856,60 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
-        if self.loaddata.input_path is None:
-            logger.error("Must select Input Directory first")
+        if self.loaddata.probe_info is None:
+            logger.error("Must select a probe first")
             return
 
         if self.loaddata.n_shanks == 0:
-            logger.error(
-                "Channel info not loaded. Please select Input Directory first."
-            )
+            logger.error("Channel info not loaded. Please select a probe first.")
+            return
+
+        if self.output_directory is None:
+            logger.error("Must set an output directory before loading data.")
             return
 
         logger.info("Load Data button pressed")
         self.load_heavy_data()
 
-    def set_output_folder(self, output_path: Path) -> bool:
-        """
-        Set the output folder to the given path. Updates UI and internal state.
-        Does NOT create the directory - validates it exists.
-
-        :param output_path: Path to the output directory
-        :return: True if successful, False otherwise
-        """
-        if not output_path or str(output_path).strip() == "":
-            logger.warning("Empty output path provided")
+    def set_save_root(self, save_root: Path) -> bool:
+        """Set the save-root directory. Per-probe output lands under it."""
+        if not save_root or str(save_root).strip() == "":
+            logger.warning("Empty save-root path provided")
             return False
-
-        try:
-            output_path = Path(output_path)
-            if not output_path.exists():
-                logger.error(f"Output path does not exist: {output_path}")
-                return False
-            if not output_path.is_dir():
-                logger.error(f"Output path is not a directory: {output_path}")
-                return False
-
-            self.output_directory = output_path
-            self.output_folder_line.setText(str(output_path))
-            logger.info(f"Output directory set to: {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to set output folder: {e}")
+        save_root = Path(save_root)
+        if not save_root.is_dir():
+            logger.error(f"Save-root is not a directory: {save_root}")
             return False
+        self.save_root = save_root
+        logger.info(f"Save root set to: {save_root}")
+        self._derive_output_directory()
+        if self.output_directory is None:
+            # No probe yet — show the save-root itself until a probe is picked.
+            self.output_folder_line.setText(str(save_root))
+        return True
 
     def on_output_folder_selected(self) -> bool:
-        """
-        Triggered in offline mode when folder button is clicked
-        """
-        folder_path = Path(
-            QtWidgets.QFileDialog.getExistingDirectory(None, "Select Output Directory")
+        """Prompt the user for a save-root directory."""
+        start_dir = str(self.save_root) if self.save_root is not None else ""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            None, "Select Save Root", directory=start_dir
         )
-
-        if folder_path:
-            return self.set_output_folder(folder_path)
-        else:
+        if not folder:
             return False
-
-    def on_input_folder_edited(self) -> None:
-        """
-        Triggered when user finishes editing input_folder_line text field
-        """
-        text = self.input_folder_line.text().strip()
-        if not text:
-            # User cleared the field - disable Load Data button
-            self.load_data_button.setEnabled(False)
-            return
-
-        try:
-            input_path = Path(text)
-            success = self.set_input_folder(input_path)
-            # Button enabled/disabled based on success in set_input_folder()
-            if not success:
-                self.load_data_button.setEnabled(False)
-        except Exception as e:
-            logger.error(f"Invalid input path: {e}")
-            self.load_data_button.setEnabled(False)
+        return self.set_save_root(Path(folder))
 
     def on_output_folder_edited(self) -> None:
-        """
-        Triggered when user finishes editing output_folder_line text field
-        """
+        """Triggered when user finishes editing output_folder_line text field."""
         text = self.output_folder_line.text().strip()
-        if text:
-            try:
-                output_path = Path(text)
-                self.set_output_folder(output_path)
-            except Exception as e:
-                logger.error(f"Invalid output path: {e}")
+        if not text:
+            return
+        try:
+            path = Path(text)
+        except Exception as e:
+            logger.error(f"Invalid output path: {e}")
+            return
+        # Editing this field is taken as setting a new save-root.
+        self.set_save_root(path)
 
     def recreate_alignment_and_regions(self) -> None:
         """Create EphysAlignment and compute histology regions. Common code."""
