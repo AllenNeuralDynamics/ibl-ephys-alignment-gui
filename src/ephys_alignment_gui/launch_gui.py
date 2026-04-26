@@ -1948,6 +1948,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         logger.info(f"Setting up view for shank index {self.session.current_shank_idx}")
 
+        # Remember which slice plot the user had selected so we can restore it
+        # after the new probe's data loads. Each slice action carries
+        # (session_attr_name, slice_key) on its .data() per init_slice_menu.
+        prev_slice_action = (
+            self.slice_options_group.checkedAction()
+            if hasattr(self, "slice_options_group")
+            else None
+        )
+
         # Remove old user-drawn lines and disconnect their signals
         self.remove_lines_points()
         for arr in (self.session.lines_features, self.session.lines_tracks):
@@ -2039,7 +2048,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.line_init.setChecked(True)
         self.probe_init.setChecked(True)
         self.unit_init.setChecked(True)
-        self.slice_init.setChecked(True)
 
         # Render all plots
         logger.info("Rendering plots...")
@@ -2048,7 +2056,31 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_line(self.session.line_fr_data)
 
         self.render_histology_plots()
-        self.plot_slice(self.session.slice_data, "ccf")
+
+        # Restore the previously-selected slice plot if its data is still
+        # available for this probe; otherwise fall back to CCF.
+        slice_payload = (
+            prev_slice_action.data() if prev_slice_action is not None else None
+        )
+        slice_data_attr, slice_key = (
+            slice_payload if slice_payload is not None else (None, None)
+        )
+        slice_data = (
+            getattr(self.session, slice_data_attr, None)
+            if slice_data_attr is not None
+            else None
+        )
+        if slice_data is not None and slice_key in slice_data:
+            prev_slice_action.setChecked(True)
+            self.plot_slice(slice_data, slice_key)
+        else:
+            if prev_slice_action is not None and prev_slice_action is not self.slice_init:
+                logger.info(
+                    f"Slice selection '{prev_slice_action.text()}' not available for "
+                    f"this probe; falling back to CCF"
+                )
+            self.slice_init.setChecked(True)
+            self.plot_slice(self.session.slice_data, "ccf")
 
         # Only configure the view on first launch
         self.set_view(view=1, configure=self.configure and not self.data_status)
