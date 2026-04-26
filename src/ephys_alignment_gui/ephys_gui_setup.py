@@ -963,6 +963,9 @@ class Setup:
             max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
+        # Y-link to fig_hist so scrolling/zooming the track-space view stays
+        # synchronised with the feature-space plots.
+        self.fig_hist_ref.setYLink(self.fig_hist)
         self.set_axis(self.fig_hist_ref, "bottom", pen="w")
         self.set_axis(self.fig_hist_ref, "left", show=False)
         replace_axis(self.fig_hist_ref, orientation="right", pos=(2, 2))
