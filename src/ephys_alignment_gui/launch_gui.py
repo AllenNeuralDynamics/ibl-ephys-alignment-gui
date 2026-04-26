@@ -1351,11 +1351,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
-            self.fig_img.setYRange(
-                min=self.session.probe_tip - self.session.probe_extra,
-                max=self.session.probe_top + self.session.probe_extra,
-                padding=self.pad,
-            )
             self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
             self.session.y_scale = 1
             self.session.img_plots.append(plot)
@@ -1390,11 +1385,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_line.addItem(line)
             self.fig_line.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.fig_line.setYRange(
-                min=self.session.probe_tip - self.session.probe_extra,
-                max=self.session.probe_top + self.session.probe_extra,
-                padding=self.pad,
             )
             self.set_axis(self.fig_line, "bottom", label=data["xaxis"])
             self.session.line_plots.append(line)
@@ -1460,11 +1450,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.fig_probe.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.fig_probe.setYRange(
-                min=self.session.probe_tip - self.session.probe_extra,
-                max=self.session.probe_top + self.session.probe_extra,
-                padding=self.pad,
             )
             # so stupid!!!!!
             self.set_axis(self.fig_probe, "bottom", pen="w", label="blank")
@@ -1582,11 +1567,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.img_plots.append(image)
             self.fig_img.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.fig_img.setYRange(
-                min=self.session.probe_tip - self.session.probe_extra,
-                max=self.session.probe_top + self.session.probe_extra,
-                padding=self.pad,
             )
             # TODO need to make this work, at the moment messes things up!
             # self.fig_img.setLimits(xMin=data['xrange'][0], xMax=data['xrange'][1])
