@@ -2043,17 +2043,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.data_status:
             self.init_menubar()
 
-        # Initialize/update checked plots
-        self.img_init.setChecked(True)
-        self.line_init.setChecked(True)
-        self.probe_init.setChecked(True)
-        self.unit_init.setChecked(True)
-
         # Render all plots
         logger.info("Rendering plots...")
-        self.plot_image(self.session.img_fr_data)
-        self.plot_probe(self.session.probe_rms_LFPdata)
-        self.plot_line(self.session.line_fr_data)
+        if self.data_status:
+            # Subsequent load — re-apply the user's previous unit filter on
+            # the new probe's data. filter_unit_pressed recomputes filtered
+            # data and calls update_plot, which fires current_img_action /
+            # line_img_action / probe_img_action — so the user's previously-
+            # selected img/line/probe plots are preserved as well.
+            unit_action = self.unit_filter_options_group.checkedAction()
+            if unit_action is not None:
+                unit_action.trigger()
+            # filter_unit_pressed visually re-checks img_init / line_init /
+            # probe_init even when current_*_action points elsewhere; restore
+            # the menu to the user's actual selection.
+            for action in (
+                self.current_img_action,
+                self.line_img_action,
+                self.probe_img_action,
+            ):
+                if action is not None:
+                    action.setChecked(True)
+        else:
+            # First load — apply menu defaults and render initial plots.
+            self.img_init.setChecked(True)
+            self.line_init.setChecked(True)
+            self.probe_init.setChecked(True)
+            self.unit_init.setChecked(True)
+            self.plot_image(self.session.img_fr_data)
+            self.plot_probe(self.session.probe_rms_LFPdata)
+            self.plot_line(self.session.line_fr_data)
 
         self.render_histology_plots()
 
