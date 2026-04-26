@@ -295,22 +295,22 @@ class Setup:
         # Add menu bar for slice plot options
         unit_filter_options = menu_bar.addMenu("Filter Units")
         # Add action group so we can toggle through unit options
-        unit_filter_options_group = QtWidgets.QActionGroup(unit_filter_options)
-        unit_filter_options_group.setExclusive(True)
+        self.unit_filter_options_group = QtWidgets.QActionGroup(unit_filter_options)
+        self.unit_filter_options_group.setExclusive(True)
         unit_filter_options.addAction(all_units)
-        unit_filter_options_group.addAction(all_units)
+        self.unit_filter_options_group.addAction(all_units)
         unit_filter_options.addAction(good_units)
-        unit_filter_options_group.addAction(good_units)
+        self.unit_filter_options_group.addAction(good_units)
         unit_filter_options.addAction(mua_units)
-        unit_filter_options_group.addAction(mua_units)
+        self.unit_filter_options_group.addAction(mua_units)
         unit_filter_options.addAction(ibl_units)
-        unit_filter_options_group.addAction(ibl_units)
+        self.unit_filter_options_group.addAction(ibl_units)
         unit_filter_options.addAction(aind_qc_units)
-        unit_filter_options_group.addAction(aind_qc_units)
+        self.unit_filter_options_group.addAction(aind_qc_units)
         unit_filter_options.addAction(sua_refine_units)
-        unit_filter_options_group.addAction(sua_refine_units)
+        self.unit_filter_options_group.addAction(sua_refine_units)
         unit_filter_options.addAction(neural_refine_units)
-        unit_filter_options_group.addAction(neural_refine_units)
+        self.unit_filter_options_group.addAction(neural_refine_units)
 
         # FIT OPTIONS MENU BAR
         # Define all possible keyboard shortcut interactions for GUI
