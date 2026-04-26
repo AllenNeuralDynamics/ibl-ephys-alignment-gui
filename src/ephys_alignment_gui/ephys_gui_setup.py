@@ -524,18 +524,22 @@ class Setup:
 
     def init_slice_menu(self) -> None:
         menu_bar = self.menuBar()
-        # Define all coronal slice plot options
-        # These are always present, regardless of histology alignment
+        # Define all coronal slice plot options. Each action stores
+        # (session_attr_name, slice_data_key) via setData() so callers can
+        # later look up the data source without re-deriving it from the label.
         slice_ccf = QtWidgets.QAction("CCF", self, checkable=True, checked=False)
+        slice_ccf.setData(("slice_data", "ccf"))
         slice_ccf.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "ccf"))
         slice_label = QtWidgets.QAction(
             "Annotation", self, checkable=True, checked=False
         )
+        slice_label.setData(("slice_data", "label"))
         slice_label.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "label"))
         if self.session.fp_slice_data is not None:
             fp_slice_label = QtWidgets.QAction(
                 "Annotation FP", self, checkable=True, checked=False
             )
+            fp_slice_label.setData(("fp_slice_data", "label"))
             fp_slice_label.triggered.connect(
                 lambda: self.plot_slice(self.session.fp_slice_data, "label")
             )
@@ -546,6 +550,7 @@ class Setup:
                 checkable=True,
                 checked=False,
             )
+            slice_hist_cb.setData(("slice_data", "hist_cb"))
             slice_hist_cb.triggered.connect(
                 lambda: self.plot_slice(self.session.slice_data, "hist_cb")
             )
@@ -578,6 +583,7 @@ class Setup:
                 this_slice_action = QtWidgets.QAction(
                     key, self, checkable=True, checked=False
                 )
+                this_slice_action.setData(("slice_data", key))
                 this_slice_action.triggered.connect(
                     lambda checked, item=key: self.plot_slice(self.session.slice_data, item)
                 )
