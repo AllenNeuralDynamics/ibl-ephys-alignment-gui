@@ -1030,8 +1030,12 @@ class Setup:
         self.fig_fit.sigDeviceRangeChanged.connect(self.on_fig_size_changed)
         self.fig_fit.setXRange(min=self.session.view_total[0], max=self.session.view_total[1])
         self.fig_fit.setYRange(min=self.session.view_total[0], max=self.session.view_total[1])
-        self.set_axis(self.fig_fit, "bottom", label="Original coordinates (um)")
-        self.set_axis(self.fig_fit, "left", label="New coordinates (um)")
+        # X = features (post-alignment ephys/probe depth, the "aligned" space
+        # shown in fig_hist). Y = track (atlas-track depth, the "original"
+        # space shown in fig_hist_ref). Match those labels so the fit plot
+        # uses the same vocabulary as the histology panels.
+        self.set_axis(self.fig_fit, "bottom", label="Aligned depth (μm)")
+        self.set_axis(self.fig_fit, "left", label="Atlas track depth (μm)")
         plot = pg.PlotCurveItem()
         plot.setData(x=self.session.depth, y=self.session.depth, pen=self.kpen_dot)
         self.fit_plot = pg.PlotCurveItem(pen=self.bpen_solid)
