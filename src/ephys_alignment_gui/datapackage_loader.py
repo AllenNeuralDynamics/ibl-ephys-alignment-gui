@@ -19,9 +19,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Minimum datapackage schema this loader can read.
-MIN_SCHEMA_MAJOR = 1
-MIN_SCHEMA_MINOR = 1
+# Minimum datapackage schema this loader can read. Major bump from 1.x:
+# probes are now nested by ``recording_id`` then ``probe_name``. The 1.x
+# flat ``dict[probe_name, ProbeEntry]`` silently merged probes that shared
+# a name across recordings, so the shape is incompatible.
+MIN_SCHEMA_MAJOR = 2
+MIN_SCHEMA_MINOR = 0
 
 
 class DataPackageError(RuntimeError):
@@ -85,38 +88,43 @@ class ProbeInfo:
 
 @dataclass(frozen=True)
 class MouseRoot:
-    """Resolved view of a preprocessed mouse output directory."""
+    """Resolved view of a preprocessed mouse output directory.
+
+    Probes are nested by ``recording_id`` then ``probe_name`` so that the
+    same physical probe re-inserted across recordings stays distinct (the
+    triplet ``(recording_id, probe_name, probe_shank)`` is the unique key).
+    """
 
     root: Path
     schema_version: str
     mouse_id: str
     transforms: TransformPaths
     histology: HistologyImagePaths
-    probes: dict[str, ProbeInfo]
+    probes: dict[str, dict[str, ProbeInfo]]
 
     @property
     def sessions(self) -> list[str]:
         """All recording IDs represented in this mouse root (sorted)."""
-        return sorted({p.recording_id for p in self.probes.values()})
+        return sorted(self.probes.keys())
 
     def probes_for_session(self, recording_id: str) -> list[str]:
         """Probe names for a given recording ID (sorted)."""
-        names = [
-            name for name, p in self.probes.items() if p.recording_id == recording_id
-        ]
-        return sorted(names)
+        return sorted(self.probes.get(recording_id, {}).keys())
 
     def get_probe(self, recording_id: str, probe_name: str) -> ProbeInfo:
         """Look up a probe by (recording_id, probe_name)."""
-        if probe_name not in self.probes:
-            raise DataPackageError(f"No probe named {probe_name!r} in datapackage")
-        probe = self.probes[probe_name]
-        if probe.recording_id != recording_id:
+        if recording_id not in self.probes:
             raise DataPackageError(
-                f"Probe {probe_name!r} belongs to recording "
-                f"{probe.recording_id!r}, not {recording_id!r}"
+                f"No recording {recording_id!r} in datapackage "
+                f"(available: {sorted(self.probes.keys())})"
             )
-        return probe
+        probes_for_rec = self.probes[recording_id]
+        if probe_name not in probes_for_rec:
+            raise DataPackageError(
+                f"No probe {probe_name!r} in recording {recording_id!r} "
+                f"(available: {sorted(probes_for_rec.keys())})"
+            )
+        return probes_for_rec[probe_name]
 
 
 def load_mouse_root(mouse_root: Path) -> MouseRoot:
@@ -214,24 +222,37 @@ def _parse_histology(d: dict, root: Path) -> HistologyImagePaths:
     )
 
 
-def _parse_probes(d: dict, root: Path) -> dict[str, ProbeInfo]:
-    probes: dict[str, ProbeInfo] = {}
-    for probe_name, entry in d.items():
-        picks = tuple(
-            XyzPicks(
-                image_space=_resolve(p["image_space"], root),
-                ccf=_resolve(p["ccf"], root),
-                shank=p.get("shank"),
+def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
+    """Parse the nested ``recording_id -> probe_name -> entry`` JSON.
+
+    ``recording_id`` and ``probe_name`` come from the outer/inner dict keys
+    rather than fields on each entry, so we set them on the resulting
+    ProbeInfo from the keys.
+    """
+    probes: dict[str, dict[str, ProbeInfo]] = {}
+    for recording_id, recording_probes in d.items():
+        if not isinstance(recording_probes, dict):
+            raise DataPackageError(
+                f"Expected nested dict under recording {recording_id!r}, got "
+                f"{type(recording_probes).__name__}. Datapackage may be from a "
+                "pre-2.0.0 schema; re-run preprocessing."
             )
-            for p in entry["xyz_picks"]
-        )
-        ephys_rel = entry.get("ephys")
-        probes[probe_name] = ProbeInfo(
-            probe_id=entry["probe_id"],
-            probe_name=probe_name,
-            recording_id=entry["recording_id"],
-            num_shanks=entry["num_shanks"],
-            ephys_dir=_resolve(ephys_rel, root) if ephys_rel else None,
-            xyz_picks=picks,
-        )
+        for probe_name, entry in recording_probes.items():
+            picks = tuple(
+                XyzPicks(
+                    image_space=_resolve(p["image_space"], root),
+                    ccf=_resolve(p["ccf"], root),
+                    shank=p.get("shank"),
+                )
+                for p in entry["xyz_picks"]
+            )
+            ephys_rel = entry.get("ephys")
+            probes.setdefault(recording_id, {})[probe_name] = ProbeInfo(
+                probe_id=entry["probe_id"],
+                probe_name=probe_name,
+                recording_id=recording_id,
+                num_shanks=entry["num_shanks"],
+                ephys_dir=_resolve(ephys_rel, root) if ephys_rel else None,
+                xyz_picks=picks,
+            )
     return probes
