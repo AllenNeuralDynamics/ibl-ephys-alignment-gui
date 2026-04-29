@@ -16,13 +16,16 @@ from ephys_alignment_gui.datapackage_loader import (
 def _make_mouse_root(
     tmp_path: Path,
     *,
-    schema_version: str = "1.1.0",
-    extra_probes: dict | None = None,
+    schema_version: str = "2.0.0",
+    extra_probes: dict[str, dict[str, dict]] | None = None,
 ) -> Path:
     """Create a minimal mouse-root directory with a datapackage.json.
 
     Also touches the target files on disk so `.resolve()` checks hold even if
     relative paths cross ``..`` boundaries.
+
+    ``extra_probes`` is shaped ``{recording_id: {probe_name: entry}}`` to
+    match the 2.0.0 nested probes schema.
     """
     mouse_root = tmp_path / "results" / "mouse42"
     mouse_root.mkdir(parents=True)
@@ -61,22 +64,24 @@ def _make_mouse_root(
     (probe_dir / "xyz_picks_image_space.json").touch()
     (probe_dir / "spikes").mkdir()
 
-    probes = {
-        "probeA": {
-            "probe_id": "p-1",
-            "recording_id": "rec1",
-            "num_shanks": 1,
-            "ephys": "rec1/probeA/spikes",
-            "xyz_picks": [
-                {
-                    "ccf": "rec1/probeA/xyz_picks.json",
-                    "image_space": "rec1/probeA/xyz_picks_image_space.json",
-                }
-            ],
+    probes: dict[str, dict[str, dict]] = {
+        "rec1": {
+            "probeA": {
+                "probe_id": "p-1",
+                "num_shanks": 1,
+                "ephys": "rec1/probeA/spikes",
+                "xyz_picks": [
+                    {
+                        "ccf": "rec1/probeA/xyz_picks.json",
+                        "image_space": "rec1/probeA/xyz_picks_image_space.json",
+                    }
+                ],
+            }
         }
     }
     if extra_probes:
-        probes.update(extra_probes)
+        for rec_id, rec_probes in extra_probes.items():
+            probes.setdefault(rec_id, {}).update(rec_probes)
 
     spim_rel = "../../SmartSPIM_mouse42_123/image_atlas_alignment/Ex_561_Em_600"
     tmpl_rel = "../../spim_template_to_ccf"
@@ -123,7 +128,7 @@ def test_loads_basic_mouse_root(tmp_path):
     root = _make_mouse_root(tmp_path)
     mr = load_mouse_root(root)
     assert mr.mouse_id == "mouse42"
-    assert mr.schema_version == "1.1.0"
+    assert mr.schema_version == "2.0.0"
     assert mr.sessions == ["rec1"]
     assert mr.probes_for_session("rec1") == ["probeA"]
 
@@ -168,13 +173,14 @@ def test_probe_info_resolves_paths(tmp_path):
 
 
 def test_rejects_older_schema(tmp_path):
-    root = _make_mouse_root(tmp_path, schema_version="1.0.0")
+    """Pre-2.0.0 datapackages have a flat ``probes`` dict and must be rejected."""
+    root = _make_mouse_root(tmp_path, schema_version="1.1.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
         load_mouse_root(root)
 
 
 def test_rejects_incompatible_major_schema(tmp_path):
-    root = _make_mouse_root(tmp_path, schema_version="2.0.0")
+    root = _make_mouse_root(tmp_path, schema_version="3.0.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
         load_mouse_root(root)
 
@@ -197,32 +203,40 @@ def test_malformed_json_raises_datapackage_error(tmp_path):
         load_mouse_root(root)
 
 
-def test_get_probe_wrong_session_raises(tmp_path):
+def test_get_probe_unknown_recording_raises(tmp_path):
     root = _make_mouse_root(tmp_path)
     mr = load_mouse_root(root)
-    with pytest.raises(DataPackageError, match="belongs to recording"):
+    with pytest.raises(DataPackageError, match="No recording 'recWRONG'"):
         mr.get_probe("recWRONG", "probeA")
+
+
+def test_get_probe_unknown_probe_in_known_recording_raises(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    mr = load_mouse_root(root)
+    with pytest.raises(DataPackageError, match="No probe 'probeNOPE' in recording 'rec1'"):
+        mr.get_probe("rec1", "probeNOPE")
 
 
 def test_multi_shank_probe_picks_by_index(tmp_path):
     extra = {
-        "probeB": {
-            "probe_id": "p-2",
-            "recording_id": "rec1",
-            "num_shanks": 2,
-            "ephys": "rec1/probeB/spikes",
-            "xyz_picks": [
-                {
-                    "ccf": "rec1/probeB/xyz_picks_shank1.json",
-                    "image_space": "rec1/probeB/xyz_picks_shank1_image_space.json",
-                    "shank": 1,
-                },
-                {
-                    "ccf": "rec1/probeB/xyz_picks_shank2.json",
-                    "image_space": "rec1/probeB/xyz_picks_shank2_image_space.json",
-                    "shank": 2,
-                },
-            ],
+        "rec1": {
+            "probeB": {
+                "probe_id": "p-2",
+                "num_shanks": 2,
+                "ephys": "rec1/probeB/spikes",
+                "xyz_picks": [
+                    {
+                        "ccf": "rec1/probeB/xyz_picks_shank1.json",
+                        "image_space": "rec1/probeB/xyz_picks_shank1_image_space.json",
+                        "shank": 1,
+                    },
+                    {
+                        "ccf": "rec1/probeB/xyz_picks_shank2.json",
+                        "image_space": "rec1/probeB/xyz_picks_shank2_image_space.json",
+                        "shank": 2,
+                    },
+                ],
+            }
         }
     }
     root = _make_mouse_root(tmp_path, extra_probes=extra)
@@ -247,17 +261,18 @@ def test_multi_shank_probe_picks_by_index(tmp_path):
 
 def test_sessions_are_distinct_recordings(tmp_path):
     extra = {
-        "probeB": {
-            "probe_id": "p-2",
-            "recording_id": "rec2",
-            "num_shanks": 1,
-            "ephys": "rec2/probeB/spikes",
-            "xyz_picks": [
-                {
-                    "ccf": "rec2/probeB/xyz_picks.json",
-                    "image_space": "rec2/probeB/xyz_picks_image_space.json",
-                }
-            ],
+        "rec2": {
+            "probeB": {
+                "probe_id": "p-2",
+                "num_shanks": 1,
+                "ephys": "rec2/probeB/spikes",
+                "xyz_picks": [
+                    {
+                        "ccf": "rec2/probeB/xyz_picks.json",
+                        "image_space": "rec2/probeB/xyz_picks_image_space.json",
+                    }
+                ],
+            }
         }
     }
     root = _make_mouse_root(tmp_path, extra_probes=extra)
@@ -270,3 +285,39 @@ def test_sessions_are_distinct_recordings(tmp_path):
     assert mr.sessions == ["rec1", "rec2"]
     assert mr.probes_for_session("rec1") == ["probeA"]
     assert mr.probes_for_session("rec2") == ["probeB"]
+
+
+def test_same_probe_name_in_two_recordings_kept_distinct(tmp_path):
+    """Same probe_name re-used across recordings stays distinct (the 2.0.0 fix)."""
+    extra = {
+        "rec2": {
+            # Same name as rec1's probeA.
+            "probeA": {
+                "probe_id": "p-1-rec2",
+                "num_shanks": 1,
+                "ephys": "rec2/probeA/spikes",
+                "xyz_picks": [
+                    {
+                        "ccf": "rec2/probeA/xyz_picks.json",
+                        "image_space": "rec2/probeA/xyz_picks_image_space.json",
+                    }
+                ],
+            }
+        }
+    }
+    root = _make_mouse_root(tmp_path, extra_probes=extra)
+    (root / "rec2" / "probeA").mkdir(parents=True)
+    for name in ("xyz_picks.json", "xyz_picks_image_space.json"):
+        (root / "rec2" / "probeA" / name).touch()
+    (root / "rec2" / "probeA" / "spikes").mkdir()
+
+    mr = load_mouse_root(root)
+    assert mr.sessions == ["rec1", "rec2"]
+    assert mr.probes_for_session("rec1") == ["probeA"]
+    assert mr.probes_for_session("rec2") == ["probeA"]
+    p1 = mr.get_probe("rec1", "probeA")
+    p2 = mr.get_probe("rec2", "probeA")
+    assert p1.probe_id == "p-1"
+    assert p2.probe_id == "p-1-rec2"
+    assert p1.recording_id == "rec1"
+    assert p2.recording_id == "rec2"

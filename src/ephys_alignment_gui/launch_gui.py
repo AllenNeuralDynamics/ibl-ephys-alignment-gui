@@ -1881,9 +1881,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.probe_list.clear()
             self.shank_list.clear()
             self.load_data_button.setEnabled(False)
+            n_probes = sum(len(rec_probes) for rec_probes in mr.probes.values())
             logger.info(
                 f"Loaded mouse {mr.mouse_id!r} with "
-                f"{len(sessions)} session(s), {len(mr.probes)} probe(s)"
+                f"{len(sessions)} session(s), {n_probes} probe(s)"
             )
             # Auto-select the first session + probe, if any.
             if sessions:
