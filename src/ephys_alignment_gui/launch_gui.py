@@ -215,6 +215,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.output_directory: Path | None = None
         self.use_docdb: bool = True
 
+        # RAM-only cheap-save cache, keyed by probe_id. Captures the
+        # in-progress (features, track) when the user navigates off a probe
+        # so they can resume via an "auto" entry in the alignment dropdown.
+        # NEVER persisted to /results or DocDB — see complete_button_pressed_offline.
+        self._auto_alignments: dict[str, list[list[float]]] = {}
+
         self.loaddata = LoadDataLocal()
 
         self.allen = self.loaddata.load_allen_csv()
@@ -1781,6 +1787,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.data_status = True
             logger.info("=== Heavy data load complete ===")
 
+            # If the user previously navigated off this probe, surface the
+            # captured (features, track) as an "auto" entry in the alignment
+            # dropdown and select it. RAM-only — see _capture_auto_alignment.
+            self._restore_auto_alignment()
+
     def load_existing_alignments(self) -> bool:
         if self.loaddata.n_shanks == 0:
             logger.error(
@@ -1846,11 +1857,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=[self.mouse_root_button, self.mouse_root_line],
         ):
             self.data_status = False
+            old_root = (
+                self.loaddata.mouse_root.root
+                if self.loaddata.mouse_root is not None
+                else None
+            )
             try:
                 mr = self.loaddata.set_mouse_root(mouse_root)
             except Exception as e:
                 logger.error(f"Failed to load mouse root {mouse_root}: {e}")
                 return False
+
+            # Different mouse → probe_ids may not be meaningful anymore.
+            # Same mouse → preserve auto cache so re-selecting the root
+            # doesn't wipe in-progress work.
+            if old_root is not None and old_root != mr.root:
+                self._auto_alignments.clear()
 
             self.mouse_root_line.setText(str(mouse_root))
 
@@ -1921,6 +1943,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not session or not probe_name:
             return
 
+        # Cheap save: capture the OUTGOING probe's in-progress alignment
+        # before we overwrite probe_info via select_probe, so it can be
+        # restored as "auto" if the user comes back. RAM-only.
+        self._capture_auto_alignment()
+
         with BusyContext(
             self,
             "Loading channel info...",
@@ -1959,6 +1986,56 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.output_directory = output_directory
         self.output_folder_line.setText(str(output_directory))
         logger.info(f"Output dir: {output_directory}")
+
+    def _capture_auto_alignment(self) -> None:
+        """Capture the current probe's in-progress (features, track) into RAM.
+
+        Called when navigating off a probe. Stored under the probe's
+        ``probe_id`` (not name, since names may collide if the schema is
+        ever loosened). Only meaningful once heavy data has been loaded
+        — before that the session has no real alignment to capture.
+        """
+        if not self.data_status:
+            return
+        probe = self.loaddata.probe_info
+        if probe is None or self.session is None:
+            return
+        try:
+            features = self.session.features[self.session.idx]
+            track = self.session.track[self.session.idx]
+        except (AttributeError, IndexError, KeyError, TypeError):
+            return
+        if features is None or track is None:
+            return
+        self._auto_alignments[probe.probe_id] = [
+            np.asarray(features).tolist(),
+            np.asarray(track).tolist(),
+        ]
+        logger.info(f"Auto-captured alignment for probe {probe.probe_id}")
+
+    def _restore_auto_alignment(self) -> None:
+        """Surface a cached auto alignment for the current probe, if any.
+
+        Injects an ``"auto"`` entry into ``loaddata.alignments`` and
+        prepends it to ``loaddata.prev_align`` so it shows up at the top
+        of the alignment dropdown. Selecting it restores
+        ``feature_prev``/``track_prev`` from RAM. Never written to disk.
+        """
+        probe = self.loaddata.probe_info
+        if probe is None:
+            return
+        auto = self._auto_alignments.get(probe.probe_id)
+        if auto is None:
+            return
+        self.loaddata.alignments["auto"] = auto
+        if "auto" in self.loaddata.prev_align:
+            self.loaddata.prev_align.remove("auto")
+        self.loaddata.prev_align.insert(0, "auto")
+        self.populate_lists(
+            self.loaddata.prev_align, self.align_list, self.align_combobox
+        )
+        self.on_alignment_selected(0)
+        logger.info(f"Restored auto alignment for probe {probe.probe_id}")
 
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
@@ -2805,8 +2882,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.output_directory / f"ccf_channel_locations{suffix}.json"
             )
 
+            # The "auto" entry is a RAM-only cheap save; never let it leak
+            # into prev_alignments.json or DocDB.
+            persistable_alignments = {
+                k: v for k, v in alignments.items() if k != "auto"
+            }
+
             _write_dict_to_json(channel_results_path, channel_results)
-            _write_dict_to_json(prev_alignments_path, alignments)
+            _write_dict_to_json(prev_alignments_path, persistable_alignments)
             _write_dict_to_json(ccf_channel_dict_path, ccf_channel_dict)
             logger.info("Channel locations saved to results folder")
 
@@ -2820,7 +2903,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                         self.output_directory.parent.stem,
                         probe_name_for_docdb,
                         channel_results,
-                        alignments,
+                        persistable_alignments,
                         ccf_channel_dict,
                     )
                 except ValueError as e:
@@ -2829,6 +2912,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     )
                 logger.info(
                     f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
+                )
+
+            # A real save supersedes the auto cache for this probe.
+            if self.loaddata.probe_info is not None:
+                self._auto_alignments.pop(
+                    self.loaddata.probe_info.probe_id, None
                 )
 
     def display_qc_options(self) -> None:
