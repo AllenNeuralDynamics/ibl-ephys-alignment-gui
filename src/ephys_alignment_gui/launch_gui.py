@@ -1617,6 +1617,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self._teardown_session()
             self.init_session_variables()
 
+            # init_session_variables() resets current_shank_idx to 0, so restore
+            # the shank the user selected in the dropdown. Otherwise loading data
+            # always lands on shank 0 and every save overwrites the shank 1 files.
+            selected_shank = self.shank_combobox.currentIndex()
+            if selected_shank >= 0:
+                self.session.current_shank_idx = selected_shank
+            logger.info(f"Loading data for shank index {self.session.current_shank_idx}")
+
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
@@ -2120,6 +2128,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         logger.info(f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})")
 
+        # The loader's alignment history is shared across shanks and is only
+        # appended to on save. Reset it when changing shank so that this shank's
+        # prev_alignments_shank{N}.json does not accumulate other shanks' entries.
+        self.reset_shank_alignments()
+
         if not self.data_status:
             # Data not loaded yet - just update index
             logger.info("Data not loaded yet, shank index updated")
@@ -2128,6 +2141,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Data already loaded - switch view without reloading heavy data
         logger.info("Switching shank view...")
         self.setup_shank_view()
+
+    def reset_shank_alignments(self) -> None:
+        """Reset the loader's per-shank alignment history and refresh the dropdown.
+
+        The loader object lives for the whole GUI run and its ``alignments``
+        dict is only ever appended to on save. Without resetting it when the
+        active shank changes, each shank's saved ``prev_alignments`` file would
+        accumulate the alignment entries of previously saved shanks.
+        """
+        self.loaddata.alignments = {}
+        self.loaddata.prev_align = ["original"]
+        self.populate_lists(
+            self.loaddata.prev_align, self.align_list, self.align_combobox
+        )
 
     def on_alignment_selected(self, idx) -> None:
         """Triggered when selecting alignment from dropdown"""
