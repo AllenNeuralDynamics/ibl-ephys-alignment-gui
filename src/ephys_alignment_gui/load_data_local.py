@@ -9,7 +9,6 @@ import re
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -172,7 +171,6 @@ class LoadDataLocal:
     data_root: Path | None = None
     histology_path: Path | None = None
     we_are_in_code_ocean: bool = True
-    chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
     sess_path: Path | None = None
     n_shanks: int = 0
@@ -180,9 +178,6 @@ class LoadDataLocal:
     tx_chain_files: AntsTransformChainFiles | None = None
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
-    channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
-    alignments: dict[str, list[list[float]]] = field(default_factory=dict)
-    prev_align: list[str] = field(default_factory=lambda: ["original"])
 
     def load_previous_alignments_docdb(
         self,
@@ -247,7 +242,14 @@ class LoadDataLocal:
 
     def load_previous_alignments(
         self, shank_idx=0, input_path: Path | None = None, use_docdb=True
-    ) -> bool:
+    ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
+        """Load a shank's previous alignments from docdb or local disk.
+
+        Returns ``(alignments, prev_align)`` for the requested shank, or
+        ``None`` if no record exists. The caller is responsible for storing the
+        result on the corresponding :class:`ShankAlignment`; this loader holds
+        no per-shank state of its own.
+        """
         input_path = self._check_input_path_arg(input_path)
 
         maybe_alignments = None
@@ -270,29 +272,7 @@ class LoadDataLocal:
             maybe_alignments = self.load_previous_alignments_local(
                 input_path=input_path, shank_idx=shank_idx
             )
-        if maybe_alignments is None:
-            return False
-        else:
-            alignments, prev_align = maybe_alignments
-            self.alignments = alignments
-            self.prev_align = prev_align
-        return True
-
-    def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
-        """
-        Find out the starting alignment
-        """
-        if len(self.prev_align) <= idx:
-            return None, None
-        alignment = self.prev_align[idx]
-        if alignment == "original":
-            feature = None
-            track = None
-        else:
-            feature = np.array(self.alignments[alignment][0])
-            track = np.array(self.alignments[alignment][1])
-
-        return feature, track
+        return maybe_alignments
 
     def _check_input_path_arg(self, input_path: Path | None) -> Path:
         if input_path is None:
@@ -399,49 +379,32 @@ class LoadDataLocal:
             self._lazy_channel_paths[channel_name] = other_channel
         logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
 
-    def set_channels_for_shank(self, shank_idx: int):
-        """Filter cached channel coordinates for selected shank. No disk I/O."""
+    def channels_for_shank(self, shank_idx: int) -> NDArray:
+        """Return the channel coordinates belonging to ``shank_idx``.
+
+        Filters the probe-wide ``chn_coords_all`` (loaded once) down to a single
+        shank. Holds no per-shank state; the caller stores the result on the
+        relevant :class:`ShankAlignment`.
+        """
         if self.chn_coords_all is None:
             raise RuntimeError("Must call load_channel_info() first")
         chn_coords_all = self.chn_coords_all
+        if self.n_shanks <= 1:
+            return chn_coords_all
         chn_x = np.unique(chn_coords_all[:, 0])
-
-        if self.n_shanks > 1:
-            shanks = {}
-            for iShank in range(self.n_shanks):
-                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
-
-            shank_chns = np.bitwise_and(
-                chn_coords_all[:, 0] >= shanks[shank_idx][0],
-                chn_coords_all[:, 0] <= shanks[shank_idx][1],
-            )
-            chn_coords = chn_coords_all[shank_chns, :]
-        else:
-            chn_coords = chn_coords_all
-        self.chn_coords = chn_coords
-
-        return chn_coords[:, 1]  # Return depths
+        lo, hi = chn_x[shank_idx * 2], chn_x[(shank_idx * 2) + 1]
+        shank_chns = np.bitwise_and(
+            chn_coords_all[:, 0] >= lo,
+            chn_coords_all[:, 0] <= hi,
+        )
+        return chn_coords_all[shank_chns, :]
 
     def get_ephys_data(self, shank_idx, input_path: Path | None = None):
         input_path = self._check_input_path_arg(input_path)
         logger.info(f"get_ephys_data: loading from {input_path}, shank_idx={shank_idx}")
-        if self.chn_coords_all is None:
-            raise RuntimeError("Must call load_channel_info() first")
-        chn_x = np.unique(self.chn_coords_all[:, 0])
-        if self.n_shanks > 1:
-            shanks = {}
-            for iShank in range(self.n_shanks):
-                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
+        chn_coords = self.channels_for_shank(shank_idx)
 
-            shank_chns = np.bitwise_and(
-                self.chn_coords_all[:, 0] >= shanks[shank_idx][0],
-                self.chn_coords_all[:, 0] <= shanks[shank_idx][1],
-            )
-            self.chn_coords = self.chn_coords_all[shank_chns, :]
-        else:
-            self.chn_coords = self.chn_coords_all
-
-        chn_depths = self.chn_coords[:, 1]
+        chn_depths = chn_coords[:, 1]
 
         data = {}
         values = [
@@ -810,37 +773,37 @@ class LoadDataLocal:
 
     def get_alignment_results(
         self,
-        feature: NDArray,
-        track: NDArray,
         channel_locations_ras: NDArray,
+        chn_coords: NDArray,
     ) -> tuple[
         dict[str, dict[str, Any]],
-        dict[str, list[list[float]]],
         dict[str, dict[str, Any]],
-        bool,
     ]:
-        logger.info("Saving channel locations and previous alignments locally")
+        """Compute per-channel region assignments for a shank.
+
+        Pure transform: given the channel locations in atlas (RAS) space and
+        the shank's channel coordinates, returns ``(channel_dict,
+        ccf_channel_dict)``. Recording the alignment into history and choosing
+        output filenames is the caller's responsibility (see
+        :meth:`ShankAlignment.add_alignment`), so no per-shank state is kept
+        here.
+        """
+        logger.info("Computing channel locations for shank")
         logger.debug(f"Channels: {channel_locations_ras}")
         if self.brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
         regions: BrainRegions = self.brain_atlas.regions
         brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
         brain_regions["xyz"] = channel_locations_ras
-        brain_regions["lateral"] = self.chn_coords[:, 0]
-        brain_regions["axial"] = self.chn_coords[:, 1]
+        brain_regions["lateral"] = chn_coords[:, 0]
+        brain_regions["axial"] = chn_coords[:, 1]
 
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
         channel_dict = self.create_channel_dict(brain_regions)
-        self.channel_dict = channel_dict
 
         ccf_channel_dict = self._transform_to_ccf(channel_locations_ras, channel_dict)
 
-        date = datetime.now().replace(microsecond=0).isoformat()
-        self.alignments[date] = [feature.tolist(), track.tolist()]
-
-        multi_shank = self.n_shanks > 1
-
-        return channel_dict, self.alignments, ccf_channel_dict, multi_shank
+        return channel_dict, ccf_channel_dict
 
     @staticmethod
     def create_channel_dict(brain_regions: Bunch) -> dict[str, dict[str, Any]]:

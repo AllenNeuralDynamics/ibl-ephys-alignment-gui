@@ -211,6 +211,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.offline: bool = True
         self.histology_exists: bool = True
         self.data_status: bool = False
+        # Input path of the probe whose heavy data is currently loaded; used to
+        # make a redundant Load Probe press a no-op (preserving shank state).
+        self._loaded_probe_path: Path | None = None
         self.output_directory: Path | None = None
         self.use_docdb: bool = True
 
@@ -1614,8 +1617,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=self.load_data_button,
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
+            # Preserve the shank the user has selected so a (re)load of the
+            # probe's heavy data lands on that shank rather than snapping back
+            # to shank 0. Load Probe is a per-probe operation; shank switching is
+            # done via the dropdown.
+            target_shank = (
+                self.session.current_shank_idx if self.session is not None else 0
+            )
             self._teardown_session()
             self.init_session_variables()
+            self.session.init_shanks(self.loaddata.n_shanks)
+            if self.session.has_shank(target_shank):
+                self.session.current_shank_idx = target_shank
+            logger.info(f"Loading probe data, active shank index {target_shank}")
 
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
@@ -1647,6 +1661,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.setup_session_view()
 
             self.data_status = True
+            self._loaded_probe_path = self.loaddata.input_path
             logger.info("=== Heavy data load complete ===")
 
     def load_existing_alignments(self) -> bool:
@@ -1671,18 +1686,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info(
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
-            success = self.loaddata.load_previous_alignments(
+            result = self.loaddata.load_previous_alignments(
                 shank_idx=self.session.current_shank_idx,
                 input_path=folder_path,
                 use_docdb=self.use_docdb,
             )
-            if success:
+            if result is not None:
+                alignments, _ = result
+                # Store on the active shank; prev_align is derived there.
+                self.session.active_shank.set_alignments(alignments)
                 self.populate_lists(
-                    self.loaddata.prev_align, self.align_list, self.align_combobox
+                    self.session.active_shank.prev_align,
+                    self.align_list,
+                    self.align_combobox,
                 )
                 self.on_alignment_selected(0)
                 logger.info(
-                    f"Loaded {len(self.loaddata.prev_align)} previous alignments"
+                    f"Loaded {len(self.session.active_shank.prev_align)} "
+                    "previous alignments"
                 )
             else:
                 logger.info("No previous alignments found")
@@ -1757,15 +1778,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
                 logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
 
-            self.session.current_shank_idx = 0
-            self.session.feature_prev = None
-            self.session.track_prev = None
+            # Create one ShankAlignment per shank now that the shank count is
+            # known; resets the active shank to 0.
+            self.session.init_shanks(self.loaddata.n_shanks)
 
             logger.info(
                 "Input directory loaded, ready to load data or existing alignments."
             )
 
-        # Enable Load Data button now that input path is set
+        # Enable Load Probe button now that input path is set
         self.load_data_button.setEnabled(True)
         return True
 
@@ -1797,7 +1818,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         logger.info(f"Use DocDB: {self.use_docdb}")
 
     def on_load_data_button_pressed(self) -> None:
-        """Triggered when user clicks 'Load Data' button"""
+        """Triggered when user clicks the 'Load Probe' button"""
         if self.loaddata.input_path is None:
             logger.error("Must select Input Directory first")
             return
@@ -1808,7 +1829,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             return
 
-        logger.info("Load Data button pressed")
+        # Load Probe is a per-probe operation. If this probe's heavy data is
+        # already loaded, do nothing rather than reloading and discarding the
+        # per-shank alignment state. Shank switching is done via the dropdown.
+        if self.data_status and self.loaddata.input_path == self._loaded_probe_path:
+            logger.info(
+                "Probe already loaded; Load Probe is a no-op. "
+                "Use the shank dropdown to switch shanks."
+            )
+            return
+
+        logger.info("Load Probe button pressed")
         self.load_heavy_data()
 
     def set_output_folder(self, output_path: Path) -> bool:
@@ -1859,7 +1890,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         text = self.input_folder_line.text().strip()
         if not text:
-            # User cleared the field - disable Load Data button
+            # User cleared the field - disable Load Probe button
             self.load_data_button.setEnabled(False)
             return
 
@@ -1970,11 +2001,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.lines_tracks = np.empty((0, 1))
         self.session.points = np.empty((0, 1))
 
-        # Re-filter channels for current shank (from cached chn_coords_all)
+        # Re-filter channels for current shank (from cached chn_coords_all) and
+        # store them on the active ShankAlignment for use at save time.
         if self.loaddata.chn_coords_all is not None:
-            self.session.chn_depths = self.loaddata.set_channels_for_shank(
+            chn_coords = self.loaddata.channels_for_shank(
                 self.session.current_shank_idx
             )
+            self.session.active_shank.chn_coords = chn_coords
+            self.session.chn_depths = chn_coords[:, 1]
             logger.debug(f"Filtered {len(self.session.chn_depths)} channels for this shank")
 
         # Only process histology if it exists
@@ -1985,8 +2019,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             logger.debug("Loaded track_annotations_ras for shank")
 
-            # Get alignment for this shank (from cached alignments, no disk read)
-            self.session.feature_prev, self.session.track_prev = self.loaddata.get_alignment_idx(0)
+            # Refresh the previous-alignments dropdown so it reflects this
+            # shank's own history rather than another shank's.
+            self.populate_lists(
+                self.session.active_shank.prev_align,
+                self.align_list,
+                self.align_combobox,
+            )
+
+            # Get alignment for this shank (from this shank's own history)
+            self.session.feature_prev, self.session.track_prev = (
+                self.session.active_shank.get_alignment_idx(0)
+            )
             self.recreate_alignment_and_regions()
 
         self.session.plotdata = pd.PlotData(self.session.probe_path, self.session.data, self.session.current_shank_idx)
@@ -2133,9 +2177,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when selecting alignment from dropdown"""
         logger.info(f"Alignment index {idx} selected")
 
-        # Get from cached data (no disk read)
+        # Get from this shank's own alignment history (no disk read)
         try:
-            self.session.feature_prev, self.session.track_prev = self.loaddata.get_alignment_idx(idx)
+            self.session.feature_prev, self.session.track_prev = (
+                self.session.active_shank.get_alignment_idx(idx)
+            )
         except RuntimeError as e:
             logger.error(f"Failed to get alignment: {e}")
             return
@@ -2629,17 +2675,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "Saved successfully",
             disable_widgets=self.complete_button,
         ):
-            # Save histology-space to disk and update in-memory state
-            channel_results, alignments, ccf_channel_dict, multi_shank = (
-                self.loaddata.get_alignment_results(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
-                    self.session.channel_locations_ras,
-                )
+            # Compute channel locations for the active shank, then record this
+            # alignment in the shank's own history. Each shank owns its
+            # alignment dict, so shanks can never contaminate each other.
+            shank = self.session.active_shank
+            channel_results, ccf_channel_dict = self.loaddata.get_alignment_results(
+                self.session.channel_locations_ras,
+                shank.chn_coords,
             )
+            shank.add_alignment(
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+            )
+            alignments = shank.alignments
 
             logger.info("Saving output files to results folder...")
-            suffix = f"_shank{self.session.current_shank_idx + 1}" if multi_shank else ""
+            multi_shank = self.loaddata.n_shanks > 1
+            suffix = f"_shank{shank.shank_idx + 1}" if multi_shank else ""
             channel_results_path = (
                 self.output_directory / f"channel_locations{suffix}.json"
             )

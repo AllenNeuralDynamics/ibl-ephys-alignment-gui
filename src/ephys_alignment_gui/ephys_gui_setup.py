@@ -676,7 +676,7 @@ class Setup:
         self.use_docdb_checkbox.stateChanged.connect(self.on_use_docdb_changed)
 
         self.load_data_button = QtWidgets.QToolButton()
-        self.load_data_button.setText("Load Data")
+        self.load_data_button.setText("Load Probe")
         self.load_data_button.setEnabled(False)  # Disabled until input path is set
         self.load_data_button.clicked.connect(self.on_load_data_button_pressed)
 

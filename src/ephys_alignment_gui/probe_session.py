@@ -2,6 +2,14 @@
 
 All attributes that are created/reset when loading a new probe live here.
 MainWindow delegates to ``self.session: ProbeSession | None``.
+
+Per-*shank* state does not live here directly. Instead the session owns one
+:class:`~ephys_alignment_gui.shank_alignment.ShankAlignment` per shank (see
+:attr:`ProbeSession.shanks`) and exposes the *active* shank's fields through
+:class:`_ShankAttr` descriptors, so switching shanks is just repointing
+:attr:`active_shank`. Existing view/plot code can keep reading e.g.
+``session.features[session.idx]`` unchanged; the read is transparently routed
+to whichever shank is active.
 """
 
 from __future__ import annotations
@@ -14,13 +22,83 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ephys_alignment_gui.shank_alignment import ShankAlignment
+
 logger = logging.getLogger(__name__)
 
 
+class _ShankAttr:
+    """Descriptor delegating an attribute to the session's active shank.
+
+    Reading or writing ``session.<name>`` transparently reads/writes
+    ``session.active_shank.<name>``. This keeps per-shank state physically on
+    the :class:`ShankAlignment` while leaving the large body of view/plot code
+    that refers to ``session.<name>`` untouched.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __set_name__(self, _owner: type, name: str) -> None:
+        # Guard against typos: descriptor attribute name must match target.
+        self._name = name
+
+    def __get__(self, obj: Any, _objtype: type | None = None) -> Any:
+        if obj is None:
+            return self
+        return getattr(obj.active_shank, self._name)
+
+    def __set__(self, obj: Any, value: Any) -> None:
+        setattr(obj.active_shank, self._name, value)
+
+
 class ProbeSession:
-    """Owns all state for a single probe alignment session."""
+    """Owns all state for a single probe alignment session.
+
+    Per-shank state is delegated to :attr:`active_shank`; the attributes below
+    that are declared as :class:`_ShankAttr` descriptors live on the active
+    :class:`ShankAlignment`, not on the session instance.
+    """
+
+    # -- Per-shank fields, delegated to the active ShankAlignment --
+    # Fit / undo buffer
+    idx = _ShankAttr("idx")
+    current_idx = _ShankAttr("current_idx")
+    total_idx = _ShankAttr("total_idx")
+    last_idx = _ShankAttr("last_idx")
+    diff_idx = _ShankAttr("diff_idx")
+    idx_prev = _ShankAttr("idx_prev")
+    max_idx = _ShankAttr("max_idx")
+    track = _ShankAttr("track")
+    features = _ShankAttr("features")
+    lin_fit_history = _ShankAttr("lin_fit_history")
+    # Track / channel locations
+    chn_depths = _ShankAttr("chn_depths")
+    track_annotations_ras = _ShankAttr("track_annotations_ras")
+    track_annos_and_ends_ras = _ShankAttr("track_annos_and_ends_ras")
+    channel_locations_ras = _ShankAttr("channel_locations_ras")
+    tip_location_ras = _ShankAttr("tip_location_ras")
+    # Selected starting alignment + engine + region overlays
+    feature_prev = _ShankAttr("feature_prev")
+    track_prev = _ShankAttr("track_prev")
+    ephysalign = _ShankAttr("ephysalign")
+    region_fp = _ShankAttr("region_fp")
+    region_label_fp = _ShankAttr("region_label_fp")
+    region_colour_fp = _ShankAttr("region_colour_fp")
+
+    _MAX_IDX = 10
 
     def __init__(self) -> None:
+        # -- Shank container (must be set before any delegated attr access) --
+        # ShankAlignment instances are created lazily on first access (see
+        # ``active_shank``): the dict only holds shanks the user has actually
+        # visited. ``_n_shanks`` bounds the valid indices; ``init_shanks`` sets
+        # it once the true shank count is known. Defaults describe a
+        # single-shank probe so delegated attribute access is valid pre-load.
+        self.shanks: dict[int, ShankAlignment] = {}
+        self._n_shanks: int = 1
+        self._active_shank_idx: int = 0
+
         # -- Probe geometry --
         self.probe_tip: int = 0
         self.probe_top: int = 3840
@@ -31,14 +109,8 @@ class ProbeSession:
         )
         self.extend_feature: int = 1
 
-        # -- Fit state --
+        # -- Fit state (UI toggle; per-move history lives on the shank) --
         self.lin_fit: bool = True
-        self.max_idx: int = 10
-        self.idx: int = 0
-        self.current_idx: int = 0
-        self.total_idx: int = 0
-        self.last_idx: int = 0
-        self.diff_idx: int = 0
 
         # -- UI toggle state --
         self.line_status: bool = True
@@ -94,37 +166,24 @@ class ProbeSession:
         self.hist_nearby_parent_col: Any = None
         self.hist_mapping: str = "Allen"
 
-        # -- Fit history --
-        self.track: list[Any] = [0] * (self.max_idx + 1)
-        self.features: list[Any] = [0] * (self.max_idx + 1)
-        self.lin_fit_history: list[bool] = [True] * (self.max_idx + 1)
+        # NOTE: fit history (track/features/lin_fit_history + idx cursors),
+        # track/channel-location arrays, chn_depths, ephysalign, the selected
+        # starting alignment (feature_prev/track_prev) and region overlays are
+        # per-shank; they live on the active ShankAlignment and are reached via
+        # the _ShankAttr descriptors declared at class scope.
 
         # -- Misc --
         self.nearby: Any = None
 
-        # -- Track / alignment arrays --
-        self.track_annotations_ras: NDArray[np.floating[Any]] | None = None
-        self.track_annos_and_ends_ras: NDArray[np.floating[Any]] | None = None
-        self.channel_locations_ras: NDArray[np.floating[Any]] | None = None
-        self.tip_location_ras: NDArray[np.floating[Any]] | None = None
+        # -- Per-probe track metadata --
         self.probe_path: Path | None = None
-        self.chn_depths: NDArray[np.floating[Any]] | None = None
         self.sess_notes: str = ""
 
         # -- Large per-session objects --
         self.data: Any = None
         self.plotdata: Any = None
-        self.ephysalign: Any = None
         self.slice_data: Any = None
         self.fp_slice_data: Any = None
-
-        # -- Alignment state --
-        self.feature_prev: Any = None
-        self.track_prev: Any = None
-        self.region_fp: Any = None
-        self.region_label_fp: Any = None
-        self.region_colour_fp: Any = None
-        self.idx_prev: int = 0
 
         # -- Computed plot data --
         self.img_fr_data: Any = None
@@ -175,8 +234,59 @@ class ProbeSession:
         self.nearby_table: Any = None
         self.region_win: Any = None
 
-        # -- Shank --
-        self.current_shank_idx: int = 0
+    # -- Shank management --
+
+    def init_shanks(self, n_shanks: int) -> None:
+        """Declare the probe's shank count and reset per-shank state.
+
+        Called once the channel geometry has been read and the true shank
+        count is known. Individual :class:`ShankAlignment` objects are *not*
+        built here; they are created lazily on first access (see
+        :attr:`active_shank`). Resets to shank 0 as the active shank.
+        """
+        self._n_shanks = max(1, int(n_shanks))
+        self.shanks = {}
+        self._active_shank_idx = 0
+
+    @property
+    def n_shanks(self) -> int:
+        """Number of shanks on this probe (valid active-index range)."""
+        return self._n_shanks
+
+    def has_shank(self, idx: int) -> bool:
+        """Whether ``idx`` is a valid shank index for this probe."""
+        return 0 <= idx < self._n_shanks
+
+    def _shank(self, idx: int) -> ShankAlignment:
+        """Return the shank at ``idx``, creating it lazily on first access."""
+        if not self.has_shank(idx):
+            raise KeyError(
+                f"Shank index {idx} out of range [0, {self._n_shanks}); "
+                "call init_shanks() first."
+            )
+        shank = self.shanks.get(idx)
+        if shank is None:
+            shank = ShankAlignment(idx, max_idx=self._MAX_IDX)
+            self.shanks[idx] = shank
+        return shank
+
+    @property
+    def active_shank(self) -> ShankAlignment:
+        """The shank whose state the delegated attributes currently expose."""
+        return self._shank(self._active_shank_idx)
+
+    @property
+    def current_shank_idx(self) -> int:
+        return self._active_shank_idx
+
+    @current_shank_idx.setter
+    def current_shank_idx(self, idx: int) -> None:
+        if not self.has_shank(idx):
+            raise KeyError(
+                f"Shank index {idx} out of range [0, {self._n_shanks}); "
+                "call init_shanks() first."
+            )
+        self._active_shank_idx = idx
 
     def teardown(self, figures: dict[str, Any]) -> None:
         """Disconnect signals, remove plot items from figures, null references.
