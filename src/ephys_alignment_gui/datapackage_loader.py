@@ -198,6 +198,40 @@ def _resolve(rel: str, root: Path) -> Path:
     return (root / rel).resolve()
 
 
+# File the GUI loads first from a probe's ephys collection dir (see
+# load_data_local.load_channel_info); used to tell whether ``ephys`` really
+# points at the ALF collection.
+_EPHYS_SENTINEL = "channels.localCoordinates.npy"
+
+
+def _resolve_ephys_dir(rel: str, root: Path) -> Path:
+    """Resolve a probe's ephys dir, healing a known bad datapackage layout.
+
+    Some ``aind-ibl-ephys-alignment-preprocessing`` manifests point ``ephys`` at
+    a ``spikes`` subdirectory that was never created -- the ALF collection
+    (``channels``/``spikes``/``clusters``) actually lives in the parent probe
+    folder alongside ``xyz_picks.json``. When the declared directory lacks
+    ``channels.localCoordinates.npy`` but its parent has it, fall back to the
+    parent and warn. Otherwise the declared path is returned unchanged so the
+    usual "file not found" error surfaces normally.
+    """
+    ephys_dir = _resolve(rel, root)
+    if (ephys_dir / _EPHYS_SENTINEL).is_file():
+        return ephys_dir
+    parent = ephys_dir.parent
+    if (parent / _EPHYS_SENTINEL).is_file():
+        logger.warning(
+            "datapackage ephys path %r lacks %s; falling back to its parent %s. "
+            "This datapackage is from a buggy preprocessing run -- re-run "
+            "preprocessing to correct the manifest.",
+            rel,
+            _EPHYS_SENTINEL,
+            parent,
+        )
+        return parent
+    return ephys_dir
+
+
 def _parse_transforms(d: dict[str, str], root: Path) -> TransformPaths:
     return TransformPaths(
         image_to_template_affine=_resolve(d["image_to_template_affine"], root),
@@ -252,7 +286,7 @@ def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
                 probe_name=probe_name,
                 recording_id=recording_id,
                 num_shanks=entry["num_shanks"],
-                ephys_dir=_resolve(ephys_rel, root) if ephys_rel else None,
+                ephys_dir=_resolve_ephys_dir(ephys_rel, root) if ephys_rel else None,
                 xyz_picks=picks,
             )
     return probes

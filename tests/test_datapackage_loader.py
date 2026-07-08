@@ -18,6 +18,8 @@ def _make_mouse_root(
     *,
     schema_version: str = "2.0.0",
     extra_probes: dict[str, dict[str, dict]] | None = None,
+    ephys: str | None = "rec1/probeA/spikes",
+    channels_rel: str | None = None,
 ) -> Path:
     """Create a minimal mouse-root directory with a datapackage.json.
 
@@ -63,13 +65,17 @@ def _make_mouse_root(
     (probe_dir / "xyz_picks.json").touch()
     (probe_dir / "xyz_picks_image_space.json").touch()
     (probe_dir / "spikes").mkdir()
+    if channels_rel is not None:
+        chan_dir = mouse_root / channels_rel
+        chan_dir.mkdir(parents=True, exist_ok=True)
+        (chan_dir / "channels.localCoordinates.npy").touch()
 
     probes: dict[str, dict[str, dict]] = {
         "rec1": {
             "probeA": {
                 "probe_id": "p-1",
                 "num_shanks": 1,
-                "ephys": "rec1/probeA/spikes",
+                "ephys": ephys,
                 "xyz_picks": [
                     {
                         "ccf": "rec1/probeA/xyz_picks.json",
@@ -172,6 +178,39 @@ def test_probe_info_resolves_paths(tmp_path):
     assert pk.shank is None
 
 
+def test_ephys_dir_heals_bad_spikes_subdir(tmp_path, caplog):
+    """A datapackage whose ``ephys`` points at a spurious ``spikes`` subdir
+    heals to the parent probe folder when the ALF channel file lives there."""
+    # Bad manifest: ephys -> rec1/probeA/spikes, but channels live in probeA.
+    root = _make_mouse_root(tmp_path, channels_rel="rec1/probeA")
+    with caplog.at_level("WARNING"):
+        mr = load_mouse_root(root)
+    probe = mr.get_probe("rec1", "probeA")
+    assert probe.ephys_dir == (root / "rec1" / "probeA")
+    assert (probe.ephys_dir / "channels.localCoordinates.npy").is_file()
+    assert any("parent" in r.getMessage() for r in caplog.records)
+
+
+def test_ephys_dir_unchanged_when_channels_present(tmp_path, caplog):
+    """A correct datapackage (channels in the declared ephys dir) is untouched
+    and logs no warning."""
+    root = _make_mouse_root(tmp_path, ephys="rec1/probeA", channels_rel="rec1/probeA")
+    with caplog.at_level("WARNING"):
+        mr = load_mouse_root(root)
+    probe = mr.get_probe("rec1", "probeA")
+    assert probe.ephys_dir == (root / "rec1" / "probeA")
+    assert not any("parent" in r.getMessage() for r in caplog.records)
+
+
+def test_ephys_dir_left_alone_when_unfixable(tmp_path):
+    """When neither the declared dir nor its parent has the channel file, the
+    declared path is returned so the normal downstream error surfaces."""
+    root = _make_mouse_root(tmp_path)  # no channels file anywhere
+    mr = load_mouse_root(root)
+    probe = mr.get_probe("rec1", "probeA")
+    assert probe.ephys_dir == (root / "rec1" / "probeA" / "spikes")
+
+
 def test_rejects_older_schema(tmp_path):
     """Pre-2.0.0 datapackages have a flat ``probes`` dict and must be rejected."""
     root = _make_mouse_root(tmp_path, schema_version="1.1.0")
@@ -213,7 +252,9 @@ def test_get_probe_unknown_recording_raises(tmp_path):
 def test_get_probe_unknown_probe_in_known_recording_raises(tmp_path):
     root = _make_mouse_root(tmp_path)
     mr = load_mouse_root(root)
-    with pytest.raises(DataPackageError, match="No probe 'probeNOPE' in recording 'rec1'"):
+    with pytest.raises(
+        DataPackageError, match="No probe 'probeNOPE' in recording 'rec1'"
+    ):
         mr.get_probe("rec1", "probeNOPE")
 
 
