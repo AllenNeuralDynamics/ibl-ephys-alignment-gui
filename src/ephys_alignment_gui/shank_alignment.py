@@ -80,6 +80,20 @@ class ShankAlignment:
         self.region_label_fp: Any = None
         self.region_colour_fp: Any = None
 
+        # -- Cached PlotData for this shank --
+        # Built once per shank (filters the probe-wide spikes/channels to this
+        # shank and memoizes its plot datasets); reused on revisit. Shares the
+        # probe-wide ``data`` dict by reference, so this is cheap to keep.
+        self.plotdata: Any = None
+
+        # -- Cached atlas/histology slice for this shank --
+        # Computed by get_slice_images() along the probe track; cached here so
+        # revisiting a shank is instant. Keyed on the track it was built from
+        # (_slice_track) so it recomputes if this shank's alignment changes.
+        self.slice_data: Any = None
+        self.fp_slice_data: Any = None
+        self._slice_track: NDArray[np.floating[Any]] | None = None
+
         # -- Output dicts produced on save --
         self.channel_dict: dict[str, dict[str, Any]] = {}
         self.ccf_channel_dict: dict[str, dict[str, Any]] = {}
@@ -132,3 +146,25 @@ class ShankAlignment:
         prev_align = sorted(alignments.keys(), reverse=True)
         prev_align.append("original")
         return prev_align
+
+    # -- Cached atlas/histology slice --
+
+    def cached_slice(self, track: NDArray) -> tuple[Any, Any] | None:
+        """Return this shank's cached ``(slice_data, fp_slice_data)``.
+
+        Returns ``None`` if nothing is cached yet, or if ``track`` differs from
+        the track the cache was built for (i.e. the shank was re-aligned).
+        """
+        if self._slice_track is not None and np.array_equal(
+            self._slice_track, track
+        ):
+            return self.slice_data, self.fp_slice_data
+        return None
+
+    def set_slice(
+        self, slice_data: Any, fp_slice_data: Any, track: NDArray
+    ) -> None:
+        """Cache the slice built for ``track`` on this shank."""
+        self.slice_data = slice_data
+        self.fp_slice_data = fp_slice_data
+        self._slice_track = track

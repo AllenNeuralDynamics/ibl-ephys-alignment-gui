@@ -52,6 +52,39 @@ class _ShankAttr:
         setattr(obj.active_shank, self._name, value)
 
 
+class _LazyPlotAttr:
+    """Descriptor exposing a plot dataset computed lazily from ``plotdata``.
+
+    Reading ``session.<name>`` calls ``session.plotdata.<method>(*args)`` the
+    first time and memoizes it (per PlotData, so per shank); ``index`` selects
+    one element of a tuple-returning getter. This replaces eagerly computing
+    every plot dataset on each shank switch — only the datasets that are
+    actually displayed get built. Returns ``None`` before data is loaded.
+    """
+
+    def __init__(
+        self, method: str, args: tuple = (), index: int | None = None
+    ) -> None:
+        self._method = method
+        self._args = args
+        self._index = index
+
+    def __get__(self, obj: Any, _objtype: type | None = None) -> Any:
+        if obj is None:
+            return self
+        plotdata = obj.plotdata
+        if plotdata is None:
+            return None
+        value = plotdata.cached(self._method, self._args)
+        return value if self._index is None else value[self._index]
+
+    def __set__(self, obj: Any, value: Any) -> None:
+        raise AttributeError(
+            f"{self._method!r} plot dataset is computed lazily and cannot be "
+            "assigned; it is derived from session.plotdata on access."
+        )
+
+
 class ProbeSession:
     """Owns all state for a single probe alignment session.
 
@@ -85,6 +118,38 @@ class ProbeSession:
     region_fp = _ShankAttr("region_fp")
     region_label_fp = _ShankAttr("region_label_fp")
     region_colour_fp = _ShankAttr("region_colour_fp")
+    # PlotData built + memoized per shank (see ShankAlignment.plotdata)
+    plotdata = _ShankAttr("plotdata")
+    # Atlas/histology slice, cached per shank (see ShankAlignment.slice_data)
+    slice_data = _ShankAttr("slice_data")
+    fp_slice_data = _ShankAttr("fp_slice_data")
+
+    # -- Plot datasets, computed lazily from ``plotdata`` and memoized per
+    # shank. Only those actually displayed are built on a shank switch. --
+    scat_drift_data = _LazyPlotAttr("get_depth_data_scatter")
+    scat_fr_data = _LazyPlotAttr("get_fr_p2t_data_scatter", index=0)
+    scat_p2t_data = _LazyPlotAttr("get_fr_p2t_data_scatter", index=1)
+    scat_amp_data = _LazyPlotAttr("get_fr_p2t_data_scatter", index=2)
+    img_fr_data = _LazyPlotAttr("get_fr_img")
+    img_spike_corr_data = _LazyPlotAttr("get_spike_correlation_data_img")
+    img_rms_APdata = _LazyPlotAttr("get_rms_data_img_probe", ("AP",), 0)
+    probe_rms_APdata = _LazyPlotAttr("get_rms_data_img_probe", ("AP",), 1)
+    img_rms_LFPdata = _LazyPlotAttr("get_rms_data_img_probe", ("LF",), 0)
+    probe_rms_LFPdata = _LazyPlotAttr("get_rms_data_img_probe", ("LF",), 1)
+    img_rms_APdata_main = _LazyPlotAttr("get_rms_data_img_probe", ("AP_main",), 0)
+    probe_rms_APdata_main = _LazyPlotAttr("get_rms_data_img_probe", ("AP_main",), 1)
+    img_rms_LFPdata_main = _LazyPlotAttr("get_rms_data_img_probe", ("LF_main",), 0)
+    probe_rms_LFPdata_main = _LazyPlotAttr("get_rms_data_img_probe", ("LF_main",), 1)
+    img_lfp_data = _LazyPlotAttr("get_lfp_spectrum_data", ("lf",), 0)
+    probe_lfp_data = _LazyPlotAttr("get_lfp_spectrum_data", ("lf",), 1)
+    img_lfp_data_main = _LazyPlotAttr("get_lfp_spectrum_data", ("lf_main",), 0)
+    probe_lfp_data_main = _LazyPlotAttr("get_lfp_spectrum_data", ("lf_main",), 1)
+    img_lfp_corr_data = _LazyPlotAttr("get_lfp_correlation_data_img")
+    line_fr_data = _LazyPlotAttr("get_fr_amp_data_line", index=0)
+    line_amp_data = _LazyPlotAttr("get_fr_amp_data_line", index=1)
+    probe_rfmap = _LazyPlotAttr("get_rfmap_data", index=0)
+    rfmap_boundaries = _LazyPlotAttr("get_rfmap_data", index=1)
+    img_stim_data = _LazyPlotAttr("get_passive_events")
 
     _MAX_IDX = 10
 
@@ -180,37 +245,16 @@ class ProbeSession:
         self.sess_notes: str = ""
 
         # -- Large per-session objects --
+        # plotdata / slice_data / fp_slice_data are per-shank (cached on the
+        # active ShankAlignment via _ShankAttr descriptors above).
         self.data: Any = None
-        self.plotdata: Any = None
-        self.slice_data: Any = None
-        self.fp_slice_data: Any = None
 
         # -- Computed plot data --
-        self.img_fr_data: Any = None
-        self.img_spike_corr_data: Any = None
-        self.img_rms_APdata: Any = None
-        self.img_rms_LFPdata: Any = None
-        self.img_rms_APdata_main: Any = None
-        self.img_rms_LFPdata_main: Any = None
-        self.img_lfp_data: Any = None
-        self.img_lfp_data_main: Any = None
-        self.img_lfp_corr_data: Any = None
-        self.img_stim_data: Any = None
+        # Most plot datasets are the lazy _LazyPlotAttr descriptors declared at
+        # class scope (computed from ``plotdata`` on demand). ``img_raw_data``
+        # is not derived from ``plotdata`` in offline mode, so it stays a plain
+        # attribute set explicitly by the view.
         self.img_raw_data: dict[str, Any] = {}
-        self.line_fr_data: Any = None
-        self.line_amp_data: Any = None
-        self.probe_rms_APdata: Any = None
-        self.probe_rms_LFPdata: Any = None
-        self.probe_rms_APdata_main: Any = None
-        self.probe_rms_LFPdata_main: Any = None
-        self.probe_lfp_data: Any = None
-        self.probe_lfp_data_main: Any = None
-        self.probe_rfmap: Any = None
-        self.rfmap_boundaries: Any = None
-        self.scat_drift_data: Any = None
-        self.scat_fr_data: Any = None
-        self.scat_p2t_data: Any = None
-        self.scat_amp_data: Any = None
 
         # -- Plot items (per-session, have signal connections) --
         self.tip_pos: Any = None

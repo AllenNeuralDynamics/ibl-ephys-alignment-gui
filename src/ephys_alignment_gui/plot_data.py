@@ -56,6 +56,13 @@ class PlotData:
         self.probe_path = probe_path
         self.data = data
         self.shank_idx = shank_idx
+        # Memoizes get_* plot datasets so each is computed at most once per
+        # PlotData (i.e. per shank), and only when actually displayed. Reset
+        # by filter_units() when the unit filter actually changes.
+        self._img_cache: dict = {}
+        # The unit-filter subset currently applied; lets filter_units() no-op
+        # when re-applied with the same subset (keeps the memo cache warm).
+        self._current_filter: str | None = None
 
         self.chn_coords_all = self.data["channels"]["localCoordinates"]
         self.chn_ind_all = self.data["channels"]["rawInd"].astype(int)
@@ -113,7 +120,27 @@ class PlotData:
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
 
+    def cached(self, method: str, args: tuple = ()):
+        """Return ``self.<method>(*args)``, memoized per PlotData instance.
+
+        Lets plot datasets be built lazily (only when displayed) yet at most
+        once per shank. The cache is cleared by :meth:`filter_units`.
+        """
+        key = (method, args)
+        if key not in self._img_cache:
+            self._img_cache[key] = getattr(self, method)(*args)
+        return self._img_cache[key]
+
     def filter_units(self, subset: str) -> None:
+        # Idempotent: re-applying the same subset (e.g. on every shank switch)
+        # is a no-op, so the memoized datasets survive and a revisit stays
+        # cheap. Only a genuine filter change recomputes spike-derived data.
+        if subset == self._current_filter:
+            return
+        self._current_filter = subset
+        # The unit filter changed: drop memoized results so they are recomputed
+        # on next display.
+        self._img_cache.clear()
         try:
             # Pre-fetch commonly used data structures (avoid repeated indexing)
             spikes: AlfBunch = self.data["spikes"]
