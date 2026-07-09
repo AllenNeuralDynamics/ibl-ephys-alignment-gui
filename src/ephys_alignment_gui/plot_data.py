@@ -70,6 +70,7 @@ class PlotData:
             .get("rawInd", np.arange(self.chn_coords_all.shape[0]))
             .astype(int)
         )
+        self.chn_contact_id_all = self.data["channels"].get("contactId")
         self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
         self.chn_shank_ind_all = valid_shank_indices(
             self.data["channels"].get("shankInd"),

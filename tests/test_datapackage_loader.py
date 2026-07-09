@@ -257,6 +257,7 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
     )
     probe_dir = root / "rec1" / "ProbeD"
     (probe_dir / "channels.rawInd.npy").touch()
+    (probe_dir / "channels.contactId.npy").touch()
     (probe_dir / "channels.shankInd.npy").touch()
     (probe_dir / "xyz_picks_shank4.json").touch()
     (probe_dir / "xyz_picks_shank4_image_space.json").touch()
@@ -277,6 +278,7 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
                         "rec1/ProbeD/channels.localCoordinates.npy"
                     ),
                     "raw_ind": _ref("rec1/ProbeD/channels.rawInd.npy"),
+                    "contact_id": _ref("rec1/ProbeD/channels.contactId.npy"),
                     "shank_ind": _ref("rec1/ProbeD/channels.shankInd.npy"),
                 },
                 "xyz_picks": [
@@ -301,11 +303,56 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
     assert probe.logical_probe == "probe0"
     assert probe.ephys_collection == "ProbeD"
     assert probe.channel_table is not None
+    assert probe.channel_table.contact_id.name == "channels.contactId.npy"
     assert probe.channel_table.shank_ind.name == "channels.shankInd.npy"
     picks = probe.picks_for_shank(0)
     assert picks.histology_shank == 3
     assert picks.ephys_shank == 0
     assert picks.shank == 1
+
+
+def test_loads_channel_table_without_optional_contact_id(tmp_path):
+    root = _make_mouse_root(
+        tmp_path,
+        ephys="rec1/ProbeD",
+        channels_rel="rec1/ProbeD",
+    )
+    probe_dir = root / "rec1" / "ProbeD"
+    (probe_dir / "channels.rawInd.npy").touch()
+    (probe_dir / "channels.shankInd.npy").touch()
+    (probe_dir / "xyz_picks.json").touch()
+    (probe_dir / "xyz_picks_image_space.json").touch()
+
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["probes"] = {
+        "rec1": {
+            "ProbeD": {
+                "probe_id": "track-probe0",
+                "num_shanks": 1,
+                "ephys": _ref("rec1/ProbeD"),
+                "channel_table": {
+                    "local_coordinates": _ref(
+                        "rec1/ProbeD/channels.localCoordinates.npy"
+                    ),
+                    "raw_ind": _ref("rec1/ProbeD/channels.rawInd.npy"),
+                    "shank_ind": _ref("rec1/ProbeD/channels.shankInd.npy"),
+                },
+                "xyz_picks": [
+                    {
+                        "ccf": _ref("rec1/ProbeD/xyz_picks.json"),
+                        "image_space": _ref("rec1/ProbeD/xyz_picks_image_space.json"),
+                    }
+                ],
+            }
+        }
+    }
+    dp_path.write_text(json.dumps(data))
+
+    mr = _load(root)
+    probe = mr.get_probe("rec1", "ProbeD")
+    assert probe.channel_table is not None
+    assert probe.channel_table.contact_id is None
 
 
 def test_ephys_dir_does_not_heal_bad_spikes_subdir_in_v3(tmp_path, caplog):

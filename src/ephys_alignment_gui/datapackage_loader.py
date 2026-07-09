@@ -155,6 +155,7 @@ class ChannelTablePaths:
 
     local_coordinates: Path
     raw_ind: Path
+    contact_id: Path | None
     shank_ind: Path
 
 
@@ -520,8 +521,12 @@ def _parse_channel_table(
 ) -> ChannelTablePaths | None:
     if not d:
         return None
+    contact_id = d.get("contact_id")
     return ChannelTablePaths(
         local_coordinates=_resolve_ref(d["local_coordinates"], resolver, assets),
         raw_ind=_resolve_ref(d["raw_ind"], resolver, assets),
+        contact_id=_resolve_ref(contact_id, resolver, assets)
+        if contact_id is not None
+        else None,
         shank_ind=_resolve_ref(d["shank_ind"], resolver, assets),
     )

@@ -145,6 +145,7 @@ class LoadDataLocal:
     brain_atlas: BrainAtlasAnatomical | None = None
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
+    chn_contact_id_all: NDArray | None = None
     chn_shank_ind_all: NDArray | None = None
     n_shanks: int = 0
 
@@ -184,6 +185,7 @@ class LoadDataLocal:
         self.probe_info = None
         self.chn_coords = None
         self.chn_coords_all = None
+        self.chn_contact_id_all = None
         self.chn_shank_ind_all = None
         self.n_shanks = 0
         return mr
@@ -212,6 +214,7 @@ class LoadDataLocal:
         self.probe_info = probe
         self.chn_coords = None
         self.chn_coords_all = None
+        self.chn_contact_id_all = None
         self.chn_shank_ind_all = None
         self.n_shanks = probe.num_shanks
         return probe
@@ -369,6 +372,13 @@ class LoadDataLocal:
             )
         path = self.probe_info.ephys_dir / "channels.localCoordinates.npy"
         self.chn_coords_all = np.load(path)
+
+        contact_path = self.probe_info.ephys_dir / "channels.contactId.npy"
+        self.chn_contact_id_all = (
+            np.load(contact_path, allow_pickle=False)
+            if contact_path.is_file()
+            else None
+        )
 
         shank_path = self.probe_info.ephys_dir / "channels.shankInd.npy"
         shank_ind = np.load(shank_path) if shank_path.is_file() else None
@@ -563,6 +573,8 @@ class LoadDataLocal:
         data["gabor"] = {"exists": False}
         if data["channels"]["exists"] and self.chn_shank_ind_all is not None:
             data["channels"]["shankInd"] = self.chn_shank_ind_all
+        if data["channels"]["exists"] and self.chn_contact_id_all is not None:
+            data["channels"]["contactId"] = self.chn_contact_id_all
 
         shank_indices_file = ephys_dir / "spike_shank_indices.npy"
         if shank_indices_file.exists():
