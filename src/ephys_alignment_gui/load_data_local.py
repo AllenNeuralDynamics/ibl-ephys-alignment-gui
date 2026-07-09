@@ -440,7 +440,15 @@ class LoadDataLocal:
         linear, _ = load_affine_matrix(
             self.mouse_root.transforms.image_to_template_affine
         )
-        R = polar_rotation(linear)
+        # An ANTs 0GenericAffine.mat maps points fixed->moving. The
+        # ls_to_template registration has fixed=template, moving=SPIM, so this
+        # linear part is the template->SPIM map. We want to rotate SPIM data
+        # *into* the template-aligned canonical frame, i.e. the SPIM->template
+        # rotation, which is the transpose (inverse) of the extracted rotation.
+        # Applying it un-transposed rotated the histology (and the probe
+        # points, which share this R via display_rotation) further from the
+        # atlas instead of toward it.
+        R = polar_rotation(linear).T
         rotation_center = image_center_physical(intensity_image)
         logger.debug(
             f"Computed SPIM->template display rotation (det={np.linalg.det(R):.6f})"
