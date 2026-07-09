@@ -58,7 +58,19 @@ class XyzPicks:
 
     image_space: Path
     ccf: Path
-    shank: int | None
+    histology_track_id: str | None = None
+    histology_shank: int | None = None
+    ephys_shank: int | None = None
+    shank: int | None = None
+
+
+@dataclass(frozen=True)
+class ChannelTablePaths:
+    """Absolute paths to producer-owned channel geometry files."""
+
+    local_coordinates: Path
+    raw_ind: Path
+    shank_ind: Path
 
 
 @dataclass(frozen=True)
@@ -68,12 +80,18 @@ class ProbeInfo:
     probe_id: str
     probe_name: str
     recording_id: str
+    logical_probe: str
+    ephys_collection: str
     num_shanks: int
     ephys_dir: Path | None
+    channel_table: ChannelTablePaths | None
     xyz_picks: tuple[XyzPicks, ...]
 
     def picks_for_shank(self, shank_idx: int) -> XyzPicks:
         """Return the xyz-picks entry for a given 0-based shank index."""
+        for pk in self.xyz_picks:
+            if pk.ephys_shank == shank_idx:
+                return pk
         if self.num_shanks == 1:
             return self.xyz_picks[0]
         want = shank_idx + 1  # datapackage uses 1-based `shank` field
@@ -257,9 +275,9 @@ def _parse_histology(d: dict, root: Path) -> HistologyImagePaths:
 
 
 def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
-    """Parse the nested ``recording_id -> probe_name -> entry`` JSON.
+    """Parse the nested ``recording_id -> ephys_collection -> entry`` JSON.
 
-    ``recording_id`` and ``probe_name`` come from the outer/inner dict keys
+    ``recording_id`` and ``ephys_collection`` come from the outer/inner dict keys
     rather than fields on each entry, so we set them on the resulting
     ProbeInfo from the keys.
     """
@@ -276,17 +294,34 @@ def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
                 XyzPicks(
                     image_space=_resolve(p["image_space"], root),
                     ccf=_resolve(p["ccf"], root),
+                    histology_track_id=p.get("histology_track_id"),
+                    histology_shank=p.get("histology_shank"),
+                    ephys_shank=p.get("ephys_shank"),
                     shank=p.get("shank"),
                 )
                 for p in entry["xyz_picks"]
             )
             ephys_rel = entry.get("ephys")
+            channel_table = _parse_channel_table(entry.get("channel_table"), root)
             probes.setdefault(recording_id, {})[probe_name] = ProbeInfo(
                 probe_id=entry["probe_id"],
                 probe_name=probe_name,
                 recording_id=recording_id,
+                logical_probe=entry.get("logical_probe", probe_name),
+                ephys_collection=entry.get("ephys_collection", probe_name),
                 num_shanks=entry["num_shanks"],
                 ephys_dir=_resolve_ephys_dir(ephys_rel, root) if ephys_rel else None,
+                channel_table=channel_table,
                 xyz_picks=picks,
             )
     return probes
+
+
+def _parse_channel_table(d: dict | None, root: Path) -> ChannelTablePaths | None:
+    if not d:
+        return None
+    return ChannelTablePaths(
+        local_coordinates=_resolve(d["local_coordinates"], root),
+        raw_ind=_resolve(d["raw_ind"], root),
+        shank_ind=_resolve(d["shank_ind"], root),
+    )

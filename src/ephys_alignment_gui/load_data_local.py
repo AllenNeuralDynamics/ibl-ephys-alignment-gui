@@ -29,6 +29,11 @@ from ephys_alignment_gui.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
+from ephys_alignment_gui.channel_geometry import (
+    n_shanks_from_geometry,
+    rows_for_shank,
+    valid_shank_indices,
+)
 from ephys_alignment_gui.datapackage_loader import (
     DataPackageError,
     MouseRoot,
@@ -140,6 +145,7 @@ class LoadDataLocal:
     brain_atlas: BrainAtlasAnatomical | None = None
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
+    chn_shank_ind_all: NDArray | None = None
     n_shanks: int = 0
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
@@ -178,6 +184,7 @@ class LoadDataLocal:
         self.probe_info = None
         self.chn_coords = None
         self.chn_coords_all = None
+        self.chn_shank_ind_all = None
         self.n_shanks = 0
         return mr
 
@@ -205,6 +212,7 @@ class LoadDataLocal:
         self.probe_info = probe
         self.chn_coords = None
         self.chn_coords_all = None
+        self.chn_shank_ind_all = None
         self.n_shanks = probe.num_shanks
         return probe
 
@@ -362,17 +370,31 @@ class LoadDataLocal:
         path = self.probe_info.ephys_dir / "channels.localCoordinates.npy"
         self.chn_coords_all = np.load(path)
 
-        chn_x = np.unique(self.chn_coords_all[:, 0])
-        chn_x_diff = np.diff(chn_x)
-        geom_n_shanks = int(np.sum(chn_x_diff > 100) + 1)
+        shank_path = self.probe_info.ephys_dir / "channels.shankInd.npy"
+        shank_ind = np.load(shank_path) if shank_path.is_file() else None
+        self.chn_shank_ind_all = valid_shank_indices(
+            shank_ind, self.chn_coords_all.shape[0]
+        )
+        if shank_ind is not None and self.chn_shank_ind_all is None:
+            logger.warning(
+                "Ignoring invalid channels.shankInd.npy for %s: expected "
+                "shape (%d,), got %s",
+                self.probe_info.probe_name,
+                self.chn_coords_all.shape[0],
+                np.asarray(shank_ind).shape,
+            )
+
+        geom_n_shanks = n_shanks_from_geometry(
+            self.chn_coords_all, self.chn_shank_ind_all
+        )
         if geom_n_shanks != self.probe_info.num_shanks:
             logger.warning(
-                "Channel geometry implies %d shanks but manifest says %d; "
-                "trusting manifest.",
+                "Channel table implies %d shanks but datapackage says %d; "
+                "trusting channel table.",
                 geom_n_shanks,
                 self.probe_info.num_shanks,
             )
-        self.n_shanks = self.probe_info.num_shanks
+        self.n_shanks = geom_n_shanks
 
     def get_shank_list(self) -> list[str] | None:
         """Build the shank-picker list for the current probe."""
@@ -455,28 +477,19 @@ class LoadDataLocal:
         # with the same (R, center) when first requested; per-channel DICOM
         # reorient is decided at load time.
         self._lazy_channel_paths = dict(hist.additional_channels)
-        logger.debug(
-            f"Setup lazy loading for {len(self._lazy_channel_paths)} channels"
-        )
+        logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
 
     def set_channels_for_shank(self, shank_idx: int):
         """Filter cached channel coordinates for selected shank. No disk I/O."""
         if self.chn_coords_all is None:
             raise RuntimeError("Must call load_channel_info() first")
-        chn_coords_all = self.chn_coords_all
-        chn_x = np.unique(chn_coords_all[:, 0])
-
-        if self.n_shanks > 1:
-            shanks = {}
-            for i in range(self.n_shanks):
-                shanks[i] = [chn_x[i * 2], chn_x[(i * 2) + 1]]
-            mask = np.bitwise_and(
-                chn_coords_all[:, 0] >= shanks[shank_idx][0],
-                chn_coords_all[:, 0] <= shanks[shank_idx][1],
-            )
-            chn_coords = chn_coords_all[mask, :]
-        else:
-            chn_coords = chn_coords_all
+        rows = rows_for_shank(
+            self.chn_coords_all,
+            self.chn_shank_ind_all,
+            shank_idx,
+            self.n_shanks,
+        )
+        chn_coords = self.chn_coords_all[rows, :]
         self.chn_coords = chn_coords
 
         return chn_coords[:, 1]  # Return depths
@@ -503,18 +516,13 @@ class LoadDataLocal:
         ephys_dir = self.probe_info.ephys_dir
         logger.info(f"get_ephys_data: loading from {ephys_dir}, shank_idx={shank_idx}")
 
-        chn_x = np.unique(self.chn_coords_all[:, 0])
-        if self.n_shanks > 1:
-            shanks = {}
-            for i in range(self.n_shanks):
-                shanks[i] = [chn_x[i * 2], chn_x[(i * 2) + 1]]
-            mask = np.bitwise_and(
-                self.chn_coords_all[:, 0] >= shanks[shank_idx][0],
-                self.chn_coords_all[:, 0] <= shanks[shank_idx][1],
-            )
-            self.chn_coords = self.chn_coords_all[mask, :]
-        else:
-            self.chn_coords = self.chn_coords_all
+        rows = rows_for_shank(
+            self.chn_coords_all,
+            self.chn_shank_ind_all,
+            shank_idx,
+            self.n_shanks,
+        )
+        self.chn_coords = self.chn_coords_all[rows, :]
         chn_depths = self.chn_coords[:, 1]
 
         data = {}
@@ -553,6 +561,8 @@ class LoadDataLocal:
         data["rf_map"] = {"exists": False}
         data["pass_stim"] = {"exists": False}
         data["gabor"] = {"exists": False}
+        if data["channels"]["exists"] and self.chn_shank_ind_all is not None:
+            data["channels"]["shankInd"] = self.chn_shank_ind_all
 
         shank_indices_file = ephys_dir / "spike_shank_indices.npy"
         if shank_indices_file.exists():

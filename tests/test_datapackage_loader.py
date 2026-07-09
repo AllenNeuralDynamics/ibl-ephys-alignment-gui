@@ -169,6 +169,8 @@ def test_probe_info_resolves_paths(tmp_path):
     mr = load_mouse_root(root)
     probe = mr.get_probe("rec1", "probeA")
     assert probe.probe_id == "p-1"
+    assert probe.logical_probe == "probeA"
+    assert probe.ephys_collection == "probeA"
     assert probe.num_shanks == 1
     assert probe.ephys_dir is not None and probe.ephys_dir.is_dir()
     assert len(probe.xyz_picks) == 1
@@ -176,6 +178,63 @@ def test_probe_info_resolves_paths(tmp_path):
     assert pk.image_space.is_file()
     assert pk.ccf.is_file()
     assert pk.shank is None
+
+
+def test_loads_explicit_ephys_geometry_fields(tmp_path):
+    root = _make_mouse_root(
+        tmp_path,
+        ephys="rec1/ProbeD",
+        channels_rel="rec1/ProbeD",
+    )
+    probe_dir = root / "rec1" / "ProbeD"
+    (probe_dir / "channels.rawInd.npy").touch()
+    (probe_dir / "channels.shankInd.npy").touch()
+    (probe_dir / "xyz_picks_shank4.json").touch()
+    (probe_dir / "xyz_picks_shank4_image_space.json").touch()
+
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["schema_version"] = "2.1.0"
+    data["probes"] = {
+        "rec1": {
+            "ProbeD": {
+                "probe_id": "track-probe0-shank3",
+                "logical_probe": "probe0",
+                "ephys_collection": "ProbeD",
+                "num_shanks": 1,
+                "ephys": "rec1/ProbeD",
+                "channel_table": {
+                    "local_coordinates": "rec1/ProbeD/channels.localCoordinates.npy",
+                    "raw_ind": "rec1/ProbeD/channels.rawInd.npy",
+                    "shank_ind": "rec1/ProbeD/channels.shankInd.npy",
+                },
+                "xyz_picks": [
+                    {
+                        "ccf": "rec1/ProbeD/xyz_picks_shank4.json",
+                        "image_space": (
+                            "rec1/ProbeD/xyz_picks_shank4_image_space.json"
+                        ),
+                        "histology_track_id": "track-probe0-shank3",
+                        "histology_shank": 3,
+                        "ephys_shank": 0,
+                        "shank": 1,
+                    }
+                ],
+            }
+        }
+    }
+    dp_path.write_text(json.dumps(data))
+
+    mr = load_mouse_root(root)
+    probe = mr.get_probe("rec1", "ProbeD")
+    assert probe.logical_probe == "probe0"
+    assert probe.ephys_collection == "ProbeD"
+    assert probe.channel_table is not None
+    assert probe.channel_table.shank_ind.name == "channels.shankInd.npy"
+    picks = probe.picks_for_shank(0)
+    assert picks.histology_shank == 3
+    assert picks.ephys_shank == 0
+    assert picks.shank == 1
 
 
 def test_ephys_dir_heals_bad_spikes_subdir(tmp_path, caplog):

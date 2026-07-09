@@ -1,4 +1,6 @@
+import json
 import logging
+import re
 
 import numpy as np
 
@@ -14,6 +16,11 @@ from one.alf.io import AlfBunch
 from pandas import DataFrame
 from PyQt5 import QtGui
 
+from ephys_alignment_gui.channel_geometry import (
+    n_shanks_from_geometry,
+    rows_for_shank,
+    valid_shank_indices,
+)
 from ephys_alignment_gui.utils import bincount2D
 
 logger = logging.getLogger(__name__)
@@ -58,26 +65,29 @@ class PlotData:
         self.shank_idx = shank_idx
 
         self.chn_coords_all = self.data["channels"]["localCoordinates"]
-        self.chn_ind_all = self.data["channels"]["rawInd"].astype(int)
+        self.chn_raw_ind_all = (
+            self.data["channels"]
+            .get("rawInd", np.arange(self.chn_coords_all.shape[0]))
+            .astype(int)
+        )
+        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
+        self.chn_shank_ind_all = valid_shank_indices(
+            self.data["channels"].get("shankInd"),
+            self.chn_coords_all.shape[0],
+        )
 
-        chn_x = np.unique(self.chn_coords_all[:, 0])
-        chn_x_diff = np.diff(chn_x)
-        n_shanks = np.sum(chn_x_diff > 100) + 1
-
-        if n_shanks > 1:
-            shanks = {}
-            for iShank in range(n_shanks):
-                shanks[iShank] = [chn_x[iShank * 2], chn_x[(iShank * 2) + 1]]
-
-            shank_chns = np.bitwise_and(
-                self.chn_coords_all[:, 0] >= shanks[shank_idx][0],
-                self.chn_coords_all[:, 0] <= shanks[shank_idx][1],
+        n_shanks = n_shanks_from_geometry(self.chn_coords_all, self.chn_shank_ind_all)
+        self.chn_rows = rows_for_shank(
+            self.chn_coords_all, self.chn_shank_ind_all, shank_idx, n_shanks
+        )
+        if self.chn_rows.size == 0:
+            logger.warning(
+                "No channels found for shank %d; falling back to all channels",
+                shank_idx,
             )
-            self.chn_coords = self.chn_coords_all[shank_chns, :]
-            self.chn_ind = self.chn_ind_all[shank_chns]
-        else:
-            self.chn_coords = self.chn_coords_all
-            self.chn_ind = self.chn_ind_all
+            self.chn_rows = self.chn_ind_all
+        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
+        self.chn_ind = self.chn_rows.copy()
 
         # Remove duplicate (x, y) coordinates (e.g. overlapping surface-finding
         # channels on multi-shank probes), keeping the first occurrence.
@@ -85,10 +95,14 @@ class PlotData:
         unique_idx = np.sort(unique_idx)
         self.chn_coords = self.chn_coords[unique_idx]
         self.chn_ind = self.chn_ind[unique_idx]
+        self.chn_rows = self.chn_rows[unique_idx]
 
         self.chn_min = np.min(self.chn_coords[:, 1])
         self.chn_max = np.max(self.chn_coords[:, 1])
-        self.chn_diff = np.min(np.abs(np.diff(np.unique(self.chn_coords[:, 1]))))
+        unique_depths = np.unique(self.chn_coords[:, 1])
+        self.chn_diff = (
+            np.min(np.abs(np.diff(unique_depths))) if unique_depths.size > 1 else 1.0
+        )
         self.chn_full = np.arange(
             self.chn_min, self.chn_max + self.chn_diff, self.chn_diff
         )
@@ -96,6 +110,7 @@ class PlotData:
         chn_sort = np.argsort(self.chn_coords[:, 1])
         self.chn_coords = self.chn_coords[chn_sort]
         self.chn_ind = self.chn_ind[chn_sort]
+        self.chn_rows = self.chn_rows[chn_sort]
 
         self.N_BNK = len(np.unique(self.chn_coords[:, 0]))
         self.idx_full = np.where(np.isin(self.chn_full, self.chn_coords[:, 1]))[0]
@@ -104,11 +119,15 @@ class PlotData:
             self.max_spike_time = np.max(self.data["spikes"]["times"])
 
         if self.data["clusters"]["exists"]:
-            self._shank_spike_indices = np.where(self.data["spike_shanks"] == shank_idx)[0]
+            self._shank_spike_indices = np.where(
+                self.data["spike_shanks"] == shank_idx
+            )[0]
             self.filter_units("all")
             self.compute_timescales()
         else:
             self._shank_spike_indices = None
+            self.spike_idx = np.array([], dtype=int)
+            self.kp_idx = np.array([], dtype=bool)
 
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
@@ -540,7 +559,7 @@ class PlotData:
             _safe_take(
                 np.mean(self.data[f"rms_{format}"]["rms"], axis=0),
                 indices=self.chn_ind,
-                )
+            )
         ) * 1e6
         probe_levels = np.nanquantile(rms_avg, [0.1, 0.9])
         probe_img, probe_scale, probe_offset = self.arrange_channels2banks(rms_avg)
@@ -630,7 +649,7 @@ class PlotData:
                 self.data["psd_lf"]["power"][freq_idx],
                 self.chn_ind,
                 axis=1,
-                )
+            )
             _lfp_dB = 10 * np.log10(np.maximum(_lfp, 1e-20))
 
             # Per-frequency normalization: subtract channel median
@@ -644,17 +663,13 @@ class PlotData:
             self.chn_depth_eq[np.where(chn_count == 2)] += 1
 
             def avg_chn_depth(a):
-                return np.mean(
-                    [a[self.chn_depth], a[self.chn_depth_eq]], axis=0
-                )
+                return np.mean([a[self.chn_depth], a[self.chn_depth_eq]], axis=0)
 
             img = np.apply_along_axis(avg_chn_depth, 1, _lfp_dB)
 
             # Resample to log-spaced frequency axis
             freqs_linear = self.data["psd_lf"]["freqs"][freq_idx]
-            freqs_log = np.geomspace(
-                freq_range[0], freq_range[1], num=img.shape[0]
-            )
+            freqs_log = np.geomspace(freq_range[0], freq_range[1], num=img.shape[0])
             from scipy.interpolate import interp1d
 
             interp_fn = interp1d(
@@ -667,9 +682,7 @@ class PlotData:
             )
             img_log = interp_fn(freqs_log)
 
-            img_full = np.full(
-                (img_log.shape[0], self.chn_full.shape[0]), np.nan
-            )
+            img_full = np.full((img_log.shape[0], self.chn_full.shape[0]), np.nan)
             img_full[:, self.idx_full] = img_log
 
             finite_vals = img_log[np.isfinite(img_log)]
@@ -705,10 +718,10 @@ class PlotData:
                 lfp_avg = _safe_take(
                     np.mean(self.data["psd_lf"]["power"][freq_idx], axis=0),
                     self.chn_ind,
-                        )
+                )
                 lfp_avg_dB = 10 * np.log10(np.maximum(lfp_avg, 1e-20))
-                probe_img, probe_scale, probe_offset = (
-                    self.arrange_channels2banks(lfp_avg_dB)
+                probe_img, probe_scale, probe_offset = self.arrange_channels2banks(
+                    lfp_avg_dB
                 )
                 probe_levels = np.quantile(lfp_avg_dB, [0.1, 0.9])
 
@@ -720,15 +733,95 @@ class PlotData:
                         "levels": probe_levels,
                         "cmap": "viridis",
                         "xaxis": "Time (s)",
-                        "xrange": np.array(
-                            [0 * BNK_SIZE, (self.N_BNK) * BNK_SIZE]
-                        ),
+                        "xrange": np.array([0 * BNK_SIZE, (self.N_BNK) * BNK_SIZE]),
                         "title": f"{freq[0]} - {freq[1]} Hz (dB)",
                     }
                 }
                 data_probe.update(lfp_band_data)
 
             return data_img, data_probe
+
+    def _load_row_channels(self, lfp_corr_folder):
+        """Load producer row-to-channel metadata for LFP band matrices."""
+        path = lfp_corr_folder / "row_channels.json"
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            logger.warning("Failed to load row_channels.json", exc_info=True)
+            return None
+
+    def _matrix_rows_for_current_shank(self, row_channels):
+        """Return channel-table rows for the active shank matrix."""
+        if not row_channels:
+            return None
+        shanks = row_channels.get("shanks", {})
+        entry = shanks.get(str(self.shank_idx))
+        if entry is None:
+            # Legacy draft row maps used 1-based shank keys.
+            entry = shanks.get(str(self.shank_idx + 1))
+        if entry is None:
+            logger.warning(
+                "row_channels.json has no entry for shank %d",
+                self.shank_idx,
+            )
+            return None
+        rows = np.asarray(entry.get("rows", []), dtype=int)
+        if rows.size == 0:
+            logger.warning(
+                "row_channels.json entry for shank %d has no rows",
+                self.shank_idx,
+            )
+            return None
+        return rows
+
+    def _slice_band_matrix(self, matrix, rows):
+        """Slice a full channel-table matrix to active-shank rows if needed."""
+        if rows is None:
+            return matrix, None
+        if matrix.shape[0] == len(self.chn_coords_all):
+            return matrix[np.ix_(rows, rows)], rows
+        if matrix.shape[0] == len(rows):
+            return matrix, rows
+        logger.warning(
+            "Skipping LFP matrix with shape %s; expected full channel count %d "
+            "or shank row count %d",
+            matrix.shape,
+            len(self.chn_coords_all),
+            len(rows),
+        )
+        return None, None
+
+    def _matrix_depth_geometry(self, rows, n_matrix):
+        """Affine display geometry derived from matrix channel rows."""
+        if rows is not None and len(rows) == n_matrix:
+            depths = self.chn_coords_all[rows, 1]
+        elif n_matrix == len(self.chn_coords):
+            depths = self.chn_coords[:, 1]
+        else:
+            depths = np.array([self.chn_min, self.chn_max], dtype=float)
+
+        unique_depths = np.unique(depths)
+        if unique_depths.size > 1:
+            pitch = np.min(np.diff(unique_depths))
+            scale = (unique_depths[-1] - unique_depths[0] + pitch) / n_matrix
+            offset = unique_depths[0]
+        else:
+            scale = 1.0
+            offset = float(unique_depths[0]) if unique_depths.size else 0.0
+        return scale, offset, np.array([offset, offset + scale * n_matrix])
+
+    def _full_band_files(self, folder, suffix):
+        """Band files excluding legacy ``_shank<N>`` compatibility views."""
+        shank_suffix = re.compile(r"_shank\d+$")
+        files = []
+        for file in folder.glob(f"*{suffix}.npy"):
+            stem = file.stem.replace(suffix, "")
+            if not shank_suffix.search(stem):
+                files.append(file)
+        return sorted(files)
 
     def _get_lfp_correlation_folder(self):
         # ---- Temporary workground for locating LFP correlation data ----
@@ -766,43 +859,32 @@ class PlotData:
         if lfp_corr_folder is None:
             return {}
 
-        # Load channel_blocks.json if available (for depth mapping)
-        import json
-
-        channel_blocks = None
-        cb_path = lfp_corr_folder / "channel_blocks.json"
-        if cb_path.exists():
-            try:
-                with open(cb_path) as f:
-                    channel_blocks = json.load(f)
-                logger.debug(
-                    f"Loaded channel_blocks.json: "
-                    f"{len(channel_blocks.get('blocks', []))} blocks"
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to load channel_blocks.json",
-                    exc_info=True,
-                )
+        row_channels = self._load_row_channels(lfp_corr_folder)
+        matrix_rows = self._matrix_rows_for_current_shank(row_channels)
 
         # Load only real-valued correlation files for the current shank
+        if matrix_rows is not None:
+            lfp_corr_files = self._full_band_files(lfp_corr_folder, "_mean_corr")
+        else:
+            lfp_corr_files = []
         shank_glob = f"*_shank{self.shank_idx + 1}_mean_corr.npy"
-        lfp_corr_files = list(lfp_corr_folder.glob(shank_glob))
         if not lfp_corr_files:
-            # Fall back to unsharded files (single-shank probes)
-            lfp_corr_files = list(lfp_corr_folder.glob("*_mean_corr.npy"))
+            lfp_corr_files = list(lfp_corr_folder.glob(shank_glob))
+        if not lfp_corr_files:
+            # Legacy single-shank fallback.
+            lfp_corr_files = self._full_band_files(lfp_corr_folder, "_mean_corr")
         if not lfp_corr_files:
             logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
             return {}
 
         all_data = {}
-        import re
-
         _shank_suffix = re.compile(r"_shank\d+$")
         for file in lfp_corr_files:
             # Extract the band name from the file name
             band_name = _shank_suffix.sub("", file.stem.replace("_mean_corr", ""))
-            this_corr = np.load(file)
+            this_corr, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
+            if this_corr is None:
+                continue
 
             logger.debug(
                 f"LFP corr file: {file.name}, shape: {this_corr.shape}, "
@@ -812,26 +894,14 @@ class PlotData:
             # Zero out diagonal (self-correlation is trivially 1)
             np.fill_diagonal(this_corr, 0.0)
 
-            # Use channel coordinates for depth mapping if matrix
-            # size matches the current shank's channel count
             n_matrix = this_corr.shape[0]
-            if n_matrix == len(self.chn_coords):
-                # Matrix rows correspond to channels — use actual
-                # depth range from the (sorted) channel coordinates
-                depths = self.chn_coords[:, 1]
-                depth_min = np.min(depths)
-                depth_max = np.max(depths)
-                depth_range = max(depth_max - depth_min, 1.0)
-                scale = depth_range / n_matrix
-                offset_y = depth_min
-            else:
-                # Fallback: linear mapping over full probe range
-                scale = (self.chn_max - self.chn_min) / n_matrix
-                offset_y = self.chn_min
+            scale, offset_y, x_range = self._matrix_depth_geometry(depth_rows, n_matrix)
 
             # Set color range from 95th percentile of off-diagonal values
             mask = ~np.eye(n_matrix, dtype=bool)
-            max_corr = np.quantile(np.abs(this_corr[mask]), 0.95)
+            max_corr = (
+                np.quantile(np.abs(this_corr[mask]), 0.95) if np.any(mask) else 1.0
+            )
             logger.debug(
                 f"LFP corr {band_name}: n={n_matrix}, "
                 f"off-diag q95={max_corr:.4f}, scale={scale:.4f}"
@@ -840,24 +910,29 @@ class PlotData:
                 "img": this_corr,
                 "scale": np.array([scale, scale]),
                 "levels": np.array([-max_corr, max_corr]),
-                "offset": np.array([0, offset_y]),
-                "xrange": np.array([offset_y, offset_y + scale * n_matrix]),
+                "offset": np.array([offset_y, offset_y]),
+                "xrange": x_range,
                 "cmap": "RdBu_r",
                 "title": f"LFP correlation ({band_name})",
                 "xaxis": "Distance from probe tip (um)",
             }
 
         # Load complex coherency files and render as HSV phase images
+        if matrix_rows is not None:
+            coherency_files = self._full_band_files(lfp_corr_folder, "_coherency")
+        else:
+            coherency_files = []
         coh_glob = f"*_shank{self.shank_idx + 1}_coherency.npy"
-        coherency_files = list(lfp_corr_folder.glob(coh_glob))
         if not coherency_files:
-            coherency_files = list(lfp_corr_folder.glob("*_coherency.npy"))
+            coherency_files = list(lfp_corr_folder.glob(coh_glob))
+        if not coherency_files:
+            coherency_files = self._full_band_files(lfp_corr_folder, "_coherency")
         for file in coherency_files:
             try:
-                band_name = _shank_suffix.sub(
-                    "", file.stem.replace("_coherency", "")
-                )
-                coh = np.load(file)
+                band_name = _shank_suffix.sub("", file.stem.replace("_coherency", ""))
+                coh, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
+                if coh is None:
+                    continue
 
                 magnitude = np.abs(coh)
                 phase = np.angle(coh)  # radians, [-pi, pi]
@@ -865,7 +940,9 @@ class PlotData:
                 # Scale saturation: map 95th percentile of
                 # off-diagonal magnitude to full saturation
                 off_diag = ~np.eye(coh.shape[0], dtype=bool)
-                max_mag = np.quantile(magnitude[off_diag], 0.95)
+                max_mag = (
+                    np.quantile(magnitude[off_diag], 0.95) if np.any(off_diag) else 1.0
+                )
                 if max_mag > 0:
                     magnitude = magnitude / max_mag
 
@@ -879,37 +956,23 @@ class PlotData:
                 from matplotlib.colors import hsv_to_rgb
 
                 rgb = hsv_to_rgb(hsv)
-                rgba = np.ones(
-                    (*rgb.shape[:2], 4), dtype=np.float32
-                )
+                rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
                 rgba[:, :, :3] = rgb.astype(np.float32)
 
                 # Zero out diagonal (self-coherency is trivially 1)
                 np.fill_diagonal(rgba[:, :, 3], 0.0)
 
-                # Depth mapping — same logic as correlation
                 n_coh = coh.shape[0]
-                if n_coh == len(self.chn_coords):
-                    depths = self.chn_coords[:, 1]
-                    d_min = np.min(depths)
-                    d_max = np.max(depths)
-                    d_range = max(d_max - d_min, 1.0)
-                    coh_scale = d_range / n_coh
-                    coh_offset = d_min
-                else:
-                    coh_scale = (
-                        (self.chn_max - self.chn_min) / n_coh
-                    )
-                    coh_offset = self.chn_min
+                coh_scale, coh_offset, coh_x_range = self._matrix_depth_geometry(
+                    depth_rows, n_coh
+                )
 
                 all_data[f"{band_name}_phase"] = {
                     "img": (rgba * 255).astype(np.uint8),
                     "scale": np.array([coh_scale, coh_scale]),
                     "levels": None,
-                    "offset": np.array([0, coh_offset]),
-                    "xrange": np.array(
-                        [coh_offset, coh_offset + coh_scale * n_coh]
-                    ),
+                    "offset": np.array([coh_offset, coh_offset]),
+                    "xrange": coh_x_range,
                     "cmap": None,
                     "title": f"LFP coherency phase ({band_name})",
                     "xaxis": "Distance from probe tip (um)",
