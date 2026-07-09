@@ -2053,12 +2053,45 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error("Channel info not loaded. Please select a probe first.")
             return
 
-        if self.output_directory is None:
-            logger.error("Must set an output directory before loading data.")
+        if not self._ensure_output_directory_for_load():
             return
 
         logger.info("Load Data button pressed")
         self.load_heavy_data()
+
+    def _ensure_output_directory_for_load(self) -> bool:
+        """Require a save location before data workflows can autosave."""
+        if self.output_directory is not None:
+            return True
+
+        msg = QtWidgets.QMessageBox(self)
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        msg.setWindowTitle("Output Folder Required")
+        msg.setText("Choose an output folder before loading data.")
+        msg.setInformativeText(
+            "The GUI saves in-progress alignments when switching probes or sessions."
+        )
+        set_button = msg.addButton(
+            "Set Output Folder...", QtWidgets.QMessageBox.AcceptRole
+        )
+        msg.addButton(QtWidgets.QMessageBox.Cancel)
+        msg.setDefaultButton(set_button)
+        msg.exec_()
+
+        if msg.clickedButton() != set_button:
+            logger.info("Load data cancelled: output directory is not set.")
+            return False
+
+        if not self.on_output_folder_selected():
+            logger.info("Load data cancelled: no output folder selected.")
+            return False
+
+        if self.output_directory is None:
+            logger.error(
+                "Output folder selected but no probe output directory was derived."
+            )
+            return False
+        return True
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
