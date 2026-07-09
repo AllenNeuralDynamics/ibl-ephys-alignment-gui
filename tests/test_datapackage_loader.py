@@ -8,26 +8,34 @@ from pathlib import Path
 import pytest
 
 from ephys_alignment_gui.datapackage_loader import (
+    AssetNotFound,
     DataPackageError,
     load_mouse_root,
 )
 
 
+def _ref(path: str, asset: str | None = None) -> dict[str, str | None]:
+    return {"asset": asset, "path": path}
+
+
+def _load(root: Path):
+    return load_mouse_root(root, asset_roots=[root.parent.parent])
+
+
 def _make_mouse_root(
     tmp_path: Path,
     *,
-    schema_version: str = "2.0.0",
+    schema_version: str = "3.0.0",
     extra_probes: dict[str, dict[str, dict]] | None = None,
-    ephys: str | None = "rec1/probeA/spikes",
+    ephys: str | None = "rec1/probeA",
     channels_rel: str | None = None,
 ) -> Path:
     """Create a minimal mouse-root directory with a datapackage.json.
 
-    Also touches the target files on disk so `.resolve()` checks hold even if
-    relative paths cross ``..`` boundaries.
+    Also touches the target files on disk so resolver checks can find them.
 
     ``extra_probes`` is shaped ``{recording_id: {probe_name: entry}}`` to
-    match the 2.0.0 nested probes schema.
+    match the nested probes schema.
     """
     mouse_root = tmp_path / "results" / "mouse42"
     mouse_root.mkdir(parents=True)
@@ -75,11 +83,11 @@ def _make_mouse_root(
             "probeA": {
                 "probe_id": "p-1",
                 "num_shanks": 1,
-                "ephys": ephys,
+                "ephys": _ref(ephys) if ephys else None,
                 "xyz_picks": [
                     {
-                        "ccf": "rec1/probeA/xyz_picks.json",
-                        "image_space": "rec1/probeA/xyz_picks_image_space.json",
+                        "ccf": _ref("rec1/probeA/xyz_picks.json"),
+                        "image_space": _ref("rec1/probeA/xyz_picks_image_space.json"),
                     }
                 ],
             }
@@ -89,34 +97,55 @@ def _make_mouse_root(
         for rec_id, rec_probes in extra_probes.items():
             probes.setdefault(rec_id, {}).update(rec_probes)
 
-    spim_rel = "../../SmartSPIM_mouse42_123/image_atlas_alignment/Ex_561_Em_600"
-    tmpl_rel = "../../spim_template_to_ccf"
     img_rel = "image_space_histology"
-    i2t_aff = f"{spim_rel}/ls_to_template_SyN_0GenericAffine.mat"
-    i2t_warp = f"{spim_rel}/ls_to_template_SyN_1InverseWarp.nii.gz"
-    t2c_aff = f"{tmpl_rel}/syn_0GenericAffine.mat"
-    t2c_warp = f"{tmpl_rel}/syn_1InverseWarp.nii.gz"
     dp = {
         "schema_version": schema_version,
         "mouse_id": "mouse42",
+        "platform": "local",
+        "external_assets": {
+            "smartspim": {
+                "role": "smartspim_registration",
+                "name": "SmartSPIM_mouse42_123",
+                "id": None,
+                "uri": None,
+                "checksum": None,
+            },
+            "spim_template_to_ccf": {
+                "role": "template_to_ccf",
+                "name": "spim_template_to_ccf",
+                "id": None,
+                "uri": None,
+                "checksum": None,
+            },
+        },
         "transforms": {
-            "image_to_template_affine": i2t_aff,
-            "image_to_template_warp": i2t_warp,
-            "template_to_ccf_affine": t2c_aff,
-            "template_to_ccf_warp": t2c_warp,
+            "image_to_template_affine": _ref(
+                "image_atlas_alignment/Ex_561_Em_600/ls_to_template_SyN_0GenericAffine.mat",
+                "smartspim",
+            ),
+            "image_to_template_warp": _ref(
+                "image_atlas_alignment/Ex_561_Em_600/ls_to_template_SyN_1InverseWarp.nii.gz",
+                "smartspim",
+            ),
+            "template_to_ccf_affine": _ref(
+                "syn_0GenericAffine.mat", "spim_template_to_ccf"
+            ),
+            "template_to_ccf_warp": _ref(
+                "syn_1InverseWarp.nii.gz", "spim_template_to_ccf"
+            ),
         },
         "histology": {
             "image_space": {
-                "registration": f"{img_rel}/histology_registration.nrrd",
-                "registration_pipeline": (
+                "registration": _ref(f"{img_rel}/histology_registration.nrrd"),
+                "registration_pipeline": _ref(
                     f"{img_rel}/histology_registration_pipeline.nrrd"
                 ),
-                "ccf_template": f"{img_rel}/ccf_in_mouse.nrrd",
-                "labels": f"{img_rel}/labels_in_mouse.nrrd",
-                "additional_channels": [f"{img_rel}/Ex_561_Em_600.nrrd"],
+                "ccf_template": _ref(f"{img_rel}/ccf_in_mouse.nrrd"),
+                "labels": _ref(f"{img_rel}/labels_in_mouse.nrrd"),
+                "additional_channels": [_ref(f"{img_rel}/Ex_561_Em_600.nrrd")],
             },
             "ccf_space": {
-                "registration": "ccf_space_histology/histology_registration.nrrd",
+                "registration": _ref("ccf_space_histology/histology_registration.nrrd"),
             },
         },
         "probes": probes,
@@ -132,26 +161,66 @@ def test_missing_datapackage_raises(tmp_path):
 
 def test_loads_basic_mouse_root(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
+    mr = _load(root)
     assert mr.mouse_id == "mouse42"
-    assert mr.schema_version == "2.0.0"
+    assert mr.schema_version == "3.0.0"
     assert mr.sessions == ["rec1"]
     assert mr.probes_for_session("rec1") == ["probeA"]
 
 
-def test_transforms_resolve_via_parent_traversal(tmp_path):
+def test_transforms_resolve_via_asset_root_search(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
-    # The transform lives in a sibling asset outside mouse_root — must resolve
-    # to an absolute path that exists.
+    mr = _load(root)
+    # The transform lives in an external asset outside mouse_root and resolves
+    # through the configured asset root.
     assert mr.transforms.image_to_template_affine.is_absolute()
     assert mr.transforms.image_to_template_affine.is_file()
     assert mr.transforms.template_to_ccf_warp.is_file()
 
 
+def test_external_asset_missing_without_roots(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    with pytest.raises(AssetNotFound, match="IBL_ASSET_ROOTS"):
+        load_mouse_root(root)
+
+
+def test_external_asset_override_by_name(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    moved = tmp_path / "renamed_histology_asset"
+    source = tmp_path / "SmartSPIM_mouse42_123"
+    source.rename(moved)
+
+    mr = load_mouse_root(
+        root,
+        asset_roots=[tmp_path],
+        asset_overrides={"SmartSPIM_mouse42_123": moved},
+    )
+
+    assert mr.transforms.image_to_template_affine.is_file()
+
+
+def test_external_asset_config_file(tmp_path, monkeypatch):
+    root = _make_mouse_root(tmp_path)
+    moved = tmp_path / "renamed_histology_asset"
+    (tmp_path / "SmartSPIM_mouse42_123").rename(moved)
+    config = {
+        "asset_roots": [str(tmp_path)],
+        "asset_overrides": {
+            "SmartSPIM_mouse42_123": str(moved),
+        },
+    }
+    config_path = tmp_path / "asset_config.json"
+    config_path.write_text(json.dumps(config))
+    monkeypatch.setenv("IBL_ASSET_CONFIG", str(config_path))
+
+    mr = load_mouse_root(root)
+
+    assert mr.transforms.image_to_template_affine.is_file()
+
+
 def test_histology_paths_are_absolute(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
+    mr = _load(root)
     for p in (
         mr.histology.registration,
         mr.histology.registration_pipeline,
@@ -166,7 +235,7 @@ def test_histology_paths_are_absolute(tmp_path):
 
 def test_probe_info_resolves_paths(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
+    mr = _load(root)
     probe = mr.get_probe("rec1", "probeA")
     assert probe.probe_id == "p-1"
     assert probe.logical_probe == "probeA"
@@ -194,7 +263,7 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
 
     dp_path = root / "datapackage.json"
     data = json.loads(dp_path.read_text())
-    data["schema_version"] = "2.1.0"
+    data["schema_version"] = "3.0.0"
     data["probes"] = {
         "rec1": {
             "ProbeD": {
@@ -202,16 +271,18 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
                 "logical_probe": "probe0",
                 "ephys_collection": "ProbeD",
                 "num_shanks": 1,
-                "ephys": "rec1/ProbeD",
+                "ephys": _ref("rec1/ProbeD"),
                 "channel_table": {
-                    "local_coordinates": "rec1/ProbeD/channels.localCoordinates.npy",
-                    "raw_ind": "rec1/ProbeD/channels.rawInd.npy",
-                    "shank_ind": "rec1/ProbeD/channels.shankInd.npy",
+                    "local_coordinates": _ref(
+                        "rec1/ProbeD/channels.localCoordinates.npy"
+                    ),
+                    "raw_ind": _ref("rec1/ProbeD/channels.rawInd.npy"),
+                    "shank_ind": _ref("rec1/ProbeD/channels.shankInd.npy"),
                 },
                 "xyz_picks": [
                     {
-                        "ccf": "rec1/ProbeD/xyz_picks_shank4.json",
-                        "image_space": (
+                        "ccf": _ref("rec1/ProbeD/xyz_picks_shank4.json"),
+                        "image_space": _ref(
                             "rec1/ProbeD/xyz_picks_shank4_image_space.json"
                         ),
                         "histology_track_id": "track-probe0-shank3",
@@ -225,7 +296,7 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
     }
     dp_path.write_text(json.dumps(data))
 
-    mr = load_mouse_root(root)
+    mr = _load(root)
     probe = mr.get_probe("rec1", "ProbeD")
     assert probe.logical_probe == "probe0"
     assert probe.ephys_collection == "ProbeD"
@@ -237,17 +308,16 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
     assert picks.shank == 1
 
 
-def test_ephys_dir_heals_bad_spikes_subdir(tmp_path, caplog):
-    """A datapackage whose ``ephys`` points at a spurious ``spikes`` subdir
-    heals to the parent probe folder when the ALF channel file lives there."""
-    # Bad manifest: ephys -> rec1/probeA/spikes, but channels live in probeA.
-    root = _make_mouse_root(tmp_path, channels_rel="rec1/probeA")
+def test_ephys_dir_does_not_heal_bad_spikes_subdir_in_v3(tmp_path, caplog):
+    """Schema 3 trusts the explicit ephys reference and does no legacy healing."""
+    root = _make_mouse_root(
+        tmp_path, ephys="rec1/probeA/spikes", channels_rel="rec1/probeA"
+    )
     with caplog.at_level("WARNING"):
-        mr = load_mouse_root(root)
+        mr = _load(root)
     probe = mr.get_probe("rec1", "probeA")
-    assert probe.ephys_dir == (root / "rec1" / "probeA")
-    assert (probe.ephys_dir / "channels.localCoordinates.npy").is_file()
-    assert any("parent" in r.getMessage() for r in caplog.records)
+    assert probe.ephys_dir == (root / "rec1" / "probeA" / "spikes")
+    assert not any("parent" in r.getMessage() for r in caplog.records)
 
 
 def test_ephys_dir_unchanged_when_channels_present(tmp_path, caplog):
@@ -255,32 +325,31 @@ def test_ephys_dir_unchanged_when_channels_present(tmp_path, caplog):
     and logs no warning."""
     root = _make_mouse_root(tmp_path, ephys="rec1/probeA", channels_rel="rec1/probeA")
     with caplog.at_level("WARNING"):
-        mr = load_mouse_root(root)
+        mr = _load(root)
     probe = mr.get_probe("rec1", "probeA")
     assert probe.ephys_dir == (root / "rec1" / "probeA")
     assert not any("parent" in r.getMessage() for r in caplog.records)
 
 
 def test_ephys_dir_left_alone_when_unfixable(tmp_path):
-    """When neither the declared dir nor its parent has the channel file, the
-    declared path is returned so the normal downstream error surfaces."""
-    root = _make_mouse_root(tmp_path)  # no channels file anywhere
-    mr = load_mouse_root(root)
+    """The declared ephys directory is returned so downstream validation owns it."""
+    root = _make_mouse_root(tmp_path, ephys="rec1/probeA/spikes")
+    mr = _load(root)
     probe = mr.get_probe("rec1", "probeA")
     assert probe.ephys_dir == (root / "rec1" / "probeA" / "spikes")
 
 
 def test_rejects_older_schema(tmp_path):
-    """Pre-2.0.0 datapackages have a flat ``probes`` dict and must be rejected."""
-    root = _make_mouse_root(tmp_path, schema_version="1.1.0")
+    """Pre-3.0.0 datapackages used string paths and must be regenerated."""
+    root = _make_mouse_root(tmp_path, schema_version="2.1.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
-        load_mouse_root(root)
+        _load(root)
 
 
 def test_rejects_incompatible_major_schema(tmp_path):
-    root = _make_mouse_root(tmp_path, schema_version="3.0.0")
+    root = _make_mouse_root(tmp_path, schema_version="4.0.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
-        load_mouse_root(root)
+        _load(root)
 
 
 def test_rejects_missing_schema_version(tmp_path):
@@ -290,7 +359,7 @@ def test_rejects_missing_schema_version(tmp_path):
     data.pop("schema_version")
     dp_path.write_text(json.dumps(data))
     with pytest.raises(DataPackageError, match="no schema_version"):
-        load_mouse_root(root)
+        _load(root)
 
 
 def test_malformed_json_raises_datapackage_error(tmp_path):
@@ -298,19 +367,19 @@ def test_malformed_json_raises_datapackage_error(tmp_path):
     root.mkdir(parents=True)
     (root / "datapackage.json").write_text("{not valid json")
     with pytest.raises(DataPackageError, match="Malformed"):
-        load_mouse_root(root)
+        _load(root)
 
 
 def test_get_probe_unknown_recording_raises(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
+    mr = _load(root)
     with pytest.raises(DataPackageError, match="No recording 'recWRONG'"):
         mr.get_probe("recWRONG", "probeA")
 
 
 def test_get_probe_unknown_probe_in_known_recording_raises(tmp_path):
     root = _make_mouse_root(tmp_path)
-    mr = load_mouse_root(root)
+    mr = _load(root)
     with pytest.raises(
         DataPackageError, match="No probe 'probeNOPE' in recording 'rec1'"
     ):
@@ -323,16 +392,20 @@ def test_multi_shank_probe_picks_by_index(tmp_path):
             "probeB": {
                 "probe_id": "p-2",
                 "num_shanks": 2,
-                "ephys": "rec1/probeB/spikes",
+                "ephys": _ref("rec1/probeB/spikes"),
                 "xyz_picks": [
                     {
-                        "ccf": "rec1/probeB/xyz_picks_shank1.json",
-                        "image_space": "rec1/probeB/xyz_picks_shank1_image_space.json",
+                        "ccf": _ref("rec1/probeB/xyz_picks_shank1.json"),
+                        "image_space": _ref(
+                            "rec1/probeB/xyz_picks_shank1_image_space.json"
+                        ),
                         "shank": 1,
                     },
                     {
-                        "ccf": "rec1/probeB/xyz_picks_shank2.json",
-                        "image_space": "rec1/probeB/xyz_picks_shank2_image_space.json",
+                        "ccf": _ref("rec1/probeB/xyz_picks_shank2.json"),
+                        "image_space": _ref(
+                            "rec1/probeB/xyz_picks_shank2_image_space.json"
+                        ),
                         "shank": 2,
                     },
                 ],
@@ -350,7 +423,7 @@ def test_multi_shank_probe_picks_by_index(tmp_path):
         (root / "rec1" / "probeB" / name).touch()
     (root / "rec1" / "probeB" / "spikes").mkdir()
 
-    mr = load_mouse_root(root)
+    mr = _load(root)
     probe = mr.get_probe("rec1", "probeB")
     assert probe.num_shanks == 2
     assert probe.picks_for_shank(0).shank == 1
@@ -365,11 +438,11 @@ def test_sessions_are_distinct_recordings(tmp_path):
             "probeB": {
                 "probe_id": "p-2",
                 "num_shanks": 1,
-                "ephys": "rec2/probeB/spikes",
+                "ephys": _ref("rec2/probeB/spikes"),
                 "xyz_picks": [
                     {
-                        "ccf": "rec2/probeB/xyz_picks.json",
-                        "image_space": "rec2/probeB/xyz_picks_image_space.json",
+                        "ccf": _ref("rec2/probeB/xyz_picks.json"),
+                        "image_space": _ref("rec2/probeB/xyz_picks_image_space.json"),
                     }
                 ],
             }
@@ -381,7 +454,7 @@ def test_sessions_are_distinct_recordings(tmp_path):
         (root / "rec2" / "probeB" / name).touch()
     (root / "rec2" / "probeB" / "spikes").mkdir()
 
-    mr = load_mouse_root(root)
+    mr = _load(root)
     assert mr.sessions == ["rec1", "rec2"]
     assert mr.probes_for_session("rec1") == ["probeA"]
     assert mr.probes_for_session("rec2") == ["probeB"]
@@ -395,11 +468,11 @@ def test_same_probe_name_in_two_recordings_kept_distinct(tmp_path):
             "probeA": {
                 "probe_id": "p-1-rec2",
                 "num_shanks": 1,
-                "ephys": "rec2/probeA/spikes",
+                "ephys": _ref("rec2/probeA/spikes"),
                 "xyz_picks": [
                     {
-                        "ccf": "rec2/probeA/xyz_picks.json",
-                        "image_space": "rec2/probeA/xyz_picks_image_space.json",
+                        "ccf": _ref("rec2/probeA/xyz_picks.json"),
+                        "image_space": _ref("rec2/probeA/xyz_picks_image_space.json"),
                     }
                 ],
             }
@@ -411,7 +484,7 @@ def test_same_probe_name_in_two_recordings_kept_distinct(tmp_path):
         (root / "rec2" / "probeA" / name).touch()
     (root / "rec2" / "probeA" / "spikes").mkdir()
 
-    mr = load_mouse_root(root)
+    mr = _load(root)
     assert mr.sessions == ["rec1", "rec2"]
     assert mr.probes_for_session("rec1") == ["probeA"]
     assert mr.probes_for_session("rec2") == ["probeA"]

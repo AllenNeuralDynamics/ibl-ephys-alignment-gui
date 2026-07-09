@@ -5,30 +5,115 @@ by ``aind-ibl-ephys-alignment-preprocessing`` v1.1.0+) and reads every path it
 needs from there. No directory-structure assumptions, no platform-specific
 literals, no globbing of sibling assets.
 
-Transform paths in the datapackage are relative to the mouse root and may use
-``..`` to reach sibling assets (e.g. the SmartSPIM asset mounted next to the
-preprocessed output).
+Datapackage schema 3.x stores each path as ``{asset, path}``. ``asset=None``
+means the path is relative to the datapackage directory; non-null assets are
+looked up in the datapackage's ``external_assets`` registry and resolved via
+runtime configuration supplied by the deployment/user.
 """
 
 from __future__ import annotations
 
 import json
-import logging
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
-# Minimum datapackage schema this loader can read. Major bump from 1.x:
-# probes are now nested by ``recording_id`` then ``probe_name``. The 1.x
-# flat ``dict[probe_name, ProbeEntry]`` silently merged probes that shared
-# a name across recordings, so the shape is incompatible.
-MIN_SCHEMA_MAJOR = 2
+# Minimum datapackage schema this loader can read. Major bump from 2.x:
+# all path fields are now reference objects ``{asset, path}``; older relative
+# string paths could encode producer-local mount layouts and are intentionally
+# rejected.
+MIN_SCHEMA_MAJOR = 3
 MIN_SCHEMA_MINOR = 0
 
 
 class DataPackageError(RuntimeError):
     """Raised when a mouse root is missing or the datapackage is malformed."""
+
+
+class AssetNotFound(DataPackageError):
+    """Raised when an external asset cannot be located on this machine."""
+
+
+class ReferenceNotFound(DataPackageError):
+    """Raised when a located asset does not contain the requested path."""
+
+
+@dataclass(frozen=True)
+class AssetRef:
+    """External asset registry entry plus its logical key."""
+
+    key: str
+    role: str
+    name: str
+    id: str | None = None
+    uri: str | None = None
+    checksum: str | None = None
+
+
+@dataclass(frozen=True)
+class PathRef:
+    """Datapackage path reference before local resolution."""
+
+    asset: str | None
+    path: str
+
+
+class RootSearchResolver:
+    """Resolve datapackage path references against local roots/overrides."""
+
+    def __init__(
+        self,
+        datapackage_dir: Path,
+        asset_roots: Sequence[Path] = (),
+        asset_overrides: Mapping[str, Path] | None = None,
+    ) -> None:
+        self.datapackage_dir = Path(datapackage_dir)
+        self.asset_roots = [Path(p) for p in asset_roots]
+        self.asset_overrides = {
+            str(k): Path(v) for k, v in (asset_overrides or {}).items()
+        }
+
+    def resolve(self, asset: AssetRef | None, within: str) -> Path:
+        """Resolve *within* inside *asset* or the datapackage directory."""
+        if asset is None:
+            return (self.datapackage_dir / within).resolve()
+
+        for override_key in (asset.key, asset.name):
+            if override_key and override_key in self.asset_overrides:
+                path = self.asset_overrides[override_key] / within
+                if path.exists():
+                    return path.resolve()
+                raise ReferenceNotFound(
+                    f"Asset override {override_key!r} for {asset.name!r} exists, "
+                    f"but requested path {within!r} was not found at {path}."
+                )
+
+        searched: list[str] = []
+        for root in self.asset_roots:
+            for key in (asset.name, asset.id):
+                if key:
+                    candidate = root / key / within
+                    searched.append(str(candidate))
+                    if candidate.exists():
+                        return candidate.resolve()
+
+        identity = ", ".join(
+            part
+            for part in (
+                f"key={asset.key!r}",
+                f"role={asset.role!r}",
+                f"name={asset.name!r}",
+                f"id={asset.id!r}" if asset.id else "",
+                f"uri={asset.uri!r}" if asset.uri else "",
+            )
+            if part
+        )
+        raise AssetNotFound(
+            f"Could not resolve external asset ({identity}) for path {within!r}. "
+            f"Searched: {searched or ['<no asset roots configured>']}. "
+            "Set IBL_ASSET_ROOTS or IBL_ASSET_OVERRIDES."
+        )
 
 
 @dataclass(frozen=True)
@@ -145,13 +230,24 @@ class MouseRoot:
         return probes_for_rec[probe_name]
 
 
-def load_mouse_root(mouse_root: Path) -> MouseRoot:
+def load_mouse_root(
+    mouse_root: Path,
+    *,
+    asset_roots: Sequence[Path] | None = None,
+    asset_overrides: Mapping[str, Path] | None = None,
+) -> MouseRoot:
     """Load and validate a mouse root directory.
 
     Parameters
     ----------
     mouse_root : Path
         Directory containing ``datapackage.json``.
+    asset_roots : sequence of Path, optional
+        Roots under which external assets may be found by name or id. When not
+        supplied, ``IBL_ASSET_ROOTS`` is used.
+    asset_overrides : mapping, optional
+        Explicit mapping from logical asset key or asset name to a local asset
+        directory. Merged with ``IBL_ASSET_OVERRIDES``; explicit arguments win.
 
     Returns
     -------
@@ -178,11 +274,18 @@ def load_mouse_root(mouse_root: Path) -> MouseRoot:
         raise DataPackageError(f"Malformed {dp_path}: {e}") from e
 
     _check_schema_version(raw.get("schema_version", ""))
+    external_assets = _parse_external_assets(raw.get("external_assets", {}))
+    runtime_config = _load_asset_config_file()
+    resolver = RootSearchResolver(
+        mouse_root,
+        asset_roots=_load_asset_roots(asset_roots, runtime_config),
+        asset_overrides=_load_asset_overrides(asset_overrides, runtime_config),
+    )
 
     try:
-        transforms = _parse_transforms(raw["transforms"], mouse_root)
-        histology = _parse_histology(raw["histology"], mouse_root)
-        probes = _parse_probes(raw["probes"], mouse_root)
+        transforms = _parse_transforms(raw["transforms"], resolver, external_assets)
+        histology = _parse_histology(raw["histology"], resolver, external_assets)
+        probes = _parse_probes(raw["probes"], resolver, external_assets)
     except KeyError as e:
         raise DataPackageError(f"datapackage.json missing required key: {e}") from e
 
@@ -207,74 +310,163 @@ def _check_schema_version(version: str) -> None:
         raise DataPackageError(
             f"Unsupported datapackage schema {version}. "
             f"GUI requires {MIN_SCHEMA_MAJOR}.{MIN_SCHEMA_MINOR}.x or newer "
-            "(re-run preprocessing)."
+            "(regenerate datapackage.json or re-run preprocessing)."
         )
 
 
-def _resolve(rel: str, root: Path) -> Path:
-    """Resolve a datapackage-relative POSIX path to an absolute Path."""
-    return (root / rel).resolve()
+def _load_asset_config_file() -> dict[str, object]:
+    config_path = os.environ.get("IBL_ASSET_CONFIG", "")
+    if not config_path:
+        return {}
+    path = Path(config_path)
+    try:
+        parsed = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise DataPackageError(f"Malformed IBL_ASSET_CONFIG JSON in {path}: {e}") from e
+    if not isinstance(parsed, dict):
+        raise DataPackageError("IBL_ASSET_CONFIG must contain a JSON object")
+    return parsed
 
 
-# File the GUI loads first from a probe's ephys collection dir (see
-# load_data_local.load_channel_info); used to tell whether ``ephys`` really
-# points at the ALF collection.
-_EPHYS_SENTINEL = "channels.localCoordinates.npy"
+def _load_asset_roots(
+    asset_roots: Sequence[Path] | None,
+    runtime_config: Mapping[str, object],
+) -> list[Path]:
+    if asset_roots is not None:
+        return [Path(p) for p in asset_roots]
+    raw = os.environ.get("IBL_ASSET_ROOTS", "")
+    if raw:
+        return [Path(p) for p in raw.split(os.pathsep) if p]
+    config_roots = runtime_config.get("asset_roots", [])
+    if not isinstance(config_roots, list):
+        raise DataPackageError("IBL_ASSET_CONFIG asset_roots must be a list")
+    return [Path(p) for p in config_roots]
 
 
-def _resolve_ephys_dir(rel: str, root: Path) -> Path:
-    """Resolve a probe's ephys dir, healing a known bad datapackage layout.
+def _load_asset_overrides(
+    asset_overrides: Mapping[str, Path] | None,
+    runtime_config: Mapping[str, object],
+) -> dict[str, Path]:
+    loaded: dict[str, Path] = {}
+    config_overrides = runtime_config.get("asset_overrides", {})
+    if config_overrides:
+        if not isinstance(config_overrides, dict):
+            raise DataPackageError(
+                "IBL_ASSET_CONFIG asset_overrides must be a JSON object"
+            )
+        loaded.update({str(k): Path(v) for k, v in config_overrides.items()})
+    raw = os.environ.get("IBL_ASSET_OVERRIDES", "")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise DataPackageError(f"Malformed IBL_ASSET_OVERRIDES JSON: {e}") from e
+        if not isinstance(parsed, dict):
+            raise DataPackageError("IBL_ASSET_OVERRIDES must be a JSON object")
+        loaded.update({str(k): Path(v) for k, v in parsed.items()})
+    if asset_overrides:
+        loaded.update({str(k): Path(v) for k, v in asset_overrides.items()})
+    return loaded
 
-    Some ``aind-ibl-ephys-alignment-preprocessing`` manifests point ``ephys`` at
-    a ``spikes`` subdirectory that was never created -- the ALF collection
-    (``channels``/``spikes``/``clusters``) actually lives in the parent probe
-    folder alongside ``xyz_picks.json``. When the declared directory lacks
-    ``channels.localCoordinates.npy`` but its parent has it, fall back to the
-    parent and warn. Otherwise the declared path is returned unchanged so the
-    usual "file not found" error surfaces normally.
-    """
-    ephys_dir = _resolve(rel, root)
-    if (ephys_dir / _EPHYS_SENTINEL).is_file():
-        return ephys_dir
-    parent = ephys_dir.parent
-    if (parent / _EPHYS_SENTINEL).is_file():
-        logger.warning(
-            "datapackage ephys path %r lacks %s; falling back to its parent %s. "
-            "This datapackage is from a buggy preprocessing run -- re-run "
-            "preprocessing to correct the manifest.",
-            rel,
-            _EPHYS_SENTINEL,
-            parent,
+
+def _parse_external_assets(d: dict) -> dict[str, AssetRef]:
+    assets: dict[str, AssetRef] = {}
+    for key, entry in d.items():
+        assets[key] = AssetRef(
+            key=key,
+            role=entry["role"],
+            name=entry["name"],
+            id=entry.get("id"),
+            uri=entry.get("uri"),
+            checksum=entry.get("checksum"),
         )
-        return parent
-    return ephys_dir
+    return assets
 
 
-def _parse_transforms(d: dict[str, str], root: Path) -> TransformPaths:
+def _parse_path_ref(value: object) -> PathRef:
+    if isinstance(value, str):
+        raise DataPackageError(
+            f"Legacy string path {value!r} found in schema 3 datapackage. "
+            "Regenerate datapackage.json with aind-ibl-preprocess --datapackage-only."
+        )
+    if not isinstance(value, dict):
+        raise DataPackageError(
+            f"Expected path reference object, got {type(value).__name__}"
+        )
+    path = value.get("path")
+    if not isinstance(path, str) or not path:
+        raise DataPackageError(f"Path reference missing non-empty 'path': {value!r}")
+    asset = value.get("asset")
+    if asset is not None and not isinstance(asset, str):
+        raise DataPackageError(
+            f"Path reference 'asset' must be string or null: {value!r}"
+        )
+    return PathRef(asset=asset, path=path)
+
+
+def _resolve_ref(
+    value: object, resolver: RootSearchResolver, assets: Mapping[str, AssetRef]
+) -> Path:
+    ref = _parse_path_ref(value)
+    if ref.asset is None:
+        return resolver.resolve(None, ref.path)
+    try:
+        asset = assets[ref.asset]
+    except KeyError as e:
+        raise DataPackageError(
+            f"Unknown external asset key {ref.asset!r} for path {ref.path!r}"
+        ) from e
+    return resolver.resolve(asset, ref.path)
+
+
+def _resolve_ephys_dir(
+    value: object, resolver: RootSearchResolver, assets: Mapping[str, AssetRef]
+) -> Path:
+    """Resolve a probe's ephys collection directory without legacy healing."""
+    return _resolve_ref(value, resolver, assets)
+
+
+def _parse_transforms(
+    d: dict[str, object], resolver: RootSearchResolver, assets: Mapping[str, AssetRef]
+) -> TransformPaths:
     return TransformPaths(
-        image_to_template_affine=_resolve(d["image_to_template_affine"], root),
-        image_to_template_warp=_resolve(d["image_to_template_warp"], root),
-        template_to_ccf_affine=_resolve(d["template_to_ccf_affine"], root),
-        template_to_ccf_warp=_resolve(d["template_to_ccf_warp"], root),
+        image_to_template_affine=_resolve_ref(
+            d["image_to_template_affine"], resolver, assets
+        ),
+        image_to_template_warp=_resolve_ref(
+            d["image_to_template_warp"], resolver, assets
+        ),
+        template_to_ccf_affine=_resolve_ref(
+            d["template_to_ccf_affine"], resolver, assets
+        ),
+        template_to_ccf_warp=_resolve_ref(d["template_to_ccf_warp"], resolver, assets),
     )
 
 
-def _parse_histology(d: dict, root: Path) -> HistologyImagePaths:
+def _parse_histology(
+    d: dict, resolver: RootSearchResolver, assets: Mapping[str, AssetRef]
+) -> HistologyImagePaths:
     img = d["image_space"]
     additional = {
-        Path(rel).stem: _resolve(rel, root)
-        for rel in img.get("additional_channels", [])
+        Path(_parse_path_ref(ref).path).stem: _resolve_ref(ref, resolver, assets)
+        for ref in img.get("additional_channels", [])
     }
     return HistologyImagePaths(
-        registration=_resolve(img["registration"], root),
-        registration_pipeline=_resolve(img["registration_pipeline"], root),
-        ccf_template=_resolve(img["ccf_template"], root),
-        labels=_resolve(img["labels"], root),
+        registration=_resolve_ref(img["registration"], resolver, assets),
+        registration_pipeline=_resolve_ref(
+            img["registration_pipeline"], resolver, assets
+        ),
+        ccf_template=_resolve_ref(img["ccf_template"], resolver, assets),
+        labels=_resolve_ref(img["labels"], resolver, assets),
         additional_channels=additional,
     )
 
 
-def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
+def _parse_probes(
+    d: dict,
+    resolver: RootSearchResolver,
+    assets: Mapping[str, AssetRef],
+) -> dict[str, dict[str, ProbeInfo]]:
     """Parse the nested ``recording_id -> ephys_collection -> entry`` JSON.
 
     ``recording_id`` and ``ephys_collection`` come from the outer/inner dict keys
@@ -292,8 +484,8 @@ def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
         for probe_name, entry in recording_probes.items():
             picks = tuple(
                 XyzPicks(
-                    image_space=_resolve(p["image_space"], root),
-                    ccf=_resolve(p["ccf"], root),
+                    image_space=_resolve_ref(p["image_space"], resolver, assets),
+                    ccf=_resolve_ref(p["ccf"], resolver, assets),
                     histology_track_id=p.get("histology_track_id"),
                     histology_shank=p.get("histology_shank"),
                     ephys_shank=p.get("ephys_shank"),
@@ -302,7 +494,9 @@ def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
                 for p in entry["xyz_picks"]
             )
             ephys_rel = entry.get("ephys")
-            channel_table = _parse_channel_table(entry.get("channel_table"), root)
+            channel_table = _parse_channel_table(
+                entry.get("channel_table"), resolver, assets
+            )
             probes.setdefault(recording_id, {})[probe_name] = ProbeInfo(
                 probe_id=entry["probe_id"],
                 probe_name=probe_name,
@@ -310,18 +504,24 @@ def _parse_probes(d: dict, root: Path) -> dict[str, dict[str, ProbeInfo]]:
                 logical_probe=entry.get("logical_probe", probe_name),
                 ephys_collection=entry.get("ephys_collection", probe_name),
                 num_shanks=entry["num_shanks"],
-                ephys_dir=_resolve_ephys_dir(ephys_rel, root) if ephys_rel else None,
+                ephys_dir=_resolve_ephys_dir(ephys_rel, resolver, assets)
+                if ephys_rel
+                else None,
                 channel_table=channel_table,
                 xyz_picks=picks,
             )
     return probes
 
 
-def _parse_channel_table(d: dict | None, root: Path) -> ChannelTablePaths | None:
+def _parse_channel_table(
+    d: dict | None,
+    resolver: RootSearchResolver,
+    assets: Mapping[str, AssetRef],
+) -> ChannelTablePaths | None:
     if not d:
         return None
     return ChannelTablePaths(
-        local_coordinates=_resolve(d["local_coordinates"], root),
-        raw_ind=_resolve(d["raw_ind"], root),
-        shank_ind=_resolve(d["shank_ind"], root),
+        local_coordinates=_resolve_ref(d["local_coordinates"], resolver, assets),
+        raw_ind=_resolve_ref(d["raw_ind"], resolver, assets),
+        shank_ind=_resolve_ref(d["shank_ind"], resolver, assets),
     )
