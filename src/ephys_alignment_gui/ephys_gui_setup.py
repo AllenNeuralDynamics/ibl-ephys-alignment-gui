@@ -572,7 +572,8 @@ class Setup:
             slice_options.addAction(slice_hist_cb)
             self.slice_options_group.addAction(slice_hist_cb)
 
-        # Initialise with the CCF as the default slice plot.
+        # Default to the histology registration channel when present (set in
+        # the loop below); otherwise fall back to the CCF template.
         self.slice_init = slice_ccf
 
         # These are accessed sepperatly so have conditional activation
@@ -589,6 +590,11 @@ class Setup:
                 )
                 slice_options.addAction(this_slice_action)
                 self.slice_options_group.addAction(this_slice_action)
+                # Prefer the registered histology as the default slice/perp
+                # volume — it's the tissue the user is aligning to, not the
+                # atlas template.
+                if key == "histology_registration":
+                    self.slice_init = this_slice_action
 
     def init_interaction_features(self) -> None:
         """

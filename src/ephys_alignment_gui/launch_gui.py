@@ -995,9 +995,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Build a uniform feature-space grid in metres covering the current
         # fig_hist display range. Sampling density matches the atlas DV voxel
         # size so the rows line up row-for-row with the histology plot.
+        #
+        # Span the full annotation-region depth extent that fig_hist draws
+        # (fig_hist_perp is Y-linked to fig_hist), not just the probe: the
+        # region rectangles run over the whole track, so bounding the grid to
+        # the probe span leaves the perp empty below the deepest contact. The
+        # probe span is kept as a floor so a degenerate/empty region set falls
+        # back to the previous behaviour. The trajectory is extrapolated past
+        # the track ends (see position_and_tangent_at_arc_lengths), so deeper
+        # rows continue the straight probe line; out-of-volume samples stay
+        # transparent.
         dv_voxel_m = abs(self.loaddata.brain_atlas.bc.dxyz[2])
         feat_min_um = self.session.probe_tip - self.session.probe_extra
         feat_max_um = self.session.probe_top + self.session.probe_extra
+        regions = self.session.hist_data.get("region")
+        if regions is not None and len(regions):
+            reg = np.asarray(regions, dtype=float)
+            feat_min_um = min(feat_min_um, float(reg.min()))
+            feat_max_um = max(feat_max_um, float(reg.max()))
         n_depths = int(round((feat_max_um - feat_min_um) * 1e-6 / dv_voxel_m)) + 1
         feature_grid_um = np.linspace(feat_min_um, feat_max_um, n_depths)
         feature_grid_m = feature_grid_um * 1e-6
@@ -1056,8 +1071,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.fig_hist_perp.setXRange(min=-extent_um, max=extent_um, padding=0)
         self.fig_hist_perp.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
+            min=feat_min_um,
+            max=feat_max_um,
             padding=self.pad,
         )
 
@@ -2385,13 +2400,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.probe_init.setChecked(True)
             self.unit_init.setChecked(True)
             self.plot_image(self.session.img_fr_data)
-            self.plot_probe(self.session.probe_rms_LFPdata)
+            # Plot the dataset matching probe_init (RMS AP) so the rendered
+            # probe plot agrees with the checked "Probe Plots" menu item.
+            self.plot_probe(self.session.probe_rms_APdata)
             self.plot_line(self.session.line_fr_data)
 
         self.render_histology_plots()
 
         # Restore the previously-selected slice plot if its data is still
-        # available for this probe; otherwise fall back to CCF.
+        # available for this probe; otherwise fall back to the default slice
+        # (slice_init — the histology registration channel when present, else
+        # CCF).
         slice_payload = (
             prev_slice_action.data() if prev_slice_action is not None else None
         )
@@ -2407,13 +2426,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             prev_slice_action.setChecked(True)
             self.plot_slice(slice_data, slice_key)
         else:
+            init_attr, init_key = self.slice_init.data()
             if prev_slice_action is not None and prev_slice_action is not self.slice_init:
                 logger.info(
                     f"Slice selection '{prev_slice_action.text()}' not available for "
-                    f"this probe; falling back to CCF"
+                    f"this probe; falling back to '{self.slice_init.text()}'"
                 )
             self.slice_init.setChecked(True)
-            self.plot_slice(self.session.slice_data, "ccf")
+            self.plot_slice(getattr(self.session, init_attr), init_key)
 
         # Only configure the view on first launch
         self.set_view(view=1, configure=self.configure and not self.data_status)
