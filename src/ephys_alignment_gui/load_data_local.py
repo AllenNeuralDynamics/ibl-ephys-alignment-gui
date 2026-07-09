@@ -789,12 +789,19 @@ class LoadDataLocal:
         if self.brain_atlas is None:
             raise RuntimeError("brain_atlas not yet loaded")
 
-        # Ensure the requested channel is cached; _load_and_slice_channel is
-        # idempotent and already applies the rotation to lazy channels.
-        if channel_name not in self.histology_images:
-            self._load_and_slice_channel(channel_name)
-        hist_image = self.histology_images[channel_name]
-        volume_arr = sitk.GetArrayFromImage(hist_image)
+        # Resolve the channel name to a scalar-intensity volume in the blessed
+        # atlas orientation. "ccf" samples the atlas template image directly
+        # (same array get_slice_images cuts the "ccf" annotation slice from),
+        # so the perp and coronal slices share one intensity scale. Any other
+        # name is a histology channel: ensure it's cached (idempotent, applies
+        # the canonical rotation to lazy channels) then sample its array.
+        if channel_name == "ccf":
+            volume_arr = self.brain_atlas.image
+        else:
+            if channel_name not in self.histology_images:
+                self._load_and_slice_channel(channel_name)
+            hist_image = self.histology_images[channel_name]
+            volume_arr = sitk.GetArrayFromImage(hist_image)
 
         return build_perpendicular_slice(
             volume_arr=volume_arr,

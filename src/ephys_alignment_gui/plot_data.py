@@ -116,6 +116,12 @@ class PlotData:
         self.N_BNK = len(np.unique(self.chn_coords[:, 0]))
         self.idx_full = np.where(np.isin(self.chn_full, self.chn_coords[:, 1]))[0]
 
+        # Depths (um) of channels currently inside the brain, per the active
+        # alignment (set by the GUI after this PlotData is built). None means
+        # "unknown" -> probe colour levels use all channels. Channels are placed
+        # along the track purely by depth, so a per-depth set is exact.
+        self.in_brain_depths_um = None
+
         if self.data["spikes"]["exists"]:
             self.max_spike_time = np.max(self.data["spikes"]["times"])
 
@@ -490,6 +496,21 @@ class PlotData:
             }
             return data_img
 
+    def _probe_levels(self, values, quantiles=(0.1, 0.9)):
+        """Colour levels from in-brain channels when known, else all channels.
+
+        ``values`` is a per-channel array ordered like ``self.chn_coords``.
+        When the GUI has set ``self.in_brain_depths_um`` (via the aligned CCF
+        annotation, excluding void), channels outside the brain are dropped so
+        their extremes don't blow out the probe colour range.
+        """
+        vals = np.asarray(values, dtype=float)
+        if self.in_brain_depths_um is not None:
+            mask = np.isin(self.chn_coords[:, 1], self.in_brain_depths_um)
+            if mask.any():
+                vals = vals[mask]
+        return np.nanquantile(vals, list(quantiles))
+
     def get_rms_data_img_probe(self, format):
         # Finds channels that are at equivalent depth on probe and averages rms values for each
         # time point at same depth togehter
@@ -562,7 +583,7 @@ class PlotData:
                 indices=self.chn_ind,
             )
         ) * 1e6
-        probe_levels = np.nanquantile(rms_avg, [0.1, 0.9])
+        probe_levels = self._probe_levels(rms_avg)
         probe_img, probe_scale, probe_offset = self.arrange_channels2banks(rms_avg)
 
         data_probe = {
@@ -724,7 +745,7 @@ class PlotData:
                 probe_img, probe_scale, probe_offset = self.arrange_channels2banks(
                     lfp_avg_dB
                 )
-                probe_levels = np.quantile(lfp_avg_dB, [0.1, 0.9])
+                probe_levels = self._probe_levels(lfp_avg_dB)
 
                 lfp_band_data = {
                     f"{freq[0]} - {freq[1]} Hz": {

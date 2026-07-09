@@ -196,7 +196,11 @@ def position_and_tangent_at_arc_lengths(
         ``EphysAlignment.ephys_depths_along_track``.
     arc_lengths_query : NDArray (M,)
         Arc lengths at which to evaluate. Outside the range of
-        ``ephys_depths_along_track`` this extrapolates (``np.interp`` clips).
+        ``ephys_depths_along_track`` the position is **extrapolated** linearly
+        along the (smoothed) end tangent — a straight continuation of the
+        trajectory past the first/last pick — so the perp slice extends beyond
+        the probe tip instead of repeating the tip cross-section. The tangent
+        itself stays clamped (constant end direction).
     sigma_samples : float
         Forwarded to :func:`smoothed_tangents`.
 
@@ -206,6 +210,11 @@ def position_and_tangent_at_arc_lengths(
     tangents  : NDArray (M, 3) unit-norm.
     """
     tangents_dense = smoothed_tangents(track_interpolation_ras, sigma_samples=sigma_samples)
+    # np.interp clamps to the endpoints outside the data range; that would
+    # repeat the tip cross-section. Compute the clamped interpolation first,
+    # then overwrite the out-of-range rows with a straight-line extrapolation
+    # along the unit end tangent (arc length is metres, tangent is unit-norm,
+    # so displacement = delta-arc-length * tangent).
     positions = np.stack(
         [
             np.interp(arc_lengths_query, ephys_depths_along_track, track_interpolation_ras[:, k])
@@ -213,6 +222,20 @@ def position_and_tangent_at_arc_lengths(
         ],
         axis=1,
     )
+    s0 = ephys_depths_along_track[0]
+    s1 = ephys_depths_along_track[-1]
+    below = arc_lengths_query < s0
+    above = arc_lengths_query > s1
+    if below.any():
+        positions[below] = (
+            track_interpolation_ras[0]
+            + (arc_lengths_query[below] - s0)[:, None] * tangents_dense[0]
+        )
+    if above.any():
+        positions[above] = (
+            track_interpolation_ras[-1]
+            + (arc_lengths_query[above] - s1)[:, None] * tangents_dense[-1]
+        )
     tangents_interp = np.stack(
         [
             np.interp(arc_lengths_query, ephys_depths_along_track, tangents_dense[:, k])

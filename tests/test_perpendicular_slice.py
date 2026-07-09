@@ -137,6 +137,29 @@ def test_position_and_tangent_at_arc_lengths_matches_interp():
     np.testing.assert_allclose(np.linalg.norm(tan, axis=1), 1.0, atol=1e-10)
 
 
+def test_position_extrapolates_past_track_ends():
+    """Queries beyond the track range extend the straight line, not clamp.
+
+    A straight -DV trajectory sampled at arc lengths above the top pick and
+    below the tip pick should keep marching along the end tangent, so the perp
+    slice extends past the probe tip instead of repeating the tip cross-section.
+    """
+    n = 60
+    arc = np.linspace(0.0, 3e-3, n)  # metres
+    traj = np.stack([np.zeros(n), np.zeros(n), -arc], axis=1)  # straight down
+    # One query below the start and one past the end of the track.
+    below = -5e-4
+    above = 3e-3 + 5e-4
+    q = np.array([below, above])
+    pos, _ = position_and_tangent_at_arc_lengths(traj, arc, q)
+
+    # Straight line z = -s continued past both ends.
+    np.testing.assert_allclose(pos[0], [0.0, 0.0, -below], atol=1e-9)
+    np.testing.assert_allclose(pos[1], [0.0, 0.0, -above], atol=1e-9)
+    # And it must NOT be clamped to the endpoints.
+    assert pos[1, 2] < traj[-1, 2] - 1e-9, "position was clamped at the tip"
+
+
 def test_arc_lengths_monotone_and_starts_at_zero():
     traj = np.cumsum(np.ones((30, 3)) * 0.025, axis=0)
     s = arc_lengths(traj)

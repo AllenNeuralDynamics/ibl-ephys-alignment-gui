@@ -968,7 +968,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fig.addItem(self.session.tip_pos)
         fig.addItem(self.session.top_pos)
 
-    def plot_perpendicular_histology(self) -> None:
+    def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
         """
         Plot the perpendicular histology slice for the current alignment.
 
@@ -976,6 +976,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         (smoothed) probe trajectory at a feature-space depth. Feature-space
         y-axis lines up with ``fig_hist`` via the shared ``fig_hist_perp``
         Y-link.
+
+        Parameters
+        ----------
+        channel_name : str
+            Which scalar-intensity volume to sample — ``"ccf"`` (the atlas
+            template, the default and same source as the "CCF" coronal slice)
+            or a histology channel name. This should match the channel shown in
+            the coronal ``fig_slice`` so the two are different views of the same
+            tissue and, with shared levels, render the same value as the same
+            colour.
         """
         if not self.histology_exists:
             return
@@ -996,15 +1006,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         n_perp_samples = int(round(2 * extent_m / dv_voxel_m)) + 1
         extent_um = extent_m * 1e6
 
-        perp_image = self.loaddata.get_perpendicular_slice_image(
-            ephysalign=self.session.ephysalign,
-            feature_ref=self.session.features[self.session.idx],
-            track_ref=self.session.track[self.session.idx],
-            feature_grid_m=feature_grid_m,
-            channel_name="histology_registration",
-            extent_m=extent_m,
-            n_perp_samples=n_perp_samples,
-        )
+        try:
+            perp_image = self.loaddata.get_perpendicular_slice_image(
+                ephysalign=self.session.ephysalign,
+                feature_ref=self.session.features[self.session.idx],
+                track_ref=self.session.track[self.session.idx],
+                feature_grid_m=feature_grid_m,
+                channel_name=channel_name,
+                extent_m=extent_m,
+                n_perp_samples=n_perp_samples,
+            )
+        except Exception:
+            # Channel can't be sampled as a scalar volume (e.g. an online-only
+            # slice). Leave the perp view empty rather than crashing the coronal
+            # slice redraw that called us.
+            logger.warning(
+                "Could not build perpendicular slice for channel '%s'",
+                channel_name,
+                exc_info=True,
+            )
+            return
 
         # pyqtgraph's ImageItem default axisOrder is col-major: axis 0 -> x.
         # Our sampler returns (n_perp, n_depths) so axis 0 is perpendicular
@@ -1052,6 +1073,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 y=self.session.chn_depths,
                 pen="r",
                 brush="r",
+                size=4,
             )
             self.fig_hist_perp.addItem(self.session.perp_channel_dots)
 
@@ -1061,7 +1083,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 y=[-TIP_SIZE_UM],
                 pen="m",
                 brush="m",
-                size=10,
+                size=5,
             )
             self.fig_hist_perp.addItem(self.session.perp_tip_marker)
 
@@ -1334,10 +1356,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.session.slice_hist_levels = self.fig_slice_hist.getLevels()
 
-            if self.session.perp_image_item is not None:
-                self.session.perp_image_item.setLevels(self.session.slice_hist_levels)
+            # Re-render the perpendicular slice from the SAME scalar channel now
+            # showing in the coronal view, so the two are different views of the
+            # same tissue. slice_hist_levels is set above, so the perp picks up
+            # matched levels (same value -> same colour).
+            self.plot_perpendicular_histology(img_type)
 
-            self.fig_slice_hist.sigLevelChangeFinished.connect(self.update_perpendicular_levels)
+            # Live-update the perp levels as the user drags the histogram
+            # handles (sigLevelsChanged fires continuously; the finished-only
+            # signal would leave the perp lagging until release).
+            self.fig_slice_hist.sigLevelsChanged.connect(self.update_perpendicular_levels)
 
             self.slice_item = self.fig_slice_hist
 
@@ -1350,6 +1378,33 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.fig_slice.addItem(self.session.traj_line)
         self.plot_channels()
+
+    def in_brain_channel_depths(self):
+        """Depths (um) of channels inside the brain for the current alignment.
+
+        Places each channel along the track with the active alignment, looks up
+        the aligned CCF annotation, and keeps channels whose region is not void
+        (id 0 = outside the brain). Returns None when it can't be determined so
+        callers fall back to using all channels.
+        """
+        if not self.histology_exists or self.session.ephysalign is None:
+            return None
+        try:
+            channel_locations_ras = self.session.ephysalign.get_channel_locations(
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+            )
+            region_ids = self.loaddata.brain_atlas.get_labels(channel_locations_ras)
+        except Exception:
+            logger.warning(
+                "Could not determine in-brain channels for probe cmap",
+                exc_info=True,
+            )
+            return None
+        in_brain = np.asarray(region_ids) != 0
+        if not in_brain.any():
+            return None
+        return np.asarray(self.session.chn_depths)[in_brain]
 
     def plot_channels(self) -> None:
         # If no histology we can't do alignment
@@ -1374,6 +1429,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 y=self.session.channel_locations_ras[:, 2],
                 pen="r",
                 brush="r",
+                size=4,
             )
             self.fig_slice.addItem(self.session.slice_chns)
 
@@ -1384,7 +1440,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 y=[self.session.tip_location_ras[2]],
                 pen="m",  # Magenta
                 brush="m",
-                size=10,  # Larger than default
+                size=5,  # Larger than the channel dots
             )
             self.fig_slice.addItem(self.session.slice_tip)
 
@@ -1798,11 +1854,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 "Channel info not loaded. Please select Input Directory first."
             )
             return False
-        folder_path = Path(
-            QtWidgets.QFileDialog.getExistingDirectory(None, "Load Existing Alignments")
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            None, "Load Existing Alignments"
         )
-        if not folder_path and not self.use_docdb:
+        # Cancel returns "". Test the raw string, not Path(""), since
+        # Path("") is PosixPath(".") which is truthy — the old guard never
+        # fired on cancel and loaded alignments from the current directory.
+        if not selected and not self.use_docdb:
             return False
+        folder_path = Path(selected)
         self.reload_folder_line.setText(str(folder_path))
 
         with BusyContext(
@@ -2240,6 +2300,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.session.plotdata = pd.PlotData(self.session.probe_path, self.session.data, self.session.current_shank_idx)
         self.set_lims(np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max)
+
+        # Constrain probe colour levels to in-brain channels so out-of-brain
+        # channels don't blow out the cmap. Must be set before the probe
+        # getters below compute their levels.
+        self.session.plotdata.in_brain_depths_um = self.in_brain_channel_depths()
 
         self.session.scat_drift_data = self.session.plotdata.get_depth_data_scatter()
         (self.session.scat_fr_data, self.session.scat_p2t_data, self.session.scat_amp_data) = (
@@ -2710,9 +2775,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if self.session.selected_region:
             idx = np.where(self.session.hist_regions == self.session.selected_region)[0]
-            if not np.any(idx):
+            # Test emptiness with .size, not np.any(): a genuine match at index
+            # 0 gives idx == [0], and np.any([0]) is False — which would drop
+            # the first region and mis-resolve it.
+            if idx.size == 0:
                 idx = np.where(self.session.hist_ref_regions == self.session.selected_region)[0]
-            if not np.any(idx):
+            if idx.size == 0:
                 idx = np.array([0])
 
             description, lookup = self.loaddata.get_region_description(
@@ -3012,6 +3080,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.notes_win.layout.addWidget(notes)
 
     def display_nearby_sessions(self) -> None:
+        # TODO: dead online-mode code. This calls
+        # self.loaddata.get_nearby_trajectories(), which LoadDataLocal (the only
+        # loader in this fork) does not implement, and the menu action that
+        # triggers it is gated behind `if not self.offline`. Remove this and the
+        # other online-mode leftovers (the nearby_* session state, online-only
+        # menu items, get_nearby_trajectories call sites, etc.) as part of a
+        # broader dead-code sweep of the online IBL GUI cruft.
         # If no histology we can't get nearby sessions
         if not self.histology_exists:
             return
