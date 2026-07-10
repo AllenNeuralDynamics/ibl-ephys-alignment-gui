@@ -1204,84 +1204,53 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 return action
         return None
 
-    def offset_hist_data(self) -> None:
+    def offset_hist_data(self, track_shift_m: float = 0.0) -> bool:
         """
         Offset location of probe tip along probe track
         """
         # If no histology we can't do alignment
         if not self.histology_exists:
-            return
+            return False
 
-        # Calculate the offset delta from the current tip line position
-        # The tip line position is in feature space (distance from probe tip)
-        # since fig_hist displays in feature space
-        offset_delta = (self.session.tip_pos.value() - self.session.probe_tip) / 1e6
-
-        # Copy the track and features arrays
-        self.session.track[self.session.idx] = np.copy(
-            self.session.track[self.session.idx_prev]
+        result = self.alignment_edit_service.offset_from_tip(
+            self.session.active_shank.edit_history,
+            tip_position_um=self.session.tip_pos.value(),
+            probe_tip_um=self.session.probe_tip,
+            lin_fit=self.session.lin_fit,
+            track_shift_m=track_shift_m,
         )
-        self.session.features[self.session.idx] = np.copy(
-            self.session.features[self.session.idx_prev]
-        )
-
-        # Only shift the boundary points (first and last) of the track array
-        # This preserves user-defined feature-track correspondences in the middle
-        self.session.track[self.session.idx][0] += offset_delta
-        self.session.track[self.session.idx][-1] += offset_delta
 
         self.get_scaled_histology()
+        return result.changed
 
-    def scale_hist_data(self) -> None:
+    def scale_hist_data(self) -> bool:
         """
         Scale brain regions along probe track
         """
 
         # If no histology we can't do alignment
         if not self.histology_exists:
-            return
+            return False
 
         # Track --> histology plot
         line_track = (
-            np.array([line[0].pos().y() for line in self.session.lines_tracks]) / 1e6
+            np.array([line[0].pos().y() for line in self.session.lines_tracks])
         )
         # Feature --> ephys data plots
         line_feature = (
-            np.array([line[0].pos().y() for line in self.session.lines_features]) / 1e6
+            np.array([line[0].pos().y() for line in self.session.lines_features])
         )
-        depths_track = np.sort(
-            np.r_[self.session.track[self.session.idx_prev][[0, -1]], line_track]
+        result = self.alignment_edit_service.fit_to_reference_lines(
+            self.session.active_shank.edit_history,
+            ephysalign=self.session.ephysalign,
+            line_features_um=line_feature,
+            line_tracks_um=line_track,
+            lin_fit=self.session.lin_fit,
+            extend_feature=self.session.extend_feature,
         )
-
-        self.session.track[self.session.idx] = self.session.ephysalign.feature2track(
-            depths_track,
-            self.session.features[self.session.idx_prev],
-            self.session.track[self.session.idx_prev],
-        )
-
-        self.session.features[self.session.idx] = np.sort(
-            np.r_[self.session.features[self.session.idx_prev][[0, -1]], line_feature]
-        )
-
-        if (self.session.features[self.session.idx].size >= 5) & self.session.lin_fit:
-            (
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            ) = self.session.ephysalign.adjust_extremes_linear(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-                self.session.extend_feature,
-            )
-
-        else:
-            self.session.track[self.session.idx] = (
-                self.session.ephysalign.adjust_extremes_uniform(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
-                )
-            )
 
         self.get_scaled_histology()
+        return result.changed
 
     def get_scaled_histology(self) -> None:
         if self.session.hist_mapping == "Allen":
@@ -2944,44 +2913,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        # Use a cyclic buffer of length self.session.max_idx to hold information about previous moves,
-        # when a new move is initiated ensures indexes are all correct so user can only access
-        # fixed number of previous or next moves
-        if self.session.current_idx < self.session.last_idx:
-            self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(
-                self.session.last_idx, self.session.max_idx
-            ) - np.mod(self.session.total_idx, self.session.max_idx)
-            if self.session.diff_idx >= 0:
-                self.session.diff_idx = self.session.max_idx - self.session.diff_idx
-            else:
-                self.session.diff_idx = np.abs(self.session.diff_idx)
-        else:
-            self.session.diff_idx = self.session.max_idx - 1
+        if not self.scale_hist_data():
+            return
+        self._redraw_after_fit_or_offset()
 
-        self.session.total_idx += 1
-        self.session.current_idx += 1
-        self.session.idx_prev = np.copy(self.session.idx)
-        self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = (
-            self.session.lin_fit
-        )  # Save checkbox state
-        self.scale_hist_data()
-        self.plot_histology(self.fig_hist)
-        self.plot_scale_factor()
-        self.plot_fit()
-        self.plot_channels()
-        self.remove_lines_points()
-        self.add_lines_points()
-        self.update_lines_points()
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
-        self.update_string()
-
-    def offset_button_pressed(self) -> None:
+    def offset_button_pressed(
+        self, _checked: bool = False, *, track_shift_m: float = 0.0
+    ) -> None:
         """
         Triggered when offset button or o key pressed, applies offset to brain regions according to
         locations of probe tip line on histology plot. Updates all plots and indices after offset
@@ -2992,26 +2930,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if self.session.current_idx < self.session.last_idx:
-            self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(
-                self.session.last_idx, self.session.max_idx
-            ) - np.mod(self.session.total_idx, self.session.max_idx)
-            if self.session.diff_idx >= 0:
-                self.session.diff_idx = self.session.max_idx - self.session.diff_idx
-            else:
-                self.session.diff_idx = np.abs(self.session.diff_idx)
-        else:
-            self.session.diff_idx = self.session.max_idx - 1
+        if not self.offset_hist_data(track_shift_m=track_shift_m):
+            return
+        self._redraw_after_fit_or_offset()
 
-        self.session.total_idx += 1
-        self.session.current_idx += 1
-        self.session.idx_prev = np.copy(self.session.idx)
-        self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = (
-            self.session.lin_fit
-        )  # Save checkbox state
-        self.offset_hist_data()
+    def _redraw_after_fit_or_offset(self) -> None:
         self.plot_histology(self.fig_hist)
         self.plot_scale_factor()
         self.plot_fit()
@@ -3038,8 +2961,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.track[self.session.idx][-1] - 50 / 1e6
             >= np.max(self.session.chn_depths) / 1e6
         ):
-            self.session.track[self.session.idx] -= 50 / 1e6
-            self.offset_button_pressed()
+            self.offset_button_pressed(track_shift_m=-50 / 1e6)
 
     def moveup_button_pressed(self) -> None:
         """
@@ -3053,8 +2975,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.track[self.session.idx][0] + 50 / 1e6
             <= np.min(self.session.chn_depths) / 1e6
         ):
-            self.session.track[self.session.idx] += 50 / 1e6
-            self.offset_button_pressed()
+            self.offset_button_pressed(track_shift_m=50 / 1e6)
 
     def toggle_labels_button_pressed(self) -> None:
         """
