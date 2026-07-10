@@ -212,6 +212,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.workspace = AlignmentWorkspace()
         self.runtime = self.workspace.runtime
         self.document = self.workspace.document
+        self.data_context = self.workspace.data_context
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
         self.alignment_edit_service = self.workspace.alignment_edit_service
@@ -2057,6 +2058,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(result.message)
             return False
 
+        try:
+            self.loaddata.set_ephys_stream(cached.ephys_stream)
+        except Exception as exc:
+            logger.error(f"Failed to restore cached stream in loader: {exc}")
+            return False
+
         self.runtime.activate_cached_stream(probe_name)
         self._clear_empty_state()
 
@@ -2098,7 +2105,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.runtime.pop_cached_stream(probe_name)
             self._teardown_session()
             self.init_session_variables()
-            self.session.init_shanks(self.loaddata.n_shanks)
+            self.session.init_shanks(self.data_context.n_shanks)
             if self.session.has_shank(target_shank):
                 self.session.current_shank_idx = target_shank
             logger.info(f"Loading probe data, active shank index {target_shank}")
@@ -2224,6 +2231,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 logger.error(result.message)
                 return False
             assert isinstance(result, MouseRootLoaded)
+            self.loaddata.reset_for_mouse_root_selection(
+                root_changed=result.root_changed
+            )
             mr = result.mouse_root
 
             # Different mouse → probe_ids may not be meaningful anymore.
@@ -2253,8 +2263,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def on_mouse_root_selected(self) -> bool:
         """Open a QFileDialog for the mouse-root directory."""
         start_dir = None
-        if self.loaddata.mouse_root is not None:
-            start_dir = str(self.loaddata.mouse_root.root)
+        if self.data_context.mouse_root is not None:
+            start_dir = str(self.data_context.mouse_root.root)
         folder = QtWidgets.QFileDialog.getExistingDirectory(
             None, "Select Mouse Root", directory=start_dir or ""
         )
@@ -2280,7 +2290,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_session_combobox_activated(self, _idx: int) -> None:
         """Populate the probe dropdown for the selected session."""
-        if self.loaddata.mouse_root is None:
+        if self.data_context.mouse_root is None:
             return
         session = self.session_combobox.currentText()
         if not session:
@@ -2306,7 +2316,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_probe_combobox_activated(self, _idx: int) -> None:
         """Select a probe: load channel info, populate shank list, derive output dir."""
-        if self.loaddata.mouse_root is None:
+        if self.data_context.mouse_root is None:
             return
         session = self.session_combobox.currentText()
         probe_name = self.probe_combobox.currentText()
@@ -2341,15 +2351,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.load_data_button.setEnabled(False)
                 return
             assert isinstance(result, ProbeSelected)
+            self.loaddata.reset_for_probe_selection()
 
             if result.shanks:
                 self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
-                logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
+                logger.info(f"Found {self.data_context.n_shanks} shanks in data.")
 
             # Fresh session to hold the pre-Load shank selection; declare the
             # probe's shank count, reset to shank 0.
             self.init_session_variables()
-            self.session.init_shanks(self.loaddata.n_shanks)
+            self.session.init_shanks(self.data_context.n_shanks)
             self.session.current_shank_idx = 0
             self.controller.set_selected_shank(0)
             self.session.feature_prev = None
@@ -2376,7 +2387,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.document.data_loaded:
             return
-        probe = self.loaddata.probe_info
+        probe = self.data_context.probe_info
         if probe is None or self.session is None:
             return
         alignment = self.session.active_alignment
@@ -2398,7 +2409,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         restores ``feature_prev``/``track_prev`` from RAM. Never written to disk.
         Keyed per (probe, shank) so it can't cross-load another shank's WIP.
         """
-        probe = self.loaddata.probe_info
+        probe = self.data_context.probe_info
         if probe is None or self.session is None:
             return
         auto = self.workspace.auto_alignments.get(
@@ -2667,7 +2678,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # set_channels_for_shank returns the depths and sets loaddata.chn_coords
         # to the full (x, y) array; store both on the active shank so per-shank
         # geometry is single-sourced (chn_coords is needed at save time).
-        if self.loaddata.chn_coords_all is not None:
+        if self.data_context.channel_table is not None:
             self.session.chn_depths = self.loaddata.set_channels_for_shank(
                 self.session.current_shank_idx
             )
@@ -3340,9 +3351,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     )
 
             # A real save supersedes the auto cache for this probe+shank.
-            if self.loaddata.probe_info is not None:
+            if self.data_context.probe_info is not None:
                 self.workspace.auto_alignments.pop(
-                    (self.loaddata.probe_info.probe_id, self.session.current_shank_idx),
+                    (
+                        self.data_context.probe_info.probe_id,
+                        self.session.current_shank_idx,
+                    ),
                     None,
                 )
 

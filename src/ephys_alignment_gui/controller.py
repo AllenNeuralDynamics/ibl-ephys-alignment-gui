@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_repository import (
     AlignmentHistory,
     AlignmentRepository,
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
 
 
@@ -94,7 +96,7 @@ class AlignmentOutputsSaved:
 
 
 class AlignmentController:
-    """Coordinates workflow commands across the document and loader.
+    """Coordinates workflow commands across document and Qt-free services.
 
     The controller owns command ordering and document mutations. It deliberately
     stays Qt-free; callers render returned results in the UI layer.
@@ -103,21 +105,25 @@ class AlignmentController:
     def __init__(
         self,
         document: AlignmentDocument,
-        loader: Any,
+        data_context: AlignmentDataContext,
+        ephys_data_service: EphysDataService,
         workflow_policy: WorkflowPolicy | None = None,
         alignment_repository: AlignmentRepository | None = None,
+        output_builder: Any | None = None,
     ) -> None:
         self.document = document
-        self.loader = loader
+        self.data_context = data_context
+        self.ephys_data_service = ephys_data_service
         self.workflow_policy = workflow_policy or WorkflowPolicy()
         self.alignment_repository = alignment_repository or AlignmentRepository()
+        self.output_builder = output_builder
 
     def can_load_data(self) -> PolicyResult:
         """Return whether the Load Data command can proceed."""
         return self.workflow_policy.can_load_data(self.document)
 
     def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
-        """Load a mouse root through the loader and update document state."""
+        """Load a mouse root through the data context and update document state."""
         if not mouse_root or str(mouse_root).strip() == "":
             return Failed("Empty mouse-root path provided")
         mouse_root = Path(mouse_root)
@@ -125,10 +131,12 @@ class AlignmentController:
             return Failed(f"Mouse-root is not a directory: {mouse_root}")
 
         old_root = (
-            self.loader.mouse_root.root if self.loader.mouse_root is not None else None
+            self.data_context.mouse_root.root
+            if self.data_context.mouse_root is not None
+            else None
         )
         try:
-            loaded_root = self.loader.set_mouse_root(mouse_root)
+            loaded_root = self.data_context.set_mouse_root(mouse_root)
         except Exception as exc:
             return Failed(f"Failed to load mouse root {mouse_root}: {exc}")
 
@@ -138,14 +146,14 @@ class AlignmentController:
 
     def select_recording(self, recording_id: str) -> RecordingSelected | Failed:
         """Select a recording and return its available probes."""
-        if self.loader.mouse_root is None:
+        if self.data_context.mouse_root is None:
             return Failed("No mouse root loaded. Please select a mouse root first.")
         if not recording_id:
             return Failed("No recording selected.")
 
         self.document.clear_probe()
         try:
-            probes = self.loader.list_probes(recording_id)
+            probes = self.data_context.list_probes(recording_id)
         except Exception as exc:
             return Failed(f"Failed to list probes for {recording_id}: {exc}")
         return RecordingSelected(recording_id, probes=list(probes))
@@ -157,7 +165,7 @@ class AlignmentController:
         ephys_stream: Any | None = None,
     ) -> ProbeSelected | Failed:
         """Select a probe, load channel metadata, and refresh output state."""
-        if self.loader.mouse_root is None:
+        if self.data_context.mouse_root is None:
             return Failed("No mouse root loaded. Please select a mouse root first.")
         if not recording_id:
             return Failed("No recording selected.")
@@ -166,13 +174,17 @@ class AlignmentController:
 
         self.document.select_probe(recording_id, probe_name)
         try:
-            self.loader.select_probe(recording_id, probe_name)
+            self.data_context.select_probe(recording_id, probe_name)
             if ephys_stream is None:
-                self.loader.load_channel_info()
+                probe = self.data_context.probe_info
+                assert probe is not None
+                channel_table = self.ephys_data_service.load_channel_table(probe)
             else:
-                self.loader.set_ephys_stream(ephys_stream)
+                self.data_context.validate_cached_stream(ephys_stream)
+                channel_table = ephys_stream.channel_table
+            self.data_context.attach_channel_table(channel_table)
             self.document.set_channel_info_loaded(True)
-            shanks = self.loader.get_shank_list() or []
+            shanks = self.data_context.shank_labels()
             output_result = self.derive_output_directory()
         except Exception as exc:
             self.document.set_channel_info_loaded(False)
@@ -185,7 +197,7 @@ class AlignmentController:
             recording_id=recording_id,
             probe_name=probe_name,
             shanks=list(shanks),
-            n_shanks=self.loader.n_shanks,
+            n_shanks=self.data_context.n_shanks,
             output_directory=output_result.output_directory,
         )
 
@@ -204,8 +216,8 @@ class AlignmentController:
         return OutputRootSet(output_root, output_result.output_directory)
 
     def derive_output_directory(self) -> OutputDirectoryDerived | Failed:
-        """Derive the per-probe output directory from document + loader state."""
-        probe = self.loader.probe_info
+        """Derive the per-probe output directory from document + probe metadata."""
+        probe = self.data_context.probe_info
         output_root = self.document.output_root
         if (
             output_root is None
@@ -243,9 +255,9 @@ class AlignmentController:
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
-        if self.loader.n_shanks == 0:
+        if self.data_context.n_shanks == 0:
             return Failed("Channel info not loaded. Please select a probe first.")
-        if self.loader.probe_info is None:
+        if self.data_context.probe_info is None:
             return Failed("No probe selected. Please select a probe first.")
         return Ok()
 
@@ -263,7 +275,7 @@ class AlignmentController:
         ready = self.can_load_previous_alignments()
         if isinstance(ready, Failed):
             return ready
-        probe = self.loader.probe_info
+        probe = self.data_context.probe_info
         assert probe is not None
 
         try:
@@ -272,7 +284,7 @@ class AlignmentController:
                 recording_id=probe.recording_id,
                 probe_name=probe.probe_name,
                 shank_idx=shank_idx,
-                n_shanks=self.loader.n_shanks,
+                n_shanks=self.data_context.n_shanks,
                 use_docdb=use_docdb,
             )
         except Exception as exc:
@@ -288,9 +300,11 @@ class AlignmentController:
         channel_coordinates: Any,
     ) -> AlignmentOutputBuilt | Failed:
         """Compute output dictionaries for the current alignment."""
+        if self.output_builder is None:
+            return Failed("No alignment output builder is configured.")
         try:
             channel_results, ccf_channel_results, multi_shank = (
-                self.loader.get_alignment_results(
+                self.output_builder.get_alignment_results(
                     channel_locations_ras,
                     channel_coordinates,
                 )

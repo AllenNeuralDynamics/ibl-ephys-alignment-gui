@@ -38,15 +38,26 @@ class FakeProbeInfo:
     probe_name: str
     probe_id: str
     num_shanks: int
+    ephys_collection: str = "streamA"
 
 
-class FakeLoader:
+@dataclass(frozen=True)
+class FakeChannelTable:
+    n_shanks: int
+
+
+@dataclass(frozen=True)
+class FakeCachedStream:
+    recording_id: str
+    ephys_collection: str
+    channel_table: FakeChannelTable
+
+
+class FakeDataContext:
     def __init__(self, mouse_root: FakeMouseRoot | None = None) -> None:
         self.mouse_root = mouse_root
         self.probe_info: FakeProbeInfo | None = None
-        self.n_shanks = 0
-        self.load_channel_info_called = False
-        self.ephys_stream = None
+        self.channel_table: FakeChannelTable | None = None
 
     def set_mouse_root(self, mouse_root: Path) -> FakeMouseRoot:
         probes = {
@@ -62,7 +73,7 @@ class FakeLoader:
             probes=probes,
         )
         self.probe_info = None
-        self.n_shanks = 0
+        self.channel_table = None
         return self.mouse_root
 
     def list_probes(self, recording_id: str) -> list[str]:
@@ -73,30 +84,73 @@ class FakeLoader:
         assert self.mouse_root is not None
         probe = self.mouse_root.probes[recording_id][probe_name]
         self.probe_info = probe
-        self.n_shanks = probe.num_shanks
+        self.channel_table = None
         return probe
 
-    def load_channel_info(self) -> None:
+    def attach_channel_table(self, channel_table: FakeChannelTable) -> None:
         if self.probe_info is None:
             raise RuntimeError("no probe selected")
-        self.load_channel_info_called = True
+        self.channel_table = channel_table
 
-    def set_ephys_stream(self, ephys_stream) -> None:
+    def validate_cached_stream(self, ephys_stream: FakeCachedStream) -> None:
         if self.probe_info is None:
             raise RuntimeError("no probe selected")
-        self.ephys_stream = ephys_stream
+        if ephys_stream.recording_id != self.probe_info.recording_id:
+            raise ValueError("recording mismatch")
+        if ephys_stream.ephys_collection != self.probe_info.ephys_collection:
+            raise ValueError("collection mismatch")
 
-    def get_shank_list(self) -> list[str] | None:
+    @property
+    def n_shanks(self) -> int:
+        if self.channel_table is None:
+            return 0
+        return self.channel_table.n_shanks
+
+    def shank_labels(self) -> list[str]:
         if self.n_shanks == 1:
             return ["1/1"]
         return [f"{idx + 1}/{self.n_shanks}" for idx in range(self.n_shanks)]
+
+
+class FakeEphysDataService:
+    def __init__(self) -> None:
+        self.loaded_probe = None
+
+    def load_channel_table(self, probe: FakeProbeInfo) -> FakeChannelTable:
+        self.loaded_probe = probe
+        return FakeChannelTable(probe.num_shanks)
+
+
+class FakeOutputBuilder:
+    def __init__(self, context: FakeDataContext) -> None:
+        self.context = context
 
     def get_alignment_results(self, channel_locations_ras, channel_coordinates):
         return (
             {"channels": list(channel_locations_ras)},
             {"ccf_channels": list(channel_coordinates)},
-            self.n_shanks > 1,
+            self.context.n_shanks > 1,
         )
+
+
+def make_controller(
+    doc: AlignmentDocument | None = None,
+    context: FakeDataContext | None = None,
+    ephys_data_service: FakeEphysDataService | None = None,
+    repo: FakeAlignmentRepository | None = None,
+    output_builder: FakeOutputBuilder | None = None,
+) -> tuple[AlignmentController, FakeDataContext, FakeEphysDataService]:
+    doc = doc or AlignmentDocument()
+    context = context or FakeDataContext()
+    ephys_data_service = ephys_data_service or FakeEphysDataService()
+    controller = AlignmentController(
+        doc,
+        context,
+        ephys_data_service,
+        alignment_repository=repo,
+        output_builder=output_builder,
+    )
+    return controller, context, ephys_data_service
 
 
 class FakeAlignmentRepository:
@@ -124,8 +178,7 @@ class FakeAlignmentRepository:
 
 def test_set_mouse_root_updates_document(tmp_path):
     doc = AlignmentDocument()
-    loader = FakeLoader()
-    controller = AlignmentController(doc, loader)
+    controller, _, _ = make_controller(doc)
 
     result = controller.set_mouse_root(tmp_path)
 
@@ -143,8 +196,8 @@ def test_set_mouse_root_reports_root_changed(tmp_path):
         probes={},
     )
     doc = AlignmentDocument()
-    loader = FakeLoader(mouse_root=old_root)
-    controller = AlignmentController(doc, loader)
+    context = FakeDataContext(mouse_root=old_root)
+    controller, _, _ = make_controller(doc, context=context)
 
     new_root = tmp_path / "new"
     new_root.mkdir()
@@ -156,7 +209,7 @@ def test_set_mouse_root_reports_root_changed(tmp_path):
 
 def test_set_mouse_root_rejects_missing_directory(tmp_path):
     doc = AlignmentDocument()
-    controller = AlignmentController(doc, FakeLoader())
+    controller, _, _ = make_controller(doc)
 
     result = controller.set_mouse_root(tmp_path / "missing")
 
@@ -166,8 +219,7 @@ def test_set_mouse_root_rejects_missing_directory(tmp_path):
 
 def test_select_recording_clears_probe_and_returns_probes(tmp_path):
     doc = AlignmentDocument(selected_recording="old", selected_probe="probeZ")
-    loader = FakeLoader()
-    controller = AlignmentController(doc, loader)
+    controller, _, _ = make_controller(doc)
     controller.set_mouse_root(tmp_path)
 
     result = controller.select_recording("rec1")
@@ -179,8 +231,8 @@ def test_select_recording_clears_probe_and_returns_probes(tmp_path):
 
 def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
     doc = AlignmentDocument()
-    loader = FakeLoader()
-    controller = AlignmentController(doc, loader)
+    ephys_data_service = FakeEphysDataService()
+    controller, _, _ = make_controller(doc, ephys_data_service=ephys_data_service)
     mouse_root = tmp_path / "mouse"
     mouse_root.mkdir()
     controller.set_mouse_root(mouse_root)
@@ -191,7 +243,8 @@ def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
     result = controller.select_probe("rec1", "probeA")
 
     assert isinstance(result, ProbeSelected)
-    assert loader.load_channel_info_called
+    assert ephys_data_service.loaded_probe is not None
+    assert ephys_data_service.loaded_probe.probe_name == "probeA"
     assert doc.selected_recording == "rec1"
     assert doc.selected_probe == "probeA"
     assert doc.channel_info_loaded
@@ -203,26 +256,29 @@ def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
 
 def test_select_probe_can_restore_cached_stream_without_loading_channel_info(tmp_path):
     doc = AlignmentDocument()
-    loader = FakeLoader()
-    controller = AlignmentController(doc, loader)
+    ephys_data_service = FakeEphysDataService()
+    controller, context, _ = make_controller(
+        doc,
+        ephys_data_service=ephys_data_service,
+    )
     mouse_root = tmp_path / "mouse"
     mouse_root.mkdir()
     controller.set_mouse_root(mouse_root)
-    cached_stream = object()
+    cached_stream = FakeCachedStream("rec1", "streamA", FakeChannelTable(2))
 
     result = controller.select_probe("rec1", "probeA", ephys_stream=cached_stream)
 
     assert isinstance(result, ProbeSelected)
-    assert not loader.load_channel_info_called
-    assert loader.ephys_stream is cached_stream
+    assert ephys_data_service.loaded_probe is None
+    assert context.channel_table is cached_stream.channel_table
     assert doc.channel_info_loaded
 
 
 def test_output_root_does_not_derive_from_stale_loader_probe(tmp_path):
     doc = AlignmentDocument(selected_recording="rec1", selected_probe="probeA")
-    loader = FakeLoader()
-    loader.probe_info = FakeProbeInfo("rec1", "probeB", "rec1:probeB", 1)
-    controller = AlignmentController(doc, loader)
+    context = FakeDataContext()
+    context.probe_info = FakeProbeInfo("rec1", "probeB", "rec1:probeB", 1)
+    controller, _, _ = make_controller(doc, context=context)
 
     output_root = tmp_path / "results"
     output_root.mkdir()
@@ -235,7 +291,7 @@ def test_output_root_does_not_derive_from_stale_loader_probe(tmp_path):
 
 def test_load_data_preparation_and_finish_updates_document():
     doc = AlignmentDocument(data_loaded=True, selected_shank=1)
-    controller = AlignmentController(doc, FakeLoader())
+    controller, _, _ = make_controller(doc)
 
     prepared = controller.prepare_load_data()
     controller.finish_load_data(shank_idx=2)
@@ -250,17 +306,16 @@ def test_can_load_data_delegates_to_policy(tmp_path):
     doc.select_probe("rec1", "probeA")
     doc.set_channel_info_loaded(True)
     doc.set_output_directory(tmp_path / "rec1" / "probeA")
-    controller = AlignmentController(doc, FakeLoader())
+    controller, _, _ = make_controller(doc)
 
     assert isinstance(controller.can_load_data(), Ok)
 
 
 def test_load_previous_alignments_uses_active_probe_and_repository(tmp_path):
     doc = AlignmentDocument()
-    loader = FakeLoader()
     repo = FakeAlignmentRepository()
     repo.loaded_alignments = {"saved": [[1.0], [2.0]]}
-    controller = AlignmentController(doc, loader, alignment_repository=repo)
+    controller, _, _ = make_controller(doc, repo=repo)
     controller.set_mouse_root(tmp_path)
     controller.select_probe("rec1", "probeA")
 
@@ -279,16 +334,15 @@ def test_load_previous_alignments_uses_active_probe_and_repository(tmp_path):
 
 
 def test_can_load_previous_alignments_requires_channel_info():
-    controller = AlignmentController(AlignmentDocument(), FakeLoader())
+    controller, _, _ = make_controller(AlignmentDocument())
 
     assert isinstance(controller.can_load_previous_alignments(), Failed)
 
 
 def test_load_previous_alignments_reports_empty_result(tmp_path):
     doc = AlignmentDocument()
-    loader = FakeLoader()
     repo = FakeAlignmentRepository()
-    controller = AlignmentController(doc, loader, alignment_repository=repo)
+    controller, _, _ = make_controller(doc, repo=repo)
     controller.set_mouse_root(tmp_path)
     controller.select_probe("rec1", "probeA")
 
@@ -302,18 +356,24 @@ def test_load_previous_alignments_reports_empty_result(tmp_path):
 
 
 def test_can_save_alignment_output_requires_output_directory():
-    controller = AlignmentController(AlignmentDocument(), FakeLoader())
+    controller, _, _ = make_controller(AlignmentDocument())
 
     assert isinstance(controller.can_save_alignment_output(), Blocked)
 
 
 def test_build_and_save_alignment_output_filters_auto(tmp_path):
     doc = AlignmentDocument(output_directory=tmp_path)
-    loader = FakeLoader()
-    loader.probe_info = FakeProbeInfo("rec1", "probeA", "rec1:probeA", 2)
-    loader.n_shanks = 2
+    context = FakeDataContext()
+    context.probe_info = FakeProbeInfo("rec1", "probeA", "rec1:probeA", 2)
+    context.channel_table = FakeChannelTable(2)
     repo = FakeAlignmentRepository()
-    controller = AlignmentController(doc, loader, alignment_repository=repo)
+    output_builder = FakeOutputBuilder(context)
+    controller, _, _ = make_controller(
+        doc,
+        context=context,
+        repo=repo,
+        output_builder=output_builder,
+    )
 
     output = controller.build_alignment_output([1, 2], [3, 4])
     assert isinstance(output, AlignmentOutputBuilt)

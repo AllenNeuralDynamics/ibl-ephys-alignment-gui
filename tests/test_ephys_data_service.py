@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.datapackage_loader import ChannelTablePaths, ProbeInfo
 from ephys_alignment_gui.ephys_data_service import (
     ChannelTable,
@@ -266,5 +267,75 @@ def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path)
     assert depths.tolist() == [0.0, 20.0]
     assert session_notes == "cached notes"
     assert data is stream.alf_data
+    assert loader.channel_collection is not None
+    assert loader.channel_collection.stream is stream
+
+
+def test_load_data_local_uses_context_channel_table_without_mirror_state(tmp_path):
+    table = ChannelTable(
+        local_coordinates=np.array(
+            [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
+        ),
+        contact_ids=np.array(["s0e0", "s0e1", "s1e0", "s1e1"]),
+        shank_indices=np.array([0, 0, 1, 1]),
+    )
+    probe = ProbeInfo(
+        probe_id="rec1:streamA",
+        probe_name="probeA",
+        recording_id="rec1",
+        logical_probe="probeA",
+        ephys_collection="streamA",
+        num_shanks=2,
+        ephys_dir=tmp_path,
+        channel_table=None,
+        xyz_picks=(),
+    )
+    stream = EphysStreamData(
+        recording_id="rec1",
+        ephys_collection="streamA",
+        ephys_dir=tmp_path,
+        channel_table=table,
+        alf_data={"channels": {"exists": True}},
+        session_notes="context notes",
+    )
+    stale_stream = EphysStreamData(
+        recording_id="rec1",
+        ephys_collection="streamA",
+        ephys_dir=tmp_path / "stale",
+        channel_table=table,
+        alf_data={"channels": {"exists": True}},
+        session_notes="stale notes",
+    )
+
+    class FakeEphysDataService:
+        loaded = False
+
+        def load_stream_data(self, selected_probe, channel_table=None):
+            assert selected_probe is probe
+            assert channel_table is table
+            self.loaded = True
+            return stream
+
+    context = AlignmentDataContext(probe_info=probe)
+    context.attach_channel_table(table)
+    service = FakeEphysDataService()
+    loader = LoadDataLocal(
+        data_context=context,
+        ephys_data_service=service,
+    )
+    loader.ephys_stream = stale_stream
+    loader.reset_for_probe_selection()
+
+    ephys_dir, depths, session_notes, data = loader.get_ephys_data(1)
+
+    assert service.loaded
+    assert ephys_dir == tmp_path
+    assert depths.tolist() == [0.0, 20.0]
+    assert session_notes == "context notes"
+    assert data is stream.alf_data
+    assert context.channel_table is table
+    assert loader.channel_table is None
+    assert loader.chn_coords_all is table.local_coordinates
+    assert loader.chn_contact_id_all is table.contact_ids
     assert loader.channel_collection is not None
     assert loader.channel_collection.stream is stream

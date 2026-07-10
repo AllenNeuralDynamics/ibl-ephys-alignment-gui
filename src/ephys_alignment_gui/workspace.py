@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
@@ -33,6 +34,7 @@ class AlignmentWorkspace:
     """
 
     document: AlignmentDocument = field(default_factory=AlignmentDocument)
+    data_context: AlignmentDataContext = field(default_factory=AlignmentDataContext)
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
     slice_service: SliceService = field(default_factory=SliceService)
     slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
@@ -54,12 +56,15 @@ class AlignmentWorkspace:
 
     def __post_init__(self) -> None:
         self.loader = LoadDataLocal(
+            data_context=self.data_context,
             ephys_data_service=self.ephys_data_service,
             slice_service=self.slice_service,
         )
         self.controller = AlignmentController(
             self.document,
-            self.loader,
+            self.data_context,
+            self.ephys_data_service,
             self.workflow_policy,
             alignment_repository=self.alignment_repository,
+            output_builder=self.loader,
         )
