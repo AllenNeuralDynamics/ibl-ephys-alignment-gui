@@ -223,7 +223,9 @@ class BrainAtlasAnatomical(BrainAtlas):
                 "or both be None"
             )
         self.display_rotation = (
-            None if display_rotation is None else np.asarray(display_rotation, dtype=np.float64)
+            None
+            if display_rotation is None
+            else np.asarray(display_rotation, dtype=np.float64)
         )
         self.display_rotation_center = (
             None

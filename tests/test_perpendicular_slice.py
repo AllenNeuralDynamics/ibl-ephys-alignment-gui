@@ -98,9 +98,7 @@ def test_perpendicular_direction_falls_back_when_tangent_parallel_to_ml():
     tangent = np.tile(np.array([1.0, 0.0, 0.0]), (3, 1))
     perp = perpendicular_direction(tangent)
     # AP axis is already perpendicular to ML; projection is itself after sign fix.
-    np.testing.assert_allclose(
-        perp, np.tile(_ATLAS_AP_AXIS, (3, 1)), atol=1e-12
-    )
+    np.testing.assert_allclose(perp, np.tile(_ATLAS_AP_AXIS, (3, 1)), atol=1e-12)
 
 
 def test_perpendicular_direction_sign_stable():
@@ -118,9 +116,7 @@ def test_position_and_tangent_at_arc_lengths_matches_interp():
     """Sanity: the sampler returns np.interp-equivalent positions."""
     n = 80
     arc = np.linspace(0.0, 4e-3, n)  # metres
-    traj = np.stack(
-        [np.linspace(0.0, 1e-4, n), np.zeros(n), -arc], axis=1
-    )
+    traj = np.stack([np.linspace(0.0, 1e-4, n), np.zeros(n), -arc], axis=1)
     q = np.array([0.0, 1e-3, 2e-3, 3e-3])
     pos, tan = position_and_tangent_at_arc_lengths(traj, arc, q)
     # Positions are linear in arc so interp exact.

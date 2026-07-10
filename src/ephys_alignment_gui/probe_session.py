@@ -62,9 +62,7 @@ class _LazyPlotAttr:
     displayed get built. Returns ``None`` before data is loaded.
     """
 
-    def __init__(
-        self, method: str, args: tuple = (), index: int | None = None
-    ) -> None:
+    def __init__(self, method: str, args: tuple = (), index: int | None = None) -> None:
         self._method = method
         self._args = args
         self._index = index

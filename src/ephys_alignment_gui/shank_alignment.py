@@ -105,9 +105,7 @@ class ShankAlignment:
         self.alignments = alignments
         self.prev_align = self._ordered_keys(alignments)
 
-    def add_alignment(
-        self, feature: NDArray, track: NDArray
-    ) -> str:
+    def add_alignment(self, feature: NDArray, track: NDArray) -> str:
         """Record a new alignment, keyed by the current timestamp.
 
         Returns the key used, and refreshes :attr:`prev_align`. The key keeps
@@ -125,9 +123,7 @@ class ShankAlignment:
         self.prev_align = self._ordered_keys(self.alignments)
         return date
 
-    def get_alignment_idx(
-        self, idx: int
-    ) -> tuple[NDArray | None, NDArray | None]:
+    def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """Return the ``(feature, track)`` for the alignment at dropdown ``idx``.
 
         ``("original")`` and out-of-range indices yield ``(None, None)``.
@@ -155,15 +151,11 @@ class ShankAlignment:
         Returns ``None`` if nothing is cached yet, or if ``track`` differs from
         the track the cache was built for (i.e. the shank was re-aligned).
         """
-        if self._slice_track is not None and np.array_equal(
-            self._slice_track, track
-        ):
+        if self._slice_track is not None and np.array_equal(self._slice_track, track):
             return self.slice_data, self.fp_slice_data
         return None
 
-    def set_slice(
-        self, slice_data: Any, fp_slice_data: Any, track: NDArray
-    ) -> None:
+    def set_slice(self, slice_data: Any, fp_slice_data: Any, track: NDArray) -> None:
         """Cache the slice built for ``track`` on this shank."""
         self.slice_data = slice_data
         self.fp_slice_data = fp_slice_data

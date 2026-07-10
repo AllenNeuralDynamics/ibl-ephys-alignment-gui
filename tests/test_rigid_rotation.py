@@ -88,13 +88,11 @@ def test_rotate_image_preserves_content_mass_and_center():
     )
 
     rng = np.random.default_rng(5)
-    xx, yy, zz = np.meshgrid(
-        np.arange(32), np.arange(28), np.arange(24), indexing="ij"
-    )
+    xx, yy, zz = np.meshgrid(np.arange(32), np.arange(28), np.arange(24), indexing="ij")
     # Off-center gaussian so rotation actually moves the centroid.
-    arr = np.exp(
-        -((xx - 10) ** 2 + (yy - 8) ** 2 + (zz - 6) ** 2) / 20.0
-    ).astype(np.float32)
+    arr = np.exp(-((xx - 10) ** 2 + (yy - 8) ** 2 + (zz - 6) ** 2) / 20.0).astype(
+        np.float32
+    )
     img = sitk.GetImageFromArray(arr)
     img.SetSpacing((0.025, 0.025, 0.025))
 

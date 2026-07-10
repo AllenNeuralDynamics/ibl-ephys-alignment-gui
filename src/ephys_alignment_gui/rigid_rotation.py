@@ -21,7 +21,9 @@ from numpy.typing import NDArray
 from scipy.linalg import polar
 
 
-def load_affine_matrix(affine_path: Path) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+def load_affine_matrix(
+    affine_path: Path,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Load an ITK/ANTs 3D affine transform and return (3x3 linear, 3 translation).
 
     The .mat file written by ANTs is an ITK `AffineTransform_double_3_3` or

@@ -61,22 +61,30 @@ class Setup:
         scatter_drift = QtWidgets.QAction(
             "Amplitude", self, checkable=True, checked=False
         )
-        scatter_drift.triggered.connect(lambda: self.plot_scatter(self.session.scat_drift_data))
+        scatter_drift.triggered.connect(
+            lambda: self.plot_scatter(self.session.scat_drift_data)
+        )
         scatter_fr = QtWidgets.QAction(
             "Cluster Amp vs Depth vs FR", self, checkable=True, checked=False
         )
-        scatter_fr.triggered.connect(lambda: self.plot_scatter(self.session.scat_fr_data))
+        scatter_fr.triggered.connect(
+            lambda: self.plot_scatter(self.session.scat_fr_data)
+        )
         scatter_p2t = QtWidgets.QAction(
             "Cluster Amp vs Depth vs Duration",
             self,
             checkable=True,
             checked=False,
         )
-        scatter_p2t.triggered.connect(lambda: self.plot_scatter(self.session.scat_p2t_data))
+        scatter_p2t.triggered.connect(
+            lambda: self.plot_scatter(self.session.scat_p2t_data)
+        )
         scatter_amp = QtWidgets.QAction(
             "Cluster FR vs Depth vs Amp", self, checkable=True, checked=False
         )
-        scatter_amp.triggered.connect(lambda: self.plot_scatter(self.session.scat_amp_data))
+        scatter_amp.triggered.connect(
+            lambda: self.plot_scatter(self.session.scat_amp_data)
+        )
         img_fr = QtWidgets.QAction("Firing Rate", self, checkable=True, checked=True)
         img_fr.triggered.connect(lambda: self.plot_image(self.session.img_fr_data))
         img_spike_corr = QtWidgets.QAction(
@@ -86,9 +94,13 @@ class Setup:
             lambda: self.plot_image(self.session.img_spike_corr_data)
         )
         img_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=False)
-        img_rmsAP.triggered.connect(lambda: self.plot_image(self.session.img_rms_APdata))
+        img_rmsAP.triggered.connect(
+            lambda: self.plot_image(self.session.img_rms_APdata)
+        )
         img_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        img_rmsLFP.triggered.connect(lambda: self.plot_image(self.session.img_rms_LFPdata))
+        img_rmsLFP.triggered.connect(
+            lambda: self.plot_image(self.session.img_rms_LFPdata)
+        )
         img_LFP = QtWidgets.QAction("LFP Spectrum", self, checkable=True, checked=False)
         img_LFP.triggered.connect(lambda: self.plot_image(self.session.img_lfp_data))
 
@@ -122,7 +134,9 @@ class Setup:
         img_LFP_main = QtWidgets.QAction(
             "LFP Spectrum Main Rec", self, checkable=True, checked=False
         )
-        img_LFP_main.triggered.connect(lambda: self.plot_image(self.session.img_lfp_data_main))
+        img_LFP_main.triggered.connect(
+            lambda: self.plot_image(self.session.img_lfp_data_main)
+        )
 
         # Initialise with firing rate 2D plot
         self.img_init = img_fr
@@ -167,7 +181,9 @@ class Setup:
         for raw in raw_type:
             img = QtWidgets.QAction(raw, self, checkable=True, checked=False)
             img.triggered.connect(
-                lambda checked, item=raw: self.plot_image(self.session.img_raw_data[item])
+                lambda checked, item=raw: self.plot_image(
+                    self.session.img_raw_data[item]
+                )
             )
             img_options.addAction(img)
             self.img_options_group.addAction(img)
@@ -176,7 +192,9 @@ class Setup:
         for stim in stim_type:
             img = QtWidgets.QAction(stim, self, checkable=True, checked=False)
             img.triggered.connect(
-                lambda checked, item=stim: self.plot_image(self.session.img_stim_data[item])
+                lambda checked, item=stim: self.plot_image(
+                    self.session.img_stim_data[item]
+                )
             )
             img_options.addAction(img)
             self.img_options_group.addAction(img)
@@ -214,9 +232,13 @@ class Setup:
         # Define all 2D probe plot options
         # In two stages 1) RMS plots manually, 2) frequency plots in for loop
         probe_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=True)
-        probe_rmsAP.triggered.connect(lambda: self.plot_probe(self.session.probe_rms_APdata))
+        probe_rmsAP.triggered.connect(
+            lambda: self.plot_probe(self.session.probe_rms_APdata)
+        )
         probe_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        probe_rmsLFP.triggered.connect(lambda: self.plot_probe(self.session.probe_rms_LFPdata))
+        probe_rmsLFP.triggered.connect(
+            lambda: self.plot_probe(self.session.probe_rms_LFPdata)
+        )
 
         # Initialise with rms of AP probe plot
         self.probe_init = probe_rmsAP
@@ -242,7 +264,9 @@ class Setup:
             band = f"{freq[0]} - {freq[1]} Hz"
             probe = QtWidgets.QAction(band, self, checkable=True, checked=False)
             probe.triggered.connect(
-                lambda checked, item=band: self.plot_probe(self.session.probe_lfp_data[item])
+                lambda checked, item=band: self.plot_probe(
+                    self.session.probe_lfp_data[item]
+                )
             )
             probe_options.addAction(probe)
             self.probe_options_group.addAction(probe)
@@ -529,12 +553,16 @@ class Setup:
         # later look up the data source without re-deriving it from the label.
         slice_ccf = QtWidgets.QAction("CCF", self, checkable=True, checked=False)
         slice_ccf.setData(("slice_data", "ccf"))
-        slice_ccf.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "ccf"))
+        slice_ccf.triggered.connect(
+            lambda: self.plot_slice(self.session.slice_data, "ccf")
+        )
         slice_label = QtWidgets.QAction(
             "Annotation", self, checkable=True, checked=False
         )
         slice_label.setData(("slice_data", "label"))
-        slice_label.triggered.connect(lambda: self.plot_slice(self.session.slice_data, "label"))
+        slice_label.triggered.connect(
+            lambda: self.plot_slice(self.session.slice_data, "label")
+        )
         if self.session.fp_slice_data is not None:
             fp_slice_label = QtWidgets.QAction(
                 "Annotation FP", self, checkable=True, checked=False
@@ -586,7 +614,9 @@ class Setup:
                 )
                 this_slice_action.setData(("slice_data", key))
                 this_slice_action.triggered.connect(
-                    lambda checked, item=key: self.plot_slice(self.session.slice_data, item)
+                    lambda checked, item=key: self.plot_slice(
+                        self.session.slice_data, item
+                    )
                 )
                 slice_options.addAction(this_slice_action)
                 self.slice_options_group.addAction(this_slice_action)
@@ -1032,12 +1062,16 @@ class Setup:
         self.ax_hist2.setWidth(10)
 
         self.fig_hist_layout = pg.GraphicsLayout()
-        self.fig_hist_layout.addItem(self.fig_scale_cb, 0, 0, 1, 5)  # Span all 5 columns
+        self.fig_hist_layout.addItem(
+            self.fig_scale_cb, 0, 0, 1, 5
+        )  # Span all 5 columns
         self.fig_hist_layout.addItem(self.fig_hist_extra_yaxis, 1, 0)
         self.fig_hist_layout.addItem(self.fig_hist, 1, 1)
-        self.fig_hist_layout.addItem(self.fig_hist_perp, 1, 2)  # NEW: Perpendicular slice
-        self.fig_hist_layout.addItem(self.fig_scale, 1, 3)        # Moved from column 2
-        self.fig_hist_layout.addItem(self.fig_hist_ref, 1, 4)     # Moved from column 3
+        self.fig_hist_layout.addItem(
+            self.fig_hist_perp, 1, 2
+        )  # NEW: Perpendicular slice
+        self.fig_hist_layout.addItem(self.fig_scale, 1, 3)  # Moved from column 2
+        self.fig_hist_layout.addItem(self.fig_hist_ref, 1, 4)  # Moved from column 3
         self.fig_hist_layout.layout.setColumnStretchFactor(0, 1)
         self.fig_hist_layout.layout.setColumnStretchFactor(1, 4)
         self.fig_hist_layout.layout.setColumnStretchFactor(2, 3)  # Perpendicular slice
@@ -1064,8 +1098,12 @@ class Setup:
         self.fig_fit.setMouseEnabled(x=False, y=False)
         self.fig_fit_exporter = pg.exporters.ImageExporter(self.fig_fit.plotItem)
         self.fig_fit.sigDeviceRangeChanged.connect(self.on_fig_size_changed)
-        self.fig_fit.setXRange(min=self.session.view_total[0], max=self.session.view_total[1])
-        self.fig_fit.setYRange(min=self.session.view_total[0], max=self.session.view_total[1])
+        self.fig_fit.setXRange(
+            min=self.session.view_total[0], max=self.session.view_total[1]
+        )
+        self.fig_fit.setYRange(
+            min=self.session.view_total[0], max=self.session.view_total[1]
+        )
         # Each point on the fit plot is one user-placed reference line (plus
         # the two implicit endpoints at probe tip / top). X = where the line
         # was placed on the ephys side, Y = where it was placed on the

@@ -89,7 +89,10 @@ def smoothed_tangents(
     raw = np.where(norms > 0, raw / norms, raw)
 
     smoothed = np.stack(
-        [gaussian_filter1d(raw[:, k], sigma=sigma_samples, mode="nearest") for k in range(3)],
+        [
+            gaussian_filter1d(raw[:, k], sigma=sigma_samples, mode="nearest")
+            for k in range(3)
+        ],
         axis=1,
     )
     smoothed_norm = np.linalg.norm(smoothed, axis=1, keepdims=True)
@@ -209,7 +212,9 @@ def position_and_tangent_at_arc_lengths(
     positions : NDArray (M, 3) in metres.
     tangents  : NDArray (M, 3) unit-norm.
     """
-    tangents_dense = smoothed_tangents(track_interpolation_ras, sigma_samples=sigma_samples)
+    tangents_dense = smoothed_tangents(
+        track_interpolation_ras, sigma_samples=sigma_samples
+    )
     # np.interp clamps to the endpoints outside the data range; that would
     # repeat the tip cross-section. Compute the clamped interpolation first,
     # then overwrite the out-of-range rows with a straight-line extrapolation
@@ -217,7 +222,11 @@ def position_and_tangent_at_arc_lengths(
     # so displacement = delta-arc-length * tangent).
     positions = np.stack(
         [
-            np.interp(arc_lengths_query, ephys_depths_along_track, track_interpolation_ras[:, k])
+            np.interp(
+                arc_lengths_query,
+                ephys_depths_along_track,
+                track_interpolation_ras[:, k],
+            )
             for k in range(3)
         ],
         axis=1,

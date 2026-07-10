@@ -409,7 +409,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Manually force the axis to shift and then reset axis as axis not always correct
             # TO DO: find a better way!
             self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10, max=self.session.xrange[1] + 10, padding=0
+                min=self.session.xrange[0] - 10,
+                max=self.session.xrange[1] + 10,
+                padding=0,
             )
             self.reset_axis_button_pressed()
             self.fig_line.update()
@@ -446,7 +448,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.fig_img.update()
             self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10, max=self.session.xrange[1] + 10, padding=0
+                min=self.session.xrange[0] - 10,
+                max=self.session.xrange[1] + 10,
+                padding=0,
             )
             self.reset_axis_button_pressed()
             self.fig_line.update()
@@ -483,7 +487,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.fig_img.update()
             self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10, max=self.session.xrange[1] + 10, padding=0
+                min=self.session.xrange[0] - 10,
+                max=self.session.xrange[1] + 10,
+                padding=0,
             )
             self.reset_axis_button_pressed()
             self.fig_line.update()
@@ -792,7 +798,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.selected_region = self.session.hist_regions[-2]
 
         # Boundary for final region
-        bound = pg.InfiniteLine(pos=self.session.hist_data["region"][-1][1], angle=0, pen="w")
+        bound = pg.InfiniteLine(
+            pos=self.session.hist_data["region"][-1][1], angle=0, pen="w"
+        )
 
         fig.addItem(bound)
         # Add dotted lines to plot to indicate region along probe track where electrode
@@ -850,12 +858,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.tip_pos.setBounds(
                 (
                     self.session.features[self.session.idx][0] * 1e6 + offset,
-                    self.session.features[self.session.idx][-1] * 1e6 - (self.session.probe_top + offset),
+                    self.session.features[self.session.idx][-1] * 1e6
+                    - (self.session.probe_top + offset),
                 )
             )
             self.session.top_pos.setBounds(
                 (
-                    self.session.features[self.session.idx][0] * 1e6 + (self.session.probe_top + offset),
+                    self.session.features[self.session.idx][0] * 1e6
+                    + (self.session.probe_top + offset),
                     self.session.features[self.session.idx][-1] * 1e6 - offset,
                 )
             )
@@ -899,7 +909,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             bound = pg.InfiniteLine(pos=reg[0], angle=0, pen="w")
             fig.addItem(region)
             fig.addItem(bound)
-            self.session.hist_ref_regions = np.vstack([self.session.hist_ref_regions, region])
+            self.session.hist_ref_regions = np.vstack(
+                [self.session.hist_ref_regions, region]
+            )
 
             region_center_y = (reg[0] + reg[1]) / 2
             label_text = self.session.hist_data_ref["axis_label"][ir][1]
@@ -958,7 +970,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Plot nearby regions
         for ir, (x, y, c) in enumerate(
-            zip(self.session.hist_nearby_x, self.session.hist_nearby_y, self.session.hist_nearby_col)
+            zip(
+                self.session.hist_nearby_x,
+                self.session.hist_nearby_y,
+                self.session.hist_nearby_col,
+            )
         ):
             colour = QtGui.QColor(c)
             plot = pg.PlotCurveItem()
@@ -1075,13 +1091,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.perp_image_item.setImage(perp_image)
 
         scale_x = (2 * extent_um) / (n_perp_samples - 1) if n_perp_samples > 1 else 1.0
-        scale_y = (
-            (feat_max_um - feat_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
-        )
+        scale_y = (feat_max_um - feat_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
         transform = [
-            scale_x, 0.0, 0.0,
-            0.0, scale_y, 0.0,
-            -extent_um, feat_min_um, 1.0,
+            scale_x,
+            0.0,
+            0.0,
+            0.0,
+            scale_y,
+            0.0,
+            -extent_um,
+            feat_min_um,
+            1.0,
         ]
         self.session.perp_image_item.setTransform(QtGui.QTransform(*transform))
 
@@ -1180,8 +1200,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         offset_delta = (self.session.tip_pos.value() - self.session.probe_tip) / 1e6
 
         # Copy the track and features arrays
-        self.session.track[self.session.idx] = np.copy(self.session.track[self.session.idx_prev])
-        self.session.features[self.session.idx] = np.copy(self.session.features[self.session.idx_prev])
+        self.session.track[self.session.idx] = np.copy(
+            self.session.track[self.session.idx_prev]
+        )
+        self.session.features[self.session.idx] = np.copy(
+            self.session.features[self.session.idx_prev]
+        )
 
         # Only shift the boundary points (first and last) of the track array
         # This preserves user-defined feature-track correspondences in the middle
@@ -1200,12 +1224,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         # Track --> histology plot
-        line_track = np.array([line[0].pos().y() for line in self.session.lines_tracks]) / 1e6
+        line_track = (
+            np.array([line[0].pos().y() for line in self.session.lines_tracks]) / 1e6
+        )
         # Feature --> ephys data plots
         line_feature = (
             np.array([line[0].pos().y() for line in self.session.lines_features]) / 1e6
         )
-        depths_track = np.sort(np.r_[self.session.track[self.session.idx_prev][[0, -1]], line_track])
+        depths_track = np.sort(
+            np.r_[self.session.track[self.session.idx_prev][[0, -1]], line_track]
+        )
 
         self.session.track[self.session.idx] = self.session.ephysalign.feature2track(
             depths_track,
@@ -1218,17 +1246,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
         if (self.session.features[self.session.idx].size >= 5) & self.session.lin_fit:
-            self.session.features[self.session.idx], self.session.track[self.session.idx] = (
-                self.session.ephysalign.adjust_extremes_linear(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
-                    self.session.extend_feature,
-                )
+            (
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+            ) = self.session.ephysalign.adjust_extremes_linear(
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+                self.session.extend_feature,
             )
 
         else:
-            self.session.track[self.session.idx] = self.session.ephysalign.adjust_extremes_uniform(
-                self.session.features[self.session.idx], self.session.track[self.session.idx]
+            self.session.track[self.session.idx] = (
+                self.session.ephysalign.adjust_extremes_uniform(
+                    self.session.features[self.session.idx],
+                    self.session.track[self.session.idx],
+                )
             )
 
         self.get_scaled_histology()
@@ -1237,19 +1269,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.session.hist_mapping == "Allen":
             self.session.hist_data["region"], self.session.hist_data["axis_label"] = (
                 self.session.ephysalign.scale_histology_regions(
-                    self.session.features[self.session.idx], self.session.track[self.session.idx]
+                    self.session.features[self.session.idx],
+                    self.session.track[self.session.idx],
                 )
             )
             self.session.hist_data["colour"] = self.session.ephysalign.region_colour
 
             self.session.scale_data["region"], self.session.scale_data["scale"] = (
-                self.session.ephysalign.get_scale_factor(self.session.hist_data["region"])
+                self.session.ephysalign.get_scale_factor(
+                    self.session.hist_data["region"]
+                )
             )
 
-            self.session.hist_data_ref["region"], self.session.hist_data_ref["axis_label"] = (
-                self.session.ephysalign.scale_histology_regions(
-                    self.session.ephysalign.track_extent, self.session.ephysalign.track_extent
-                )
+            (
+                self.session.hist_data_ref["region"],
+                self.session.hist_data_ref["axis_label"],
+            ) = self.session.ephysalign.scale_histology_regions(
+                self.session.ephysalign.track_extent,
+                self.session.ephysalign.track_extent,
             )
             self.session.hist_data_ref["colour"] = self.session.ephysalign.region_colour
 
@@ -1269,13 +1306,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 )
             )
 
-            self.session.hist_data_ref["region"], self.session.hist_data_ref["axis_label"] = (
-                self.session.ephysalign.scale_histology_regions(
-                    self.session.ephysalign.track_extent,
-                    self.session.ephysalign.track_extent,
-                    region=self.session.region_fp,
-                    region_label=self.session.region_label_fp,
-                )
+            (
+                self.session.hist_data_ref["region"],
+                self.session.hist_data_ref["axis_label"],
+            ) = self.session.ephysalign.scale_histology_regions(
+                self.session.ephysalign.track_extent,
+                self.session.ephysalign.track_extent,
+                region=self.session.region_fp,
+                region_label=self.session.region_label_fp,
             )
             self.session.hist_data_ref["colour"] = self.session.region_colour_fp
 
@@ -1350,16 +1388,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.fit_plot.setData(
-            x=self.session.features[self.session.idx] * 1e6, y=self.session.track[self.session.idx] * 1e6
+            x=self.session.features[self.session.idx] * 1e6,
+            y=self.session.track[self.session.idx] * 1e6,
         )
         self.fit_scatter.setData(
-            x=self.session.features[self.session.idx] * 1e6, y=self.session.track[self.session.idx] * 1e6
+            x=self.session.features[self.session.idx] * 1e6,
+            y=self.session.track[self.session.idx] * 1e6,
         )
 
         # Only show linear fit line if checkbox is checked and we have enough points
         if self.session.lin_fit and (self.session.features[self.session.idx].size >= 5):
             depth_lin = self.session.ephysalign.feature2track_lin(
-                self.session.depth / 1e6, self.session.features[self.session.idx], self.session.track[self.session.idx]
+                self.session.depth / 1e6,
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
             )
             if np.any(depth_lin):
                 self.fit_plot_lin.setData(x=self.session.depth, y=depth_lin * 1e6)
@@ -1447,7 +1489,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Live-update the perp levels as the user drags the histogram
             # handles (sigLevelsChanged fires continuously; the finished-only
             # signal would leave the perp lagging until release).
-            self.fig_slice_hist.sigLevelsChanged.connect(self.update_perpendicular_levels)
+            self.fig_slice_hist.sigLevelsChanged.connect(
+                self.update_perpendicular_levels
+            )
 
             self.slice_item = self.fig_slice_hist
 
@@ -1494,12 +1538,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.session.channel_status = True
-        self.session.channel_locations_ras = self.session.ephysalign.get_channel_locations(
-            self.session.features[self.session.idx], self.session.track[self.session.idx]
+        self.session.channel_locations_ras = (
+            self.session.ephysalign.get_channel_locations(
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+            )
         )
         # Compute tip location (200 μm below first electrode)
         self.session.tip_location_ras = self.session.ephysalign.get_tip_location(
-            self.session.features[self.session.idx], self.session.track[self.session.idx]
+            self.session.features[self.session.idx],
+            self.session.track[self.session.idx],
         )
 
         if not self.session.slice_chns:
@@ -1527,7 +1575,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_slice.addItem(self.session.slice_tip)
 
             track_lines = self.session.ephysalign.get_perp_vector(
-                self.session.features[self.session.idx], self.session.track[self.session.idx]
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
             )
 
             logger.debug(f"Reference lines: {track_lines}")
@@ -1546,7 +1595,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.fig_slice.removeItem(line)
             self.session.slice_lines = []
             track_lines = self.session.ephysalign.get_perp_vector(
-                self.session.features[self.session.idx], self.session.track[self.session.idx]
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
             )
 
             logger.debug(f"Reference lines: {track_lines}")
@@ -1809,24 +1859,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 hsv_phase[:, :, 0] = np.linspace(0, 1, n)[None, :]
                 hsv_phase[:, :, 1] = 1.0
                 hsv_phase[:, :, 2] = 1.0
-                rgb_phase = (
-                    hsv_to_rgb(hsv_phase) * 255
-                ).astype(np.uint8)
+                rgb_phase = (hsv_to_rgb(hsv_phase) * 255).astype(np.uint8)
 
                 # Bottom bar: saturation gradient (white → red)
                 hsv_sat = np.zeros((bar_h, n, 3))
                 hsv_sat[:, :, 0] = 0.0  # red hue
                 hsv_sat[:, :, 1] = np.linspace(0, 1, n)[None, :]
                 hsv_sat[:, :, 2] = 1.0
-                rgb_sat = (
-                    hsv_to_rgb(hsv_sat) * 255
-                ).astype(np.uint8)
+                rgb_sat = (hsv_to_rgb(hsv_sat) * 255).astype(np.uint8)
 
                 # Stack: phase on top, saturation below
                 # Transpose to (width, height, 3) for pyqtgraph
-                combined = np.concatenate(
-                    [rgb_phase, rgb_sat], axis=0
-                ).transpose(1, 0, 2)
+                combined = np.concatenate([rgb_phase, rgb_sat], axis=0).transpose(
+                    1, 0, 2
+                )
                 cbar_img = pg.ImageItem()
                 cbar_img.setImage(combined, autoLevels=False)
                 self.fig_img_cb.addItem(cbar_img)
@@ -2014,9 +2060,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
-            self.session.probe_path, self.session.chn_depths, self.session.sess_notes, data = (
-                self.loaddata.get_ephys_data(self.session.current_shank_idx)
-            )
+            (
+                self.session.probe_path,
+                self.session.chn_depths,
+                self.session.sess_notes,
+                data,
+            ) = self.loaddata.get_ephys_data(self.session.current_shank_idx)
             self.session.data = data
 
             if not self.session.probe_path:
@@ -2319,9 +2368,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if "auto" in shank.prev_align:
             shank.prev_align.remove("auto")
         shank.prev_align.insert(0, "auto")
-        self.populate_lists(
-            shank.prev_align, self.align_list, self.align_combobox
-        )
+        self.populate_lists(shank.prev_align, self.align_list, self.align_combobox)
         self.on_alignment_selected(0)
         logger.info(f"Restored auto alignment for probe {probe.probe_id}")
 
@@ -2502,17 +2549,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
         # Get histology regions
-        self.session.region_fp, self.session.region_label_fp, self.session.region_colour_fp, _ = (
-            EphysAlignment.get_histology_regions(
-                self.session.ephysalign.track_interpolation_ras,
-                self.session.ephysalign.ephys_depths_along_track,
-                self.loaddata.brain_atlas,
-            )
+        (
+            self.session.region_fp,
+            self.session.region_label_fp,
+            self.session.region_colour_fp,
+            _,
+        ) = EphysAlignment.get_histology_regions(
+            self.session.ephysalign.track_interpolation_ras,
+            self.session.ephysalign.ephys_depths_along_track,
+            self.loaddata.brain_atlas,
         )
 
-        self.session.features[self.session.idx], self.session.track[self.session.idx], self.session.track_annos_and_ends_ras = (
-            self.session.ephysalign.get_track_and_feature()
-        )
+        (
+            self.session.features[self.session.idx],
+            self.session.track[self.session.idx],
+            self.session.track_annos_and_ends_ras,
+        ) = self.session.ephysalign.get_track_and_feature()
 
         self.get_scaled_histology()
 
@@ -2577,7 +2629,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session.current_shank_idx
             )
             self.session.active_shank.chn_coords = self.loaddata.chn_coords
-            logger.debug(f"Filtered {len(self.session.chn_depths)} channels for this shank")
+            logger.debug(
+                f"Filtered {len(self.session.chn_depths)} channels for this shank"
+            )
 
         # Only process histology if it exists
         if self.histology_exists:
@@ -2608,7 +2662,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session.data,
                 self.session.current_shank_idx,
             )
-        self.set_lims(np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max)
+        self.set_lims(
+            np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max
+        )
 
         # Constrain probe AND image colour levels to in-brain channels. Set on
         # the (persistent) plotdata before any lazy getter runs, so both the
@@ -2698,7 +2754,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.plot_slice(slice_data, slice_key)
         else:
             init_attr, init_key = self.slice_init.data()
-            if prev_slice_action is not None and prev_slice_action is not self.slice_init:
+            if (
+                prev_slice_action is not None
+                and prev_slice_action is not self.slice_init
+            ):
                 logger.info(
                     f"Slice selection '{prev_slice_action.text()}' not available for "
                     f"this probe; falling back to '{self.slice_init.text()}'"
@@ -2724,7 +2783,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.current_shank_idx = new_shank_id - 1
         self.controller.set_selected_shank(self.session.current_shank_idx)
 
-        logger.info(f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})")
+        logger.info(
+            f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})"
+        )
 
         if not self.document.data_loaded:
             # Data not loaded yet - just update index
@@ -2770,13 +2831,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             steps=6,
             brain_atlas=self.loaddata.brain_atlas,
         )
-        [self.session.hist_nearby_x, self.session.hist_nearby_y, self.session.hist_nearby_col] = (
-            self.session.ephysalign.arrange_into_regions(
-                self.session.ephysalign.ephys_depths_along_track,
-                nearby_bounds["id"],
-                nearby_bounds["dist"],
-                nearby_bounds["col"],
-            )
+        [
+            self.session.hist_nearby_x,
+            self.session.hist_nearby_y,
+            self.session.hist_nearby_col,
+        ] = self.session.ephysalign.arrange_into_regions(
+            self.session.ephysalign.ephys_depths_along_track,
+            nearby_bounds["id"],
+            nearby_bounds["dist"],
+            nearby_bounds["col"],
         )
 
         [
@@ -2863,9 +2926,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # fixed number of previous or next moves
         if self.session.current_idx < self.session.last_idx:
             self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(self.session.last_idx, self.session.max_idx) - np.mod(
-                self.session.total_idx, self.session.max_idx
-            )
+            self.session.diff_idx = np.mod(
+                self.session.last_idx, self.session.max_idx
+            ) - np.mod(self.session.total_idx, self.session.max_idx)
             if self.session.diff_idx >= 0:
                 self.session.diff_idx = self.session.max_idx - self.session.diff_idx
             else:
@@ -2877,7 +2940,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.current_idx += 1
         self.session.idx_prev = np.copy(self.session.idx)
         self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = self.session.lin_fit  # Save checkbox state
+        self.session.lin_fit_history[self.session.idx] = (
+            self.session.lin_fit
+        )  # Save checkbox state
         self.scale_hist_data()
         self.plot_histology(self.fig_hist)
         self.plot_scale_factor()
@@ -2906,9 +2971,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if self.session.current_idx < self.session.last_idx:
             self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(self.session.last_idx, self.session.max_idx) - np.mod(
-                self.session.total_idx, self.session.max_idx
-            )
+            self.session.diff_idx = np.mod(
+                self.session.last_idx, self.session.max_idx
+            ) - np.mod(self.session.total_idx, self.session.max_idx)
             if self.session.diff_idx >= 0:
                 self.session.diff_idx = self.session.max_idx - self.session.diff_idx
             else:
@@ -2920,7 +2985,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.current_idx += 1
         self.session.idx_prev = np.copy(self.session.idx)
         self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = self.session.lin_fit  # Save checkbox state
+        self.session.lin_fit_history[self.session.idx] = (
+            self.session.lin_fit
+        )  # Save checkbox state
         self.offset_hist_data()
         self.plot_histology(self.fig_hist)
         self.plot_scale_factor()
@@ -2944,7 +3011,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if self.session.track[self.session.idx][-1] - 50 / 1e6 >= np.max(self.session.chn_depths) / 1e6:
+        if (
+            self.session.track[self.session.idx][-1] - 50 / 1e6
+            >= np.max(self.session.chn_depths) / 1e6
+        ):
             self.session.track[self.session.idx] -= 50 / 1e6
             self.offset_button_pressed()
 
@@ -2956,7 +3026,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if self.session.track[self.session.idx][0] + 50 / 1e6 <= np.min(self.session.chn_depths) / 1e6:
+        if (
+            self.session.track[self.session.idx][0] + 50 / 1e6
+            <= np.min(self.session.chn_depths) / 1e6
+        ):
             self.session.track[self.session.idx] += 50 / 1e6
             self.offset_button_pressed()
 
@@ -3040,9 +3113,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
 
         if self.session.selected_line:
-            line_idx = np.where(self.session.lines_features == self.session.selected_line)[0]
+            line_idx = np.where(
+                self.session.lines_features == self.session.selected_line
+            )[0]
             if line_idx.size == 0:
-                line_idx = np.where(self.session.lines_tracks == self.session.selected_line)[0]
+                line_idx = np.where(
+                    self.session.lines_tracks == self.session.selected_line
+                )[0]
             line_idx = line_idx[0]
 
             self.fig_img.removeItem(self.session.lines_features[line_idx][0])
@@ -3052,8 +3129,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.fig_hist_perp.removeItem(self.session.lines_features[line_idx][3])
             self.fig_hist.removeItem(self.session.lines_tracks[line_idx, 0])
             self.fig_fit.removeItem(self.session.points[line_idx, 0])
-            self.session.lines_features = np.delete(self.session.lines_features, line_idx, axis=0)
-            self.session.lines_tracks = np.delete(self.session.lines_tracks, line_idx, axis=0)
+            self.session.lines_features = np.delete(
+                self.session.lines_features, line_idx, axis=0
+            )
+            self.session.lines_tracks = np.delete(
+                self.session.lines_tracks, line_idx, axis=0
+            )
             self.session.points = np.delete(self.session.points, line_idx, axis=0)
 
     def describe_labels_pressed(self) -> None:
@@ -3067,7 +3148,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # 0 gives idx == [0], and np.any([0]) is False — which would drop
             # the first region and mis-resolve it.
             if idx.size == 0:
-                idx = np.where(self.session.hist_ref_regions == self.session.selected_region)[0]
+                idx = np.where(
+                    self.session.hist_ref_regions == self.session.selected_region
+                )[0]
             if idx.size == 0:
                 idx = np.array([0])
 
@@ -3158,7 +3241,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.session.total_idx > self.session.last_idx:
             self.session.last_idx = np.copy(self.session.total_idx)
 
-        if self.session.current_idx > np.max([0, self.session.total_idx - self.session.diff_idx]):
+        if self.session.current_idx > np.max(
+            [0, self.session.total_idx - self.session.diff_idx]
+        ):
             self.session.current_idx -= 1
             self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
 
@@ -3194,9 +3279,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.points = np.empty((0, 1))
         if self.session.current_idx < self.session.last_idx:
             self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(self.session.last_idx, self.session.max_idx) - np.mod(
-                self.session.total_idx, self.session.max_idx
-            )
+            self.session.diff_idx = np.mod(
+                self.session.last_idx, self.session.max_idx
+            ) - np.mod(self.session.total_idx, self.session.max_idx)
             if self.session.diff_idx >= 0:
                 self.session.diff_idx = self.session.max_idx - self.session.diff_idx
             else:
@@ -3207,9 +3292,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.total_idx += 1
         self.session.current_idx += 1
         self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = self.session.lin_fit  # Save checkbox state
-        self.session.track[self.session.idx] = np.copy(self.session.ephysalign.track_init)
-        self.session.features[self.session.idx] = np.copy(self.session.ephysalign.feature_init)
+        self.session.lin_fit_history[self.session.idx] = (
+            self.session.lin_fit
+        )  # Save checkbox state
+        self.session.track[self.session.idx] = np.copy(
+            self.session.ephysalign.track_init
+        )
+        self.session.features[self.session.idx] = np.copy(
+            self.session.ephysalign.feature_init
+        )
 
         self.get_scaled_histology()
 
@@ -3276,9 +3367,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             alignments = shank.alignments
             # Reflect the new save in the alignment dropdown.
-            self.populate_lists(
-                shank.prev_align, self.align_list, self.align_combobox
-            )
+            self.populate_lists(shank.prev_align, self.align_list, self.align_combobox)
 
             logger.info("Saving output files to results folder...")
             saved = self.controller.save_alignment_output(
@@ -3352,7 +3441,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
-        self.fig_img.setXRange(min=self.session.xrange[0], max=self.session.xrange[1], padding=0)
+        self.fig_img.setXRange(
+            min=self.session.xrange[0], max=self.session.xrange[1], padding=0
+        )
         self.fig_img.setYRange(
             min=self.session.probe_tip - self.session.probe_extra,
             max=self.session.probe_top + self.session.probe_extra,
@@ -3397,7 +3488,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.nearby_table.setHorizontalHeaderItem(
             0, QtWidgets.QTableWidgetItem("Session")
         )
-        self.session.nearby_table.setHorizontalHeaderItem(1, QtWidgets.QTableWidgetItem("dist"))
+        self.session.nearby_table.setHorizontalHeaderItem(
+            1, QtWidgets.QTableWidgetItem("dist")
+        )
         self.session.nearby_table.setHorizontalHeaderItem(
             2, QtWidgets.QTableWidgetItem("dist_mlap")
         )
@@ -3417,9 +3510,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.nearby_win.layout.addWidget(self.session.nearby_table)
 
     def popup_closed(self, popup) -> None:
-        popup_idx = [iP for iP, pop in enumerate(self.session.cluster_popups) if pop == popup][
-            0
-        ]
+        popup_idx = [
+            iP for iP, pop in enumerate(self.session.cluster_popups) if pop == popup
+        ][0]
         self.session.cluster_popups.pop(popup_idx)
 
     def popup_moved(self) -> None:
@@ -3489,7 +3582,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.set_axis(template_plot, "bottom", label="T (ms)")
         self.set_axis(template_plot, "left", label="Amplitude (a.u.)")
-        plot.setData(x=self.session.plotdata.t_template, y=template_wf, pen=self.kpen_solid)
+        plot.setData(
+            x=self.session.plotdata.t_template, y=template_wf, pen=self.kpen_solid
+        )
         template_plot.addItem(plot)
 
         clust_layout = pg.GraphicsLayout()
@@ -3580,7 +3675,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     [line_feature1, line_feature2, line_feature3, line_feature_perp],
                 ]
             )
-            self.session.lines_tracks = np.vstack([self.session.lines_tracks, line_track])
+            self.session.lines_tracks = np.vstack(
+                [self.session.lines_tracks, line_track]
+            )
 
             point = pg.PlotDataItem()
             point.setData(
@@ -3605,7 +3702,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             elif (items[0] == self.fig_scale) & (type(items[1]) == pg.LinearRegionItem):
                 idx = np.where(self.session.scale_regions == items[1])[0][0]
                 self.fig_scale_ax.setLabel(
-                    "Scale Factor = " + str(np.around(self.session.scale_factor[idx], 2))
+                    "Scale Factor = "
+                    + str(np.around(self.session.scale_factor[idx], 2))
                 )
             elif (items[0] == self.fig_hist) & (type(items[1]) == pg.LinearRegionItem):
                 self.session.selected_region = items[1]
@@ -3654,14 +3752,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
-        self.session.top_pos.setPos(self.session.tip_pos.value() + self.session.probe_top)
+        self.session.top_pos.setPos(
+            self.session.tip_pos.value() + self.session.probe_top
+        )
 
     def top_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
-        self.session.tip_pos.setPos(self.session.top_pos.value() - self.session.probe_top)
+        self.session.tip_pos.setPos(
+            self.session.top_pos.value() - self.session.probe_top
+        )
 
     def remove_lines_points(self) -> None:
         """
@@ -3736,7 +3838,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     [line_feature1, line_feature2, line_feature3, line_feature_perp],
                 ]
             )
-            self.session.lines_tracks = np.vstack([self.session.lines_tracks, line_track])
+            self.session.lines_tracks = np.vstack(
+                [self.session.lines_tracks, line_track]
+            )
 
             point = pg.PlotDataItem()
             point.setData(
