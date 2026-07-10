@@ -342,8 +342,14 @@ class ProbeSession:
             )
         self._active_shank_idx = idx
 
-    def teardown(self, figures: dict[str, Any]) -> None:
-        """Disconnect signals, remove plot items from figures, null references.
+    def detach(self, figures: dict[str, Any]) -> None:
+        """Remove this session's plot items from the shared figures + disconnect
+        its signals, WITHOUT nulling state or running gc.
+
+        Used when swapping the displayed stream while keeping the outgoing
+        session intact in the stream cache: it frees the shared figures for the
+        incoming session but leaves this session's data/plotdata/shanks alive so
+        a later switch-back is instant. :meth:`teardown` calls this then nulls.
 
         Parameters
         ----------
@@ -429,6 +435,15 @@ class ProbeSession:
                     pop.close()
                 except RuntimeError:
                     pass
+
+    def teardown(self, figures: dict[str, Any]) -> None:
+        """Detach from figures, then null large references and gc.
+
+        Use for a session that is being discarded (app reset, or evicting the
+        stream cache) — NOT for a session that stays in the cache, which should
+        only :meth:`detach`.
+        """
+        self.detach(figures)
 
         # -- Null large references (plotdata/ephysalign/slice_data route to the
         # active shank via descriptors; this nulls the active shank's refs) --
