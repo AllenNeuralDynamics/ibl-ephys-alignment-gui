@@ -27,7 +27,6 @@ from ephys_alignment_gui.anatomical_atlas import (
     BrainAtlasAnatomical,
 )
 from ephys_alignment_gui.datapackage_loader import (
-    DataPackageError,
     MouseRoot,
     ProbeInfo,
     load_mouse_root,
@@ -389,46 +388,6 @@ class LoadDataLocal:
         self._set_channel_collection(collection)
 
         return collection.depths
-
-    def get_ephys_data(
-        self, shank_idx: int
-    ) -> tuple[Path, NDArray, str, dict[str, Any]]:
-        """Load ephys ALF for the current probe + shank.
-
-        Returns
-        -------
-        tuple
-            ``(ephys_dir, chn_depths, sess_notes, data)``. The ``ephys_dir`` is
-            what downstream plot code stores as ``probe_path`` (it contains
-            ``band_corr/`` etc.).
-        """
-        probe = self._probe_info()
-        channel_table = self._channel_table()
-        if probe is None:
-            raise RuntimeError("No probe selected — call select_probe() first")
-        if probe.ephys_dir is None:
-            raise DataPackageError(
-                f"Probe {probe.probe_name!r} has no ephys dir"
-            )
-        if channel_table is None:
-            raise RuntimeError("Must call load_channel_info() first")
-        self._cache_channel_table_arrays(channel_table)
-
-        if self.ephys_stream is None:
-            self.ephys_stream = self.ephys_data_service.load_stream_data(
-                probe,
-                channel_table=channel_table,
-            )
-
-        collection = self.ephys_stream.channel_collection(shank_idx)
-        self._set_channel_collection(collection)
-
-        return (
-            self.ephys_stream.ephys_dir,
-            collection.depths,
-            self.ephys_stream.session_notes,
-            self.ephys_stream.alf_data,
-        )
 
     def load_allen_csv(self):
         allen_path = Path(Path(atlas.__file__).parent, "allen_structure_tree.csv")

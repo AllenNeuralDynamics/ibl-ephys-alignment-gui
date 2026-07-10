@@ -159,7 +159,7 @@ def test_ephys_data_service_loads_stream_data(monkeypatch, tmp_path):
     assert stream.channel_collection(1).depths.tolist() == [0.0, 20.0]
 
 
-def test_load_data_local_keeps_legacy_api_while_using_runtime_stream(tmp_path):
+def test_load_data_local_keeps_legacy_channel_adapter(tmp_path):
     table = ChannelTable(
         local_coordinates=np.array(
             [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
@@ -192,11 +192,6 @@ def test_load_data_local_keeps_legacy_api_while_using_runtime_stream(tmp_path):
             assert selected_probe is probe
             return table
 
-        def load_stream_data(self, selected_probe, channel_table=None):
-            assert selected_probe is probe
-            assert channel_table is table
-            return stream
-
     loader = LoadDataLocal(ephys_data_service=FakeEphysDataService())
     loader.probe_info = probe
 
@@ -204,13 +199,10 @@ def test_load_data_local_keeps_legacy_api_while_using_runtime_stream(tmp_path):
     assert loader.n_shanks == 2
     assert loader.chn_contact_id_all.tolist() == ["s0e0", "s0e1", "s1e0", "s1e1"]
     assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
+    assert loader.channel_collection is not None
+    assert loader.channel_collection.rows.tolist() == [2, 3]
 
-    ephys_dir, depths, session_notes, data = loader.get_ephys_data(1)
-
-    assert ephys_dir == tmp_path
-    assert depths.tolist() == [0.0, 20.0]
-    assert session_notes == "notes"
-    assert data is stream.alf_data
+    loader.set_channel_collection(stream.channel_collection(1))
     assert loader.ephys_stream is stream
     assert loader.channel_collection is not None
     assert loader.channel_collection.stream is stream
@@ -262,17 +254,14 @@ def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path)
     assert loader.chn_contact_id_all is table.contact_ids
     assert loader.chn_coords.tolist() == [[250.0, 0.0], [250.0, 20.0]]
 
-    ephys_dir, depths, session_notes, data = loader.get_ephys_data(1)
-
-    assert ephys_dir == tmp_path
-    assert depths.tolist() == [0.0, 20.0]
-    assert session_notes == "cached notes"
-    assert data is stream.alf_data
+    assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
     assert loader.channel_collection is not None
     assert loader.channel_collection.stream is stream
 
 
-def test_load_data_local_uses_context_channel_table_without_mirror_state(tmp_path):
+def test_load_data_local_adapts_context_channel_collection_without_mirror_state(
+    tmp_path,
+):
     table = ChannelTable(
         local_coordinates=np.array(
             [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
@@ -299,43 +288,18 @@ def test_load_data_local_uses_context_channel_table_without_mirror_state(tmp_pat
         alf_data={"channels": {"exists": True}},
         session_notes="context notes",
     )
-    stale_stream = EphysStreamData(
-        recording_id="rec1",
-        ephys_collection="streamA",
-        ephys_dir=tmp_path / "stale",
-        channel_table=table,
-        alf_data={"channels": {"exists": True}},
-        session_notes="stale notes",
-    )
-
-    class FakeEphysDataService:
-        loaded = False
-
-        def load_stream_data(self, selected_probe, channel_table=None):
-            assert selected_probe is probe
-            assert channel_table is table
-            self.loaded = True
-            return stream
-
     context = AlignmentDataContext(probe_info=probe)
     context.attach_channel_table(table)
-    service = FakeEphysDataService()
     loader = LoadDataLocal(
         data_context=context,
-        ephys_data_service=service,
+        ephys_data_service=object(),
     )
-    loader.ephys_stream = stale_stream
-    loader.reset_for_probe_selection()
 
-    ephys_dir, depths, session_notes, data = loader.get_ephys_data(1)
+    loader.set_channel_collection(stream.channel_collection(1))
 
-    assert service.loaded
-    assert ephys_dir == tmp_path
-    assert depths.tolist() == [0.0, 20.0]
-    assert session_notes == "context notes"
-    assert data is stream.alf_data
     assert context.channel_table is table
     assert loader.channel_table is None
+    assert loader.ephys_stream is stream
     assert loader.chn_coords_all is table.local_coordinates
     assert loader.chn_contact_id_all is table.contact_ids
     assert loader.channel_collection is not None
