@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
@@ -35,6 +36,9 @@ class AlignmentWorkspace:
     workflow_policy: WorkflowPolicy = field(default_factory=WorkflowPolicy)
     alignment_repository: AlignmentRepository = field(
         default_factory=AlignmentRepository
+    )
+    alignment_edit_service: AlignmentEditService = field(
+        default_factory=AlignmentEditService
     )
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)

@@ -211,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.document = self.workspace.document
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
+        self.alignment_edit_service = self.workspace.alignment_edit_service
         self.plot_data_factory = self.workspace.plot_data_factory
         self.slice_display_policy = self.workspace.slice_display_policy
 
@@ -3227,28 +3228,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if (self.session.current_idx < self.session.total_idx) & (
-            self.session.current_idx > self.session.total_idx - self.session.max_idx
-        ):
-            self.session.current_idx += 1
-            self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-
-            # Restore lin_fit state from history and update checkbox without triggering signal
-            self.session.lin_fit = self.session.lin_fit_history[self.session.idx]
-            self.lin_fit_option.blockSignals(True)
-            self.lin_fit_option.setChecked(self.session.lin_fit)
-            self.lin_fit_option.blockSignals(False)
-
-            self.remove_lines_points()
-            self.add_lines_points()
-            self.get_scaled_histology()
-            self.plot_histology(self.fig_hist)
-            self.plot_scale_factor()
-            self.remove_lines_points()
-            self.add_lines_points()
-            self.plot_fit()
-            self.plot_channels()
-            self.update_string()
+        result = self.alignment_edit_service.go_next(
+            self.session.active_shank.edit_history
+        )
+        if result.changed:
+            self._restore_lin_fit_from_edit(result.lin_fit)
+            self._redraw_after_history_navigation()
 
     def prev_button_pressed(self) -> None:
         """
@@ -3260,31 +3245,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if self.session.total_idx > self.session.last_idx:
-            self.session.last_idx = np.copy(self.session.total_idx)
-
-        if self.session.current_idx > np.max(
-            [0, self.session.total_idx - self.session.diff_idx]
-        ):
-            self.session.current_idx -= 1
-            self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-
-            # Restore lin_fit state from history and update checkbox without triggering signal
-            self.session.lin_fit = self.session.lin_fit_history[self.session.idx]
-            self.lin_fit_option.blockSignals(True)
-            self.lin_fit_option.setChecked(self.session.lin_fit)
-            self.lin_fit_option.blockSignals(False)
-
-            self.remove_lines_points()
-            self.add_lines_points()
-            self.get_scaled_histology()
-            self.plot_histology(self.fig_hist)
-            self.plot_scale_factor()
-            self.remove_lines_points()
-            self.add_lines_points()
-            self.plot_fit()
-            self.plot_channels()
-            self.update_string()
+        result = self.alignment_edit_service.go_previous(
+            self.session.active_shank.edit_history
+        )
+        if result.changed:
+            self._restore_lin_fit_from_edit(result.lin_fit)
+            self._redraw_after_history_navigation()
 
     def reset_button_pressed(self) -> None:
         """
@@ -3299,29 +3265,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.lines_features = np.empty((0, 4))
         self.session.lines_tracks = np.empty((0, 1))
         self.session.points = np.empty((0, 1))
-        if self.session.current_idx < self.session.last_idx:
-            self.session.total_idx = np.copy(self.session.current_idx)
-            self.session.diff_idx = np.mod(
-                self.session.last_idx, self.session.max_idx
-            ) - np.mod(self.session.total_idx, self.session.max_idx)
-            if self.session.diff_idx >= 0:
-                self.session.diff_idx = self.session.max_idx - self.session.diff_idx
-            else:
-                self.session.diff_idx = np.abs(self.session.diff_idx)
-        else:
-            self.session.diff_idx = self.session.max_idx - 1
-
-        self.session.total_idx += 1
-        self.session.current_idx += 1
-        self.session.idx = np.mod(self.session.current_idx, self.session.max_idx)
-        self.session.lin_fit_history[self.session.idx] = (
-            self.session.lin_fit
-        )  # Save checkbox state
-        self.session.track[self.session.idx] = np.copy(
-            self.session.ephysalign.track_init
-        )
-        self.session.features[self.session.idx] = np.copy(
-            self.session.ephysalign.feature_init
+        self.alignment_edit_service.reset_to_initial(
+            self.session.active_shank.edit_history,
+            feature_init=self.session.ephysalign.feature_init,
+            track_init=self.session.ephysalign.track_init,
+            lin_fit=self.session.lin_fit,
         )
 
         self.get_scaled_histology()
@@ -3337,6 +3285,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
+        self.update_string()
+
+    def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
+        if lin_fit is None:
+            return
+        self.session.lin_fit = lin_fit
+        self.lin_fit_option.blockSignals(True)
+        self.lin_fit_option.setChecked(self.session.lin_fit)
+        self.lin_fit_option.blockSignals(False)
+
+    def _redraw_after_history_navigation(self) -> None:
+        self.remove_lines_points()
+        self.add_lines_points()
+        self.get_scaled_histology()
+        self.plot_histology(self.fig_hist)
+        self.plot_scale_factor()
+        self.remove_lines_points()
+        self.add_lines_points()
+        self.plot_fit()
+        self.plot_channels()
         self.update_string()
 
     def run_complete_button_in_thread(self) -> None:
