@@ -11,6 +11,7 @@ from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.slice_service import SliceService
 from ephys_alignment_gui.workflow import WorkflowPolicy
 
 AutoAlignmentKey = tuple[str, int]
@@ -28,6 +29,7 @@ class AlignmentWorkspace:
 
     document: AlignmentDocument = field(default_factory=AlignmentDocument)
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
+    slice_service: SliceService = field(default_factory=SliceService)
     workflow_policy: WorkflowPolicy = field(default_factory=WorkflowPolicy)
     alignment_repository: AlignmentRepository = field(
         default_factory=AlignmentRepository
@@ -40,7 +42,10 @@ class AlignmentWorkspace:
     controller: AlignmentController = field(init=False)
 
     def __post_init__(self) -> None:
-        self.loader = LoadDataLocal(ephys_data_service=self.ephys_data_service)
+        self.loader = LoadDataLocal(
+            ephys_data_service=self.ephys_data_service,
+            slice_service=self.slice_service,
+        )
         self.controller = AlignmentController(
             self.document,
             self.loader,

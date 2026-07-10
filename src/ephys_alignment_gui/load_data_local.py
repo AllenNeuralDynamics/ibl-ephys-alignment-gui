@@ -7,7 +7,6 @@ import re
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
 import ssl
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,88 +43,12 @@ from ephys_alignment_gui.rigid_rotation import (
     polar_rotation,
     rotate_image,
 )
+from ephys_alignment_gui.slice_service import SliceService
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
-
-
-class SmartSliceDict(dict):
-    """Dict that loads images and computes slices on-demand, tracking trajectory per slice."""
-
-    def __init__(
-        self,
-        eager_data,
-        lazy_channel_names,
-        trajectory_id,
-        load_and_slice_callback,
-    ) -> None:
-        """
-        Parameters:
-        - eager_data: dict with pre-computed data (ccf, label,
-          annotation_ids, scale, offset, histology_registration)
-        - lazy_channel_names: list of channel names for lazy loading
-        - trajectory_id: unique ID for current trajectory
-        - load_and_slice_callback: callable(channel_name) -> slice_array
-        """
-        super().__init__(eager_data)
-        self._lazy_channel_names = set(lazy_channel_names)
-        self._trajectory_id = trajectory_id
-        self._load_and_slice_callback = load_and_slice_callback
-
-        # Add lazy channel keys with None values (enables menu creation)
-        for channel in lazy_channel_names:
-            if channel not in self:
-                super().__setitem__(channel, None)
-
-    def __getitem__(self, key):
-        """Load/compute slice on first access for current trajectory."""
-        # Metadata keys always return directly
-        if key in ["ccf", "label", "annotation_ids", "scale", "offset"]:
-            return super().__getitem__(key)
-
-        value = super().__getitem__(key)
-
-        # Lazy channels: trigger load if None
-        if key in self._lazy_channel_names and value is None:
-            logger.info(f"Lazy loading and slicing channel: {key}")
-            slice_data = self._load_and_slice_callback(key)
-            super().__setitem__(key, slice_data)
-            return slice_data
-
-        return value
-
-
-def _cut_slice_from_atlas_image(
-    atlas_array: NDArray,
-    xyz_channel_indices: NDArray,
-    func: Callable[[NDArray], NDArray] | None = None,
-) -> NDArray:
-    """
-    Extract a "wavy" slice from the atlas image given the xyz channel indices.
-    xyz channel indices are indices in the atlas array, not physical coordinates.
-
-    Parameters
-    ----------
-    atlas_array : NDArray
-        The atlas image array from which to extract the slice.
-    xyz_channel_indices : NDArray
-        The xyz channel indices in the atlas array.
-    func : Callable[[NDArray], NDArray] | None, optional
-        An optional function to apply to the extracted slice, by default None.
-
-    Returns
-    -------
-    NDArray
-        The extracted slice from the atlas image.
-    """
-    # N x image.shape[1]
-    slice = atlas_array[xyz_channel_indices[:, 0], :, xyz_channel_indices[:, 2]]
-    if func is not None:
-        slice = func(slice)
-    slice = np.swapaxes(slice, 0, 1)  # Now it's image.shape[1] x N [x 3 for RGB]
-    return slice
 
 
 @dataclass
@@ -150,6 +73,7 @@ class LoadDataLocal:
     ephys_stream: EphysStreamData | None = None
     channel_collection: ChannelCollectionView | None = None
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
+    slice_service: SliceService = field(default_factory=SliceService)
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
     channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -179,8 +103,6 @@ class LoadDataLocal:
             self.histology_images = {}
             if hasattr(self, "_lazy_channel_paths"):
                 delattr(self, "_lazy_channel_paths")
-            if hasattr(self, "_slice_index"):
-                delattr(self, "_slice_index")
         self.mouse_root = mr
         self.probe_info = None
         self.chn_coords = None
@@ -476,131 +398,20 @@ class LoadDataLocal:
     # ------------------------------------------------------------------
 
     def get_slice_images(self, track_interpolation_ras):
-        # Load the CCF images
-        """
-        Get slice images
-        """
-        # --- Get the ccf slice in image space ---
-        #
-        # BrainCoordinates converts from XYZ world to IJK (spacing only) but
-        # doesn't handle permutations (xyz2dim). This converts world
-        # coordinates to image indices, and then permutes to match atlas image
-        # orientation
-        index = self.brain_atlas.physical_points_to_indices(
-            track_interpolation_ras, round=True
-        )
-        # Store for lazy loading
-        self._slice_index = index
-        trajectory_id = id(track_interpolation_ras)
-
-        # Build a tilted slice by getting horizontal lines at each index.
-        ccf_slice = _cut_slice_from_atlas_image(
-            self.brain_atlas.image,
-            index,  # type: ignore
-        )
-        annotation_slice = _cut_slice_from_atlas_image(
-            self.brain_atlas.label,
-            index,
-        )
-        label_slice = self.brain_atlas._label2rgb(annotation_slice)  # type: ignore
-        x_dimno = self.brain_atlas.xyz2dims[0]
-        width = [
-            self.brain_atlas.bc.i2x(0),
-            self.brain_atlas.bc.i2x(self.brain_atlas.image.shape[x_dimno]),
-        ]
-        height = [
-            self.brain_atlas.bc.i2z(index[0, 2]),
-            self.brain_atlas.bc.i2z(index[-1, 2]),
-        ]
-
-        logger.debug(f"CCF slice: {ccf_slice.shape}")
-
-        eager_data = {
-            "ccf": ccf_slice,
-            "label": label_slice,
-            "annotation_ids": annotation_slice,
-            "scale": np.array(
-                [
-                    (width[-1] - width[0]) / ccf_slice.shape[0],
-                    (height[-1] - height[0]) / ccf_slice.shape[1],
-                ]
+        """Get atlas and histology slices for the current shank track."""
+        if self.brain_atlas is None:
+            raise RuntimeError(
+                "brain_atlas not yet loaded; call load_atlas_and_histology() first"
+            )
+        return (
+            self.slice_service.build_slice_set(
+                brain_atlas=self.brain_atlas,
+                histology_images=self.histology_images,
+                lazy_channel_paths=getattr(self, "_lazy_channel_paths", {}),
+                track_interpolation_ras=track_interpolation_ras,
             ),
-            "offset": np.array([width[0], height[0]]),
-        }
-
-        if "histology_registration" in self.histology_images:
-            hist_image = self.histology_images["histology_registration"]
-            hist_arr = sitk.GetArrayViewFromImage(hist_image)
-            hist_slice = _cut_slice_from_atlas_image(
-                hist_arr,
-                index,  # type: ignore
-            )
-            eager_data["histology_registration"] = hist_slice
-            logger.debug("Computed eager slice for histology_registration")
-
-        lazy_channel_names: list[str] = []
-        if hasattr(self, "_lazy_channel_paths"):
-            lazy_channel_names = list(self._lazy_channel_paths.keys())
-            logger.debug(
-                f"Setting up lazy loading for {len(lazy_channel_names)} channels"
-            )
-
-        slice_data = SmartSliceDict(
-            eager_data=eager_data,
-            lazy_channel_names=lazy_channel_names,
-            trajectory_id=trajectory_id,
-            load_and_slice_callback=self._load_and_slice_channel,
+            None,
         )
-
-        return slice_data, None
-
-    def _load_and_slice_channel(self, channel_name: str) -> NDArray:
-        """Load histology channel (if needed) and slice for the current trajectory."""
-        if channel_name not in self.histology_images:
-            if channel_name not in self._lazy_channel_paths:
-                raise ValueError(f"Unknown channel: {channel_name}")
-            channel_path = self._lazy_channel_paths[channel_name]
-            logger.info(f"Loading channel image from disk: {channel_path.name}")
-            channel_image = sitk.ReadImage(str(channel_path))
-
-            # Apply the same rigid rotation as the main atlas assets so this
-            # channel shares the canonical (rotated) frame. Uses whatever
-            # (R, center) the atlas was built with.
-            if (
-                self.brain_atlas is not None
-                and self.brain_atlas.display_rotation is not None
-                and self.brain_atlas.display_rotation_center is not None
-            ):
-                channel_image = rotate_image(
-                    channel_image,
-                    self.brain_atlas.display_rotation,
-                    self.brain_atlas.display_rotation_center,
-                    interpolator="linear",
-                )
-
-            dicom_orient_str = (
-                sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
-                    channel_image.GetDirection()
-                )
-            )
-            if dicom_orient_str != _BLESSED_DIRECTION:
-                channel_image = sitk.DICOMOrient(channel_image, _BLESSED_DIRECTION)
-            self.histology_images[channel_name] = channel_image
-            logger.debug(f"Cached {channel_name} in histology_images")
-        else:
-            logger.debug(f"Using cached image for {channel_name}")
-
-        if not hasattr(self, "_slice_index") or self._slice_index is None:
-            raise RuntimeError("Cannot compute slice: trajectory index not set")
-
-        hist_image = self.histology_images[channel_name]
-        hist_arr = sitk.GetArrayViewFromImage(hist_image)
-        hist_slice = _cut_slice_from_atlas_image(
-            hist_arr,
-            self._slice_index,  # type: ignore
-        )
-        logger.debug(f"Computed slice for {channel_name}: shape {hist_slice.shape}")
-        return hist_slice
 
     def get_perpendicular_slice_image(
         self,
@@ -626,33 +437,18 @@ class LoadDataLocal:
         NDArray (n_perp_samples, len(feature_grid_m))
             NaN for samples that fall outside the rotated histology volume.
         """
-        from ephys_alignment_gui.perpendicular_slice import build_perpendicular_slice
-
         if self.brain_atlas is None:
             raise RuntimeError("brain_atlas not yet loaded")
 
-        # Resolve the channel name to a scalar-intensity volume in the blessed
-        # atlas orientation. "ccf" samples the atlas template image directly
-        # (same array get_slice_images cuts the "ccf" annotation slice from),
-        # so the perp and coronal slices share one intensity scale. Any other
-        # name is a histology channel: ensure it's cached (idempotent, applies
-        # the canonical rotation to lazy channels) then sample its array.
-        if channel_name == "ccf":
-            volume_arr = self.brain_atlas.image
-        else:
-            if channel_name not in self.histology_images:
-                self._load_and_slice_channel(channel_name)
-            hist_image = self.histology_images[channel_name]
-            volume_arr = sitk.GetArrayFromImage(hist_image)
-
-        return build_perpendicular_slice(
-            volume_arr=volume_arr,
+        return self.slice_service.build_perpendicular_slice_image(
             brain_atlas=self.brain_atlas,
-            track_interpolation_ras=ephysalign.track_interpolation_ras,
-            ephys_depths_along_track=ephysalign.ephys_depths_along_track,
-            feature_ref=np.asarray(feature_ref, dtype=np.float64),
-            track_ref=np.asarray(track_ref, dtype=np.float64),
-            feature_grid_m=np.asarray(feature_grid_m, dtype=np.float64),
+            histology_images=self.histology_images,
+            lazy_channel_paths=getattr(self, "_lazy_channel_paths", {}),
+            ephysalign=ephysalign,
+            feature_ref=feature_ref,
+            track_ref=track_ref,
+            feature_grid_m=feature_grid_m,
+            channel_name=channel_name,
             extent_m=extent_m,
             n_perp_samples=n_perp_samples,
             sigma_samples=sigma_samples,
