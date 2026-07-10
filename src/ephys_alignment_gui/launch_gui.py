@@ -2456,11 +2456,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.lines_tracks = np.empty((0, 1))
         self.session.points = np.empty((0, 1))
 
-        # Re-filter channels for current shank (from cached chn_coords_all)
+        # Re-filter channels for current shank (from cached chn_coords_all).
+        # set_channels_for_shank returns the depths and sets loaddata.chn_coords
+        # to the full (x, y) array; store both on the active shank so per-shank
+        # geometry is single-sourced (chn_coords is needed at save time).
         if self.loaddata.chn_coords_all is not None:
             self.session.chn_depths = self.loaddata.set_channels_for_shank(
                 self.session.current_shank_idx
             )
+            self.session.active_shank.chn_coords = self.loaddata.chn_coords
             logger.debug(f"Filtered {len(self.session.chn_depths)} channels for this shank")
 
         # Only process histology if it exists
