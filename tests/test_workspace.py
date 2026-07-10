@@ -22,7 +22,6 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.alignment_edit_service is not None
     assert workspace.alignment_derived_data_service is not None
     assert workspace.loader.data_context is workspace.data_context
-    assert workspace.loader.ephys_data_service is workspace.ephys_data_service
     assert workspace.loader.slice_service is workspace.slice_service
     assert workspace.slice_display_policy is not None
     assert workspace.runtime is not None

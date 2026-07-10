@@ -187,18 +187,12 @@ def test_load_data_local_keeps_legacy_channel_adapter(tmp_path):
         session_notes="notes",
     )
 
-    class FakeEphysDataService:
-        def load_channel_table(self, selected_probe):
-            assert selected_probe is probe
-            return table
+    context = AlignmentDataContext(probe_info=probe)
+    context.attach_channel_table(table)
+    loader = LoadDataLocal(data_context=context)
 
-    loader = LoadDataLocal(ephys_data_service=FakeEphysDataService())
-    loader.probe_info = probe
-
-    loader.load_channel_info()
-    assert loader.n_shanks == 2
-    assert loader.chn_contact_id_all.tolist() == ["s0e0", "s0e1", "s1e0", "s1e1"]
     assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
+    assert loader.chn_contact_id_all.tolist() == ["s0e0", "s0e1", "s1e0", "s1e1"]
     assert loader.channel_collection is not None
     assert loader.channel_collection.rows.tolist() == [2, 3]
 
@@ -236,20 +230,13 @@ def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path)
         session_notes="cached notes",
     )
 
-    class FailingEphysDataService:
-        def load_channel_table(self, _selected_probe):
-            raise AssertionError("channel table should come from cached stream")
-
-        def load_stream_data(self, _selected_probe, channel_table=None):
-            raise AssertionError("stream data should come from cached stream")
-
-    loader = LoadDataLocal(ephys_data_service=FailingEphysDataService())
-    loader.probe_info = probe
+    context = AlignmentDataContext(probe_info=probe)
+    loader = LoadDataLocal(data_context=context)
     loader.set_channel_collection(stream.channel_collection(1))
 
     assert loader.ephys_stream is stream
-    assert loader.channel_table is table
-    assert loader.n_shanks == 2
+    assert context.channel_table is table
+    assert context.n_shanks == 2
     assert loader.chn_coords_all is table.local_coordinates
     assert loader.chn_contact_id_all is table.contact_ids
     assert loader.chn_coords.tolist() == [[250.0, 0.0], [250.0, 20.0]]
@@ -290,15 +277,11 @@ def test_load_data_local_adapts_context_channel_collection_without_mirror_state(
     )
     context = AlignmentDataContext(probe_info=probe)
     context.attach_channel_table(table)
-    loader = LoadDataLocal(
-        data_context=context,
-        ephys_data_service=object(),
-    )
+    loader = LoadDataLocal(data_context=context)
 
     loader.set_channel_collection(stream.channel_collection(1))
 
     assert context.channel_table is table
-    assert loader.channel_table is None
     assert loader.ephys_stream is stream
     assert loader.chn_coords_all is table.local_coordinates
     assert loader.chn_contact_id_all is table.contact_ids

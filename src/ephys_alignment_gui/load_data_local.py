@@ -26,15 +26,9 @@ from ephys_alignment_gui.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
-from ephys_alignment_gui.datapackage_loader import (
-    MouseRoot,
-    ProbeInfo,
-    load_mouse_root,
-)
 from ephys_alignment_gui.ephys_data_service import (
     ChannelCollectionView,
     ChannelTable,
-    EphysDataService,
     EphysStreamData,
 )
 from ephys_alignment_gui.rigid_rotation import (
@@ -53,27 +47,22 @@ ANTS_DIMENSION = 3
 
 @dataclass
 class LoadDataLocal:
-    """Loader driven by a preprocessed mouse-root directory.
+    """Legacy adapter for histology, slices, and output helpers.
 
-    The entry-point is :meth:`set_mouse_root`, which reads ``datapackage.json``
-    and surfaces the sessions and probes available. :meth:`select_probe` picks
-    one for subsequent loading. All file paths come from the datapackage; the
-    loader makes no assumptions about directory layout beyond that contract.
+    Selected mouse/probe/channel metadata is owned by ``AlignmentDataContext``.
+    Ephys stream loading is owned by ``ProbeDataWorkflow``. This adapter keeps
+    the remaining legacy plotting and save-output helpers working while those
+    responsibilities are split into smaller services.
     """
 
-    data_context: AlignmentDataContext | None = None
-    mouse_root: MouseRoot | None = None
-    probe_info: ProbeInfo | None = None
+    data_context: AlignmentDataContext
     brain_atlas: BrainAtlasAnatomical | None = None
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
     chn_contact_id_all: NDArray | None = None
     chn_shank_ind_all: NDArray | None = None
-    n_shanks: int = 0
-    channel_table: ChannelTable | None = None
     ephys_stream: EphysStreamData | None = None
     channel_collection: ChannelCollectionView | None = None
-    ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
     slice_service: SliceService = field(default_factory=SliceService)
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
@@ -83,25 +72,11 @@ class LoadDataLocal:
     # Mouse-root / probe selection
     # ------------------------------------------------------------------
 
-    def _mouse_root(self) -> MouseRoot | None:
-        if self.data_context is not None:
-            return self.data_context.mouse_root
-        return self.mouse_root
-
-    def _probe_info(self) -> ProbeInfo | None:
-        if self.data_context is not None:
-            return self.data_context.probe_info
-        return self.probe_info
-
     def _channel_table(self) -> ChannelTable | None:
-        if self.data_context is not None:
-            return self.data_context.channel_table
-        return self.channel_table
+        return self.data_context.channel_table
 
     def _n_shanks(self) -> int:
-        if self.data_context is not None:
-            return self.data_context.n_shanks
-        return self.n_shanks
+        return self.data_context.n_shanks
 
     def _clear_channel_cache(self) -> None:
         """Clear legacy channel adapter fields derived from a selected stream."""
@@ -109,8 +84,6 @@ class LoadDataLocal:
         self.chn_coords_all = None
         self.chn_contact_id_all = None
         self.chn_shank_ind_all = None
-        self.channel_table = None
-        self.n_shanks = 0
         self.ephys_stream = None
         self.channel_collection = None
 
@@ -133,100 +106,19 @@ class LoadDataLocal:
         """Clear loader-side stream caches after the selected probe changes."""
         self._clear_channel_cache()
 
-    def set_mouse_root(self, mouse_root: Path) -> MouseRoot:
-        """Load a mouse-root directory. Resets probe-specific state.
-
-        Parameters
-        ----------
-        mouse_root : Path
-            Directory containing ``datapackage.json``.
-
-        Returns
-        -------
-        MouseRoot
-            Resolved view of the mouse-root.
-        """
-        logger.info(f"set_mouse_root: {mouse_root}")
-        if self.data_context is not None:
-            old_root = self.data_context.mouse_root
-            mr = self.data_context.set_mouse_root(Path(mouse_root))
-        else:
-            old_root = self.mouse_root
-            mr = load_mouse_root(Path(mouse_root))
-            self.mouse_root = mr
-            self.probe_info = None
-        self.reset_for_mouse_root_selection(
-            root_changed=old_root is not None and old_root.root != mr.root
-        )
-        return mr
-
-    def list_sessions(self) -> list[str]:
-        """Recording IDs available in the current mouse root."""
-        mouse_root = self._mouse_root()
-        if mouse_root is None:
-            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
-        return mouse_root.sessions
-
-    def list_probes(self, recording_id: str) -> list[str]:
-        """Probe names for a given recording in the current mouse root."""
-        mouse_root = self._mouse_root()
-        if mouse_root is None:
-            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
-        return mouse_root.probes_for_session(recording_id)
-
-    def select_probe(self, recording_id: str, probe_name: str) -> ProbeInfo:
-        """Select a probe for loading. Resets per-probe data caches."""
-        mouse_root = self._mouse_root()
-        if mouse_root is None:
-            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
-        if self.data_context is not None:
-            probe = self.data_context.select_probe(recording_id, probe_name)
-        else:
-            probe = mouse_root.get_probe(recording_id, probe_name)
-            self.probe_info = probe
-        logger.info(
-            f"select_probe: recording={recording_id!r}, probe={probe_name!r}, "
-            f"num_shanks={probe.num_shanks}, ephys_dir={probe.ephys_dir}"
-        )
-        self.reset_for_probe_selection()
-        if self.data_context is None:
-            self.n_shanks = probe.num_shanks
-        return probe
-
     @property
     def probe_id(self) -> str | None:
         """Shortcut for the current probe ID (if selected)."""
-        probe = self._probe_info()
+        probe = self.data_context.probe_info
         return probe.probe_id if probe is not None else None
 
     # ------------------------------------------------------------------
     # Channel info / ephys / atlas loading
     # ------------------------------------------------------------------
 
-    def load_channel_info(self) -> None:
-        """Load channel local coordinates from the selected probe's ephys ALF."""
-        probe = self._probe_info()
-        if probe is None:
-            raise RuntimeError("No probe selected — call select_probe() first")
-        channel_table = self.ephys_data_service.load_channel_table(probe)
-        self._set_channel_table(channel_table)
-        self.ephys_stream = None
-        self.channel_collection = None
-
-        geom_n_shanks = channel_table.n_shanks
-        if geom_n_shanks != probe.num_shanks:
-            logger.warning(
-                "Channel table implies %d shanks but datapackage says %d; "
-                "trusting channel table.",
-                geom_n_shanks,
-                probe.num_shanks,
-            )
-        if self.data_context is None:
-            self.n_shanks = geom_n_shanks
-
     def set_ephys_stream(self, stream: EphysStreamData) -> None:
         """Attach an already-loaded runtime stream to this loader adapter."""
-        probe = self._probe_info()
+        probe = self.data_context.probe_info
         if probe is None:
             raise RuntimeError("No probe selected — call select_probe() first")
         if stream.recording_id != probe.recording_id:
@@ -250,26 +142,12 @@ class LoadDataLocal:
 
     def _set_channel_table(self, channel_table: ChannelTable) -> None:
         """Update legacy channel-table adapter fields from a runtime model."""
-        if self.data_context is not None:
-            self.data_context.attach_channel_table(channel_table)
-        else:
-            self.channel_table = channel_table
+        self.data_context.attach_channel_table(channel_table)
         self._cache_channel_table_arrays(channel_table)
-        if self.data_context is None:
-            self.n_shanks = channel_table.n_shanks
 
     def _set_channel_collection(self, collection: ChannelCollectionView) -> None:
         self.channel_collection = collection
         self.chn_coords = collection.local_coordinates
-
-    def get_shank_list(self) -> list[str] | None:
-        """Build the shank-picker list for the current probe."""
-        n_shanks = self._n_shanks()
-        if n_shanks == 1:
-            return ["1/1"]
-        if n_shanks > 1:
-            return [f"{i + 1}/{n_shanks}" for i in range(n_shanks)]
-        return None
 
     def load_atlas_and_histology(self) -> None:
         """Load atlas + default histology channel from the mouse-root datapackage.
@@ -279,7 +157,7 @@ class LoadDataLocal:
         intensity and pipeline images are kept on the atlas for the ANTs CCF
         chain (which was computed in SPIM-native coords).
         """
-        mouse_root = self._mouse_root()
+        mouse_root = self.data_context.mouse_root
         if mouse_root is None:
             raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
         hist = mouse_root.histology
@@ -358,9 +236,9 @@ class LoadDataLocal:
     def set_channels_for_shank(self, shank_idx: int) -> NDArray:
         """Filter cached channel coordinates for selected shank. No disk I/O."""
         channel_table = self._channel_table()
-        probe = self._probe_info()
+        probe = self.data_context.probe_info
         if channel_table is None:
-            raise RuntimeError("Must call load_channel_info() first")
+            raise RuntimeError("Channel info not loaded. Please select a probe first.")
         if probe is None:
             raise RuntimeError("No probe selected — call select_probe() first")
         self._cache_channel_table_arrays(channel_table)
@@ -396,7 +274,7 @@ class LoadDataLocal:
 
     def get_track_annotations(self, shank_idx: int) -> NDArray[np.floating]:
         """Read xyz-picks (image space) for the current probe + shank."""
-        probe = self._probe_info()
+        probe = self.data_context.probe_info
         if probe is None:
             raise RuntimeError("No probe selected — call select_probe() first")
         picks = probe.picks_for_shank(shank_idx)
@@ -507,7 +385,7 @@ class LoadDataLocal:
         channel_locations_ras: NDArray,
         channel_dict: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        mouse_root = self._mouse_root()
+        mouse_root = self.data_context.mouse_root
         if mouse_root is None or self.brain_atlas is None:
             raise RuntimeError(
                 "Mouse root or brain atlas not loaded; cannot transform to CCF"

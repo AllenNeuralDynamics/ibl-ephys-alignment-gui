@@ -63,7 +63,6 @@ class AlignmentWorkspace:
         )
         self.loader = LoadDataLocal(
             data_context=self.data_context,
-            ephys_data_service=self.ephys_data_service,
             slice_service=self.slice_service,
         )
         self.controller = AlignmentController(
