@@ -44,10 +44,6 @@ from ephys_alignment_gui.workflow import (
     Requirement,
 )
 from ephys_alignment_gui.workspace import AlignmentWorkspace
-from ephys_alignment_gui.windows.features_across_region import (
-    RegionFeatureWindow,
-)
-from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +204,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         remote=False,
     ) -> None:
         super().__init__()
+        requested_offline = self._normalize_offline_flag(offline)
+        if not requested_offline:
+            logger.warning(
+                "ONE/Alyx online mode is not supported in this branch; "
+                "using preprocessed datapackage mode. DocDB remains available "
+                "through the DocDB checkbox."
+            )
+        offline = True
 
         self.workspace = AlignmentWorkspace()
         self.runtime = self.workspace.runtime
@@ -230,13 +234,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._connect_alignment_changed_handlers()
 
         self.configure: bool = True
-        self.offline: bool = True
         self.histology_exists: bool = True
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
         self.allen = self.loaddata.load_allen_csv()
         self.init_region_lookup(self.allen)
+
+    @staticmethod
+    def _normalize_offline_flag(offline: Any) -> bool:
+        """Interpret legacy CLI/string offline flags."""
+        if isinstance(offline, str):
+            return offline.strip().lower() not in {"0", "false", "no", "off"}
+        return bool(offline)
+
+    def _show_one_unsupported(self, feature: str) -> None:
+        """Report unsupported ONE/Alyx-only actions without crashing."""
+        message = (
+            f"{feature} requires ONE/Alyx online mode, which is not supported "
+            "in this preprocessed datapackage workflow."
+        )
+        logger.warning(message)
+        QtWidgets.QMessageBox.information(self, "Unavailable", message)
 
     @property
     def session(self) -> ProbeSession | None:
@@ -2744,13 +2763,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # built from ``plotdata`` and memoized only when a plot is displayed.
         # (Re)assigning ``plotdata`` above resets that per-shank memo cache.
 
-        # TODO broken
-        if self.offline:
-            self.session.img_raw_data = {}
-        else:
-            self.session.img_raw_data = self.session.plotdata.get_raw_data_image(
-                self.loaddata.probe_id, one=self.loaddata.one
-            )
+        # Raw image retrieval requires ONE/Alyx online access. The preprocessed
+        # datapackage workflow only displays local ALF-derived plot data.
+        self.session.img_raw_data = {}
 
         if self.histology_exists:
             # Reuse this shank's cached slice unless its track changed (e.g. the
@@ -3395,8 +3410,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.display_qc_options()
             return
 
-        self.loaddata.upload_dj(align_qc, ephys_qc, ephys_desc)
-        self.complete_button_pressed()
+        logger.warning(
+            "Alyx QC upload is unavailable without ONE; saving local/DocDB "
+            "alignment output instead."
+        )
+        self.complete_button_pressed_offline()
 
     def reset_axis_button_pressed(self) -> None:
         self.fig_hist.setYRange(
@@ -3429,53 +3447,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.notes_win.layout.addWidget(notes)
 
     def display_nearby_sessions(self) -> None:
-        # TODO: dead online-mode code. This calls
-        # self.loaddata.get_nearby_trajectories(), which LoadDataLocal (the only
-        # loader in this fork) does not implement, and the menu action that
-        # triggers it is gated behind `if not self.offline`. Remove this and the
-        # other online-mode leftovers (the nearby_* session state, online-only
-        # menu items, get_nearby_trajectories call sites, etc.) as part of a
-        # broader dead-code sweep of the online IBL GUI cruft.
-        # If no histology we can't get nearby sessions
-        if not self.histology_exists:
-            return
-
-        if not self.session.nearby:
-            self.session.nearby, self.dist, self.dist_mlap = (
-                self.loaddata.get_nearby_trajectories()
-            )
-
-        self.session.nearby_win = ephys_gui.PopupWindow(
-            title="Nearby Sessions", size=(400, 300), graphics=False
-        )
-
-        self.session.nearby_table = QtWidgets.QTableWidget()
-        self.session.nearby_table.setRowCount(10)
-        self.session.nearby_table.setColumnCount(3)
-
-        self.session.nearby_table.setHorizontalHeaderItem(
-            0, QtWidgets.QTableWidgetItem("Session")
-        )
-        self.session.nearby_table.setHorizontalHeaderItem(
-            1, QtWidgets.QTableWidgetItem("dist")
-        )
-        self.session.nearby_table.setHorizontalHeaderItem(
-            2, QtWidgets.QTableWidgetItem("dist_mlap")
-        )
-        self.session.nearby_table.setSortingEnabled(True)
-        for iT, (near, dist, dist_mlap) in enumerate(
-            zip(self.session.nearby, self.dist, self.dist_mlap)
-        ):
-            sess_item = QtWidgets.QTableWidgetItem(near)
-            dist_item = QtWidgets.QTableWidgetItem()
-            dist_item.setData(0, int(dist))
-            dist_mlap_item = QtWidgets.QTableWidgetItem()
-            dist_mlap_item.setData(0, int(dist_mlap))
-            self.session.nearby_table.setItem(iT, 0, sess_item)
-            self.session.nearby_table.setItem(iT, 1, dist_item)
-            self.session.nearby_table.setItem(iT, 2, dist_mlap_item)
-
-        self.session.nearby_win.layout.addWidget(self.session.nearby_table)
+        self._show_one_unsupported("Nearby sessions")
 
     def popup_closed(self, popup) -> None:
         popup_idx = [
@@ -3570,24 +3542,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return clust_no
 
     def display_subject_scaling(self) -> None:
-        if self.session.subj_win is not None:
-            self.session.subj_win.close()
-
-        self.session.subj_win = ScalingWindow(
-            self.loaddata.probe_id,
-            self.loaddata.subj,
-            self.loaddata.one,
-            self.loaddata.brain_atlas,
-        )
+        self._show_one_unsupported("Subject scaling")
 
     def display_region_features(self) -> None:
-        self.session.region_win = RegionFeatureWindow(
-            self.loaddata.one,
-            np.unique(np.array(self.session.ephysalign.region_id).ravel()),
-            self.loaddata.brain_atlas,
-            download=False,
-        )
-        self.session.region_win.show()
+        self._show_one_unsupported("Region features")
 
     def on_mouse_double_clicked(self, event) -> None:
         """
@@ -3919,9 +3877,15 @@ def setup_logging(log_level=logging.INFO, log_file=None) -> None:
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Offline vs online mode")
+    parser = argparse.ArgumentParser(
+        description="IBL ephys alignment GUI for preprocessed datapackages"
+    )
     parser.add_argument(
-        "-o", "--offline", default=True, required=False, help="Offline mode"
+        "-o",
+        "--offline",
+        default=True,
+        required=False,
+        help="Legacy flag; ONE/Alyx online mode is not supported.",
     )
     parser.add_argument(
         "-r",
