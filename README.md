@@ -31,6 +31,10 @@ Once the package has been installed in your environment, you can run the GUI wit
 launch
 ```
 
+You can prefill the save-root directory by setting `EPHYS_ALIGNMENT_OUTPUT_ROOT`.
+For example, on Code Ocean set `EPHYS_ALIGNMENT_OUTPUT_ROOT=/results`. The GUI
+still lets users choose or edit a different output root after startup.
+
 
 ## Keyboard shortcuts
 
@@ -81,4 +85,3 @@ undo/redo buffer (per shank):
 
 An alignment only enters the buffer/history when you commit it with Fit,
 Offset, or a move — placing reference lines alone does not.
-

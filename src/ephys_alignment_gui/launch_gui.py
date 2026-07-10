@@ -31,9 +31,13 @@ from ephys_alignment_gui.controller import (
     RecordingSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
-from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
+from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.settings import (
+    OUTPUT_ROOT_ENV_VAR,
+    output_root_from_environment,
+)
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
@@ -233,6 +237,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
         self._connect_alignment_changed_handlers()
+        self._set_default_output_root_from_environment()
 
         self.configure: bool = True
         self.histology_exists: bool = True
@@ -257,6 +262,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         logger.warning(message)
         QtWidgets.QMessageBox.information(self, "Unavailable", message)
+
+    def _set_default_output_root_from_environment(self) -> None:
+        """Use an environment-provided save root as the startup default."""
+        output_root = output_root_from_environment()
+        if output_root is None:
+            return
+        if self.set_save_root(output_root):
+            logger.info(
+                "Default save root set from %s: %s",
+                OUTPUT_ROOT_ENV_VAR,
+                output_root,
+            )
 
     @property
     def session(self) -> ProbeSession | None:
