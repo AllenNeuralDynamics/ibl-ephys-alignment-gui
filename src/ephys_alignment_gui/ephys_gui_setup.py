@@ -33,8 +33,8 @@ class Setup:
         main_layout.addLayout(self.interaction_layout2, 4, 2, 2, 1)
         main_layout.addWidget(self.fig_fit, 6, 2, 2, 1)
         main_layout.addLayout(self.interaction_layout3, 8, 2, 2, 1)
-        main_layout.setColumnStretch(0, 5)
-        main_layout.setColumnStretch(1, 2)
+        main_layout.setColumnStretch(0, 4)
+        main_layout.setColumnStretch(1, 3)
         main_layout.setColumnStretch(2, 3)
 
         main_widget.setLayout(main_layout)
@@ -925,7 +925,7 @@ class Setup:
         self.fig_data_layout.addItem(self.fig_line, 1, 1)
         self.fig_data_layout.addItem(self.fig_probe, 1, 2)
         self.fig_data_layout.layout.setColumnStretchFactor(0, 6)
-        self.fig_data_layout.layout.setColumnStretchFactor(1, 2)
+        self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
         self.fig_data_layout.layout.setColumnStretchFactor(2, 1)
         self.fig_data_layout.layout.setRowStretchFactor(0, 1)
         self.fig_data_layout.layout.setRowStretchFactor(1, 10)
@@ -991,12 +991,14 @@ class Setup:
 
         # Perpendicular histology slice plot
         self.fig_hist_perp = pg.PlotItem()
+        self.fig_hist_perp.setContentsMargins(0, 0, 0, 0)
         self.fig_hist_perp.setMouseEnabled(x=False)
         self.fig_hist_perp.setYRange(
             min=self.session.probe_tip - self.session.probe_extra,
             max=self.session.probe_top + self.session.probe_extra,
             padding=self.pad,
         )
+        self.set_axis(self.fig_hist_perp, "bottom", pen="w")
         self.set_axis(self.fig_hist_perp, "left", show=False)
         self.fig_hist_perp.setYLink(self.fig_hist)
 
@@ -1031,7 +1033,7 @@ class Setup:
         self.fig_hist_layout.addItem(self.fig_hist_ref, 1, 4)  # Moved from column 3
         self.fig_hist_layout.layout.setColumnStretchFactor(0, 1)
         self.fig_hist_layout.layout.setColumnStretchFactor(1, 4)
-        self.fig_hist_layout.layout.setColumnStretchFactor(2, 3)  # Perpendicular slice
+        self.fig_hist_layout.layout.setColumnStretchFactor(2, 5)  # Perpendicular slice
         self.fig_hist_layout.layout.setColumnStretchFactor(3, 1)  # Scale
         self.fig_hist_layout.layout.setColumnStretchFactor(4, 4)  # Ref
         self.fig_hist_layout.layout.setRowStretchFactor(0, 1)

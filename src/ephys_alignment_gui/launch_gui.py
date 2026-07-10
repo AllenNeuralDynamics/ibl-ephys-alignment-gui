@@ -36,6 +36,7 @@ from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.thread_worker import Worker
+from ephys_alignment_gui.view_limits import default_feature_y_limits
 from ephys_alignment_gui.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     Blocked,
@@ -359,6 +360,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         [top_line.setY(self.session.probe_top) for top_line in self.probe_top_lines]
         [tip_line.setY(self.session.probe_tip) for tip_line in self.probe_tip_lines]
 
+    def default_feature_y_limits(self) -> tuple[float, float]:
+        """Return the current default feature-depth display limits."""
+        plotdata = getattr(self.session, "plotdata", None)
+        in_brain_depths_um = (
+            getattr(plotdata, "in_brain_depths_um", None)
+            if plotdata is not None
+            else None
+        )
+        return default_feature_y_limits(
+            probe_tip_um=self.session.probe_tip,
+            probe_top_um=self.session.probe_top,
+            probe_extra_um=self.session.probe_extra,
+            in_brain_depths_um=in_brain_depths_um,
+        )
+
+    def set_default_feature_y_range(self) -> None:
+        """Apply the default feature-depth range to the linked depth plots."""
+        y_min, y_max = self.default_feature_y_limits()
+        self.fig_hist.setYRange(min=y_min, max=y_max, padding=self.pad)
+        self.fig_hist_ref.setYRange(min=y_min, max=y_max, padding=self.pad)
+        self.fig_img.setYRange(min=y_min, max=y_max, padding=self.pad)
+
     def populate_lists(self, data, list_name, combobox) -> None:
         """
         Populate drop down lists with subject/session/alignment options
@@ -428,7 +451,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_probe.setFixedWidth(self.fig_probe_width)
 
             self.fig_data_layout.layout.setColumnStretchFactor(0, 6)
-            self.fig_data_layout.layout.setColumnStretchFactor(1, 2)
+            self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
             self.fig_data_layout.layout.setColumnStretchFactor(2, 1)
             self.fig_data_layout.layout.setRowStretchFactor(0, 1)
             self.fig_data_layout.layout.setRowStretchFactor(1, 10)
@@ -470,7 +493,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.fig_data_layout.layout.setColumnStretchFactor(0, 6)
             self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(2, 2)
+            self.fig_data_layout.layout.setColumnStretchFactor(2, 1)
             self.fig_data_layout.layout.setRowStretchFactor(0, 1)
             self.fig_data_layout.layout.setRowStretchFactor(1, 10)
 
@@ -504,7 +527,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.set_axis(self.fig_probe, "left", label="Distance from probe tip (um)")
 
             self.fig_data_layout.layout.setColumnStretchFactor(0, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(1, 2)
+            self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
             self.fig_data_layout.layout.setColumnStretchFactor(2, 6)
             self.fig_data_layout.layout.setRowStretchFactor(0, 1)
             self.fig_data_layout.layout.setRowStretchFactor(1, 10)
@@ -1148,11 +1171,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_hist_perp.addItem(self.session.perp_image_item)
 
         self.fig_hist_perp.setXRange(min=-extent_um, max=extent_um, padding=0)
-        self.fig_hist_perp.setYRange(
-            min=feat_min_um,
-            max=feat_max_um,
-            padding=self.pad,
-        )
 
         if self.session.channel_status:
             self.session.perp_probe_line = pg.InfiniteLine(
@@ -1385,11 +1403,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _on_alignment_changed_range(self, event: AlignmentChanged) -> None:
         if not event.reset_histology_range:
             return
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.set_default_feature_y_range()
 
     def _on_alignment_changed_status(self, event: AlignmentChanged) -> None:
         if event.update_status:
@@ -3016,7 +3030,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._emit_alignment_changed(
             source="fit",
             line_update="sync",
-            reset_histology_range=True,
         )
 
     def offset_button_pressed(
@@ -3037,7 +3050,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._emit_alignment_changed(
             source="offset",
             line_update="sync",
-            reset_histology_range=True,
         )
 
     def movedown_button_pressed(self) -> None:
@@ -3417,23 +3429,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.complete_button_pressed_offline()
 
     def reset_axis_button_pressed(self) -> None:
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
-        self.fig_hist_ref.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.set_default_feature_y_range()
         self.fig_img.setXRange(
             min=self.session.xrange[0], max=self.session.xrange[1], padding=0
-        )
-        self.fig_img.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
         )
 
     def display_session_notes(self) -> None:
