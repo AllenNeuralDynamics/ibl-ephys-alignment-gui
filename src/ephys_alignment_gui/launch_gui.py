@@ -206,6 +206,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     ) -> None:
         super().__init__()
 
+        self.workspace = AlignmentWorkspace()
+        self.runtime = self.workspace.runtime
+        self.document = self.workspace.document
+        self.loaddata = self.workspace.loader
+        self.controller = self.workspace.controller
+        self.plot_data_factory = self.workspace.plot_data_factory
+        self.slice_display_policy = self.workspace.slice_display_policy
+
         self.init_variables()
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
@@ -213,17 +221,27 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.configure: bool = True
         self.offline: bool = True
         self.histology_exists: bool = True
-        self.workspace = AlignmentWorkspace()
-        self.document = self.workspace.document
-        self.loaddata = self.workspace.loader
-        self.controller = self.workspace.controller
-        self.plot_data_factory = self.workspace.plot_data_factory
-        self.slice_display_policy = self.workspace.slice_display_policy
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
         self.allen = self.loaddata.load_allen_csv()
         self.init_region_lookup(self.allen)
+
+    @property
+    def session(self) -> ProbeSession | None:
+        """Active ProbeSession owned by the runtime manager."""
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            return getattr(self, "_session_before_runtime", None)
+        return runtime.active_session
+
+    @session.setter
+    def session(self, session: ProbeSession | None) -> None:
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            self._session_before_runtime = session
+            return
+        runtime.active_session = session
 
     def init_variables(self) -> None:
         """
@@ -249,7 +267,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
-        self.session = ProbeSession()
+        self.runtime.new_session()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -1955,19 +1973,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _stash_and_detach_current(self) -> None:
         """Detach the displayed session from the figures, keeping it cached.
 
-        The outgoing session stays intact in the workspace cache (if it was
+        The outgoing session stays intact in the runtime cache (if it was
         loaded) so switching back is instant; only its plot items are removed
         from the shared figures. A never-loaded (unkeyed) session is simply
         dropped. Distinct from ``_teardown_session``, which discards state.
         """
-        if self.session is None:
+        session = self.runtime.detach_active_for_cache()
+        if session is None:
             return
-        self.workspace.cache_current_session(self.session)
-        self.session.detach(self._figures())
+        session.detach(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
-        self.session = None
-        self.workspace.clear_current_stream()
 
     def _evict_stream_cache(self) -> None:
         """Tear down every cached stream (and the current one) and clear it.
@@ -1975,10 +1991,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Called when the recording session changes — the cache belongs to one
         recording session, so this bounds memory to a single session's streams.
         """
-        self.workspace.cache_current_session(self.session)
-        self.session = None
         figures = self._figures()
-        for sess in self.workspace.clear_stream_cache():
+        for sess in self.runtime.sessions_for_stream_eviction():
             sess.teardown(figures)
         self.fit_plot.setData()
         self.fit_scatter.setData()
@@ -1994,7 +2008,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         load does (setup then restore), so recreate reconstructs the WIP rather
         than resetting it.
         """
-        cached = self.workspace.stream_cache[probe_name]
+        cached = self.runtime.cached_stream(probe_name)
+        if cached is None:
+            return False
         result = self.controller.select_probe(
             session_name,
             probe_name,
@@ -2004,8 +2020,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(result.message)
             return False
 
-        self.session = cached
-        self.workspace.set_current_stream(probe_name)
+        self.runtime.activate_cached_stream(probe_name)
         self._clear_empty_state()
 
         if result.shanks:
@@ -2043,7 +2058,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
             probe_name = self.probe_combobox.currentText()
-            self.workspace.pop_cached_stream(probe_name)
+            self.runtime.pop_cached_stream(probe_name)
             self._teardown_session()
             self.init_session_variables()
             self.session.init_shanks(self.loaddata.n_shanks)
@@ -2088,8 +2103,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.controller.finish_load_data(self.session.current_shank_idx)
             # Cache this freshly-built stream so switching back is instant.
-            self.workspace.stream_cache[probe_name] = self.session
-            self.workspace.set_current_stream(probe_name)
+            self.runtime.cache_loaded_stream(probe_name)
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
@@ -2270,7 +2284,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._stash_and_detach_current()
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
-        if probe_name in self.workspace.stream_cache:
+        if self.runtime.has_cached_stream(probe_name):
             if self._activate_cached_stream(session, probe_name):
                 self.load_data_button.setEnabled(True)
             return
