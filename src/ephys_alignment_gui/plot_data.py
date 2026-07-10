@@ -408,10 +408,15 @@ class PlotData:
             xscale = (times[-1] - times[0]) / img.shape[0]
             yscale = (depths[-1] - depths[0]) / img.shape[1]
 
+            # img columns are D_BIN-wide depth bins; constrain the colour range
+            # to bins containing in-brain channels (emitted img unchanged).
+            col = self._in_brain_col_mask(depths, bin_width=D_BIN)
+            fr_by_depth = np.mean(img if col is None else img[:, col], axis=0)
+
             data_img = {
                 "img": img,
                 "scale": np.array([xscale, yscale]),
-                "levels": np.quantile(np.mean(img, axis=0), [0, 1]),
+                "levels": np.quantile(fr_by_depth, [0, 1]),
                 "offset": np.array([0, np.min(depths)]),
                 "xrange": np.array([times[0], times[-1]]),
                 "xaxis": "Time (s)",
@@ -509,10 +514,14 @@ class PlotData:
             corr[np.isnan(corr)] = 0
             np.fill_diagonal(corr, 0)
             scale = (np.max(depths) - np.min(depths)) / corr.shape[0]
+            # corr is (depth-bin x depth-bin); constrain the colour range to the
+            # in-brain x in-brain sub-block (emitted matrix unchanged).
+            col = self._in_brain_col_mask(depths, bin_width=D_BIN)
+            corr_lvl = corr if col is None else corr[np.ix_(col, col)]
             data_img = {
                 "img": corr,
                 "scale": np.array([scale, scale]),
-                "levels": np.array([np.min(corr), np.max(corr)]),
+                "levels": np.array([np.min(corr_lvl), np.max(corr_lvl)]),
                 "offset": np.array([self.chn_min, self.chn_min]),
                 "xrange": np.array([self.chn_min, self.chn_max]),
                 "cmap": "viridis",
@@ -520,6 +529,33 @@ class PlotData:
                 "xaxis": "Distance from probe tip (um)",
             }
             return data_img
+
+    def _in_brain_col_mask(self, depth_axis_um, bin_width=None):
+        """Boolean mask over an image depth axis selecting in-brain columns.
+
+        Returns ``None`` (caller should use the full array — today's behavior)
+        when ``in_brain_depths_um`` is unset/empty or nothing maps in-brain.
+        ``depth_axis_um`` is the per-column depth coordinate of the target
+        array. With ``bin_width`` given the axis is treated as bincount bin
+        centers and each in-brain channel marks the bin it falls in; otherwise
+        the axis is matched to channel depths exactly (``np.isin``).
+        """
+        if self.in_brain_depths_um is None:
+            return None
+        axis = np.asarray(depth_axis_um, dtype=float)
+        in_brain = np.asarray(self.in_brain_depths_um, dtype=float)
+        if axis.size == 0 or in_brain.size == 0:
+            return None
+        if bin_width is None:
+            mask = np.isin(axis, in_brain)
+        else:
+            idx = np.round((in_brain - axis[0]) / bin_width).astype(int)
+            idx = idx[(idx >= 0) & (idx < axis.size)]
+            mask = np.zeros(axis.size, dtype=bool)
+            mask[idx] = True
+        if not mask.any():
+            return None
+        return mask
 
     def _probe_levels(self, values, quantiles=(0.1, 0.9)):
         """Colour levels from in-brain channels when known, else all channels.
@@ -530,10 +566,9 @@ class PlotData:
         their extremes don't blow out the probe colour range.
         """
         vals = np.asarray(values, dtype=float)
-        if self.in_brain_depths_um is not None:
-            mask = np.isin(self.chn_coords[:, 1], self.in_brain_depths_um)
-            if mask.any():
-                vals = vals[mask]
+        mask = self._in_brain_col_mask(self.chn_coords[:, 1])
+        if mask is not None and mask.shape[0] == vals.shape[0]:
+            vals = vals[mask]
         return np.nanquantile(vals, list(quantiles))
 
     def get_rms_data_img_probe(self, format):
@@ -573,7 +608,12 @@ class PlotData:
         img_full = np.full((img.shape[0], self.chn_full.shape[0]), np.nan)
         img_full[:, self.idx_full] = img
 
-        levels = np.nanquantile(img, [0.1, 0.9])
+        # img columns are the unique channel depths (avg_chn_depth); constrain
+        # the colour levels to in-brain depths so out-of-brain channels don't
+        # blow out the range. Emitted img is unchanged; only levels narrow.
+        unique_depths = np.unique(self.chn_coords[:, 1])
+        col = self._in_brain_col_mask(unique_depths)
+        levels = np.nanquantile(img if col is None else img[:, col], [0.1, 0.9])
         xscale = (
             self.data[f"rms_{format}"]["timestamps"][-1]
             - self.data[f"rms_{format}"]["timestamps"][0]
@@ -732,7 +772,12 @@ class PlotData:
             img_full = np.full((img_log.shape[0], self.chn_full.shape[0]), np.nan)
             img_full[:, self.idx_full] = img_log
 
-            finite_vals = img_log[np.isfinite(img_log)]
+            # img_log columns are the unique channel depths; constrain the
+            # symmetric colour range to in-brain depths (emitted img unchanged).
+            unique_depths = np.unique(self.chn_coords[:, 1])
+            col = self._in_brain_col_mask(unique_depths)
+            level_src = img_log if col is None else img_log[:, col]
+            finite_vals = level_src[np.isfinite(level_src)]
             if len(finite_vals) > 0:
                 max_abs = np.quantile(np.abs(finite_vals), 0.95)
             else:
@@ -841,13 +886,23 @@ class PlotData:
         )
         return None, None
 
+    def _matrix_row_depths(self, rows, n_matrix):
+        """Per-row channel depths (um) for a band matrix, or None if unknown.
+
+        Used both for display geometry and for the in-brain colour mask. None
+        signals the fallback geometry (no per-row depth), in which case callers
+        should not attempt in-brain masking.
+        """
+        if rows is not None and len(rows) == n_matrix:
+            return self.chn_coords_all[rows, 1]
+        if n_matrix == len(self.chn_coords):
+            return self.chn_coords[:, 1]
+        return None
+
     def _matrix_depth_geometry(self, rows, n_matrix):
         """Affine display geometry derived from matrix channel rows."""
-        if rows is not None and len(rows) == n_matrix:
-            depths = self.chn_coords_all[rows, 1]
-        elif n_matrix == len(self.chn_coords):
-            depths = self.chn_coords[:, 1]
-        else:
+        depths = self._matrix_row_depths(rows, n_matrix)
+        if depths is None:
             depths = np.array([self.chn_min, self.chn_max], dtype=float)
 
         unique_depths = np.unique(depths)
@@ -944,8 +999,13 @@ class PlotData:
             n_matrix = this_corr.shape[0]
             scale, offset_y, x_range = self._matrix_depth_geometry(depth_rows, n_matrix)
 
-            # Set color range from 95th percentile of off-diagonal values
+            # Set color range from 95th percentile of off-diagonal values,
+            # restricted to the in-brain x in-brain sub-block when known so
+            # out-of-brain channels don't blow out the range.
             mask = ~np.eye(n_matrix, dtype=bool)
+            inb = self._in_brain_col_mask(self._matrix_row_depths(depth_rows, n_matrix))
+            if inb is not None and inb.shape[0] == n_matrix:
+                mask &= np.outer(inb, inb)
             max_corr = (
                 np.quantile(np.abs(this_corr[mask]), 0.95) if np.any(mask) else 1.0
             )
@@ -984,9 +1044,15 @@ class PlotData:
                 magnitude = np.abs(coh)
                 phase = np.angle(coh)  # radians, [-pi, pi]
 
-                # Scale saturation: map 95th percentile of
-                # off-diagonal magnitude to full saturation
+                # Scale saturation: map 95th percentile of off-diagonal
+                # magnitude to full saturation, restricted to the in-brain
+                # sub-block when known.
                 off_diag = ~np.eye(coh.shape[0], dtype=bool)
+                inb = self._in_brain_col_mask(
+                    self._matrix_row_depths(depth_rows, coh.shape[0])
+                )
+                if inb is not None and inb.shape[0] == coh.shape[0]:
+                    off_diag &= np.outer(inb, inb)
                 max_mag = (
                     np.quantile(magnitude[off_diag], 0.95) if np.any(off_diag) else 1.0
                 )
