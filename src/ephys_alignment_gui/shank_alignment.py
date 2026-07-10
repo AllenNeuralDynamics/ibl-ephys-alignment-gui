@@ -25,7 +25,21 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
+
 logger = logging.getLogger(__name__)
+
+
+def _edit_history_attr(name: str) -> property:
+    """Delegate a compatibility attribute to ``edit_history``."""
+
+    def _get(self: Any) -> Any:
+        return getattr(self.edit_history, name)
+
+    def _set(self: Any, value: Any) -> None:
+        setattr(self.edit_history, name, value)
+
+    return property(_get, _set)
 
 
 class ShankAlignment:
@@ -36,8 +50,22 @@ class ShankAlignment:
     shank_idx : int
         Zero-based index of this shank within the probe.
     max_idx : int
-        Size of the cyclic fit/undo buffer (number of retained moves).
+        Size of the transient cyclic fit/undo buffer.
     """
+
+    # Compatibility accessors for the edit buffer. The storage lives on
+    # AlignmentEditHistory; callers can keep using ``shank.idx`` etc while the
+    # broader ProbeSession split proceeds.
+    idx = _edit_history_attr("idx")
+    current_idx = _edit_history_attr("current_idx")
+    total_idx = _edit_history_attr("total_idx")
+    last_idx = _edit_history_attr("last_idx")
+    diff_idx = _edit_history_attr("diff_idx")
+    idx_prev = _edit_history_attr("idx_prev")
+    max_idx = _edit_history_attr("max_idx")
+    track = _edit_history_attr("track")
+    features = _edit_history_attr("features")
+    lin_fit_history = _edit_history_attr("lin_fit_history")
 
     def __init__(self, shank_idx: int, max_idx: int = 10) -> None:
         self.shank_idx: int = shank_idx
@@ -58,17 +86,8 @@ class ShankAlignment:
         # Dropdown-ordered keys, newest first, with "original" appended.
         self.prev_align: list[str] = ["original"]
 
-        # -- Cyclic fit / undo buffer (per shank) --
-        self.max_idx: int = max_idx
-        self.idx: int = 0
-        self.current_idx: int = 0
-        self.total_idx: int = 0
-        self.last_idx: int = 0
-        self.diff_idx: int = 0
-        self.idx_prev: int = 0
-        self.track: list[Any] = [0] * (max_idx + 1)
-        self.features: list[Any] = [0] * (max_idx + 1)
-        self.lin_fit_history: list[bool] = [True] * (max_idx + 1)
+        # -- Transient fit / undo buffer (per shank) --
+        self.edit_history = AlignmentEditHistory(max_idx=max_idx)
 
         # -- Currently-selected starting alignment --
         self.feature_prev: Any = None

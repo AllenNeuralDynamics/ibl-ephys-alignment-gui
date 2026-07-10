@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui import shank_alignment
+from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 from ephys_alignment_gui.shank_alignment import ShankAlignment
 
 
@@ -27,6 +28,34 @@ def test_get_alignment_idx_original_and_out_of_range():
     assert sa.prev_align == ["original"]
     assert sa.get_alignment_idx(0) == (None, None)
     assert sa.get_alignment_idx(5) == (None, None)
+
+
+def test_edit_history_delegates_legacy_fit_attributes():
+    sa = ShankAlignment(0, max_idx=3)
+
+    assert isinstance(sa.edit_history, AlignmentEditHistory)
+    assert sa.max_idx == 3
+    assert len(sa.features) == 4
+
+    sa.idx = 2
+    sa.current_idx = 5
+    sa.total_idx = 6
+    sa.last_idx = 4
+    sa.diff_idx = 1
+    sa.idx_prev = 1
+    sa.features[2] = np.array([1.0])
+    sa.track[2] = np.array([2.0])
+    sa.lin_fit_history[2] = False
+
+    assert sa.edit_history.idx == 2
+    assert sa.edit_history.current_idx == 5
+    assert sa.edit_history.total_idx == 6
+    assert sa.edit_history.last_idx == 4
+    assert sa.edit_history.diff_idx == 1
+    assert sa.edit_history.idx_prev == 1
+    np.testing.assert_array_equal(sa.edit_history.features[2], [1.0])
+    np.testing.assert_array_equal(sa.edit_history.track[2], [2.0])
+    assert not sa.edit_history.lin_fit_history[2]
 
 
 def test_add_alignment_and_roundtrip():
