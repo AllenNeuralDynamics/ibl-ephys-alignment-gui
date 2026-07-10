@@ -28,6 +28,14 @@ from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.thread_worker import Worker
+from ephys_alignment_gui.workflow import (
+    CHOOSE_OUTPUT_FOLDER,
+    Blocked,
+    LoadDataState,
+    Ok,
+    Requirement,
+    WorkflowPolicy,
+)
 from ephys_alignment_gui.windows.features_across_region import (
     RegionFeatureWindow,
 )
@@ -232,6 +240,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._empty_state_item: Any = None
 
         self.loaddata = LoadDataLocal()
+        self.workflow_policy = WorkflowPolicy()
 
         self.allen = self.loaddata.load_allen_csv()
         self.init_region_lookup(self.allen)
@@ -2282,29 +2291,56 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
-        if self.loaddata.probe_info is None:
-            logger.error("Must select a probe first")
-            return
+        result = self.workflow_policy.can_load_data(self._load_data_state())
+        if isinstance(result, Blocked):
+            if not self._handle_load_data_blocked(result):
+                return
+            result = self.workflow_policy.can_load_data(self._load_data_state())
 
-        if self.loaddata.n_shanks == 0:
-            logger.error("Channel info not loaded. Please select a probe first.")
-            return
-
-        if not self._ensure_output_directory_for_load():
+        if not isinstance(result, Ok):
+            if isinstance(result, Blocked):
+                self._log_requirement(result.first)
             return
 
         logger.info("Load Data button pressed")
         self.load_heavy_data()
 
-    def _ensure_output_directory_for_load(self) -> bool:
+    def _load_data_state(self) -> LoadDataState:
+        """Current GUI state relevant to the Load Data workflow policy."""
+        return LoadDataState(
+            probe_selected=self.loaddata.probe_info is not None,
+            channel_info_loaded=self.loaddata.n_shanks != 0,
+            output_directory_set=self.output_directory is not None,
+        )
+
+    def _handle_load_data_blocked(self, result: Blocked) -> bool:
+        """Render the first load-data requirement and return whether to retry."""
+        requirement = result.first
+        if requirement.action == CHOOSE_OUTPUT_FOLDER:
+            return self._ensure_output_directory_for_load(requirement)
+        self._log_requirement(requirement)
+        return False
+
+    @staticmethod
+    def _log_requirement(requirement: Requirement) -> None:
+        logger.error(requirement.message)
+
+    def _ensure_output_directory_for_load(
+        self, requirement: Requirement | None = None
+    ) -> bool:
         """Require a save location before data workflows can autosave."""
         if self.output_directory is not None:
             return True
 
+        requirement = requirement or Requirement(
+            code="output_required",
+            message="Choose an output folder before loading data.",
+            action=CHOOSE_OUTPUT_FOLDER,
+        )
         msg = QtWidgets.QMessageBox(self)
         msg.setIcon(QtWidgets.QMessageBox.Warning)
         msg.setWindowTitle("Output Folder Required")
-        msg.setText("Choose an output folder before loading data.")
+        msg.setText(requirement.message)
         msg.setInformativeText(
             "The GUI saves in-progress alignments when switching probes or sessions."
         )
