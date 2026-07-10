@@ -151,7 +151,10 @@ class AlignmentController:
         return RecordingSelected(recording_id, probes=list(probes))
 
     def select_probe(
-        self, recording_id: str, probe_name: str
+        self,
+        recording_id: str,
+        probe_name: str,
+        ephys_stream: Any | None = None,
     ) -> ProbeSelected | Failed:
         """Select a probe, load channel metadata, and refresh output state."""
         if self.loader.mouse_root is None:
@@ -164,7 +167,10 @@ class AlignmentController:
         self.document.select_probe(recording_id, probe_name)
         try:
             self.loader.select_probe(recording_id, probe_name)
-            self.loader.load_channel_info()
+            if ephys_stream is None:
+                self.loader.load_channel_info()
+            else:
+                self.loader.set_ephys_stream(ephys_stream)
             self.document.set_channel_info_loaded(True)
             shanks = self.loader.get_shank_list() or []
             output_result = self.derive_output_directory()

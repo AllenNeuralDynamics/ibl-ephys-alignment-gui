@@ -2004,7 +2004,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         load does (setup then restore), so recreate reconstructs the WIP rather
         than resetting it.
         """
-        result = self.controller.select_probe(session_name, probe_name)
+        result = self.controller.select_probe(
+            session_name,
+            probe_name,
+            ephys_stream=cached.ephys_stream,
+        )
         if isinstance(result, Failed):
             logger.error(result.message)
             return False
@@ -2066,6 +2070,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session.sess_notes,
                 data,
             ) = self.loaddata.get_ephys_data(self.session.current_shank_idx)
+            self.session.ephys_stream = self.loaddata.ephys_stream
             self.session.data = data
 
             if not self.session.probe_path:

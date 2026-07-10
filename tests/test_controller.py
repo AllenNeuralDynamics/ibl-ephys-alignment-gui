@@ -46,6 +46,7 @@ class FakeLoader:
         self.probe_info: FakeProbeInfo | None = None
         self.n_shanks = 0
         self.load_channel_info_called = False
+        self.ephys_stream = None
 
     def set_mouse_root(self, mouse_root: Path) -> FakeMouseRoot:
         probes = {
@@ -79,6 +80,11 @@ class FakeLoader:
         if self.probe_info is None:
             raise RuntimeError("no probe selected")
         self.load_channel_info_called = True
+
+    def set_ephys_stream(self, ephys_stream) -> None:
+        if self.probe_info is None:
+            raise RuntimeError("no probe selected")
+        self.ephys_stream = ephys_stream
 
     def get_shank_list(self) -> list[str] | None:
         if self.n_shanks == 1:
@@ -193,6 +199,23 @@ def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
     assert result.n_shanks == 2
     assert result.output_directory == output_root / "rec1" / "probeA"
     assert result.output_directory.is_dir()
+
+
+def test_select_probe_can_restore_cached_stream_without_loading_channel_info(tmp_path):
+    doc = AlignmentDocument()
+    loader = FakeLoader()
+    controller = AlignmentController(doc, loader)
+    mouse_root = tmp_path / "mouse"
+    mouse_root.mkdir()
+    controller.set_mouse_root(mouse_root)
+    cached_stream = object()
+
+    result = controller.select_probe("rec1", "probeA", ephys_stream=cached_stream)
+
+    assert isinstance(result, ProbeSelected)
+    assert not loader.load_channel_info_called
+    assert loader.ephys_stream is cached_stream
+    assert doc.channel_info_loaded
 
 
 def test_output_root_does_not_derive_from_stale_loader_probe(tmp_path):

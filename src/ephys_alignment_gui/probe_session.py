@@ -256,6 +256,7 @@ class ProbeSession:
         self.sess_notes: str = ""
 
         # -- Large per-session objects (plotdata / slice_data are per-shank) --
+        self.ephys_stream: Any = None
         self.data: Any = None
 
         # -- Computed plot data --

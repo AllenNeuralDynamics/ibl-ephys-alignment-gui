@@ -21,22 +21,22 @@ from iblatlas import atlas
 from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
 from numpy.typing import NDArray
-from one import alf
 
 from ephys_alignment_gui.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
-)
-from ephys_alignment_gui.channel_geometry import (
-    n_shanks_from_geometry,
-    rows_for_shank,
-    valid_shank_indices,
 )
 from ephys_alignment_gui.datapackage_loader import (
     DataPackageError,
     MouseRoot,
     ProbeInfo,
     load_mouse_root,
+)
+from ephys_alignment_gui.ephys_data_service import (
+    ChannelCollectionView,
+    ChannelTable,
+    EphysDataService,
+    EphysStreamData,
 )
 from ephys_alignment_gui.rigid_rotation import (
     image_center_physical,
@@ -146,6 +146,10 @@ class LoadDataLocal:
     chn_contact_id_all: NDArray | None = None
     chn_shank_ind_all: NDArray | None = None
     n_shanks: int = 0
+    channel_table: ChannelTable | None = None
+    ephys_stream: EphysStreamData | None = None
+    channel_collection: ChannelCollectionView | None = None
+    ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
     channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -184,6 +188,9 @@ class LoadDataLocal:
         self.chn_contact_id_all = None
         self.chn_shank_ind_all = None
         self.n_shanks = 0
+        self.channel_table = None
+        self.ephys_stream = None
+        self.channel_collection = None
         return mr
 
     def list_sessions(self) -> list[str]:
@@ -213,6 +220,9 @@ class LoadDataLocal:
         self.chn_contact_id_all = None
         self.chn_shank_ind_all = None
         self.n_shanks = probe.num_shanks
+        self.channel_table = None
+        self.ephys_stream = None
+        self.channel_collection = None
         return probe
 
     @property
@@ -228,38 +238,12 @@ class LoadDataLocal:
         """Load channel local coordinates from the selected probe's ephys ALF."""
         if self.probe_info is None:
             raise RuntimeError("No probe selected — call select_probe() first")
-        if self.probe_info.ephys_dir is None:
-            raise DataPackageError(
-                f"Probe {self.probe_info.probe_name!r} has no ephys dir "
-                "(preprocessing ran with skip_ephys=true)."
-            )
-        path = self.probe_info.ephys_dir / "channels.localCoordinates.npy"
-        self.chn_coords_all = np.load(path)
+        channel_table = self.ephys_data_service.load_channel_table(self.probe_info)
+        self._set_channel_table(channel_table)
+        self.ephys_stream = None
+        self.channel_collection = None
 
-        contact_path = self.probe_info.ephys_dir / "channels.contactId.npy"
-        self.chn_contact_id_all = (
-            np.load(contact_path, allow_pickle=False)
-            if contact_path.is_file()
-            else None
-        )
-
-        shank_path = self.probe_info.ephys_dir / "channels.shankInd.npy"
-        shank_ind = np.load(shank_path) if shank_path.is_file() else None
-        self.chn_shank_ind_all = valid_shank_indices(
-            shank_ind, self.chn_coords_all.shape[0]
-        )
-        if shank_ind is not None and self.chn_shank_ind_all is None:
-            logger.warning(
-                "Ignoring invalid channels.shankInd.npy for %s: expected "
-                "shape (%d,), got %s",
-                self.probe_info.probe_name,
-                self.chn_coords_all.shape[0],
-                np.asarray(shank_ind).shape,
-            )
-
-        geom_n_shanks = n_shanks_from_geometry(
-            self.chn_coords_all, self.chn_shank_ind_all
-        )
+        geom_n_shanks = channel_table.n_shanks
         if geom_n_shanks != self.probe_info.num_shanks:
             logger.warning(
                 "Channel table implies %d shanks but datapackage says %d; "
@@ -268,6 +252,32 @@ class LoadDataLocal:
                 self.probe_info.num_shanks,
             )
         self.n_shanks = geom_n_shanks
+
+    def set_ephys_stream(self, stream: EphysStreamData) -> None:
+        """Attach an already-loaded runtime stream to this loader adapter."""
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
+        if stream.recording_id != self.probe_info.recording_id:
+            raise ValueError(
+                "Cached stream recording does not match selected recording: "
+                f"{stream.recording_id!r} != {self.probe_info.recording_id!r}"
+            )
+        if stream.ephys_collection != self.probe_info.ephys_collection:
+            raise ValueError(
+                "Cached stream collection does not match selected collection: "
+                f"{stream.ephys_collection!r} != {self.probe_info.ephys_collection!r}"
+            )
+        self.ephys_stream = stream
+        self._set_channel_table(stream.channel_table)
+        self.channel_collection = None
+
+    def _set_channel_table(self, channel_table: ChannelTable) -> None:
+        """Update legacy channel-table adapter fields from a runtime model."""
+        self.channel_table = channel_table
+        self.chn_coords_all = channel_table.local_coordinates
+        self.chn_contact_id_all = channel_table.contact_ids
+        self.chn_shank_ind_all = channel_table.shank_indices
+        self.n_shanks = channel_table.n_shanks
 
     def get_shank_list(self) -> list[str] | None:
         """Build the shank-picker list for the current probe."""
@@ -360,22 +370,42 @@ class LoadDataLocal:
         self._lazy_channel_paths = dict(hist.additional_channels)
         logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
 
-    def set_channels_for_shank(self, shank_idx: int):
+    def set_channels_for_shank(self, shank_idx: int) -> NDArray:
         """Filter cached channel coordinates for selected shank. No disk I/O."""
-        if self.chn_coords_all is None:
+        if self.channel_table is None:
             raise RuntimeError("Must call load_channel_info() first")
-        rows = rows_for_shank(
-            self.chn_coords_all,
-            self.chn_shank_ind_all,
-            shank_idx,
-            self.n_shanks,
-        )
-        chn_coords = self.chn_coords_all[rows, :]
+        if self.probe_info is None:
+            raise RuntimeError("No probe selected — call select_probe() first")
+
+        if self.ephys_stream is not None:
+            collection = self.ephys_stream.channel_collection(shank_idx)
+        else:
+            rows = self.channel_table.rows_for_shank(shank_idx)
+            collection = ChannelCollectionView(
+                stream=EphysStreamData(
+                    recording_id=self.probe_info.recording_id,
+                    ephys_collection=self.probe_info.ephys_collection,
+                    ephys_dir=self.probe_info.ephys_dir or Path(),
+                    channel_table=self.channel_table,
+                    alf_data={},
+                    session_notes="",
+                    probe_id=self.probe_info.probe_id,
+                    probe_name=self.probe_info.probe_name,
+                    logical_probe=self.probe_info.logical_probe,
+                ),
+                shank_idx=shank_idx,
+                rows=rows,
+            )
+
+        self.channel_collection = collection
+        chn_coords = collection.local_coordinates
         self.chn_coords = chn_coords
 
-        return chn_coords[:, 1]  # Return depths
+        return collection.depths
 
-    def get_ephys_data(self, shank_idx: int):
+    def get_ephys_data(
+        self, shank_idx: int
+    ) -> tuple[Path, NDArray, str, dict[str, Any]]:
         """Load ephys ALF for the current probe + shank.
 
         Returns
@@ -391,77 +421,25 @@ class LoadDataLocal:
             raise DataPackageError(
                 f"Probe {self.probe_info.probe_name!r} has no ephys dir"
             )
-        if self.chn_coords_all is None:
+        if self.channel_table is None:
             raise RuntimeError("Must call load_channel_info() first")
 
-        ephys_dir = self.probe_info.ephys_dir
-        logger.info(f"get_ephys_data: loading from {ephys_dir}, shank_idx={shank_idx}")
+        if self.ephys_stream is None:
+            self.ephys_stream = self.ephys_data_service.load_stream_data(
+                self.probe_info,
+                channel_table=self.channel_table,
+            )
 
-        rows = rows_for_shank(
-            self.chn_coords_all,
-            self.chn_shank_ind_all,
-            shank_idx,
-            self.n_shanks,
+        collection = self.ephys_stream.channel_collection(shank_idx)
+        self.channel_collection = collection
+        self.chn_coords = collection.local_coordinates
+
+        return (
+            self.ephys_stream.ephys_dir,
+            collection.depths,
+            self.ephys_stream.session_notes,
+            self.ephys_stream.alf_data,
         )
-        self.chn_coords = self.chn_coords_all[rows, :]
-        chn_depths = self.chn_coords[:, 1]
-
-        data = {}
-        values = [
-            "spikes",
-            "clusters",
-            "channels",
-            "rms_AP",
-            "rms_LF",
-            "rms_AP_main",
-            "rms_LF_main",
-            "psd_lf",
-            "psd_lf_main",
-        ]
-        objects = [
-            "spikes",
-            "clusters",
-            "channels",
-            "ephysTimeRmsAP",
-            "ephysTimeRmsLF",
-            "ephysTimeRmsAPMain",
-            "ephysTimeRmsLFMain",
-            "ephysSpectralDensityLF",
-            "ephysSpectralDensityLFMain",
-        ]
-        for v, o in zip(values, objects):
-            try:
-                data[v] = alfio.load_object(ephys_dir, o)
-                data[v]["exists"] = True
-                if "rms" in v:
-                    data[v]["xaxis"] = "Time (s)"
-            except alf.exceptions.ALFObjectNotFound:
-                logger.warning(f"{v} data was not found, some plots will not display")
-                data[v] = {"exists": False}
-
-        data["rf_map"] = {"exists": False}
-        data["pass_stim"] = {"exists": False}
-        data["gabor"] = {"exists": False}
-        if data["channels"]["exists"] and self.chn_shank_ind_all is not None:
-            data["channels"]["shankInd"] = self.chn_shank_ind_all
-        if data["channels"]["exists"] and self.chn_contact_id_all is not None:
-            data["channels"]["contactId"] = self.chn_contact_id_all
-
-        shank_indices_file = ephys_dir / "spike_shank_indices.npy"
-        if shank_indices_file.exists():
-            data["spike_shanks"] = np.load(shank_indices_file)
-
-        unit_shank_indices_file = ephys_dir / "unit_shank_indices.npy"
-        if unit_shank_indices_file.exists():
-            data["unit_shank_indices"] = np.load(unit_shank_indices_file)
-
-        notes_file = ephys_dir / "session_notes.txt"
-        if notes_file.exists():
-            sess_notes = notes_file.read_text()
-        else:
-            sess_notes = "No notes for this session"
-
-        return ephys_dir, chn_depths, sess_notes, data
 
     def load_allen_csv(self):
         allen_path = Path(Path(atlas.__file__).parent, "allen_structure_tree.csv")
