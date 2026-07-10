@@ -32,6 +32,7 @@ from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
+from ephys_alignment_gui.image_levels import brain_percentile_levels
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
@@ -1149,6 +1150,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.perp_image_item.setLevels(levels)
         self.session.slice_hist_levels = levels
 
+    def refresh_perpendicular_histology(self) -> None:
+        """Refresh perpendicular slice for the currently selected scalar slice."""
+        channel_name = self._current_scalar_slice_channel()
+        if channel_name is None:
+            return
+        self.plot_perpendicular_histology(channel_name)
+
+    def _current_scalar_slice_channel(self) -> str | None:
+        """Return the selected scalar slice channel, if the slice UI has one."""
+        if not hasattr(self, "slice_options_group"):
+            return None
+        action = self.slice_options_group.checkedAction()
+        if action is None:
+            return None
+        payload = action.data()
+        if payload is None:
+            return None
+        data_attr, img_type = payload
+        data = getattr(self.session, data_attr, None)
+        if data is None or img_type not in data:
+            return None
+        image = data[img_type]
+        if img_type == "label" or np.asarray(image).ndim == 3:
+            return None
+        return img_type
+
     def offset_hist_data(self) -> None:
         """
         Offset location of probe tip along probe track
@@ -1381,11 +1408,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.slice_item = None
 
         if img_type == "label":
+            self.session.slice_hist_levels = None
+            self.session.perp_image_item = None
+            self.fig_hist_perp.clear()
             self.fig_slice_layout.addItem(self.fig_slice_hist_alt, 0, 1)
             self.slice_item = self.fig_slice_hist_alt
         elif data[img_type].ndim == 3:
             # Pre-rendered RGBA image (e.g. coherency phase) —
             # no colormap or histogram needed
+            self.session.slice_hist_levels = None
+            self.session.perp_image_item = None
+            self.fig_hist_perp.clear()
             pass
         else:
             self.session.slice_color_bar = ColorBar("cividis")
@@ -1397,12 +1430,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_slice_hist.gradient.setColorMap(self.session.slice_color_bar.map)
             self.fig_slice_hist.autoHistogramRange()
             self.fig_slice_layout.addItem(self.fig_slice_hist, 0, 1)
-            hist_levels = self.fig_slice_hist.getLevels()
-            hist_val, hist_count = img.getHistogram()
-            upper_idx = np.where(hist_count > 10)[0][-1]
-            upper_val = hist_val[upper_idx]
-            if hist_levels[0] != 0:
-                self.fig_slice_hist.setLevels(min=hist_levels[0], max=upper_val)
+            display_levels = brain_percentile_levels(
+                data[img_type],
+                data.get("annotation_ids"),
+            )
+            if display_levels is not None:
+                self.fig_slice_hist.setLevels(
+                    min=display_levels[0], max=display_levels[1]
+                )
+            else:
+                hist_levels = self.fig_slice_hist.getLevels()
+                hist_val, hist_count = img.getHistogram()
+                populated = np.where(hist_count > 10)[0]
+                if populated.size and hist_levels[0] != 0:
+                    upper_val = hist_val[populated[-1]]
+                    self.fig_slice_hist.setLevels(min=hist_levels[0], max=upper_val)
 
             self.session.slice_hist_levels = self.fig_slice_hist.getLevels()
 
@@ -2446,7 +2488,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.plot_histology_ref(self.fig_hist_ref)
         self.plot_histology(self.fig_hist)
-        self.plot_perpendicular_histology()
+        self.refresh_perpendicular_histology()
         # force labels off then on to refresh
         # TODO better way to do this?
         self.session.label_status = False

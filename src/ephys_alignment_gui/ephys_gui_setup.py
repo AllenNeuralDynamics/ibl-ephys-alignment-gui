@@ -578,7 +578,7 @@ class Setup:
 
         # These are accessed sepperatly so have conditional activation
         for key in self.session.slice_data.keys():
-            if key in ["ccf", "label", "scale", "offset"]:
+            if key in ["ccf", "label", "annotation_ids", "scale", "offset"]:
                 continue
             else:
                 this_slice_action = QtWidgets.QAction(

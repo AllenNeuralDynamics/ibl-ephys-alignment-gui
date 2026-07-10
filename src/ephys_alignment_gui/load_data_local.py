@@ -66,7 +66,8 @@ class SmartSliceDict(dict):
     ) -> None:
         """
         Parameters:
-        - eager_data: dict with pre-computed data (ccf, label, scale, offset, histology_registration)
+        - eager_data: dict with pre-computed data (ccf, label,
+          annotation_ids, scale, offset, histology_registration)
         - lazy_channel_names: list of channel names for lazy loading
         - trajectory_id: unique ID for current trajectory
         - load_and_slice_callback: callable(channel_name) -> slice_array
@@ -84,7 +85,7 @@ class SmartSliceDict(dict):
     def __getitem__(self, key):
         """Load/compute slice on first access for current trajectory."""
         # Metadata keys always return directly
-        if key in ["ccf", "label", "scale", "offset"]:
+        if key in ["ccf", "label", "annotation_ids", "scale", "offset"]:
             return super().__getitem__(key)
 
         value = super().__getitem__(key)
@@ -657,11 +658,11 @@ class LoadDataLocal:
             self.brain_atlas.image,
             index,  # type: ignore
         )
-        label_slice = _cut_slice_from_atlas_image(
+        annotation_slice = _cut_slice_from_atlas_image(
             self.brain_atlas.label,
             index,
-            self.brain_atlas._label2rgb,  # type: ignore
         )
+        label_slice = self.brain_atlas._label2rgb(annotation_slice)  # type: ignore
         x_dimno = self.brain_atlas.xyz2dims[0]
         width = [
             self.brain_atlas.bc.i2x(0),
@@ -677,6 +678,7 @@ class LoadDataLocal:
         eager_data = {
             "ccf": ccf_slice,
             "label": label_slice,
+            "annotation_ids": annotation_slice,
             "scale": np.array(
                 [
                     (width[-1] - width[0]) / ccf_slice.shape[0],
