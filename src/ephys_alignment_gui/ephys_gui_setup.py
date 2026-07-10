@@ -548,83 +548,40 @@ class Setup:
 
     def init_slice_menu(self) -> None:
         menu_bar = self.menuBar()
-        # Define all coronal slice plot options. Each action stores
-        # (session_attr_name, slice_data_key) via setData() so callers can
-        # later look up the data source without re-deriving it from the label.
-        slice_ccf = QtWidgets.QAction("CCF", self, checkable=True, checked=False)
-        slice_ccf.setData(("slice_data", "ccf"))
-        slice_ccf.triggered.connect(
-            lambda: self.plot_slice(self.session.slice_data, "ccf")
+        slice_options = menu_bar.addMenu("Slice Plots")
+        self.slice_options_group = QtWidgets.QActionGroup(slice_options)
+        self.slice_options_group.setExclusive(True)
+        self.slice_init = None
+
+        menu_items = self.slice_display_policy.menu_items(
+            slice_data=self.session.slice_data,
+            fp_slice_data=self.session.fp_slice_data,
+            offline=self.offline,
         )
-        slice_label = QtWidgets.QAction(
-            "Annotation", self, checkable=True, checked=False
+        default_selection = self.slice_display_policy.default_selection(
+            self.session.slice_data
         )
-        slice_label.setData(("slice_data", "label"))
-        slice_label.triggered.connect(
-            lambda: self.plot_slice(self.session.slice_data, "label")
-        )
-        if self.session.fp_slice_data is not None:
-            fp_slice_label = QtWidgets.QAction(
-                "Annotation FP", self, checkable=True, checked=False
-            )
-            fp_slice_label.setData(("fp_slice_data", "label"))
-            fp_slice_label.triggered.connect(
-                lambda: self.plot_slice(self.session.fp_slice_data, "label")
-            )
-        if not self.offline:
-            slice_hist_cb = QtWidgets.QAction(
-                "Histology cerebellar example",
+        for item in menu_items:
+            action = QtWidgets.QAction(
+                item.label,
                 self,
                 checkable=True,
                 checked=False,
             )
-            slice_hist_cb.setData(("slice_data", "hist_cb"))
-            slice_hist_cb.triggered.connect(
-                lambda: self.plot_slice(self.session.slice_data, "hist_cb")
+            action.setData(item.selection.to_payload())
+            action.triggered.connect(
+                lambda _checked=False, selection=item.selection: self.plot_slice(
+                    getattr(self.session, selection.data_attr),
+                    selection.key,
+                )
             )
+            slice_options.addAction(action)
+            self.slice_options_group.addAction(action)
+            if item.selection == default_selection:
+                self.slice_init = action
 
-        # Add menu bar for slice plot
-        slice_options = menu_bar.addMenu("Slice Plots")
-        # Add action group so we can toggle through slice plot options
-        self.slice_options_group = QtWidgets.QActionGroup(slice_options)
-        self.slice_options_group.setExclusive(True)
-        slice_options.addAction(slice_ccf)
-        self.slice_options_group.addAction(slice_ccf)
-        slice_options.addAction(slice_label)
-        self.slice_options_group.addAction(slice_label)
-        if self.session.fp_slice_data is not None:
-            slice_options.addAction(fp_slice_label)
-            self.slice_options_group.addAction(fp_slice_label)
-
-        if not self.offline:
-            slice_options.addAction(slice_hist_cb)
-            self.slice_options_group.addAction(slice_hist_cb)
-
-        # Default to the histology registration channel when present (set in
-        # the loop below); otherwise fall back to the CCF template.
-        self.slice_init = slice_ccf
-
-        # These are accessed sepperatly so have conditional activation
-        for key in self.session.slice_data.keys():
-            if key in ["ccf", "label", "annotation_ids", "scale", "offset"]:
-                continue
-            else:
-                this_slice_action = QtWidgets.QAction(
-                    key, self, checkable=True, checked=False
-                )
-                this_slice_action.setData(("slice_data", key))
-                this_slice_action.triggered.connect(
-                    lambda checked, item=key: self.plot_slice(
-                        self.session.slice_data, item
-                    )
-                )
-                slice_options.addAction(this_slice_action)
-                self.slice_options_group.addAction(this_slice_action)
-                # Prefer the registered histology as the default slice/perp
-                # volume — it's the tissue the user is aligning to, not the
-                # atlas template.
-                if key == "histology_registration":
-                    self.slice_init = this_slice_action
+        if self.slice_init is None and self.slice_options_group.actions():
+            self.slice_init = self.slice_options_group.actions()[0]
 
     def init_interaction_features(self) -> None:
         """

@@ -15,6 +15,7 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.controller.alignment_repository is workspace.alignment_repository
     assert workspace.loader.ephys_data_service is workspace.ephys_data_service
     assert workspace.loader.slice_service is workspace.slice_service
+    assert workspace.slice_display_policy is not None
 
 
 def test_workspace_owns_stream_cache_boundary() -> None:

@@ -31,9 +31,9 @@ from ephys_alignment_gui.controller import (
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
-from ephys_alignment_gui.image_levels import brain_percentile_levels
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.workflow import (
     CHOOSE_OUTPUT_FOLDER,
@@ -218,6 +218,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
         self.plot_data_factory = self.workspace.plot_data_factory
+        self.slice_display_policy = self.workspace.slice_display_policy
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
@@ -1153,17 +1154,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         action = self.slice_options_group.checkedAction()
         if action is None:
             return None
-        payload = action.data()
-        if payload is None:
+        selection = self.slice_display_policy.selection_from_payload(action.data())
+        if selection is None:
             return None
-        data_attr, img_type = payload
-        data = getattr(self.session, data_attr, None)
-        if data is None or img_type not in data:
+        return self.slice_display_policy.scalar_channel_for_selection(
+            self._slice_data_by_attr(),
+            selection,
+        )
+
+    def _slice_data_by_attr(self) -> dict[str, Any]:
+        """Return slice data keyed by the QAction payload data-attr names."""
+        return {
+            "slice_data": self.session.slice_data,
+            "fp_slice_data": self.session.fp_slice_data,
+        }
+
+    def _slice_action_for_selection(self, selection: SliceSelection) -> Any:
+        """Find the QAction that represents a slice selection."""
+        if not hasattr(self, "slice_options_group"):
             return None
-        image = data[img_type]
-        if img_type == "label" or np.asarray(image).ndim == 3:
-            return None
-        return img_type
+        for action in self.slice_options_group.actions():
+            action_selection = self.slice_display_policy.selection_from_payload(
+                action.data()
+            )
+            if action_selection == selection:
+                return action
+        return None
 
     def offset_hist_data(self) -> None:
         """
@@ -1398,8 +1414,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_slice.clear()
         self.session.slice_chns = []
         self.session.slice_lines = []
+        image = data[img_type]
+        decision = self.slice_display_policy.render_decision(data, img_type)
         img = pg.ImageItem()
-        img.setImage(data[img_type])
+        img.setImage(image)
         transform = [
             data["scale"][0],
             0.0,
@@ -1418,13 +1436,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_slice_layout.removeItem(self.slice_item)
             self.slice_item = None
 
-        if img_type == "label":
+        if decision.kind is SliceImageKind.LABEL:
             self.session.slice_hist_levels = None
             self.session.perp_image_item = None
             self.fig_hist_perp.clear()
             self.fig_slice_layout.addItem(self.fig_slice_hist_alt, 0, 1)
             self.slice_item = self.fig_slice_hist_alt
-        elif data[img_type].ndim == 3:
+        elif decision.kind is SliceImageKind.RGB:
             # Pre-rendered RGBA image (e.g. coherency phase) —
             # no colormap or histogram needed
             self.session.slice_hist_levels = None
@@ -1441,13 +1459,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_slice_hist.gradient.setColorMap(self.session.slice_color_bar.map)
             self.fig_slice_hist.autoHistogramRange()
             self.fig_slice_layout.addItem(self.fig_slice_hist, 0, 1)
-            display_levels = brain_percentile_levels(
-                data[img_type],
-                data.get("annotation_ids"),
-            )
-            if display_levels is not None:
+            if decision.initial_levels is not None:
                 self.fig_slice_hist.setLevels(
-                    min=display_levels[0], max=display_levels[1]
+                    min=decision.initial_levels[0],
+                    max=decision.initial_levels[1],
                 )
             else:
                 hist_levels = self.fig_slice_hist.getLevels()
@@ -1463,7 +1478,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # showing in the coronal view, so the two are different views of the
             # same tissue. slice_hist_levels is set above, so the perp picks up
             # matched levels (same value -> same colour).
-            self.plot_perpendicular_histology(img_type)
+            self.plot_perpendicular_histology(decision.scalar_channel or img_type)
 
             # Live-update the perp levels as the user drags the histogram
             # handles (sigLevelsChanged fires continuously; the finished-only
@@ -2723,32 +2738,39 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # available for this probe; otherwise fall back to the default slice
         # (slice_init — the histology registration channel when present, else
         # CCF).
-        slice_payload = (
+        previous_selection = self.slice_display_policy.selection_from_payload(
             prev_slice_action.data() if prev_slice_action is not None else None
         )
-        slice_data_attr, slice_key = (
-            slice_payload if slice_payload is not None else (None, None)
+        default_selection = self.slice_display_policy.selection_from_payload(
+            self.slice_init.data()
         )
-        slice_data = (
-            getattr(self.session, slice_data_attr, None)
-            if slice_data_attr is not None
-            else None
-        )
-        if slice_data is not None and slice_key in slice_data:
-            prev_slice_action.setChecked(True)
-            self.plot_slice(slice_data, slice_key)
+        if default_selection is None:
+            logger.warning("No default slice selection is available")
         else:
-            init_attr, init_key = self.slice_init.data()
+            choice = self.slice_display_policy.choose_selection(
+                previous=previous_selection,
+                default=default_selection,
+                data_by_attr=self._slice_data_by_attr(),
+            )
+            selected_action = self._slice_action_for_selection(choice.selection)
+            if selected_action is None:
+                selected_action = self.slice_init
             if (
                 prev_slice_action is not None
-                and prev_slice_action is not self.slice_init
+                and selected_action is not prev_slice_action
+                and not choice.used_previous
             ):
                 logger.info(
                     f"Slice selection '{prev_slice_action.text()}' not available for "
-                    f"this probe; falling back to '{self.slice_init.text()}'"
+                    f"this probe; falling back to '{selected_action.text()}'"
                 )
-            self.slice_init.setChecked(True)
-            self.plot_slice(getattr(self.session, init_attr), init_key)
+            selected_action.setChecked(True)
+            selected_selection = self.slice_display_policy.selection_from_payload(
+                selected_action.data()
+            )
+            if selected_selection is not None:
+                slice_data = getattr(self.session, selected_selection.data_attr)
+                self.plot_slice(slice_data, selected_selection.key)
 
         # Only configure the view on first launch
         self.set_view(view=1, configure=self.configure and not preserve_plot_selection)

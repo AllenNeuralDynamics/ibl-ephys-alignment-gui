@@ -11,6 +11,7 @@ from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
 from ephys_alignment_gui.workflow import WorkflowPolicy
 
@@ -30,6 +31,7 @@ class AlignmentWorkspace:
     document: AlignmentDocument = field(default_factory=AlignmentDocument)
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
     slice_service: SliceService = field(default_factory=SliceService)
+    slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
     workflow_policy: WorkflowPolicy = field(default_factory=WorkflowPolicy)
     alignment_repository: AlignmentRepository = field(
         default_factory=AlignmentRepository
