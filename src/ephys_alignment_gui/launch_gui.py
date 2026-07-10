@@ -1823,8 +1823,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=self.load_data_button,
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
+            # Preserve the shank the user has selected so a (re)load lands on
+            # that shank rather than snapping back to shank 0. Load Probe is a
+            # per-probe op; shank switching is done via the dropdown. Fixes the
+            # dropdown <-> displayed-shank drift on load.
+            target_shank = (
+                self.session.current_shank_idx if self.session is not None else 0
+            )
             self._teardown_session()
             self.init_session_variables()
+            self.session.init_shanks(self.loaddata.n_shanks)
+            if self.session.has_shank(target_shank):
+                self.session.current_shank_idx = target_shank
+            logger.info(f"Loading probe data, active shank index {target_shank}")
 
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
@@ -2044,6 +2055,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
                 logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
 
+            # Declare the probe's shank count so per-shank delegated attribute
+            # access is valid, then reset to shank 0 for the new probe.
+            self.session.init_shanks(self.loaddata.n_shanks)
             self.session.current_shank_idx = 0
             self.session.feature_prev = None
             self.session.track_prev = None
@@ -2290,7 +2304,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                         item.sigPositionChanged.disconnect()
                     except (TypeError, AttributeError, RuntimeError):
                         pass
-        self.session.lines_features = np.empty((0, 3))
+        self.session.lines_features = np.empty((0, 4))
         self.session.lines_tracks = np.empty((0, 1))
         self.session.points = np.empty((0, 1))
 
@@ -2921,7 +2935,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.remove_lines_points()
-        self.session.lines_features = np.empty((0, 3))
+        self.session.lines_features = np.empty((0, 4))
         self.session.lines_tracks = np.empty((0, 1))
         self.session.points = np.empty((0, 1))
         if self.session.current_idx < self.session.last_idx:
