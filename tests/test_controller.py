@@ -20,7 +20,7 @@ from ephys_alignment_gui.controller import (
     ProbeSelected,
     RecordingSelected,
 )
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 
 
@@ -119,6 +119,11 @@ class FakeEphysDataService:
     def load_channel_table(self, probe: FakeProbeInfo) -> FakeChannelTable:
         self.loaded_probe = probe
         return FakeChannelTable(probe.num_shanks)
+
+
+class FailingEphysDataService(FakeEphysDataService):
+    def load_channel_table(self, probe: FakeProbeInfo) -> FakeChannelTable:
+        raise RuntimeError(f"cannot load {probe.probe_name}")
 
 
 class FakeOutputBuilder:
@@ -252,6 +257,8 @@ def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
     assert result.n_shanks == 2
     assert result.output_directory == output_root / "rec1" / "probeA"
     assert result.output_directory.is_dir()
+    assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 0)
+    assert doc.active_alignment_state is not None
 
 
 def test_select_probe_can_restore_cached_stream_without_loading_channel_info(tmp_path):
@@ -272,6 +279,25 @@ def test_select_probe_can_restore_cached_stream_without_loading_channel_info(tmp
     assert ephys_data_service.loaded_probe is None
     assert context.channel_table is cached_stream.channel_table
     assert doc.channel_info_loaded
+    assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 0)
+
+
+def test_select_probe_failure_does_not_create_alignment_state(tmp_path):
+    doc = AlignmentDocument()
+    controller, _, _ = make_controller(
+        doc,
+        ephys_data_service=FailingEphysDataService(),
+    )
+    mouse_root = tmp_path / "mouse"
+    mouse_root.mkdir()
+    controller.set_mouse_root(mouse_root)
+
+    result = controller.select_probe("rec1", "probeA")
+
+    assert isinstance(result, Failed)
+    assert not doc.channel_info_loaded
+    assert doc.selected_alignment_key is None
+    assert doc.alignment_states == {}
 
 
 def test_output_root_does_not_derive_from_stale_loader_probe(tmp_path):
@@ -291,7 +317,9 @@ def test_output_root_does_not_derive_from_stale_loader_probe(tmp_path):
 
 def test_load_data_preparation_and_finish_updates_document():
     doc = AlignmentDocument(data_loaded=True, selected_shank=1)
-    controller, _, _ = make_controller(doc)
+    context = FakeDataContext()
+    context.probe_info = FakeProbeInfo("rec1", "probeA", "rec1:probeA", 3)
+    controller, _, _ = make_controller(doc, context=context)
 
     prepared = controller.prepare_load_data()
     controller.finish_load_data(shank_idx=2)
@@ -299,6 +327,19 @@ def test_load_data_preparation_and_finish_updates_document():
     assert prepared.preserve_plot_selection
     assert doc.data_loaded
     assert doc.selected_shank == 2
+    assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 2)
+
+
+def test_set_selected_shank_updates_document_alignment_key(tmp_path):
+    doc = AlignmentDocument()
+    controller, _, _ = make_controller(doc)
+    controller.set_mouse_root(tmp_path)
+    controller.select_probe("rec1", "probeA")
+
+    controller.set_selected_shank(1)
+
+    assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 1)
+    assert doc.selected_shank == 1
 
 
 def test_can_load_data_delegates_to_policy(tmp_path):

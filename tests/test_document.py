@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ephys_alignment_gui.document import AlignmentDocument
+import numpy as np
+import pytest
+
+from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 
 
 def test_document_records_mouse_root_and_clears_probe_state(tmp_path):
@@ -65,3 +68,78 @@ def test_output_paths_are_stored_as_paths(tmp_path):
 
     assert doc.output_root == Path(tmp_path)
     assert doc.output_directory == tmp_path / "rec1" / "probeA"
+
+
+def test_alignment_key_rejects_negative_shank() -> None:
+    with pytest.raises(ValueError, match="shank_idx"):
+        AlignmentKey("rec1", "streamA", -1)
+
+
+def test_select_alignment_key_creates_and_selects_state() -> None:
+    doc = AlignmentDocument(selected_probe="probeA")
+    key = AlignmentKey("rec1", "streamA", 1)
+
+    state = doc.select_alignment_key(key)
+
+    assert doc.selected_alignment_key == key
+    assert doc.selected_recording == "rec1"
+    assert doc.selected_shank == 1
+    assert doc.active_alignment_state is state
+    assert doc.alignment_state_for(key) is state
+
+
+def test_alignment_states_are_isolated_by_key() -> None:
+    doc = AlignmentDocument()
+    shank0 = AlignmentKey("rec1", "streamA", 0)
+    shank1 = AlignmentKey("rec1", "streamA", 1)
+
+    doc.select_alignment_key(shank0)
+    doc.active_add_alignment(np.array([0.0]), np.array([1.0]))
+    doc.select_alignment_key(shank1)
+
+    assert doc.active_prev_align == ["original"]
+    assert len(doc.alignment_state_for(shank0).alignments) == 1
+    assert doc.alignment_state_for(shank1).alignments == {}
+
+
+def test_set_selected_shank_updates_active_alignment_key() -> None:
+    doc = AlignmentDocument(selected_probe="probeA")
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+
+    doc.set_selected_shank(2)
+
+    assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 2)
+    assert doc.selected_shank == 2
+    assert doc.active_prev_align == ["original"]
+
+
+def test_active_alignment_history_helpers_roundtrip() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    feature = np.array([0.0, 1.0])
+    track = np.array([2.0, 3.0])
+
+    key = doc.active_add_alignment(feature, track)
+
+    assert doc.active_prev_align == [key, "original"]
+    saved_feature, saved_track = doc.active_get_alignment_idx(0)
+    np.testing.assert_array_equal(saved_feature, feature)
+    np.testing.assert_array_equal(saved_track, track)
+
+
+def test_alignment_registry_survives_probe_clear_but_can_clear_on_new_root(
+    tmp_path,
+) -> None:
+    doc = AlignmentDocument(selected_probe="probeA")
+    key = AlignmentKey("rec1", "streamA", 0)
+    doc.select_alignment_key(key)
+    doc.active_add_alignment(np.array([0.0]), np.array([1.0]))
+
+    doc.clear_probe()
+
+    assert doc.selected_alignment_key is None
+    assert key in doc.alignment_states
+
+    doc.set_mouse_root(tmp_path / "mouse", clear_alignment_states=True)
+
+    assert doc.alignment_states == {}

@@ -19,7 +19,6 @@ construction:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -27,6 +26,7 @@ from numpy.typing import NDArray
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
+from ephys_alignment_gui.alignment_state import AlignmentState
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,11 @@ def _edit_history_attr(name: str) -> property:
 
 
 class ShankAlignment:
-    """Owns every piece of state that belongs to a single shank.
+    """Compatibility holder for per-shank alignment and derived runtime state.
+
+    Pure editable state is owned by :class:`AlignmentState`. Runtime-derived
+    compatibility fields still live here until the GUI/view split can consume
+    them from runtime services directly.
 
     Parameters
     ----------
@@ -71,17 +75,56 @@ class ShankAlignment:
     @property
     def active_alignment(self) -> ActiveAlignment | None:
         """Current feature/track control points for this shank."""
-        return self.edit_history.current_alignment
+        return self.alignment_state.active_alignment
 
     @active_alignment.setter
     def active_alignment(self, alignment: ActiveAlignment | None) -> None:
-        if alignment is None:
-            self.edit_history.clear_current_alignment()
-            return
-        self.edit_history.set_current_alignment(alignment)
+        self.alignment_state.active_alignment = alignment
+
+    @property
+    def edit_history(self) -> AlignmentEditHistory:
+        """Transient edit buffer for the editable alignment state."""
+        return self.alignment_state.edit_history
+
+    @property
+    def alignments(self) -> dict[str, list[list[float]]]:
+        """Saved alignment history, delegated to AlignmentState."""
+        return self.alignment_state.alignments
+
+    @alignments.setter
+    def alignments(self, alignments: dict[str, list[list[float]]]) -> None:
+        self.alignment_state.set_alignments(alignments)
+
+    @property
+    def prev_align(self) -> list[str]:
+        """Dropdown-ordered alignment keys, delegated to AlignmentState."""
+        return self.alignment_state.prev_align
+
+    @prev_align.setter
+    def prev_align(self, prev_align: list[str]) -> None:
+        self.alignment_state.prev_align = prev_align
+
+    @property
+    def feature_prev(self) -> Any:
+        """Currently selected starting feature alignment."""
+        return self.alignment_state.feature_prev
+
+    @feature_prev.setter
+    def feature_prev(self, feature_prev: Any) -> None:
+        self.alignment_state.feature_prev = feature_prev
+
+    @property
+    def track_prev(self) -> Any:
+        """Currently selected starting track alignment."""
+        return self.alignment_state.track_prev
+
+    @track_prev.setter
+    def track_prev(self, track_prev: Any) -> None:
+        self.alignment_state.track_prev = track_prev
 
     def __init__(self, shank_idx: int, max_idx: int = 10) -> None:
         self.shank_idx: int = shank_idx
+        self.alignment_state = AlignmentState(max_idx=max_idx)
 
         # -- Channel geometry for this shank --
         self.chn_coords: NDArray[Any] | None = None
@@ -92,19 +135,6 @@ class ShankAlignment:
         self.track_annos_and_ends_ras: NDArray[np.floating[Any]] | None = None
         self.channel_locations_ras: NDArray[np.floating[Any]] | None = None
         self.tip_location_ras: NDArray[np.floating[Any]] | None = None
-
-        # -- Persistent alignment history --
-        # Maps an ISO-timestamp key to ``[feature, track]`` control points.
-        self.alignments: dict[str, list[list[float]]] = {}
-        # Dropdown-ordered keys, newest first, with "original" appended.
-        self.prev_align: list[str] = ["original"]
-
-        # -- Transient fit / undo buffer (per shank) --
-        self.edit_history = AlignmentEditHistory(max_idx=max_idx)
-
-        # -- Currently-selected starting alignment --
-        self.feature_prev: Any = None
-        self.track_prev: Any = None
 
         # -- Alignment engine + derived region overlays for this shank --
         self.ephysalign: Any = None
@@ -134,8 +164,7 @@ class ShankAlignment:
 
     def set_alignments(self, alignments: dict[str, list[list[float]]]) -> None:
         """Replace this shank's alignment history and rebuild the dropdown list."""
-        self.alignments = alignments
-        self.prev_align = self._ordered_keys(alignments)
+        self.alignment_state.set_alignments(alignments)
 
     def add_alignment(self, feature: NDArray, track: NDArray) -> str:
         """Record a new alignment, keyed by the current timestamp.
@@ -145,35 +174,14 @@ class ShankAlignment:
         exists for the current second a ``.N`` disambiguator is appended so a
         rapid second save cannot silently overwrite the first.
         """
-        base = datetime.now().replace(microsecond=0).isoformat()
-        date = base
-        n = 1
-        while date in self.alignments:
-            date = f"{base}.{n}"
-            n += 1
-        self.alignments[date] = [feature.tolist(), track.tolist()]
-        self.prev_align = self._ordered_keys(self.alignments)
-        return date
+        return self.alignment_state.add_alignment(feature, track)
 
     def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """Return the ``(feature, track)`` for the alignment at dropdown ``idx``.
 
         ``("original")`` and out-of-range indices yield ``(None, None)``.
         """
-        if len(self.prev_align) <= idx:
-            return None, None
-        alignment = self.prev_align[idx]
-        if alignment == "original":
-            return None, None
-        feature = np.array(self.alignments[alignment][0])
-        track = np.array(self.alignments[alignment][1])
-        return feature, track
-
-    @staticmethod
-    def _ordered_keys(alignments: dict[str, Any]) -> list[str]:
-        prev_align = sorted(alignments.keys(), reverse=True)
-        prev_align.append("original")
-        return prev_align
+        return self.alignment_state.get_alignment_idx(idx)
 
     # -- Cached atlas/histology slice --
 

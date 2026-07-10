@@ -12,7 +12,7 @@ from ephys_alignment_gui.alignment_repository import (
     AlignmentRepository,
     SavedAlignmentOutputs,
 )
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
 
@@ -140,8 +140,12 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to load mouse root {mouse_root}: {exc}")
 
-        self.document.set_mouse_root(mouse_root, mouse_id=loaded_root.mouse_id)
         root_changed = old_root is not None and old_root != loaded_root.root
+        self.document.set_mouse_root(
+            mouse_root,
+            mouse_id=loaded_root.mouse_id,
+            clear_alignment_states=root_changed,
+        )
         return MouseRootLoaded(loaded_root, root_changed=root_changed)
 
     def select_recording(self, recording_id: str) -> RecordingSelected | Failed:
@@ -175,15 +179,16 @@ class AlignmentController:
         self.document.select_probe(recording_id, probe_name)
         try:
             self.data_context.select_probe(recording_id, probe_name)
+            probe = self.data_context.probe_info
+            assert probe is not None
             if ephys_stream is None:
-                probe = self.data_context.probe_info
-                assert probe is not None
                 channel_table = self.ephys_data_service.load_channel_table(probe)
             else:
                 self.data_context.validate_cached_stream(ephys_stream)
                 channel_table = ephys_stream.channel_table
             self.data_context.attach_channel_table(channel_table)
             self.document.set_channel_info_loaded(True)
+            self.document.select_alignment_key(self._alignment_key_for_probe(0))
             shanks = self.data_context.shank_labels()
             output_result = self.derive_output_directory()
         except Exception as exc:
@@ -247,11 +252,24 @@ class AlignmentController:
     def finish_load_data(self, shank_idx: int) -> None:
         """Record successful heavy data load for the active shank."""
         self.document.mark_data_loaded(True)
-        self.document.set_selected_shank(shank_idx)
+        self.set_selected_shank(shank_idx)
 
     def set_selected_shank(self, shank_idx: int) -> None:
         """Record the active shank selected by the user."""
-        self.document.set_selected_shank(shank_idx)
+        if self.data_context.probe_info is None:
+            self.document.set_selected_shank(shank_idx)
+            return
+        self.document.select_alignment_key(self._alignment_key_for_probe(shank_idx))
+
+    def _alignment_key_for_probe(self, shank_idx: int) -> AlignmentKey:
+        probe = self.data_context.probe_info
+        if probe is None:
+            raise RuntimeError("No probe selected. Please select a probe first.")
+        return AlignmentKey(
+            recording_id=probe.recording_id,
+            ephys_collection=probe.ephys_collection,
+            shank_idx=shank_idx,
+        )
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""

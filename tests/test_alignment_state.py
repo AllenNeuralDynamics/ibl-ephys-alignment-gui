@@ -1,0 +1,96 @@
+"""Tests for pure editable alignment state."""
+
+from __future__ import annotations
+
+import datetime as _dt
+
+import numpy as np
+
+from ephys_alignment_gui import alignment_state
+from ephys_alignment_gui.active_alignment import ActiveAlignment
+from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
+from ephys_alignment_gui.alignment_state import AlignmentState
+
+
+class _FixedDatetime:
+    """datetime stand-in whose now() returns a fixed instant."""
+
+    _fixed = _dt.datetime(2026, 7, 9, 12, 0, 0)
+
+    @classmethod
+    def now(cls):
+        return cls._fixed
+
+
+def test_alignment_state_owns_edit_history_and_active_alignment() -> None:
+    state = AlignmentState(max_idx=3)
+
+    assert isinstance(state.edit_history, AlignmentEditHistory)
+    assert state.edit_history.max_idx == 3
+    assert state.prev_align == ["original"]
+
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+        lin_fit=False,
+    )
+
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [0.0, 1.0])
+    assert not state.active_alignment.lin_fit
+
+    state.active_alignment = None
+
+    assert state.active_alignment is None
+
+
+def test_alignment_state_history_roundtrip() -> None:
+    state = AlignmentState()
+    feature = np.array([0.0, 1.0, 2.0])
+    track = np.array([0.0, 1.5, 3.0])
+
+    key = state.add_alignment(feature, track)
+
+    assert state.prev_align[0] == key
+    assert state.prev_align[-1] == "original"
+    f, t = state.get_alignment_idx(0)
+    np.testing.assert_array_equal(f, feature)
+    np.testing.assert_array_equal(t, track)
+
+
+def test_alignment_state_same_second_keys_disambiguate(monkeypatch) -> None:
+    monkeypatch.setattr(alignment_state, "datetime", _FixedDatetime)
+    state = AlignmentState()
+
+    k1 = state.add_alignment(np.array([0.0]), np.array([0.0]))
+    k2 = state.add_alignment(np.array([1.0]), np.array([1.0]))
+
+    assert k1 != k2
+    assert k2.startswith(k1)
+    assert len(state.alignments) == 2
+
+
+def test_alignment_state_set_alignments_orders_newest_first() -> None:
+    state = AlignmentState()
+
+    state.set_alignments(
+        {
+            "2026-07-09T10:00:00": [[0.0], [0.0]],
+            "2026-07-09T12:00:00": [[1.0], [1.0]],
+            "2026-07-09T11:00:00": [[2.0], [2.0]],
+        }
+    )
+
+    assert state.prev_align == [
+        "2026-07-09T12:00:00",
+        "2026-07-09T11:00:00",
+        "2026-07-09T10:00:00",
+        "original",
+    ]
+
+
+def test_alignment_state_original_and_out_of_range_are_empty() -> None:
+    state = AlignmentState()
+
+    assert state.get_alignment_idx(0) == (None, None)
+    assert state.get_alignment_idx(5) == (None, None)

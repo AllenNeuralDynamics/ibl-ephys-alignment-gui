@@ -7,9 +7,10 @@ import datetime as _dt
 import numpy as np
 import pytest
 
-from ephys_alignment_gui import shank_alignment
+from ephys_alignment_gui import alignment_state
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
+from ephys_alignment_gui.alignment_state import AlignmentState
 from ephys_alignment_gui.shank_alignment import ShankAlignment
 
 
@@ -34,6 +35,7 @@ def test_get_alignment_idx_original_and_out_of_range():
 def test_edit_history_delegates_legacy_fit_attributes():
     sa = ShankAlignment(0, max_idx=3)
 
+    assert isinstance(sa.alignment_state, AlignmentState)
     assert isinstance(sa.edit_history, AlignmentEditHistory)
     assert sa.max_idx == 3
     assert len(sa.features) == 4
@@ -95,7 +97,7 @@ def test_add_alignment_and_roundtrip():
 
 
 def test_add_alignment_same_second_disambiguates(monkeypatch):
-    monkeypatch.setattr(shank_alignment, "datetime", _FixedDatetime)
+    monkeypatch.setattr(alignment_state, "datetime", _FixedDatetime)
     sa = ShankAlignment(0)
     k1 = sa.add_alignment(np.array([0.0]), np.array([0.0]))
     k2 = sa.add_alignment(np.array([1.0]), np.array([1.0]))

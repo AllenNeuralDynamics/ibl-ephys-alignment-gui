@@ -2,8 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from numpy.typing import NDArray
+
+from ephys_alignment_gui.alignment_state import AlignmentState
+
+
+@dataclass(frozen=True)
+class AlignmentKey:
+    """Stable document key for one editable alignment state."""
+
+    recording_id: str
+    ephys_collection: str
+    shank_idx: int
+
+    def __post_init__(self) -> None:
+        if self.shank_idx < 0:
+            raise ValueError("shank_idx must be non-negative")
 
 
 @dataclass
@@ -20,6 +37,10 @@ class AlignmentDocument:
     selected_recording: str | None = None
     selected_probe: str | None = None
     selected_shank: int = 0
+    selected_alignment_key: AlignmentKey | None = None
+    alignment_states: dict[AlignmentKey, AlignmentState] = field(
+        default_factory=dict
+    )
     output_root: Path | None = None
     output_directory: Path | None = None
     channel_info_loaded: bool = False
@@ -31,17 +52,26 @@ class AlignmentDocument:
         """Whether a recording/probe pair is selected."""
         return self.selected_recording is not None and self.selected_probe is not None
 
-    def set_mouse_root(self, mouse_root: Path, mouse_id: str | None = None) -> None:
+    def set_mouse_root(
+        self,
+        mouse_root: Path,
+        mouse_id: str | None = None,
+        *,
+        clear_alignment_states: bool = False,
+    ) -> None:
         """Record the active mouse root and clear probe/data state."""
         self.mouse_root = Path(mouse_root)
         self.mouse_id = mouse_id
         self.clear_probe()
+        if clear_alignment_states:
+            self.alignment_states.clear()
 
     def clear_probe(self) -> None:
         """Clear selected probe and dependent state."""
         self.selected_recording = None
         self.selected_probe = None
         self.selected_shank = 0
+        self.selected_alignment_key = None
         self.channel_info_loaded = False
         self.data_loaded = False
         self.dirty = False
@@ -52,6 +82,7 @@ class AlignmentDocument:
         self.selected_recording = recording_id
         self.selected_probe = probe_name
         self.selected_shank = 0
+        self.selected_alignment_key = None
         self.channel_info_loaded = False
         self.data_loaded = False
         self.dirty = False
@@ -66,6 +97,69 @@ class AlignmentDocument:
     def set_selected_shank(self, shank_idx: int) -> None:
         """Record the active shank index."""
         self.selected_shank = shank_idx
+        if self.selected_alignment_key is not None:
+            self.select_alignment_key(
+                AlignmentKey(
+                    recording_id=self.selected_alignment_key.recording_id,
+                    ephys_collection=self.selected_alignment_key.ephys_collection,
+                    shank_idx=shank_idx,
+                )
+            )
+
+    def select_alignment_key(self, key: AlignmentKey) -> AlignmentState:
+        """Select and return the editable state for an alignment key."""
+        self.selected_alignment_key = key
+        self.selected_recording = key.recording_id
+        self.selected_shank = key.shank_idx
+        return self.alignment_state_for(key)
+
+    def alignment_state_for(self, key: AlignmentKey) -> AlignmentState:
+        """Return the editable state for a key, creating it if needed."""
+        if key not in self.alignment_states:
+            self.alignment_states[key] = AlignmentState()
+        return self.alignment_states[key]
+
+    @property
+    def active_alignment_state(self) -> AlignmentState | None:
+        """Editable state for the selected alignment key, if one is active."""
+        if self.selected_alignment_key is None:
+            return None
+        return self.alignment_state_for(self.selected_alignment_key)
+
+    @property
+    def active_alignments(self) -> dict[str, list[list[float]]] | None:
+        """Saved alignment history for the active alignment state."""
+        state = self.active_alignment_state
+        return None if state is None else state.alignments
+
+    @property
+    def active_prev_align(self) -> list[str] | None:
+        """Dropdown-ordered alignment keys for the active alignment state."""
+        state = self.active_alignment_state
+        return None if state is None else state.prev_align
+
+    def set_active_alignments(self, alignments: dict[str, list[list[float]]]) -> None:
+        """Replace persisted history on the active alignment state."""
+        state = self._require_active_alignment_state()
+        state.set_alignments(alignments)
+
+    def active_add_alignment(self, feature: NDArray, track: NDArray) -> str:
+        """Record a saved alignment on the active alignment state."""
+        state = self._require_active_alignment_state()
+        return state.add_alignment(feature, track)
+
+    def active_get_alignment_idx(
+        self, idx: int
+    ) -> tuple[NDArray | None, NDArray | None]:
+        """Return an alignment from the active state's dropdown index."""
+        state = self._require_active_alignment_state()
+        return state.get_alignment_idx(idx)
+
+    def _require_active_alignment_state(self) -> AlignmentState:
+        state = self.active_alignment_state
+        if state is None:
+            raise RuntimeError("No active alignment key selected")
+        return state
 
     def set_output_root(self, output_root: Path) -> None:
         """Record the root under which per-probe outputs are written."""
