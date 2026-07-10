@@ -122,6 +122,12 @@ class PlotData:
         # along the track purely by depth, so a per-depth set is exact.
         self.in_brain_depths_um = None
 
+        # Per-instance memo of get_* datasets (see cached()). Cleared only when
+        # the unit filter actually changes, since these datasets depend on the
+        # spike/channel data, not on the alignment. Keeps shank revisits cheap.
+        self._img_cache: dict = {}
+        self._current_filter: str | None = None
+
         if self.data["spikes"]["exists"]:
             self.max_spike_time = np.max(self.data["spikes"]["times"])
 
@@ -139,7 +145,26 @@ class PlotData:
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
 
+    def cached(self, method: str, args: tuple = ()):
+        """Return ``self.<method>(*args)``, memoized per PlotData instance.
+
+        Lets plot datasets be built lazily (only when displayed) yet at most
+        once per shank. The cache is cleared by :meth:`filter_units` when the
+        unit subset actually changes.
+        """
+        key = (method, args)
+        if key not in self._img_cache:
+            self._img_cache[key] = getattr(self, method)(*args)
+        return self._img_cache[key]
+
     def filter_units(self, subset: str) -> None:
+        # Idempotent: re-applying the current subset (as happens on every shank
+        # switch) is a no-op, so the memo cache stays warm. A genuine change
+        # clears it before recomputing spike_idx/kp_idx below.
+        if subset == self._current_filter:
+            return
+        self._current_filter = subset
+        self._img_cache.clear()
         try:
             # Pre-fetch commonly used data structures (avoid repeated indexing)
             spikes: AlfBunch = self.data["spikes"]
