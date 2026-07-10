@@ -5,15 +5,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from ephys_alignment_gui.alignment_repository import (
+    LoadedAlignmentHistory,
+    SavedAlignmentOutputs,
+)
 from ephys_alignment_gui.controller import (
     AlignmentController,
+    AlignmentOutputBuilt,
+    AlignmentOutputsSaved,
     MouseRootLoaded,
+    NoPreviousAlignments,
     OutputRootSet,
+    PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.workflow import Failed, Ok
+from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,36 @@ class FakeLoader:
         if self.n_shanks == 1:
             return ["1/1"]
         return [f"{idx + 1}/{self.n_shanks}" for idx in range(self.n_shanks)]
+
+    def get_alignment_results(self, channel_locations_ras, channel_coordinates):
+        return (
+            {"channels": list(channel_locations_ras)},
+            {"ccf_channels": list(channel_coordinates)},
+            self.n_shanks > 1,
+        )
+
+
+class FakeAlignmentRepository:
+    def __init__(self) -> None:
+        self.loaded_alignments = None
+        self.saved_kwargs = None
+
+    def load_previous_alignments(self, **kwargs):
+        self.loaded_kwargs = kwargs
+        if self.loaded_alignments is None:
+            return None
+        return LoadedAlignmentHistory(self.loaded_alignments)
+
+    def save_alignment_outputs(self, **kwargs):
+        self.saved_kwargs = kwargs
+        return SavedAlignmentOutputs(
+            channel_results_path=kwargs["output_directory"] / "channel_locations.json",
+            previous_alignments_path=kwargs["output_directory"]
+            / "prev_alignments.json",
+            ccf_channel_results_path=kwargs["output_directory"]
+            / "ccf_channel_locations.json",
+            docdb_probe_name="probeA_0" if kwargs["use_docdb"] else None,
+        )
 
 
 def test_set_mouse_root_updates_document(tmp_path):
@@ -192,3 +230,79 @@ def test_can_load_data_delegates_to_policy(tmp_path):
     controller = AlignmentController(doc, FakeLoader())
 
     assert isinstance(controller.can_load_data(), Ok)
+
+
+def test_load_previous_alignments_uses_active_probe_and_repository(tmp_path):
+    doc = AlignmentDocument()
+    loader = FakeLoader()
+    repo = FakeAlignmentRepository()
+    repo.loaded_alignments = {"saved": [[1.0], [2.0]]}
+    controller = AlignmentController(doc, loader, alignment_repository=repo)
+    controller.set_mouse_root(tmp_path)
+    controller.select_probe("rec1", "probeA")
+
+    result = controller.load_previous_alignments(
+        folder=tmp_path,
+        shank_idx=1,
+        use_docdb=True,
+    )
+
+    assert isinstance(result, PreviousAlignmentsLoaded)
+    assert result.alignments == {"saved": [[1.0], [2.0]]}
+    assert repo.loaded_kwargs["recording_id"] == "rec1"
+    assert repo.loaded_kwargs["probe_name"] == "probeA"
+    assert repo.loaded_kwargs["shank_idx"] == 1
+    assert repo.loaded_kwargs["n_shanks"] == 2
+
+
+def test_can_load_previous_alignments_requires_channel_info():
+    controller = AlignmentController(AlignmentDocument(), FakeLoader())
+
+    assert isinstance(controller.can_load_previous_alignments(), Failed)
+
+
+def test_load_previous_alignments_reports_empty_result(tmp_path):
+    doc = AlignmentDocument()
+    loader = FakeLoader()
+    repo = FakeAlignmentRepository()
+    controller = AlignmentController(doc, loader, alignment_repository=repo)
+    controller.set_mouse_root(tmp_path)
+    controller.select_probe("rec1", "probeA")
+
+    result = controller.load_previous_alignments(
+        folder=None,
+        shank_idx=0,
+        use_docdb=True,
+    )
+
+    assert isinstance(result, NoPreviousAlignments)
+
+
+def test_can_save_alignment_output_requires_output_directory():
+    controller = AlignmentController(AlignmentDocument(), FakeLoader())
+
+    assert isinstance(controller.can_save_alignment_output(), Blocked)
+
+
+def test_build_and_save_alignment_output_filters_auto(tmp_path):
+    doc = AlignmentDocument(output_directory=tmp_path)
+    loader = FakeLoader()
+    loader.probe_info = FakeProbeInfo("rec1", "probeA", "rec1:probeA", 2)
+    loader.n_shanks = 2
+    repo = FakeAlignmentRepository()
+    controller = AlignmentController(doc, loader, alignment_repository=repo)
+
+    output = controller.build_alignment_output([1, 2], [3, 4])
+    assert isinstance(output, AlignmentOutputBuilt)
+    saved = controller.save_alignment_output(
+        output,
+        alignments={"auto": [[0], [0]], "saved": [[1], [2]]},
+        shank_idx=1,
+        use_docdb=False,
+    )
+
+    assert isinstance(saved, AlignmentOutputsSaved)
+    assert saved.previous_alignments == {"saved": [[1], [2]]}
+    assert repo.saved_kwargs["previous_alignments"] == {"saved": [[1], [2]]}
+    assert repo.saved_kwargs["multi_shank"]
+    assert repo.saved_kwargs["shank_idx"] == 1

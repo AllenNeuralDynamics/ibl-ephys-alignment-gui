@@ -79,3 +79,17 @@ class WorkflowPolicy:
         if requirements:
             return Blocked(tuple(requirements))
         return Ok()
+
+    def can_save_alignment_output(self, document: AlignmentDocument) -> PolicyResult:
+        """Return whether the current alignment can be persisted."""
+        if document.output_directory is None:
+            return Blocked(
+                (
+                    Requirement(
+                        OUTPUT_REQUIRED,
+                        "Choose an output folder before saving.",
+                        action=CHOOSE_OUTPUT_FOLDER,
+                    ),
+                )
+            )
+        return Ok()

@@ -6,8 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.alignment_repository import (
+    AlignmentHistory,
+    AlignmentRepository,
+    SavedAlignmentOutputs,
+)
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.workflow import Failed, PolicyResult, WorkflowPolicy
+from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,35 @@ class LoadDataPrepared:
     preserve_plot_selection: bool
 
 
+@dataclass(frozen=True)
+class PreviousAlignmentsLoaded:
+    """Previous alignments were loaded for the active probe/shank."""
+
+    alignments: AlignmentHistory
+
+
+@dataclass(frozen=True)
+class NoPreviousAlignments:
+    """No previous alignments were available."""
+
+
+@dataclass(frozen=True)
+class AlignmentOutputBuilt:
+    """Output dictionaries computed from the current alignment."""
+
+    channel_results: dict
+    ccf_channel_results: dict
+    multi_shank: bool
+
+
+@dataclass(frozen=True)
+class AlignmentOutputsSaved:
+    """Alignment output files were persisted."""
+
+    saved: SavedAlignmentOutputs
+    previous_alignments: AlignmentHistory
+
+
 class AlignmentController:
     """Coordinates workflow commands across the document and loader.
 
@@ -71,10 +105,12 @@ class AlignmentController:
         document: AlignmentDocument,
         loader: Any,
         workflow_policy: WorkflowPolicy | None = None,
+        alignment_repository: AlignmentRepository | None = None,
     ) -> None:
         self.document = document
         self.loader = loader
         self.workflow_policy = workflow_policy or WorkflowPolicy()
+        self.alignment_repository = alignment_repository or AlignmentRepository()
 
     def can_load_data(self) -> PolicyResult:
         """Return whether the Load Data command can proceed."""
@@ -198,3 +234,98 @@ class AlignmentController:
     def set_selected_shank(self, shank_idx: int) -> None:
         """Record the active shank selected by the user."""
         self.document.set_selected_shank(shank_idx)
+
+    def can_load_previous_alignments(self) -> Ok | Failed:
+        """Return whether previous alignments can be loaded."""
+        if self.loader.n_shanks == 0:
+            return Failed("Channel info not loaded. Please select a probe first.")
+        if self.loader.probe_info is None:
+            return Failed("No probe selected. Please select a probe first.")
+        return Ok()
+
+    def can_save_alignment_output(self) -> PolicyResult:
+        """Return whether the current alignment output can be saved."""
+        return self.workflow_policy.can_save_alignment_output(self.document)
+
+    def load_previous_alignments(
+        self,
+        folder: Path | None,
+        shank_idx: int,
+        use_docdb: bool,
+    ) -> PreviousAlignmentsLoaded | NoPreviousAlignments | Failed:
+        """Load previous alignments for the selected probe/shank."""
+        ready = self.can_load_previous_alignments()
+        if isinstance(ready, Failed):
+            return ready
+        probe = self.loader.probe_info
+        assert probe is not None
+
+        try:
+            loaded = self.alignment_repository.load_previous_alignments(
+                folder=folder,
+                recording_id=probe.recording_id,
+                probe_name=probe.probe_name,
+                shank_idx=shank_idx,
+                n_shanks=self.loader.n_shanks,
+                use_docdb=use_docdb,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to load previous alignments: {exc}")
+
+        if loaded is None:
+            return NoPreviousAlignments()
+        return PreviousAlignmentsLoaded(loaded.alignments)
+
+    def build_alignment_output(
+        self,
+        channel_locations_ras: Any,
+        channel_coordinates: Any,
+    ) -> AlignmentOutputBuilt | Failed:
+        """Compute output dictionaries for the current alignment."""
+        try:
+            channel_results, ccf_channel_results, multi_shank = (
+                self.loader.get_alignment_results(
+                    channel_locations_ras,
+                    channel_coordinates,
+                )
+            )
+        except Exception as exc:
+            return Failed(f"Failed to build alignment output: {exc}")
+        return AlignmentOutputBuilt(
+            channel_results=channel_results,
+            ccf_channel_results=ccf_channel_results,
+            multi_shank=multi_shank,
+        )
+
+    def save_alignment_output(
+        self,
+        output: AlignmentOutputBuilt,
+        alignments: AlignmentHistory,
+        shank_idx: int,
+        use_docdb: bool,
+    ) -> AlignmentOutputsSaved | Failed:
+        """Persist output dictionaries and alignment history."""
+        output_directory = self.document.output_directory
+        if output_directory is None:
+            return Failed("Choose an output folder before saving.")
+
+        persistable_alignments = {
+            key: value for key, value in alignments.items() if key != "auto"
+        }
+        try:
+            saved = self.alignment_repository.save_alignment_outputs(
+                output_directory=output_directory,
+                shank_idx=shank_idx,
+                multi_shank=output.multi_shank,
+                channel_results=output.channel_results,
+                previous_alignments=persistable_alignments,
+                ccf_channel_results=output.ccf_channel_results,
+                use_docdb=use_docdb,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to save alignment output: {exc}")
+
+        return AlignmentOutputsSaved(
+            saved=saved,
+            previous_alignments=persistable_alignments,
+        )

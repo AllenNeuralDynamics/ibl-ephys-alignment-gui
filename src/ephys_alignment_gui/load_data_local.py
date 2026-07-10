@@ -9,7 +9,6 @@ import re
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,6 @@ import numpy as np
 import one.alf.io as alfio
 import pandas
 import SimpleITK as sitk
-from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 from iblatlas import atlas
 from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
@@ -40,7 +38,6 @@ from ephys_alignment_gui.datapackage_loader import (
     ProbeInfo,
     load_mouse_root,
 )
-from ephys_alignment_gui.docdb import _default_doc_db_api_client, query_docdb_id
 from ephys_alignment_gui.rigid_rotation import (
     image_center_physical,
     load_affine_matrix,
@@ -152,8 +149,6 @@ class LoadDataLocal:
 
     histology_images: dict[str, sitk.Image] = field(default_factory=dict)
     channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
-    alignments: dict[str, list[list[float]]] = field(default_factory=dict)
-    prev_align: list[str] = field(default_factory=lambda: ["original"])
 
     # ------------------------------------------------------------------
     # Mouse-root / probe selection
@@ -224,139 +219,6 @@ class LoadDataLocal:
     def probe_id(self) -> str | None:
         """Shortcut for the current probe ID (if selected)."""
         return self.probe_info.probe_id if self.probe_info is not None else None
-
-    # ------------------------------------------------------------------
-    # Previous alignments
-    # ------------------------------------------------------------------
-
-    def load_previous_alignments_docdb(
-        self,
-        recording_id: str,
-        probe_name: str,
-        shank_idx: int = 0,
-    ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
-        """Fetch alignment history from DocDB keyed by (recording, probe, shank)."""
-        docdb_id = query_docdb_id(recording_id)[0]
-        quality_control = get_quality_control_by_id(
-            _default_doc_db_api_client(), docdb_id
-        )
-
-        if quality_control is None:
-            return None
-
-        evaluations = quality_control.evaluations
-
-        evaluation_name = f"{recording_id}_{probe_name}_{shank_idx}"
-        alignment_evaluations = [
-            evaluation
-            for evaluation in evaluations
-            if evaluation.name == f"Probe Alignment for {evaluation_name}"
-        ]
-
-        n_eval = len(alignment_evaluations)
-
-        if n_eval == 0:
-            logger.info(f"No alignment found in docdb for {evaluation_name}")
-            return None
-
-        logger.info(
-            f"Found existing record for {evaluation_name}. Loading alignment now"
-        )
-        latest_alignment_evaluation = max(
-            alignment_evaluations, key=lambda x: x.created
-        )  # pull latest alignment evaluation
-        curation_metric = latest_alignment_evaluation.metrics[0].value["curations"]
-        alignments = json.loads(curation_metric[0])[
-            "previous_alignments"
-        ]  # load in the previous alignment
-        prev_align = list(alignments.keys())
-        prev_align = sorted(prev_align, reverse=True)
-        prev_align.append("original")
-        return alignments, prev_align
-
-    def load_previous_alignments_local(
-        self,
-        folder: Path,
-        shank_idx: int = 0,
-    ) -> tuple[dict[str, list[list[float]]], list[str]] | None:
-        """Load ``prev_alignments.json`` (or shank variant) from *folder*."""
-        suffix = f"_shank{shank_idx + 1}" if self.n_shanks > 1 else ""
-        prev_align_filename = f"prev_alignments{suffix}.json"
-        p = folder / prev_align_filename
-        if not p.exists():
-            return None
-        with open(p) as f:
-            alignments: dict[str, list[list[float]]] = json.load(f)
-        prev_align = list(alignments.keys())
-        prev_align = sorted(prev_align, reverse=True)
-        prev_align.append("original")
-        return alignments, prev_align
-
-    def load_previous_alignments(
-        self,
-        folder: Path,
-        shank_idx: int = 0,
-        use_docdb: bool = True,
-    ) -> bool:
-        """Load previous alignments for the selected probe.
-
-        Parameters
-        ----------
-        folder : Path
-            Directory to check for ``prev_alignments.json`` on the local-file
-            fallback path.
-        shank_idx : int
-            0-based shank index.
-        use_docdb : bool
-            Attempt DocDB first; fall back to local file if unavailable.
-        """
-        if self.probe_info is None:
-            raise RuntimeError("No probe selected — call select_probe() first")
-
-        maybe_alignments = None
-        load_local = not use_docdb
-        if use_docdb:
-            logger.debug("Using docdb to get previous alignments")
-            try:
-                maybe_alignments = self.load_previous_alignments_docdb(
-                    recording_id=self.probe_info.recording_id,
-                    probe_name=self.probe_info.probe_name,
-                    shank_idx=shank_idx,
-                )
-                if maybe_alignments is None:
-                    load_local = True
-            except ValueError as e:
-                logger.warning(
-                    f"Failed to load previous alignments from docdb with exception {e}. "
-                    "Falling back to local file."
-                )
-                load_local = True
-        if load_local:
-            maybe_alignments = self.load_previous_alignments_local(
-                folder=folder, shank_idx=shank_idx
-            )
-        if maybe_alignments is None:
-            return False
-        alignments, prev_align = maybe_alignments
-        self.alignments = alignments
-        self.prev_align = prev_align
-        return True
-
-    def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
-        """
-        Find out the starting alignment
-        """
-        if len(self.prev_align) <= idx:
-            return None, None
-        alignment = self.prev_align[idx]
-        if alignment == "original":
-            feature = None
-            track = None
-        else:
-            feature = np.array(self.alignments[alignment][0])
-            track = np.array(self.alignments[alignment][1])
-
-        return feature, track
 
     # ------------------------------------------------------------------
     # Channel info / ephys / atlas loading

@@ -70,3 +70,17 @@ def test_load_data_reports_all_missing_requirements_in_order():
         CHANNEL_INFO_REQUIRED,
         OUTPUT_REQUIRED,
     ]
+
+
+def test_save_alignment_output_requires_output_directory():
+    result = WorkflowPolicy().can_save_alignment_output(AlignmentDocument())
+
+    assert isinstance(result, Blocked)
+    assert result.first.code == OUTPUT_REQUIRED
+    assert result.first.action == CHOOSE_OUTPUT_FOLDER
+
+
+def test_save_alignment_output_allowed_when_output_directory_is_set():
+    doc = AlignmentDocument(output_directory=Path("/tmp/results/rec1/probeA"))
+
+    assert isinstance(WorkflowPolicy().can_save_alignment_output(doc), Ok)

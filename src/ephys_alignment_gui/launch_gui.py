@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import platform
@@ -22,14 +21,17 @@ from PyQt5.QtWidgets import QApplication
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.controller import (
+    AlignmentOutputBuilt,
+    AlignmentOutputsSaved,
     AlignmentController,
     MouseRootLoaded,
+    NoPreviousAlignments,
     OutputRootSet,
+    PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
-from ephys_alignment_gui.docdb import write_output_to_docdb
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
 from ephys_alignment_gui.image_levels import brain_percentile_levels
@@ -53,18 +55,6 @@ from ephys_alignment_gui.windows.subject_scaling import ScalingWindow
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
-
-
-def _write_dict_to_json(file_path: Path, data_dict: dict) -> None:
-    """
-    Write dictionary to JSON file
-    :param file_path: path to JSON file
-    :type file_path: Path
-    :param data_dict: dictionary to write to JSON file
-    :type data_dict: dict
-    """
-    with open(file_path, "w") as fp:
-        json.dump(data_dict, fp, indent=2, separators=(",", ": "))
 
 
 class BusyContext:
@@ -2065,11 +2055,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self._restore_auto_alignment()
 
     def load_existing_alignments(self) -> bool:
-        if self.loaddata.n_shanks == 0:
-            logger.error(
-                "Channel info not loaded. Please select Input Directory first."
-            )
+        ready = self.controller.can_load_previous_alignments()
+        if isinstance(ready, Failed):
+            logger.error(ready.message)
             return False
+
         selected = QtWidgets.QFileDialog.getExistingDirectory(
             None, "Load Existing Alignments"
         )
@@ -2078,27 +2068,31 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # fired on cancel and loaded alignments from the current directory.
         if not selected and not self.use_docdb:
             return False
-        folder_path = Path(selected)
-        self.reload_folder_line.setText(str(folder_path))
+        folder_path = Path(selected) if selected else None
+        if folder_path is not None:
+            self.reload_folder_line.setText(str(folder_path))
 
         with BusyContext(
             self,
             "Loading alignments...",
             "Alignments loaded",
             disable_widgets=self.reload_folder_button,
-        ) as ctx:
+        ):
             logger.info(
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
-            success = self.loaddata.load_previous_alignments(
+            result = self.controller.load_previous_alignments(
                 folder=folder_path,
                 shank_idx=self.session.current_shank_idx,
                 use_docdb=self.use_docdb,
             )
-            if success:
+            if isinstance(result, Failed):
+                logger.error(result.message)
+                return False
+            if isinstance(result, PreviousAlignmentsLoaded):
                 # Hand the disk-loaded history to THIS shank (single owner);
-                # the loader's copy is transient scratch, not read hereafter.
-                self.session.active_shank.set_alignments(self.loaddata.alignments)
+                # the controller/repository copy is transient scratch.
+                self.session.active_shank.set_alignments(result.alignments)
                 self.populate_lists(
                     self.session.active_shank.prev_align,
                     self.align_list,
@@ -2109,7 +2103,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     f"Loaded {len(self.session.active_shank.prev_align)} "
                     "previous alignments"
                 )
-            else:
+            elif isinstance(result, NoPreviousAlignments):
                 logger.info("No previous alignments found")
 
         return True
@@ -2396,6 +2390,47 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.on_output_folder_selected():
             logger.info("Load data cancelled: no output folder selected.")
+            return False
+
+        if self.document.output_directory is None:
+            logger.error(
+                "Output folder selected but no probe output directory was derived."
+            )
+            return False
+        return True
+
+    def _ensure_output_directory_for_save(
+        self, requirement: Requirement | None = None
+    ) -> bool:
+        """Require a save location before writing alignment outputs."""
+        if self.document.output_directory is not None:
+            return True
+
+        requirement = requirement or Requirement(
+            code="output_required",
+            message="Choose an output folder before saving.",
+            action=CHOOSE_OUTPUT_FOLDER,
+        )
+        msg = QtWidgets.QMessageBox(self)
+        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        msg.setWindowTitle("Output Folder Required")
+        msg.setText(requirement.message)
+        msg.setInformativeText(
+            "The GUI writes channel locations and alignment history to the output folder."
+        )
+        set_button = msg.addButton(
+            "Set Output Folder...", QtWidgets.QMessageBox.AcceptRole
+        )
+        msg.addButton(QtWidgets.QMessageBox.Cancel)
+        msg.setDefaultButton(set_button)
+        msg.exec_()
+
+        if msg.clickedButton() != set_button:
+            logger.info("Save cancelled: output directory is not set.")
+            return False
+
+        if not self.on_output_folder_selected():
+            logger.info("Save cancelled: no output folder selected.")
             return False
 
         if self.document.output_directory is None:
@@ -3206,9 +3241,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed.
         Saves final channel locations to a JSON file
         """
-        output_directory = self.document.output_directory
-        if output_directory is None:
-            logger.error("Output directory not set. Please select an output directory.")
+        save_ready = self.controller.can_save_alignment_output()
+        if isinstance(save_ready, Blocked):
+            if not self._ensure_output_directory_for_save(save_ready.first):
+                return
+            save_ready = self.controller.can_save_alignment_output()
+
+        if not isinstance(save_ready, Ok):
+            if isinstance(save_ready, Blocked):
+                self._log_requirement(save_ready.first)
             return
 
         with BusyContext(
@@ -3220,12 +3261,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Compute histology-space + CCF channel dicts (loader IO), then
             # record the alignment on THIS shank (the single owner of history).
             shank = self.session.active_shank
-            channel_results, ccf_channel_dict, multi_shank = (
-                self.loaddata.get_alignment_results(
-                    self.session.channel_locations_ras,
-                    shank.chn_coords,
-                )
+            output = self.controller.build_alignment_output(
+                self.session.channel_locations_ras,
+                shank.chn_coords,
             )
+            if isinstance(output, Failed):
+                logger.error(output.message)
+                return
+            assert isinstance(output, AlignmentOutputBuilt)
+
             shank.add_alignment(
                 self.session.features[self.session.idx],
                 self.session.track[self.session.idx],
@@ -3237,48 +3281,29 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
             logger.info("Saving output files to results folder...")
-            suffix = f"_shank{self.session.current_shank_idx + 1}" if multi_shank else ""
-            channel_results_path = (
-                output_directory / f"channel_locations{suffix}.json"
+            saved = self.controller.save_alignment_output(
+                output,
+                alignments,
+                self.session.current_shank_idx,
+                self.use_docdb,
             )
-            prev_alignments_path = (
-                output_directory / f"prev_alignments{suffix}.json"
-            )
-            ccf_channel_dict_path = (
-                output_directory / f"ccf_channel_locations{suffix}.json"
-            )
-
-            # The "auto" entry is a RAM-only cheap save; never let it leak
-            # into prev_alignments.json or DocDB.
-            persistable_alignments = {
-                k: v for k, v in alignments.items() if k != "auto"
-            }
-
-            _write_dict_to_json(channel_results_path, channel_results)
-            _write_dict_to_json(prev_alignments_path, persistable_alignments)
-            _write_dict_to_json(ccf_channel_dict_path, ccf_channel_dict)
+            if isinstance(saved, Failed):
+                logger.error(saved.message)
+                return
+            assert isinstance(saved, AlignmentOutputsSaved)
             logger.info("Channel locations saved to results folder")
 
-            if self.use_docdb:
-                logger.info("Writing channel locations to DocDB...")
-                probe_name_for_docdb = (
-                    f"{output_directory.stem}_{self.session.current_shank_idx}"
-                )
-                try:
-                    write_output_to_docdb(
-                        output_directory.parent.stem,
-                        probe_name_for_docdb,
-                        channel_results,
-                        persistable_alignments,
-                        ccf_channel_dict,
-                    )
-                except ValueError as e:
+            if saved.saved.docdb_probe_name is not None:
+                if saved.saved.docdb_error is not None:
                     logger.error(
-                        f"Failed to write to docdb with error {e}. Output saved to results folder"
+                        "Failed to write to DocDB with error %s. Output saved to results folder",
+                        saved.saved.docdb_error,
                     )
-                logger.info(
-                    f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
-                )
+                else:
+                    logger.info(
+                        "Channels locations saved, and ccf coordinates saved for %s",
+                        saved.saved.docdb_probe_name,
+                    )
 
             # A real save supersedes the auto cache for this probe+shank.
             if self.loaddata.probe_info is not None:
