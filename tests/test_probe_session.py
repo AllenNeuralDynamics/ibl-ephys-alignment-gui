@@ -62,6 +62,17 @@ def test_shank_instances_created_lazily():
     assert set(s.shanks) == {0, 2}
 
 
+def test_alignment_history_isolated_per_shank():
+    s = ProbeSession()
+    s.init_shanks(2)
+    s.active_shank.add_alignment(np.array([0.0]), np.array([0.0]))
+    assert len(s.active_shank.alignments) == 1
+    s.current_shank_idx = 1
+    # Shank 1 has its own (empty) history — no cross-contamination.
+    assert s.active_shank.alignments == {}
+    assert s.active_shank.prev_align == ["original"]
+
+
 class _FakePlotData:
     """Minimal cached() stub to exercise _LazyPlotAttr."""
 

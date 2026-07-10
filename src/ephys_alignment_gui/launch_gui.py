@@ -219,7 +219,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # in-progress (features, track) when the user navigates off a probe
         # so they can resume via an "auto" entry in the alignment dropdown.
         # NEVER persisted to /results or DocDB — see complete_button_pressed_offline.
-        self._auto_alignments: dict[str, list[list[float]]] = {}
+        self._auto_alignments: dict[tuple[str, int], list[list[float]]] = {}
 
         self.loaddata = LoadDataLocal()
 
@@ -1906,12 +1906,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 use_docdb=self.use_docdb,
             )
             if success:
+                # Hand the disk-loaded history to THIS shank (single owner);
+                # the loader's copy is transient scratch, not read hereafter.
+                self.session.active_shank.set_alignments(self.loaddata.alignments)
                 self.populate_lists(
-                    self.loaddata.prev_align, self.align_list, self.align_combobox
+                    self.session.active_shank.prev_align,
+                    self.align_list,
+                    self.align_combobox,
                 )
                 self.on_alignment_selected(0)
                 logger.info(
-                    f"Loaded {len(self.loaddata.prev_align)} previous alignments"
+                    f"Loaded {len(self.session.active_shank.prev_align)} "
+                    "previous alignments"
                 )
             else:
                 logger.info("No previous alignments found")
@@ -2097,32 +2103,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         if features is None or track is None:
             return
-        self._auto_alignments[probe.probe_id] = [
+        key = (probe.probe_id, self.session.current_shank_idx)
+        self._auto_alignments[key] = [
             np.asarray(features).tolist(),
             np.asarray(track).tolist(),
         ]
-        logger.info(f"Auto-captured alignment for probe {probe.probe_id}")
+        logger.info(f"Auto-captured alignment for probe {probe.probe_id} {key}")
 
     def _restore_auto_alignment(self) -> None:
         """Surface a cached auto alignment for the current probe, if any.
 
-        Injects an ``"auto"`` entry into ``loaddata.alignments`` and
-        prepends it to ``loaddata.prev_align`` so it shows up at the top
-        of the alignment dropdown. Selecting it restores
-        ``feature_prev``/``track_prev`` from RAM. Never written to disk.
+        Injects an ``"auto"`` entry into the active shank's alignment history
+        and prepends it to its dropdown so it shows up at the top. Selecting it
+        restores ``feature_prev``/``track_prev`` from RAM. Never written to disk.
+        Keyed per (probe, shank) so it can't cross-load another shank's WIP.
         """
         probe = self.loaddata.probe_info
-        if probe is None:
+        if probe is None or self.session is None:
             return
-        auto = self._auto_alignments.get(probe.probe_id)
+        auto = self._auto_alignments.get(
+            (probe.probe_id, self.session.current_shank_idx)
+        )
         if auto is None:
             return
-        self.loaddata.alignments["auto"] = auto
-        if "auto" in self.loaddata.prev_align:
-            self.loaddata.prev_align.remove("auto")
-        self.loaddata.prev_align.insert(0, "auto")
+        shank = self.session.active_shank
+        shank.alignments["auto"] = auto
+        if "auto" in shank.prev_align:
+            shank.prev_align.remove("auto")
+        shank.prev_align.insert(0, "auto")
         self.populate_lists(
-            self.loaddata.prev_align, self.align_list, self.align_combobox
+            shank.prev_align, self.align_list, self.align_combobox
         )
         self.on_alignment_selected(0)
         logger.info(f"Restored auto alignment for probe {probe.probe_id}")
@@ -2323,8 +2333,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             logger.debug("Loaded track_annotations_ras for shank")
 
-            # Get alignment for this shank (from cached alignments, no disk read)
-            self.session.feature_prev, self.session.track_prev = self.loaddata.get_alignment_idx(0)
+            # Refresh the previous-alignments dropdown to this shank's own
+            # history (not another shank's), then take its starting alignment.
+            self.populate_lists(
+                self.session.active_shank.prev_align,
+                self.align_list,
+                self.align_combobox,
+            )
+            self.session.feature_prev, self.session.track_prev = (
+                self.session.active_shank.get_alignment_idx(0)
+            )
             self.recreate_alignment_and_regions()
 
         # Build this shank's PlotData once; reuse it on revisit (it holds the
@@ -2466,9 +2484,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when selecting alignment from dropdown"""
         logger.info(f"Alignment index {idx} selected")
 
-        # Get from cached data (no disk read)
+        # Get from this shank's own alignment history (no disk read)
         try:
-            self.session.feature_prev, self.session.track_prev = self.loaddata.get_alignment_idx(idx)
+            self.session.feature_prev, self.session.track_prev = (
+                self.session.active_shank.get_alignment_idx(idx)
+            )
         except RuntimeError as e:
             logger.error(f"Failed to get alignment: {e}")
             return
@@ -2976,13 +2996,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "Saved successfully",
             disable_widgets=self.complete_button,
         ):
-            # Save histology-space to disk and update in-memory state
-            channel_results, alignments, ccf_channel_dict, multi_shank = (
+            # Compute histology-space + CCF channel dicts (loader IO), then
+            # record the alignment on THIS shank (the single owner of history).
+            shank = self.session.active_shank
+            channel_results, ccf_channel_dict, multi_shank = (
                 self.loaddata.get_alignment_results(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
                     self.session.channel_locations_ras,
+                    shank.chn_coords,
                 )
+            )
+            shank.add_alignment(
+                self.session.features[self.session.idx],
+                self.session.track[self.session.idx],
+            )
+            alignments = shank.alignments
+            # Reflect the new save in the alignment dropdown.
+            self.populate_lists(
+                shank.prev_align, self.align_list, self.align_combobox
             )
 
             logger.info("Saving output files to results folder...")
@@ -3029,10 +3059,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     f"Channels locations saved, and ccf coordinates saved for {probe_name_for_docdb}"
                 )
 
-            # A real save supersedes the auto cache for this probe.
+            # A real save supersedes the auto cache for this probe+shank.
             if self.loaddata.probe_info is not None:
                 self._auto_alignments.pop(
-                    self.loaddata.probe_info.probe_id, None
+                    (self.loaddata.probe_info.probe_id, self.session.current_shank_idx),
+                    None,
                 )
 
     def display_qc_options(self) -> None:

@@ -919,21 +919,25 @@ class LoadDataLocal:
 
     def get_alignment_results(
         self,
-        feature: NDArray,
-        track: NDArray,
         channel_locations_ras: NDArray,
+        chn_coords: NDArray,
     ) -> tuple[
         dict[str, dict[str, Any]],
-        dict[str, list[list[float]]],
         dict[str, dict[str, Any]],
         bool,
     ]:
-        logger.info("Saving channel locations and previous alignments locally")
+        """Compute the histology-space + CCF channel dicts for a save.
+
+        IO-only: the alignment history itself is owned per-shank by
+        :class:`~ephys_alignment_gui.shank_alignment.ShankAlignment` (the caller
+        records the new alignment there and persists it), so this no longer
+        keeps a resident ``alignments`` dict. ``chn_coords`` is passed in rather
+        than read from loader scratch so a save is decoupled from loader state.
+        """
+        logger.info("Saving channel locations locally")
         logger.debug(f"Channels: {channel_locations_ras}")
         if self.brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
-        if self.chn_coords is None:
-            raise RuntimeError("Must call set_channels_for_shank() first")
         regions: BrainRegions = self.brain_atlas.regions
         brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
         # Persist xyz in SPIM-native coords so external tools reading the
@@ -941,8 +945,8 @@ class LoadDataLocal:
         brain_regions["xyz"] = self.brain_atlas.unrotate_to_spim_native(
             channel_locations_ras
         )
-        brain_regions["lateral"] = self.chn_coords[:, 0]
-        brain_regions["axial"] = self.chn_coords[:, 1]
+        brain_regions["lateral"] = chn_coords[:, 0]
+        brain_regions["axial"] = chn_coords[:, 1]
 
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
         channel_dict = self.create_channel_dict(brain_regions)
@@ -950,12 +954,9 @@ class LoadDataLocal:
 
         ccf_channel_dict = self._transform_to_ccf(channel_locations_ras, channel_dict)
 
-        date = datetime.now().replace(microsecond=0).isoformat()
-        self.alignments[date] = [feature.tolist(), track.tolist()]
-
         multi_shank = self.n_shanks > 1
 
-        return channel_dict, self.alignments, ccf_channel_dict, multi_shank
+        return channel_dict, ccf_channel_dict, multi_shank
 
     @staticmethod
     def create_channel_dict(brain_regions: Bunch) -> dict[str, dict[str, Any]]:
