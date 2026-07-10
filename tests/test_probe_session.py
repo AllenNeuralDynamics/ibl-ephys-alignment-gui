@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.probe_session import ProbeSession
 
 
@@ -71,6 +72,30 @@ def test_alignment_history_isolated_per_shank():
     # Shank 1 has its own (empty) history — no cross-contamination.
     assert s.active_shank.alignments == {}
     assert s.active_shank.prev_align == ["original"]
+
+
+def test_active_alignment_delegates_to_active_shank():
+    s = ProbeSession()
+    s.init_shanks(2)
+    s.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 2.0]),
+        lin_fit=False,
+    )
+
+    first = s.active_alignment
+    assert first is not None
+    np.testing.assert_array_equal(first.feature, [0.0, 1.0])
+    assert not first.lin_fit
+
+    s.current_shank_idx = 1
+    assert s.active_alignment is None
+    s.active_alignment = ActiveAlignment(np.array([3.0, 4.0]), np.array([5.0, 6.0]))
+
+    s.current_shank_idx = 0
+    np.testing.assert_array_equal(s.active_alignment.feature, [0.0, 1.0])
+    s.current_shank_idx = 1
+    np.testing.assert_array_equal(s.active_alignment.feature, [3.0, 4.0])
 
 
 class _FakePlotData:

@@ -1061,11 +1061,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         n_perp_samples = int(round(2 * extent_m / dv_voxel_m)) + 1
         extent_um = extent_m * 1e6
 
+        alignment = self.session.active_alignment
+        if alignment is None:
+            return
+
         try:
             perp_image = self.loaddata.get_perpendicular_slice_image(
                 ephysalign=self.session.ephysalign,
-                feature_ref=self.session.features[self.session.idx],
-                track_ref=self.session.track[self.session.idx],
+                feature_ref=alignment.feature,
+                track_ref=alignment.track,
                 feature_grid_m=feature_grid_m,
                 channel_name=channel_name,
                 extent_m=extent_m,
@@ -2342,17 +2346,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe = self.loaddata.probe_info
         if probe is None or self.session is None:
             return
-        try:
-            features = self.session.features[self.session.idx]
-            track = self.session.track[self.session.idx]
-        except (AttributeError, IndexError, KeyError, TypeError):
+        alignment = self.session.active_alignment
+        if alignment is None:
             return
-        if features is None or track is None:
-            return
+
         key = (probe.probe_id, self.session.current_shank_idx)
         self.workspace.auto_alignments[key] = [
-            np.asarray(features).tolist(),
-            np.asarray(track).tolist(),
+            np.asarray(alignment.feature).tolist(),
+            np.asarray(alignment.track).tolist(),
         ]
         logger.info(f"Auto-captured alignment for probe {probe.probe_id} {key}")
 

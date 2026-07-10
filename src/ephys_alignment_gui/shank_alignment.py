@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,18 @@ class ShankAlignment:
     track = _edit_history_attr("track")
     features = _edit_history_attr("features")
     lin_fit_history = _edit_history_attr("lin_fit_history")
+
+    @property
+    def active_alignment(self) -> ActiveAlignment | None:
+        """Current feature/track control points for this shank."""
+        return self.edit_history.current_alignment
+
+    @active_alignment.setter
+    def active_alignment(self, alignment: ActiveAlignment | None) -> None:
+        if alignment is None:
+            self.edit_history.clear_current_alignment()
+            return
+        self.edit_history.set_current_alignment(alignment)
 
     def __init__(self, shank_idx: int, max_idx: int = 10) -> None:
         self.shank_idx: int = shank_idx

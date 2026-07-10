@@ -103,6 +103,7 @@ class ProbeSession:
     track = _ShankAttr("track")
     features = _ShankAttr("features")
     lin_fit_history = _ShankAttr("lin_fit_history")
+    active_alignment = _ShankAttr("active_alignment")
     # Track / channel locations
     chn_depths = _ShankAttr("chn_depths")
     track_annotations_ras = _ShankAttr("track_annotations_ras")

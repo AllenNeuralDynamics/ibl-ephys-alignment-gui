@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui import shank_alignment
+from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 from ephys_alignment_gui.shank_alignment import ShankAlignment
 
@@ -56,6 +57,28 @@ def test_edit_history_delegates_legacy_fit_attributes():
     np.testing.assert_array_equal(sa.edit_history.features[2], [1.0])
     np.testing.assert_array_equal(sa.edit_history.track[2], [2.0])
     assert not sa.edit_history.lin_fit_history[2]
+
+
+def test_active_alignment_delegates_to_edit_history() -> None:
+    sa = ShankAlignment(0)
+    alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 2.0]),
+        lin_fit=False,
+    )
+
+    sa.active_alignment = alignment
+
+    assert sa.active_alignment is not None
+    np.testing.assert_array_equal(sa.features[0], [0.0, 1.0])
+    np.testing.assert_array_equal(sa.track[0], [0.0, 2.0])
+    assert not sa.lin_fit_history[0]
+    np.testing.assert_array_equal(sa.active_alignment.feature, [0.0, 1.0])
+    np.testing.assert_array_equal(sa.active_alignment.track, [0.0, 2.0])
+    assert not sa.active_alignment.lin_fit
+
+    sa.active_alignment = None
+    assert sa.active_alignment is None
 
 
 def test_add_alignment_and_roundtrip():
