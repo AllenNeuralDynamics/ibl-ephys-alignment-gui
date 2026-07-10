@@ -19,7 +19,6 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.controller import (
     AlignmentOutputBuilt,
     AlignmentOutputsSaved,
@@ -36,6 +35,7 @@ from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
 from ephys_alignment_gui.image_levels import brain_percentile_levels
 from ephys_alignment_gui.load_data_local import LoadDataLocal
+from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.thread_worker import Worker
@@ -237,6 +237,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._empty_state_item: Any = None
 
         self.loaddata = LoadDataLocal()
+        self.plot_data_factory = PlotDataFactory()
         self.workflow_policy = WorkflowPolicy()
         self.controller = AlignmentController(
             self.document, self.loaddata, self.workflow_policy
@@ -2662,11 +2663,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # shank's filtered channels/spikes and the memoized plot datasets).
         # plotdata is per-shank (_ShankAttr), so each shank keeps its own.
         if self.session.plotdata is None:
-            self.session.plotdata = pd.PlotData(
-                self.session.probe_path,
-                self.session.data,
-                self.session.current_shank_idx,
-            )
+            if self.loaddata.channel_collection is not None:
+                self.session.plotdata = self.plot_data_factory.build(
+                    self.loaddata.channel_collection
+                )
+            else:
+                self.session.plotdata = self.plot_data_factory.build_legacy(
+                    self.session.probe_path,
+                    self.session.data,
+                    self.session.current_shank_idx,
+                )
         self.set_lims(
             np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max
         )

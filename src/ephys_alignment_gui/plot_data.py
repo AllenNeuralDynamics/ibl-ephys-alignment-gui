@@ -21,6 +21,7 @@ from ephys_alignment_gui.channel_geometry import (
     rows_for_shank,
     valid_shank_indices,
 )
+from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
 from ephys_alignment_gui.utils import bincount2D
 
 logger = logging.getLogger(__name__)
@@ -59,36 +60,22 @@ def _safe_take(arr, indices, axis=0):
 
 
 class PlotData:
-    def __init__(self, probe_path, data, shank_idx) -> None:
+    def __init__(
+        self,
+        probe_path,
+        data,
+        shank_idx,
+        channel_collection: ChannelCollectionView | None = None,
+    ) -> None:
         self.probe_path = probe_path
         self.data = data
         self.shank_idx = shank_idx
+        self.channel_collection = channel_collection
 
-        self.chn_coords_all = self.data["channels"]["localCoordinates"]
-        self.chn_raw_ind_all = (
-            self.data["channels"]
-            .get("rawInd", np.arange(self.chn_coords_all.shape[0]))
-            .astype(int)
-        )
-        self.chn_contact_id_all = self.data["channels"].get("contactId")
-        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
-        self.chn_shank_ind_all = valid_shank_indices(
-            self.data["channels"].get("shankInd"),
-            self.chn_coords_all.shape[0],
-        )
-
-        n_shanks = n_shanks_from_geometry(self.chn_coords_all, self.chn_shank_ind_all)
-        self.chn_rows = rows_for_shank(
-            self.chn_coords_all, self.chn_shank_ind_all, shank_idx, n_shanks
-        )
-        if self.chn_rows.size == 0:
-            logger.warning(
-                "No channels found for shank %d; falling back to all channels",
-                shank_idx,
-            )
-            self.chn_rows = self.chn_ind_all
-        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
-        self.chn_ind = self.chn_rows.copy()
+        if channel_collection is None:
+            self._init_channel_geometry_from_alf_data(shank_idx)
+        else:
+            self._init_channel_geometry_from_collection(channel_collection)
 
         # Remove duplicate (x, y) coordinates (e.g. overlapping surface-finding
         # channels on multi-shank probes), keeping the first occurrence.
@@ -144,6 +131,58 @@ class PlotData:
 
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
+
+    def _init_channel_geometry_from_collection(
+        self, channel_collection: ChannelCollectionView
+    ) -> None:
+        """Initialize channel geometry from a runtime channel-collection view."""
+        channel_table = channel_collection.channel_table
+        self.chn_coords_all = channel_table.local_coordinates
+        self.chn_raw_ind_all = (
+            channel_table.raw_ind
+            if channel_table.raw_ind is not None
+            else np.arange(self.chn_coords_all.shape[0])
+        ).astype(int)
+        self.chn_contact_id_all = channel_table.contact_ids
+        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
+        self.chn_shank_ind_all = channel_table.shank_indices
+        self.chn_rows = channel_collection.rows.copy()
+        if self.chn_rows.size == 0:
+            logger.warning(
+                "No channels found for shank %d; falling back to all channels",
+                channel_collection.shank_idx,
+            )
+            self.chn_rows = self.chn_ind_all
+        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
+        self.chn_ind = self.chn_rows.copy()
+
+    def _init_channel_geometry_from_alf_data(self, shank_idx) -> None:
+        """Initialize channel geometry from legacy ALF channel metadata."""
+        self.chn_coords_all = self.data["channels"]["localCoordinates"]
+        self.chn_raw_ind_all = (
+            self.data["channels"]
+            .get("rawInd", np.arange(self.chn_coords_all.shape[0]))
+            .astype(int)
+        )
+        self.chn_contact_id_all = self.data["channels"].get("contactId")
+        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
+        self.chn_shank_ind_all = valid_shank_indices(
+            self.data["channels"].get("shankInd"),
+            self.chn_coords_all.shape[0],
+        )
+
+        n_shanks = n_shanks_from_geometry(self.chn_coords_all, self.chn_shank_ind_all)
+        self.chn_rows = rows_for_shank(
+            self.chn_coords_all, self.chn_shank_ind_all, shank_idx, n_shanks
+        )
+        if self.chn_rows.size == 0:
+            logger.warning(
+                "No channels found for shank %d; falling back to all channels",
+                shank_idx,
+            )
+            self.chn_rows = self.chn_ind_all
+        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
+        self.chn_ind = self.chn_rows.copy()
 
     def cached(self, method: str, args: tuple = ()):
         """Return ``self.<method>(*args)``, memoized per PlotData instance.
