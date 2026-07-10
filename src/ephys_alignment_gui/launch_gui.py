@@ -19,6 +19,7 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+from ephys_alignment_gui.alignment_events import AlignmentChanged, LineUpdateMode
 from ephys_alignment_gui.controller import (
     AlignmentOutputBuilt,
     AlignmentOutputsSaved,
@@ -176,6 +177,8 @@ class BusyContext:
 
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
+    alignment_changed = QtCore.pyqtSignal(object)
+
     @staticmethod
     def _instances():
         app = QtWidgets.QApplication.instance()
@@ -221,6 +224,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.init_variables()
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
+        self._connect_alignment_changed_handlers()
 
         self.configure: bool = True
         self.offline: bool = True
@@ -1222,8 +1226,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             lin_fit=self.session.lin_fit,
             track_shift_m=track_shift_m,
         )
-
-        self.get_scaled_histology()
         return result.changed
 
     def scale_hist_data(self) -> bool:
@@ -1251,8 +1253,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             lin_fit=self.session.lin_fit,
             extend_feature=self.session.extend_feature,
         )
-
-        self.get_scaled_histology()
         return result.changed
 
     def get_scaled_histology(self) -> None:
@@ -1265,6 +1265,52 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             region_label_fp=self.session.region_label_fp,
             region_colour_fp=self.session.region_colour_fp,
         )
+        self._apply_alignment_histology_data(derived)
+
+    def _connect_alignment_changed_handlers(self) -> None:
+        self.alignment_changed.connect(self._on_alignment_changed_apply_data)
+        self.alignment_changed.connect(self._on_alignment_changed_prepare_lines)
+        self.alignment_changed.connect(self._on_alignment_changed_histology)
+        self.alignment_changed.connect(self._on_alignment_changed_scale)
+        self.alignment_changed.connect(self._on_alignment_changed_fit)
+        self.alignment_changed.connect(self._on_alignment_changed_channels)
+        self.alignment_changed.connect(self._on_alignment_changed_perpendicular)
+        self.alignment_changed.connect(self._on_alignment_changed_lines)
+        self.alignment_changed.connect(self._on_alignment_changed_range)
+        self.alignment_changed.connect(self._on_alignment_changed_status)
+
+    def _emit_alignment_changed(
+        self,
+        *,
+        source: str,
+        line_update: LineUpdateMode = "none",
+        reset_histology_range: bool = False,
+        refresh_perpendicular: bool = True,
+    ) -> None:
+        event = AlignmentChanged(
+            source=source,
+            active_alignment=self.session.active_alignment,
+            histology=self.alignment_derived_data_service.compute_histology(
+                ephysalign=self.session.ephysalign,
+                feature=self.session.features[self.session.idx],
+                track=self.session.track[self.session.idx],
+                histology_mapping=self.session.hist_mapping,
+                region_fp=self.session.region_fp,
+                region_label_fp=self.session.region_label_fp,
+                region_colour_fp=self.session.region_colour_fp,
+            ),
+            projection=self.alignment_derived_data_service.compute_channel_projection(
+                ephysalign=self.session.ephysalign,
+                feature=self.session.features[self.session.idx],
+                track=self.session.track[self.session.idx],
+            ),
+            line_update=line_update,
+            reset_histology_range=reset_histology_range,
+            refresh_perpendicular=refresh_perpendicular,
+        )
+        self.alignment_changed.emit(event)
+
+    def _apply_alignment_histology_data(self, derived) -> None:
         self.session.hist_data["region"] = derived.histology.region
         self.session.hist_data["axis_label"] = derived.histology.axis_label
         self.session.hist_data["colour"] = derived.histology.colour
@@ -1275,6 +1321,57 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.hist_data_ref["colour"] = derived.reference_histology.colour
         self.session.scale_data["region"] = derived.scale.region
         self.session.scale_data["scale"] = derived.scale.scale
+
+    def _on_alignment_changed_apply_data(self, event: AlignmentChanged) -> None:
+        self._apply_alignment_histology_data(event.histology)
+        self.session.channel_locations_ras = event.projection.channel_locations_ras
+        self.session.tip_location_ras = event.projection.tip_location_ras
+
+    def _on_alignment_changed_prepare_lines(self, event: AlignmentChanged) -> None:
+        if event.line_update == "navigation":
+            self.remove_lines_points()
+            self.add_lines_points()
+
+    def _on_alignment_changed_histology(self, event: AlignmentChanged) -> None:
+        self.plot_histology(self.fig_hist)
+
+    def _on_alignment_changed_scale(self, event: AlignmentChanged) -> None:
+        self.plot_scale_factor()
+
+    def _on_alignment_changed_fit(self, event: AlignmentChanged) -> None:
+        self.plot_fit()
+
+    def _on_alignment_changed_channels(self, event: AlignmentChanged) -> None:
+        self.plot_channels(event.projection)
+
+    def _on_alignment_changed_perpendicular(self, event: AlignmentChanged) -> None:
+        if event.refresh_perpendicular:
+            self.refresh_perpendicular_histology()
+
+    def _on_alignment_changed_lines(self, event: AlignmentChanged) -> None:
+        if event.line_update == "navigation":
+            self.remove_lines_points()
+            self.add_lines_points()
+        elif event.line_update == "sync":
+            self.remove_lines_points()
+            self.add_lines_points()
+            self.update_lines_points()
+        elif event.line_update == "reset_previous":
+            if np.any(self.session.feature_prev):
+                self.create_lines(self.session.feature_prev[1:-1] * 1e6)
+
+    def _on_alignment_changed_range(self, event: AlignmentChanged) -> None:
+        if not event.reset_histology_range:
+            return
+        self.fig_hist.setYRange(
+            min=self.session.probe_tip - self.session.probe_extra,
+            max=self.session.probe_top + self.session.probe_extra,
+            padding=self.pad,
+        )
+
+    def _on_alignment_changed_status(self, event: AlignmentChanged) -> None:
+        if event.update_status:
+            self.update_string()
 
     def plot_scale_factor(self) -> None:
         """
@@ -1493,17 +1590,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return None
         return np.asarray(self.session.chn_depths)[in_brain]
 
-    def plot_channels(self) -> None:
+    def plot_channels(self, projection=None) -> None:
         # If no histology we can't do alignment
         if not self.histology_exists:
             return
 
         self.session.channel_status = True
-        projection = self.alignment_derived_data_service.compute_channel_projection(
-            ephysalign=self.session.ephysalign,
-            feature=self.session.features[self.session.idx],
-            track=self.session.track[self.session.idx],
-        )
+        if projection is None:
+            projection = self.alignment_derived_data_service.compute_channel_projection(
+                ephysalign=self.session.ephysalign,
+                feature=self.session.features[self.session.idx],
+                track=self.session.track[self.session.idx],
+            )
         self.session.channel_locations_ras = projection.channel_locations_ras
         self.session.tip_location_ras = projection.tip_location_ras
 
@@ -2880,7 +2978,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.scale_hist_data():
             return
-        self._redraw_after_fit_or_offset()
+        self._emit_alignment_changed(
+            source="fit",
+            line_update="sync",
+            reset_histology_range=True,
+        )
 
     def offset_button_pressed(
         self, _checked: bool = False, *, track_shift_m: float = 0.0
@@ -2897,22 +2999,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.offset_hist_data(track_shift_m=track_shift_m):
             return
-        self._redraw_after_fit_or_offset()
-
-    def _redraw_after_fit_or_offset(self) -> None:
-        self.plot_histology(self.fig_hist)
-        self.plot_scale_factor()
-        self.plot_fit()
-        self.plot_channels()
-        self.remove_lines_points()
-        self.add_lines_points()
-        self.update_lines_points()
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
+        self._emit_alignment_changed(
+            source="offset",
+            line_update="sync",
+            reset_histology_range=True,
         )
-        self.update_string()
 
     def movedown_button_pressed(self) -> None:
         """
@@ -3119,7 +3210,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         if result.changed:
             self._restore_lin_fit_from_edit(result.lin_fit)
-            self._redraw_after_history_navigation()
+            self._emit_alignment_changed(source="next", line_update="navigation")
 
     def prev_button_pressed(self) -> None:
         """
@@ -3136,7 +3227,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         if result.changed:
             self._restore_lin_fit_from_edit(result.lin_fit)
-            self._redraw_after_history_navigation()
+            self._emit_alignment_changed(source="previous", line_update="navigation")
 
     def reset_button_pressed(self) -> None:
         """
@@ -3157,21 +3248,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_init=self.session.ephysalign.track_init,
             lin_fit=self.session.lin_fit,
         )
-
-        self.get_scaled_histology()
-
-        self.plot_histology(self.fig_hist)
-        self.plot_scale_factor()
-        if np.any(self.session.feature_prev):
-            self.create_lines(self.session.feature_prev[1:-1] * 1e6)
-        self.plot_fit()
-        self.plot_channels()
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
+        self._emit_alignment_changed(
+            source="reset",
+            line_update="reset_previous",
+            reset_histology_range=True,
         )
-        self.update_string()
 
     def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
         if lin_fit is None:
@@ -3180,18 +3261,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.lin_fit_option.blockSignals(True)
         self.lin_fit_option.setChecked(self.session.lin_fit)
         self.lin_fit_option.blockSignals(False)
-
-    def _redraw_after_history_navigation(self) -> None:
-        self.remove_lines_points()
-        self.add_lines_points()
-        self.get_scaled_histology()
-        self.plot_histology(self.fig_hist)
-        self.plot_scale_factor()
-        self.remove_lines_points()
-        self.add_lines_points()
-        self.plot_fit()
-        self.plot_channels()
-        self.update_string()
 
     def run_complete_button_in_thread(self) -> None:
         self.thread = QThread()
