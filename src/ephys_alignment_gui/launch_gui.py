@@ -3453,15 +3453,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             line_feature3.setZValue(100)
             line_feature3.sigPositionChanged.connect(self.update_lines_features)
+            line_feature_perp = pg.InfiniteLine(
+                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
+            )
+            line_feature_perp.setZValue(100)
+            line_feature_perp.sigPositionChanged.connect(self.update_lines_features)
             self.fig_hist.addItem(line_track)
             self.fig_img.addItem(line_feature1)
             self.fig_line.addItem(line_feature2)
             self.fig_probe.addItem(line_feature3)
+            self.fig_hist_perp.addItem(line_feature_perp)
 
+            # 4-wide row (col 3 = perpendicular-plot handle), matching
+            # create_lines and the teardown/delete perp handling.
             self.session.lines_features = np.vstack(
                 [
                     self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3],
+                    [line_feature1, line_feature2, line_feature3, line_feature_perp],
                 ]
             )
             self.session.lines_tracks = np.vstack([self.session.lines_tracks, line_track])
