@@ -22,21 +22,13 @@ from iblutil.util import Bunch
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.anatomical_atlas import (
-    _BLESSED_DIRECTION,
-    BrainAtlasAnatomical,
-)
+from ephys_alignment_gui.anatomical_atlas import BrainAtlasAnatomical
 from ephys_alignment_gui.ephys_data_service import (
     ChannelCollectionView,
     ChannelTable,
     EphysStreamData,
 )
-from ephys_alignment_gui.rigid_rotation import (
-    image_center_physical,
-    load_affine_matrix,
-    polar_rotation,
-    rotate_image,
-)
+from ephys_alignment_gui.histology_data_service import HistologyRuntimeData
 from ephys_alignment_gui.slice_service import SliceService
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -106,6 +98,12 @@ class LoadDataLocal:
         """Clear loader-side stream caches after the selected probe changes."""
         self._clear_channel_cache()
 
+    def set_histology_data(self, histology_data: HistologyRuntimeData) -> None:
+        """Attach already-loaded atlas and histology runtime data."""
+        self.brain_atlas = histology_data.brain_atlas
+        self.histology_images = dict(histology_data.histology_images)
+        self._lazy_channel_paths = dict(histology_data.lazy_channel_paths)
+
     @property
     def probe_id(self) -> str | None:
         """Shortcut for the current probe ID (if selected)."""
@@ -148,90 +146,6 @@ class LoadDataLocal:
     def _set_channel_collection(self, collection: ChannelCollectionView) -> None:
         self.channel_collection = collection
         self.chn_coords = collection.local_coordinates
-
-    def load_atlas_and_histology(self) -> None:
-        """Load atlas + default histology channel from the mouse-root datapackage.
-
-        Applies the SPIM->template polar rotation so all image-space assets
-        share an atlas-aligned canonical frame. SPIM-native versions of the
-        intensity and pipeline images are kept on the atlas for the ANTs CCF
-        chain (which was computed in SPIM-native coords).
-        """
-        mouse_root = self.data_context.mouse_root
-        if mouse_root is None:
-            raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
-        hist = mouse_root.histology
-        logger.debug(f"Loading atlas and histology from {hist.registration.parent}")
-
-        intensity_image = sitk.ReadImage(str(hist.ccf_template))
-        label_image = sitk.ReadImage(str(hist.labels))
-        pipeline_image = sitk.ReadImage(str(hist.registration_pipeline))
-        histology_image = sitk.ReadImage(str(hist.registration))
-
-        # Extract the rotational part of the SPIM->template affine and apply
-        # it to every image-space asset, so the canonical in-memory frame has
-        # atlas-aligned axes. SPIM-native recovery (for saving xyz_picks and
-        # composing with the ANTs CCF chain) is done via R^T through the
-        # BrainAtlasAnatomical.unrotate_to_spim_native helper.
-        linear, _ = load_affine_matrix(
-            mouse_root.transforms.image_to_template_affine
-        )
-        # An ANTs 0GenericAffine.mat maps points fixed->moving. The
-        # ls_to_template registration has fixed=template, moving=SPIM, so this
-        # linear part is the template->SPIM map. We want to rotate SPIM data
-        # *into* the template-aligned canonical frame, i.e. the SPIM->template
-        # rotation, which is the transpose (inverse) of the extracted rotation.
-        # Applying it un-transposed rotated the histology (and the probe
-        # points, which share this R via display_rotation) further from the
-        # atlas instead of toward it.
-        R = polar_rotation(linear).T
-        rotation_center = image_center_physical(intensity_image)
-        logger.debug(
-            f"Computed SPIM->template display rotation (det={np.linalg.det(R):.6f})"
-        )
-
-        intensity_image_rot = rotate_image(
-            intensity_image, R, rotation_center, interpolator="linear"
-        )
-        label_image_rot = rotate_image(
-            label_image, R, rotation_center, interpolator="nearest"
-        )
-        pipeline_image_rot = rotate_image(
-            pipeline_image, R, rotation_center, interpolator="linear"
-        )
-        histology_image_rot = rotate_image(
-            histology_image, R, rotation_center, interpolator="linear"
-        )
-
-        self.brain_atlas = BrainAtlasAnatomical(
-            intensity_img=intensity_image_rot,
-            label_img=label_image_rot,
-            pipeline_img=pipeline_image_rot,
-            display_rotation=R,
-            display_rotation_center=rotation_center,
-            intensity_img_spim_native=intensity_image,
-            pipeline_img_spim_native=pipeline_image,
-        )
-
-        # Ensure the rotated histology is in the blessed DICOM orientation
-        # consumed by the rest of the pipeline (rotate_image emits identity
-        # direction, so DICOMOrient only does a cheap axis permutation).
-        dicom_orient_str = (
-            sitk.DICOMOrientImageFilter.GetOrientationFromDirectionCosines(
-                histology_image_rot.GetDirection()
-            )
-        )
-        if dicom_orient_str != _BLESSED_DIRECTION:
-            histology_image_rot = sitk.DICOMOrient(
-                histology_image_rot, _BLESSED_DIRECTION
-            )
-        self.histology_images["histology_registration"] = histology_image_rot
-
-        # Store metadata for lazy loading other channels. They'll be rotated
-        # with the same (R, center) when first requested; per-channel DICOM
-        # reorient is decided at load time.
-        self._lazy_channel_paths = dict(hist.additional_channels)
-        logger.debug(f"Setup lazy loading for {len(self._lazy_channel_paths)} channels")
 
     def set_channels_for_shank(self, shank_idx: int) -> NDArray:
         """Filter cached channel coordinates for selected shank. No disk I/O."""
@@ -294,7 +208,7 @@ class LoadDataLocal:
         track_annotations_ras_spim = np.array(user_picks["xyz_picks"]) / 1e6
         if self.brain_atlas is None:
             raise RuntimeError(
-                "brain_atlas not yet loaded; call load_atlas_and_histology() first"
+                "brain_atlas not yet loaded; attach histology data first"
             )
         return self.brain_atlas.rotate_to_canonical(track_annotations_ras_spim)
 
@@ -306,7 +220,7 @@ class LoadDataLocal:
         """Get atlas and histology slices for the current shank track."""
         if self.brain_atlas is None:
             raise RuntimeError(
-                "brain_atlas not yet loaded; call load_atlas_and_histology() first"
+                "brain_atlas not yet loaded; attach histology data first"
             )
         return (
             self.slice_service.build_slice_set(

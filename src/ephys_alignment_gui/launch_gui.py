@@ -214,6 +214,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.document = self.workspace.document
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
+        self.histology_data_service = self.workspace.histology_data_service
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
         self.alignment_edit_service = self.workspace.alignment_edit_service
@@ -2137,7 +2138,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 try:
                     ctx.update_message("Loading atlas and histology...")
                     logger.info("Loading atlas and histology...")
-                    self.loaddata.load_atlas_and_histology()
+                    mouse_root = self.data_context.mouse_root
+                    if mouse_root is None:
+                        raise RuntimeError("No mouse root loaded")
+                    histology_data = self.histology_data_service.load(mouse_root)
+                    self.loaddata.set_histology_data(histology_data)
                     logger.info("Atlas and histology loaded successfully")
                 except Exception as e:
                     logger.error(f"Failed to load atlas/histology: {e}")

@@ -19,6 +19,7 @@ def test_workspace_wires_shared_services() -> None:
         workspace.probe_data_workflow.ephys_data_service
         is workspace.ephys_data_service
     )
+    assert workspace.histology_data_service is not None
     assert workspace.alignment_edit_service is not None
     assert workspace.alignment_derived_data_service is not None
     assert workspace.loader.data_context is workspace.data_context
