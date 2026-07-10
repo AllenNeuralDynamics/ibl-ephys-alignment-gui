@@ -253,13 +253,14 @@ def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path)
 
     loader = LoadDataLocal(ephys_data_service=FailingEphysDataService())
     loader.probe_info = probe
-    loader.set_ephys_stream(stream)
+    loader.set_channel_collection(stream.channel_collection(1))
 
     assert loader.ephys_stream is stream
     assert loader.channel_table is table
     assert loader.n_shanks == 2
     assert loader.chn_coords_all is table.local_coordinates
     assert loader.chn_contact_id_all is table.contact_ids
+    assert loader.chn_coords.tolist() == [[250.0, 0.0], [250.0, 20.0]]
 
     ephys_dir, depths, session_notes, data = loader.get_ephys_data(1)
 

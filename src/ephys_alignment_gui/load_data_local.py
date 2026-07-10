@@ -244,6 +244,11 @@ class LoadDataLocal:
         self._set_channel_table(stream.channel_table)
         self.channel_collection = None
 
+    def set_channel_collection(self, collection: ChannelCollectionView) -> None:
+        """Attach an already-selected runtime channel collection."""
+        self.set_ephys_stream(collection.stream)
+        self._set_channel_collection(collection)
+
     def _set_channel_table(self, channel_table: ChannelTable) -> None:
         """Update legacy channel-table adapter fields from a runtime model."""
         if self.data_context is not None:
@@ -253,6 +258,10 @@ class LoadDataLocal:
         self._cache_channel_table_arrays(channel_table)
         if self.data_context is None:
             self.n_shanks = channel_table.n_shanks
+
+    def _set_channel_collection(self, collection: ChannelCollectionView) -> None:
+        self.channel_collection = collection
+        self.chn_coords = collection.local_coordinates
 
     def get_shank_list(self) -> list[str] | None:
         """Build the shank-picker list for the current probe."""
@@ -377,9 +386,7 @@ class LoadDataLocal:
                 rows=rows,
             )
 
-        self.channel_collection = collection
-        chn_coords = collection.local_coordinates
-        self.chn_coords = chn_coords
+        self._set_channel_collection(collection)
 
         return collection.depths
 
@@ -414,8 +421,7 @@ class LoadDataLocal:
             )
 
         collection = self.ephys_stream.channel_collection(shank_idx)
-        self.channel_collection = collection
-        self.chn_coords = collection.local_coordinates
+        self._set_channel_collection(collection)
 
         return (
             self.ephys_stream.ephys_dir,

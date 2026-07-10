@@ -213,6 +213,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.runtime = self.workspace.runtime
         self.document = self.workspace.document
         self.data_context = self.workspace.data_context
+        self.probe_data_workflow = self.workspace.probe_data_workflow
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
         self.alignment_edit_service = self.workspace.alignment_edit_service
@@ -2059,7 +2060,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
 
         try:
-            self.loaddata.set_ephys_stream(cached.ephys_stream)
+            loaded = self.probe_data_workflow.from_stream(
+                cached.ephys_stream,
+                cached.current_shank_idx,
+            )
+            self.loaddata.set_channel_collection(loaded.channel_collection)
         except Exception as exc:
             logger.error(f"Failed to restore cached stream in loader: {exc}")
             return False
@@ -2113,14 +2118,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
-            (
-                self.session.probe_path,
-                self.session.chn_depths,
-                self.session.sess_notes,
-                data,
-            ) = self.loaddata.get_ephys_data(self.session.current_shank_idx)
-            self.session.ephys_stream = self.loaddata.ephys_stream
-            self.session.data = data
+            loaded = self.probe_data_workflow.load(self.session.current_shank_idx)
+            self.loaddata.set_channel_collection(loaded.channel_collection)
+            self.session.probe_path = loaded.ephys_dir
+            self.session.chn_depths = loaded.depths
+            self.session.sess_notes = loaded.session_notes
+            self.session.ephys_stream = loaded.stream
+            self.session.data = loaded.alf_data
 
             if not self.session.probe_path:
                 logger.error("Failed to load ephys data")

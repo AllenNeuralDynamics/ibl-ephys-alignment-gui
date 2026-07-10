@@ -15,6 +15,7 @@ from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
 from ephys_alignment_gui.session_runtime import SessionRuntime
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
@@ -51,10 +52,15 @@ class AlignmentWorkspace:
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
     auto_alignments: dict[AutoAlignmentKey, AutoAlignment] = field(default_factory=dict)
+    probe_data_workflow: ProbeDataWorkflow = field(init=False)
     loader: LoadDataLocal = field(init=False)
     controller: AlignmentController = field(init=False)
 
     def __post_init__(self) -> None:
+        self.probe_data_workflow = ProbeDataWorkflow(
+            self.data_context,
+            self.ephys_data_service,
+        )
         self.loader = LoadDataLocal(
             data_context=self.data_context,
             ephys_data_service=self.ephys_data_service,
