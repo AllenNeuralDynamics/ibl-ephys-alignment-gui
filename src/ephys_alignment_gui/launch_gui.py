@@ -2698,8 +2698,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                         item.sigPositionChanged.disconnect()
                     except (TypeError, AttributeError, RuntimeError):
                         pass
-        self.session.lines_features = np.empty((0, 4))
-        self.session.lines_tracks = np.empty((0, 1))
+        self.session.lines_features = np.empty((0, 3))
+        self.session.lines_tracks = np.empty((0, 2))
         self.session.points = np.empty((0, 1))
 
         # Re-filter channels for current shank (from cached chn_coords_all).
@@ -3160,9 +3160,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.removeItem(self.session.lines_features[line_idx][0])
             self.fig_line.removeItem(self.session.lines_features[line_idx][1])
             self.fig_probe.removeItem(self.session.lines_features[line_idx][2])
-            if len(self.session.lines_features[line_idx]) > 3:
-                self.fig_hist_perp.removeItem(self.session.lines_features[line_idx][3])
             self.fig_hist.removeItem(self.session.lines_tracks[line_idx, 0])
+            if self.session.lines_tracks.shape[1] > 1:
+                self.fig_hist_perp.removeItem(self.session.lines_tracks[line_idx, 1])
             self.fig_fit.removeItem(self.session.points[line_idx, 0])
             self.session.lines_features = np.delete(
                 self.session.lines_features, line_idx, axis=0
@@ -3274,8 +3274,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.remove_lines_points()
-        self.session.lines_features = np.empty((0, 4))
-        self.session.lines_tracks = np.empty((0, 1))
+        self.session.lines_features = np.empty((0, 3))
+        self.session.lines_tracks = np.empty((0, 2))
         self.session.points = np.empty((0, 1))
         self.alignment_edit_service.reset_to_initial(
             self.session.active_shank.edit_history,
@@ -3582,27 +3582,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             line_feature3.setZValue(100)
             line_feature3.sigPositionChanged.connect(self.update_lines_features)
-            line_feature_perp = pg.InfiniteLine(
+            line_track_perp = pg.InfiniteLine(
                 pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
             )
-            line_feature_perp.setZValue(100)
-            line_feature_perp.sigPositionChanged.connect(self.update_lines_features)
+            line_track_perp.setZValue(100)
+            line_track_perp.sigPositionChanged.connect(self.update_lines_track)
             self.fig_hist.addItem(line_track)
             self.fig_img.addItem(line_feature1)
             self.fig_line.addItem(line_feature2)
             self.fig_probe.addItem(line_feature3)
-            self.fig_hist_perp.addItem(line_feature_perp)
+            self.fig_hist_perp.addItem(line_track_perp)
 
-            # 4-wide row (col 3 = perpendicular-plot handle), matching
-            # create_lines and the teardown/delete perp handling.
             self.session.lines_features = np.vstack(
                 [
                     self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3, line_feature_perp],
+                    [line_feature1, line_feature2, line_feature3],
                 ]
             )
             self.session.lines_tracks = np.vstack(
-                [self.session.lines_tracks, line_track]
+                [self.session.lines_tracks, [line_track, line_track_perp]]
             )
 
             point = pg.PlotDataItem()
@@ -3666,7 +3664,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :param line: selected line
         :type line: pyqtgraph InfiniteLine
         """
-        line_idx = np.where(self.session.lines_tracks == line)[0][0]
+        idx = np.where(self.session.lines_tracks == line)
+        line_idx = idx[0][0]
+        fig_idx = np.setdiff1d(
+            np.arange(0, self.session.lines_tracks.shape[1]), idx[1][0]
+        )
+
+        for j in fig_idx:
+            self.session.lines_tracks[line_idx][j].setPos(line.value())
 
         self.session.points[line_idx][0].setData(
             x=[self.session.lines_features[line_idx][0].pos().y()],
@@ -3701,9 +3706,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.removeItem(line_feature[0])
             self.fig_line.removeItem(line_feature[1])
             self.fig_probe.removeItem(line_feature[2])
-            if len(line_feature) > 3:  # Has perpendicular slice line
-                self.fig_hist_perp.removeItem(line_feature[3])
             self.fig_hist.removeItem(line_track[0])
+            if len(line_track) > 1:
+                self.fig_hist_perp.removeItem(line_track[1])
             self.fig_fit.removeItem(point[0])
 
     def add_lines_points(self) -> None:
@@ -3716,9 +3721,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.addItem(line_feature[0])
             self.fig_line.addItem(line_feature[1])
             self.fig_probe.addItem(line_feature[2])
-            if len(line_feature) > 3:  # Has perpendicular slice line
-                self.fig_hist_perp.addItem(line_feature[3])
             self.fig_hist.addItem(line_track[0])
+            if len(line_track) > 1:
+                self.fig_hist_perp.addItem(line_track[1])
             self.fig_fit.addItem(point[0])
 
     def update_lines_points(self) -> None:
@@ -3730,6 +3735,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.lines_features, self.session.lines_tracks, self.session.points
         ):
             line_track[0].setPos(line_feature[0].getYPos())
+            if len(line_track) > 1:
+                line_track[1].setPos(line_feature[0].getYPos())
             point[0].setData(
                 x=[line_feature[0].pos().y()], y=[line_feature[0].pos().y()]
             )
@@ -3749,23 +3756,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             line_feature3 = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
             line_feature3.setZValue(100)
             line_feature3.sigPositionChanged.connect(self.update_lines_features)
-            line_feature_perp = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
-            line_feature_perp.setZValue(100)
-            line_feature_perp.sigPositionChanged.connect(self.update_lines_features)
+            line_track_perp = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_track_perp.setZValue(100)
+            line_track_perp.sigPositionChanged.connect(self.update_lines_track)
             self.fig_hist.addItem(line_track)
             self.fig_img.addItem(line_feature1)
             self.fig_line.addItem(line_feature2)
             self.fig_probe.addItem(line_feature3)
-            self.fig_hist_perp.addItem(line_feature_perp)
+            self.fig_hist_perp.addItem(line_track_perp)
 
             self.session.lines_features = np.vstack(
                 [
                     self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3, line_feature_perp],
+                    [line_feature1, line_feature2, line_feature3],
                 ]
             )
             self.session.lines_tracks = np.vstack(
-                [self.session.lines_tracks, line_track]
+                [self.session.lines_tracks, [line_track, line_track_perp]]
             )
 
             point = pg.PlotDataItem()

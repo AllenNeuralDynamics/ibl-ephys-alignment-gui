@@ -46,10 +46,10 @@ def test_shanks_keep_independent_state():
     np.testing.assert_array_equal(s.features[0], [1.0])
 
 
-def test_lines_features_is_four_wide():
-    # Column 3 is the perpendicular-slice line handle.
+def test_reference_line_handles_separate_feature_and_track_space():
     s = ProbeSession()
-    assert s.lines_features.shape == (0, 4)
+    assert s.lines_features.shape == (0, 3)
+    assert s.lines_tracks.shape == (0, 2)
 
 
 def test_shank_instances_created_lazily():

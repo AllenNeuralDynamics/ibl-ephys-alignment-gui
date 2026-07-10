@@ -183,10 +183,11 @@ class ProbeSession:
         self.channel_status: bool = True
         self.hist_bound_status: bool = True
 
-        # -- Reference lines / points (col 3 of lines_features is the perp
-        # slice line handle, hence width 4) --
-        self.lines_features: NDArray[Any] = np.empty((0, 4))
-        self.lines_tracks: NDArray[Any] = np.empty((0, 1))
+        # -- Reference lines / points --
+        # Feature-side handles live on img/line/probe plots. Track-side handles
+        # live on the histology strip and perpendicular histology slice.
+        self.lines_features: NDArray[Any] = np.empty((0, 3))
+        self.lines_tracks: NDArray[Any] = np.empty((0, 2))
         self.points: NDArray[Any] = np.empty((0, 1))
         self.y_scale: float = 1
         self.x_scale: float = 1
@@ -412,8 +413,8 @@ class ProbeSession:
                 figures["line"].removeItem(line_feature[1])
             if "probe" in figures:
                 figures["probe"].removeItem(line_feature[2])
-            if "hist_perp" in figures and len(line_feature) > 3:
-                figures["hist_perp"].removeItem(line_feature[3])
+            if "hist_perp" in figures and len(line_track) > 1:
+                figures["hist_perp"].removeItem(line_track[1])
             if "hist" in figures:
                 figures["hist"].removeItem(line_track[0])
             if "fit" in figures:
