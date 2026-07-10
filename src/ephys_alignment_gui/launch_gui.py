@@ -221,6 +221,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # NEVER persisted to /results or DocDB — see complete_button_pressed_offline.
         self._auto_alignments: dict[tuple[str, int], list[list[float]]] = {}
 
+        # Per-stream ProbeSession cache, keyed by probe name within the current
+        # recording session. Lets switching back to an already-loaded stream be
+        # instant (reuses its built ProbeSession: data, per-shank plotdata memo,
+        # cached slices, alignment history, fit buffers) rather than reloading.
+        # Evicted when the recording session changes (bounds memory to one
+        # session's streams). See _activate_stream / _evict_stream_cache.
+        self._stream_cache: dict[str, ProbeSession] = {}
+        self._current_stream_key: str | None = None
+        self._empty_state_item: Any = None
+
         self.loaddata = LoadDataLocal()
 
         self.allen = self.loaddata.load_allen_csv()
@@ -243,6 +253,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Padding to add to figures to make sure always same size viewbox
         self.pad = 0.05
         self.init_session_variables()
+
+        # Guide the user before any data is loaded / after clearing.
+        if hasattr(self, "fig_img"):
+            self._show_empty_state()
 
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
@@ -1813,6 +1827,104 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "fit": self.fig_fit,
         }
 
+    # -- Empty-state placeholder ---------------------------------------
+
+    def _show_empty_state(self, text: str = "Select and load data") -> None:
+        """Show centered guidance text in the image plot when nothing is shown."""
+        if self._empty_state_item is not None:
+            return
+        item = pg.TextItem(text, anchor=(0.5, 0.5), color=(160, 160, 160))
+        vb = self.fig_img.getViewBox()
+        vb.addItem(item, ignoreBounds=True)
+
+        def _center(*_args):
+            (x0, x1), (y0, y1) = vb.viewRange()
+            item.setPos((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
+        _center()
+        vb.sigRangeChanged.connect(_center)
+        self._empty_state_item = (item, _center)
+
+    def _clear_empty_state(self) -> None:
+        if self._empty_state_item is None:
+            return
+        item, center = self._empty_state_item
+        vb = self.fig_img.getViewBox()
+        try:
+            vb.sigRangeChanged.disconnect(center)
+        except (TypeError, RuntimeError):
+            pass
+        vb.removeItem(item)
+        self._empty_state_item = None
+
+    # -- Per-stream ProbeSession cache ---------------------------------
+
+    def _stash_and_detach_current(self) -> None:
+        """Detach the displayed session from the figures, keeping it cached.
+
+        The outgoing session stays intact in ``_stream_cache`` (if it was
+        loaded) so switching back is instant; only its plot items are removed
+        from the shared figures. A never-loaded (unkeyed) session is simply
+        dropped. Distinct from ``_teardown_session``, which discards state.
+        """
+        if self.session is None:
+            return
+        if self._current_stream_key is not None:
+            self._stream_cache[self._current_stream_key] = self.session
+        self.session.detach(self._figures())
+        self.fit_plot.setData()
+        self.fit_scatter.setData()
+        self.session = None
+        self._current_stream_key = None
+
+    def _evict_stream_cache(self) -> None:
+        """Tear down every cached stream (and the current one) and clear it.
+
+        Called when the recording session changes — the cache belongs to one
+        recording session, so this bounds memory to a single session's streams.
+        """
+        if self.session is not None and self._current_stream_key is not None:
+            self._stream_cache[self._current_stream_key] = self.session
+        self.session = None
+        self._current_stream_key = None
+        figures = self._figures()
+        for sess in self._stream_cache.values():
+            sess.teardown(figures)
+        self._stream_cache.clear()
+        self.fit_plot.setData()
+        self.fit_scatter.setData()
+
+    def _activate_cached_stream(self, session_name: str, probe_name: str) -> None:
+        """Display an already-loaded stream from the cache — no heavy reload.
+
+        Reuses the cached ProbeSession's data / per-shank plotdata memo /
+        cached slices. The loader is re-pointed at the probe (cheap: metadata +
+        channel table) so setup_shank_view's channel/track reads and the shank
+        list target it; the heavy ephys + atlas are NOT reloaded. In-progress
+        fit is preserved via the auto-alignment restore, exactly as a normal
+        load does (setup then restore), so recreate reconstructs the WIP rather
+        than resetting it.
+        """
+        cached = self._stream_cache[probe_name]
+        self.session = cached
+        self._current_stream_key = probe_name
+        self.data_status = True
+        self._clear_empty_state()
+
+        self.loaddata.select_probe(session_name, probe_name)
+        self.loaddata.load_channel_info()
+        shanklist = self.loaddata.get_shank_list()
+        if shanklist is not None:
+            self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
+            self.shank_combobox.setCurrentIndex(cached.current_shank_idx)
+        self._derive_output_directory()
+
+        self.setup_session_view()
+        # Restore this probe+shank's retained in-progress fit (captured when the
+        # user navigated away) as the "auto" starting alignment.
+        self._restore_auto_alignment()
+        logger.info(f"Activated cached stream {probe_name}")
+
     def load_heavy_data(self) -> None:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
 
@@ -1830,6 +1942,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             target_shank = (
                 self.session.current_shank_idx if self.session is not None else 0
             )
+            # Drop any stale cache entry for this stream before rebuilding it,
+            # so we never leave a torn-down session in the cache.
+            probe_name = self.probe_combobox.currentText()
+            self._stream_cache.pop(probe_name, None)
             self._teardown_session()
             self.init_session_variables()
             self.session.init_shanks(self.loaddata.n_shanks)
@@ -1867,6 +1983,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.setup_session_view()
 
             self.data_status = True
+            # Cache this freshly-built stream so switching back is instant.
+            self._stream_cache[probe_name] = self.session
+            self._current_stream_key = probe_name
+            self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
             # If the user previously navigated off this probe, surface the
@@ -2019,6 +2139,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         session = self.session_combobox.currentText()
         if not session:
             return
+        # The stream cache belongs to one recording session. Capture the
+        # current probe's WIP (survives eviction in _auto_alignments), then
+        # evict every cached stream so memory is bounded to one session.
+        self._capture_auto_alignment()
+        self._evict_stream_cache()
+        self._show_empty_state()
         probes = self.loaddata.list_probes(session)
         self.populate_lists(probes, self.probe_list, self.probe_combobox)
         self.shank_list.clear()
@@ -2037,10 +2163,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         # Cheap save: capture the OUTGOING probe's in-progress alignment
-        # before we overwrite probe_info via select_probe, so it can be
-        # restored as "auto" if the user comes back. RAM-only.
+        # (uses the still-current session + probe_info) so it can be restored
+        # as "auto" if the user comes back. RAM-only.
         self._capture_auto_alignment()
+        # Free the figures from the outgoing stream, keeping it in the cache.
+        self._stash_and_detach_current()
 
+        # Cache HIT: show the already-loaded stream instantly (no heavy reload).
+        if probe_name in self._stream_cache:
+            self._activate_cached_stream(session, probe_name)
+            self.load_data_button.setEnabled(True)
+            return
+
+        # Cache MISS: clear the display and prepare the loader + a fresh session
+        # for an explicit Load. Nothing is shown until the user loads.
+        self._show_empty_state()
         with BusyContext(
             self,
             "Loading channel info...",
@@ -2061,8 +2198,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
                 logger.info(f"Found {self.loaddata.n_shanks} shanks in data.")
 
-            # Declare the probe's shank count so per-shank delegated attribute
-            # access is valid, then reset to shank 0 for the new probe.
+            # Fresh session to hold the pre-Load shank selection; declare the
+            # probe's shank count, reset to shank 0.
+            self.init_session_variables()
             self.session.init_shanks(self.loaddata.n_shanks)
             self.session.current_shank_idx = 0
             self.session.feature_prev = None
