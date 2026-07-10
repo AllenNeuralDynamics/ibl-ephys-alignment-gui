@@ -93,7 +93,7 @@ class ShankAlignment:
         self.channel_locations_ras: NDArray[np.floating[Any]] | None = None
         self.tip_location_ras: NDArray[np.floating[Any]] | None = None
 
-        # -- Persistent alignment history (formerly on LoadDataLocal) --
+        # -- Persistent alignment history --
         # Maps an ISO-timestamp key to ``[feature, track]`` control points.
         self.alignments: dict[str, list[list[float]]] = {}
         # Dropdown-ordered keys, newest first, with "original" appended.

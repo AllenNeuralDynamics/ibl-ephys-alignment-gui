@@ -7,15 +7,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.datapackage_loader import ChannelTablePaths, ProbeInfo
 from ephys_alignment_gui.ephys_data_service import (
     ChannelTable,
     EphysDataService,
     EphysStreamData,
 )
-from ephys_alignment_gui.histology_data_service import HistologyDataContext
-from ephys_alignment_gui.load_data_local import LoadDataLocal
 
 
 def _probe_info(ephys_dir: Path, channel_table: ChannelTablePaths) -> ProbeInfo:
@@ -158,142 +155,3 @@ def test_ephys_data_service_loads_stream_data(monkeypatch, tmp_path):
     assert stream.alf_data["rms_AP"]["xaxis"] == "Time (s)"
     assert stream.alf_data["spike_shanks"].tolist() == [0, 1, 1]
     assert stream.channel_collection(1).depths.tolist() == [0.0, 20.0]
-
-
-def test_load_data_local_keeps_legacy_channel_adapter(tmp_path):
-    table = ChannelTable(
-        local_coordinates=np.array(
-            [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
-        ),
-        contact_ids=np.array(["s0e0", "s0e1", "s1e0", "s1e1"]),
-        shank_indices=np.array([0, 0, 1, 1]),
-    )
-    probe = ProbeInfo(
-        probe_id="rec1:streamA",
-        probe_name="probeA",
-        recording_id="rec1",
-        logical_probe="probeA",
-        ephys_collection="streamA",
-        num_shanks=2,
-        ephys_dir=tmp_path,
-        channel_table=None,
-        xyz_picks=(),
-    )
-    stream = EphysStreamData(
-        recording_id="rec1",
-        ephys_collection="streamA",
-        ephys_dir=tmp_path,
-        channel_table=table,
-        alf_data={"channels": {"exists": True}},
-        session_notes="notes",
-    )
-
-    context = AlignmentDataContext(probe_info=probe)
-    context.attach_channel_table(table)
-    loader = LoadDataLocal(
-        data_context=context,
-        histology_context=HistologyDataContext(),
-    )
-
-    assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
-    assert loader.chn_contact_id_all.tolist() == ["s0e0", "s0e1", "s1e0", "s1e1"]
-    assert loader.channel_collection is not None
-    assert loader.channel_collection.rows.tolist() == [2, 3]
-
-    loader.set_channel_collection(stream.channel_collection(1))
-    assert loader.ephys_stream is stream
-    assert loader.channel_collection is not None
-    assert loader.channel_collection.stream is stream
-
-
-def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path):
-    table = ChannelTable(
-        local_coordinates=np.array(
-            [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
-        ),
-        contact_ids=np.array(["s0e0", "s0e1", "s1e0", "s1e1"]),
-        shank_indices=np.array([0, 0, 1, 1]),
-    )
-    probe = ProbeInfo(
-        probe_id="rec1:streamA",
-        probe_name="probeA",
-        recording_id="rec1",
-        logical_probe="probeA",
-        ephys_collection="streamA",
-        num_shanks=2,
-        ephys_dir=tmp_path,
-        channel_table=None,
-        xyz_picks=(),
-    )
-    stream = EphysStreamData(
-        recording_id="rec1",
-        ephys_collection="streamA",
-        ephys_dir=tmp_path,
-        channel_table=table,
-        alf_data={"channels": {"exists": True}},
-        session_notes="cached notes",
-    )
-
-    context = AlignmentDataContext(probe_info=probe)
-    loader = LoadDataLocal(
-        data_context=context,
-        histology_context=HistologyDataContext(),
-    )
-    loader.set_channel_collection(stream.channel_collection(1))
-
-    assert loader.ephys_stream is stream
-    assert context.channel_table is table
-    assert context.n_shanks == 2
-    assert loader.chn_coords_all is table.local_coordinates
-    assert loader.chn_contact_id_all is table.contact_ids
-    assert loader.chn_coords.tolist() == [[250.0, 0.0], [250.0, 20.0]]
-
-    assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
-    assert loader.channel_collection is not None
-    assert loader.channel_collection.stream is stream
-
-
-def test_load_data_local_adapts_context_channel_collection_without_mirror_state(
-    tmp_path,
-):
-    table = ChannelTable(
-        local_coordinates=np.array(
-            [[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]]
-        ),
-        contact_ids=np.array(["s0e0", "s0e1", "s1e0", "s1e1"]),
-        shank_indices=np.array([0, 0, 1, 1]),
-    )
-    probe = ProbeInfo(
-        probe_id="rec1:streamA",
-        probe_name="probeA",
-        recording_id="rec1",
-        logical_probe="probeA",
-        ephys_collection="streamA",
-        num_shanks=2,
-        ephys_dir=tmp_path,
-        channel_table=None,
-        xyz_picks=(),
-    )
-    stream = EphysStreamData(
-        recording_id="rec1",
-        ephys_collection="streamA",
-        ephys_dir=tmp_path,
-        channel_table=table,
-        alf_data={"channels": {"exists": True}},
-        session_notes="context notes",
-    )
-    context = AlignmentDataContext(probe_info=probe)
-    context.attach_channel_table(table)
-    loader = LoadDataLocal(
-        data_context=context,
-        histology_context=HistologyDataContext(),
-    )
-
-    loader.set_channel_collection(stream.channel_collection(1))
-
-    assert context.channel_table is table
-    assert loader.ephys_stream is stream
-    assert loader.chn_coords_all is table.local_coordinates
-    assert loader.chn_contact_id_all is table.contact_ids
-    assert loader.channel_collection is not None
-    assert loader.channel_collection.stream is stream

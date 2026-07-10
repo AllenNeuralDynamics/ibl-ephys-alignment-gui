@@ -32,6 +32,7 @@ from ephys_alignment_gui.controller import (
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
+from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.settings import (
@@ -224,7 +225,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
         self.histology_data_service = self.workspace.histology_data_service
-        self.loaddata = self.workspace.loader
+        self.histology_context = self.workspace.histology_context
+        self.slice_service = self.workspace.slice_service
+        self.probe_track_service = self.workspace.probe_track_service
+        self.region_lookup_service = self.workspace.region_lookup_service
         self.controller = self.workspace.controller
         self.alignment_edit_service = self.workspace.alignment_edit_service
         self.alignment_derived_data_service = (
@@ -244,7 +248,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
-        self.allen = self.loaddata.load_allen_csv()
+        self.allen = self.region_lookup_service.load_allen_csv()
         self.init_region_lookup(self.allen)
 
     @staticmethod
@@ -1115,7 +1119,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # the track ends (see position_and_tangent_at_arc_lengths), so deeper
         # rows continue the straight probe line; out-of-volume samples stay
         # transparent.
-        dv_voxel_m = abs(self.loaddata.brain_atlas.bc.dxyz[2])
+        brain_atlas = self.histology_context.brain_atlas
+        if brain_atlas is None:
+            return
+        dv_voxel_m = abs(brain_atlas.bc.dxyz[2])
         feat_min_um = self.session.probe_tip - self.session.probe_extra
         feat_max_um = self.session.probe_top + self.session.probe_extra
         regions = self.session.hist_data.get("region")
@@ -1136,7 +1143,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         try:
-            perp_image = self.loaddata.get_perpendicular_slice_image(
+            perp_image = self.slice_service.build_perpendicular_slice_image(
+                brain_atlas=brain_atlas,
+                histology_images=self.histology_context.histology_images,
+                lazy_channel_paths=self.histology_context.lazy_channel_paths,
                 ephysalign=self.session.ephysalign,
                 feature_ref=alignment.feature,
                 track_ref=alignment.track,
@@ -1631,7 +1641,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     track=self.session.track[self.session.idx],
                 )
             )
-            region_ids = self.loaddata.brain_atlas.get_labels(channel_locations_ras)
+            brain_atlas = self.histology_context.brain_atlas
+            if brain_atlas is None:
+                return None
+            region_ids = brain_atlas.get_labels(channel_locations_ras)
         except Exception:
             logger.warning(
                 "Could not determine in-brain channels for probe cmap",
@@ -2028,6 +2041,52 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "fit": self.fig_fit,
         }
 
+    def _stream_key_for_selection(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> StreamKey | None:
+        """Return the ephys stream key for a recording/probe selection."""
+        mouse_root = self.data_context.mouse_root
+        if mouse_root is None:
+            return None
+        try:
+            probe = mouse_root.get_probe(recording_id, probe_name)
+        except Exception:
+            logger.warning(
+                "Could not resolve stream key for %s/%s",
+                recording_id,
+                probe_name,
+                exc_info=True,
+            )
+            return None
+        return probe.recording_id, probe.ephys_collection
+
+    def _new_stream_runtime(self, stream) -> EphysStreamRuntime:
+        """Build runtime ownership for a loaded ephys stream."""
+        return EphysStreamRuntime(
+            stream=stream,
+            plot_data_factory=self.plot_data_factory,
+        )
+
+    def _attach_stream_runtime_to_session(
+        self,
+        stream_runtime: EphysStreamRuntime,
+        shank_idx: int,
+    ):
+        """Project runtime stream state into the active view session."""
+        if self.session is None:
+            raise RuntimeError("No active ProbeSession")
+        collection = stream_runtime.collection_for_shank(shank_idx)
+        stream = stream_runtime.stream
+        self.session.ephys_stream = stream
+        self.session.probe_path = stream.ephys_dir
+        self.session.sess_notes = stream.session_notes
+        self.session.data = stream.alf_data
+        self.session.chn_depths = collection.depths
+        self.session.active_shank.chn_coords = collection.local_coordinates
+        return collection
+
     # -- Empty-state placeholder ---------------------------------------
 
     def _show_empty_state(self, text: str = "Select and load data") -> None:
@@ -2058,25 +2117,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         vb.removeItem(item)
         self._empty_state_item = None
 
-    # -- Per-stream ProbeSession cache ---------------------------------
+    # -- Per-stream runtime cache --------------------------------------
 
     def _stash_and_detach_current(self) -> None:
-        """Detach the displayed session from the figures, keeping it cached.
-
-        The outgoing session stays intact in the runtime cache (if it was
-        loaded) so switching back is instant; only its plot items are removed
-        from the shared figures. A never-loaded (unkeyed) session is simply
-        dropped. Distinct from ``_teardown_session``, which discards state.
-        """
+        """Tear down the displayed view session, keeping stream runtime cached."""
         session = self.runtime.detach_active_for_cache()
         if session is None:
             return
-        session.detach(self._figures())
+        session.teardown(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
     def _evict_stream_cache(self) -> None:
-        """Tear down every cached stream (and the current one) and clear it.
+        """Tear down the active view session and clear cached stream runtimes.
 
         Called when the recording session changes — the cache belongs to one
         recording session, so this bounds memory to a single session's streams.
@@ -2087,54 +2140,58 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
-    def _activate_cached_stream(self, session_name: str, probe_name: str) -> bool:
+    def _activate_cached_stream(
+        self,
+        session_name: str,
+        probe_name: str,
+        stream_key: StreamKey,
+    ) -> bool:
         """Display an already-loaded stream from the cache — no heavy reload.
 
-        Reuses the cached ProbeSession's data / per-shank plotdata memo /
-        cached slices. The loader is re-pointed at the probe (cheap: metadata +
-        channel table) so setup_shank_view's channel/track reads and the shank
-        list target it; the heavy ephys + atlas are NOT reloaded. In-progress
-        fit is preserved via the auto-alignment restore, exactly as a normal
-        load does (setup then restore), so recreate reconstructs the WIP rather
-        than resetting it.
+        Reuses cached stream data and per-shank PlotData. A fresh ProbeSession
+        is created as a view adapter; document/edit state preservation is
+        handled by the auto-alignment cache until alignment state is moved into
+        the document model.
         """
-        cached = self.runtime.cached_stream(probe_name)
-        if cached is None:
+        cached_runtime = self.runtime.cached_stream(stream_key)
+        if cached_runtime is None:
             return False
         result = self.controller.select_probe(
             session_name,
             probe_name,
-            ephys_stream=cached.ephys_stream,
+            ephys_stream=cached_runtime.stream,
         )
         if isinstance(result, Failed):
             logger.error(result.message)
             return False
 
         try:
-            loaded = self.probe_data_workflow.from_stream(
-                cached.ephys_stream,
-                cached.current_shank_idx,
-            )
-            self.loaddata.set_channel_collection(loaded.channel_collection)
+            self.init_session_variables()
+            self.session.init_shanks(self.data_context.n_shanks)
+            self.runtime.activate_cached_stream(stream_key)
+            target_shank = cached_runtime.current_shank_idx
+            if not self.session.has_shank(target_shank):
+                target_shank = 0
+            self.session.current_shank_idx = target_shank
+            self._attach_stream_runtime_to_session(cached_runtime, target_shank)
         except Exception as exc:
-            logger.error(f"Failed to restore cached stream in loader: {exc}")
+            logger.error(f"Failed to restore cached stream runtime: {exc}")
             return False
 
-        self.runtime.activate_cached_stream(probe_name)
         self._clear_empty_state()
 
         if result.shanks:
             self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
-            self.shank_combobox.setCurrentIndex(cached.current_shank_idx)
-            self.controller.set_selected_shank(cached.current_shank_idx)
+            self.shank_combobox.setCurrentIndex(self.session.current_shank_idx)
+            self.controller.set_selected_shank(self.session.current_shank_idx)
         self._display_output_directory(result.output_directory)
-        self.controller.finish_load_data(cached.current_shank_idx)
+        self.controller.finish_load_data(self.session.current_shank_idx)
 
         self.setup_session_view(preserve_plot_selection=True)
         # Restore this probe+shank's retained in-progress fit (captured when the
         # user navigated away) as the "auto" starting alignment.
         self._restore_auto_alignment()
-        logger.info(f"Activated cached stream {probe_name}")
+        logger.info(f"Activated cached stream {stream_key}")
         return True
 
     def load_heavy_data(self) -> None:
@@ -2158,7 +2215,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
             probe_name = self.probe_combobox.currentText()
-            self.runtime.pop_cached_stream(probe_name)
+            stream_key = self._stream_key_for_selection(
+                self.session_combobox.currentText(),
+                probe_name,
+            )
+            if stream_key is not None:
+                self.runtime.pop_cached_stream(stream_key)
             self._teardown_session()
             self.init_session_variables()
             self.session.init_shanks(self.data_context.n_shanks)
@@ -2170,12 +2232,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
             loaded = self.probe_data_workflow.load(self.session.current_shank_idx)
-            self.loaddata.set_channel_collection(loaded.channel_collection)
-            self.session.probe_path = loaded.ephys_dir
-            self.session.chn_depths = loaded.depths
-            self.session.sess_notes = loaded.session_notes
-            self.session.ephys_stream = loaded.stream
-            self.session.data = loaded.alf_data
+            stream_runtime = self._new_stream_runtime(loaded.stream)
+            self.runtime.cache_loaded_stream(stream_runtime)
+            self._attach_stream_runtime_to_session(
+                stream_runtime,
+                self.session.current_shank_idx,
+            )
 
             if not self.session.probe_path:
                 logger.error("Failed to load ephys data")
@@ -2184,7 +2246,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info(f"Loaded ephys data from {self.session.probe_path}")
 
             # Load atlas and histology (subject-level, cached if same subject)
-            if self.loaddata.brain_atlas is None:
+            if self.histology_context.brain_atlas is None:
                 try:
                     ctx.update_message("Loading atlas and histology...")
                     logger.info("Loading atlas and histology...")
@@ -2192,7 +2254,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     if mouse_root is None:
                         raise RuntimeError("No mouse root loaded")
                     histology_data = self.histology_data_service.load(mouse_root)
-                    self.loaddata.set_histology_data(histology_data)
+                    self.histology_context.set(histology_data)
                     logger.info("Atlas and histology loaded successfully")
                 except Exception as e:
                     logger.error(f"Failed to load atlas/histology: {e}")
@@ -2205,8 +2267,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
             self.controller.finish_load_data(self.session.current_shank_idx)
-            # Cache this freshly-built stream so switching back is instant.
-            self.runtime.cache_loaded_stream(probe_name)
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
@@ -2290,9 +2350,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 logger.error(result.message)
                 return False
             assert isinstance(result, MouseRootLoaded)
-            self.loaddata.reset_for_mouse_root_selection(
-                root_changed=result.root_changed
-            )
+            if result.root_changed:
+                self.histology_context.clear()
             mr = result.mouse_root
 
             # Different mouse → probe_ids may not be meaningful anymore.
@@ -2386,12 +2445,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # (uses the still-current session + probe_info) so it can be restored
         # as "auto" if the user comes back. RAM-only.
         self._capture_auto_alignment()
-        # Free the figures from the outgoing stream, keeping it in the cache.
+        # Free the figures from the outgoing view session. Loaded stream data
+        # stays in the stream-runtime cache.
         self._stash_and_detach_current()
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
-        if self.runtime.has_cached_stream(probe_name):
-            if self._activate_cached_stream(session, probe_name):
+        stream_key = self._stream_key_for_selection(session, probe_name)
+        if stream_key is not None and self.runtime.has_cached_stream(stream_key):
+            if self._activate_cached_stream(session, probe_name, stream_key):
                 self.load_data_button.setEnabled(True)
             return
 
@@ -2410,7 +2471,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.load_data_button.setEnabled(False)
                 return
             assert isinstance(result, ProbeSelected)
-            self.loaddata.reset_for_probe_selection()
 
             if result.shanks:
                 self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
@@ -2644,6 +2704,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Create EphysAlignment and compute histology regions. Common code."""
         if not self.histology_exists:
             return
+        brain_atlas = self.histology_context.brain_atlas
+        if brain_atlas is None:
+            logger.error("Cannot recreate alignment: brain atlas is not loaded")
+            return
 
         # Create alignment
         if np.any(self.session.feature_prev):
@@ -2652,13 +2716,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session.chn_depths,
                 track_prev=self.session.track_prev,
                 feature_prev=self.session.feature_prev,
-                brain_atlas=self.loaddata.brain_atlas,
+                brain_atlas=brain_atlas,
             )
         else:
             self.session.ephysalign = EphysAlignment(
                 self.session.track_annotations_ras,
                 self.session.chn_depths,
-                brain_atlas=self.loaddata.brain_atlas,
+                brain_atlas=brain_atlas,
             )
 
         # Get histology regions
@@ -2670,7 +2734,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         ) = EphysAlignment.get_histology_regions(
             self.session.ephysalign.track_interpolation_ras,
             self.session.ephysalign.ephys_depths_along_track,
-            self.loaddata.brain_atlas,
+            brain_atlas,
         )
 
         (
@@ -2733,24 +2797,31 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.lines_tracks = np.empty((0, 2))
         self.session.points = np.empty((0, 1))
 
-        # Re-filter channels for current shank (from cached chn_coords_all).
-        # set_channels_for_shank returns the depths and sets loaddata.chn_coords
-        # to the full (x, y) array; store both on the active shank so per-shank
-        # geometry is single-sourced (chn_coords is needed at save time).
-        if self.data_context.channel_table is not None:
-            self.session.chn_depths = self.loaddata.set_channels_for_shank(
-                self.session.current_shank_idx
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is not None:
+            collection = self._attach_stream_runtime_to_session(
+                stream_runtime,
+                self.session.current_shank_idx,
             )
-            self.session.active_shank.chn_coords = self.loaddata.chn_coords
             logger.debug(
-                f"Filtered {len(self.session.chn_depths)} channels for this shank"
+                f"Selected {len(collection.depths)} channels for this shank"
             )
 
         # Only process histology if it exists
         if self.histology_exists:
+            probe = self.data_context.probe_info
+            brain_atlas = self.histology_context.brain_atlas
+            if probe is None:
+                raise RuntimeError("No probe selected. Please select a probe first.")
+            if brain_atlas is None:
+                raise RuntimeError("brain_atlas not yet loaded")
             # Load track_annotations_ras for this shank
-            self.session.track_annotations_ras = self.loaddata.get_track_annotations(
-                self.session.current_shank_idx
+            self.session.track_annotations_ras = (
+                self.probe_track_service.load_track_annotations(
+                    probe=probe,
+                    shank_idx=self.session.current_shank_idx,
+                    brain_atlas=brain_atlas,
+                )
             )
             logger.debug("Loaded track_annotations_ras for shank")
 
@@ -2770,9 +2841,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # shank's filtered channels/spikes and the memoized plot datasets).
         # plotdata is per-shank (_ShankAttr), so each shank keeps its own.
         if self.session.plotdata is None:
-            if self.loaddata.channel_collection is not None:
-                self.session.plotdata = self.plot_data_factory.build(
-                    self.loaddata.channel_collection
+            if stream_runtime is not None:
+                self.session.plotdata = stream_runtime.plot_data_for_shank(
+                    self.session.current_shank_idx
                 )
             else:
                 self.session.plotdata = self.plot_data_factory.build_legacy(
@@ -2804,7 +2875,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             shank = self.session.active_shank
             track = self.session.ephysalign.track_interpolation_ras
             if shank.cached_slice(track) is None:
-                slice_data, fp_slice_data = self.loaddata.get_slice_images(track)
+                brain_atlas = self.histology_context.brain_atlas
+                if brain_atlas is None:
+                    raise RuntimeError("brain_atlas not yet loaded")
+                slice_data = self.slice_service.build_slice_set(
+                    brain_atlas=brain_atlas,
+                    histology_images=self.histology_context.histology_images,
+                    lazy_channel_paths=self.histology_context.lazy_channel_paths,
+                    track_interpolation_ras=track,
+                )
+                fp_slice_data = None
                 shank.set_slice(slice_data, fp_slice_data, track)
         else:
             self.session.slice_data = {}
@@ -2945,12 +3025,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # If no histology we can't plot histology
         if not self.histology_exists:
             return
+        brain_atlas = self.histology_context.brain_atlas
+        if brain_atlas is None:
+            return
 
         nearby_bounds = self.session.ephysalign.get_nearest_boundary(
             self.session.ephysalign.track_interpolation_ras,
             self.allen,
             steps=6,
-            brain_atlas=self.loaddata.brain_atlas,
+            brain_atlas=brain_atlas,
         )
         [
             self.session.hist_nearby_x,
@@ -3218,7 +3301,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if idx.size == 0:
                 idx = np.array([0])
 
-            description, lookup = self.loaddata.get_region_description(
+            description, lookup = self.region_lookup_service.get_region_description(
                 self.session.ephysalign.region_id[idx[0]][0]
             )
             item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
@@ -3254,7 +3337,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def label_pressed(self, item) -> None:
         idx = int(item.model().itemFromIndex(item).accessibleText())
-        description, lookup = self.loaddata.get_region_description(idx)
+        description, lookup = self.region_lookup_service.get_region_description(idx)
         item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
         model_item = self.struct_list.indexFromItem(item[0])
         self.struct_view.setCurrentIndex(model_item)
