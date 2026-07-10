@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ephys_alignment_gui.alignment_derived_data_service import (
+    AlignmentDerivedDataService,
+)
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.controller import AlignmentController
@@ -39,6 +42,9 @@ class AlignmentWorkspace:
     )
     alignment_edit_service: AlignmentEditService = field(
         default_factory=AlignmentEditService
+    )
+    alignment_derived_data_service: AlignmentDerivedDataService = field(
+        default_factory=AlignmentDerivedDataService
     )
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)

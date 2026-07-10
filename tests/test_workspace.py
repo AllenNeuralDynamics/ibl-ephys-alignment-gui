@@ -13,6 +13,7 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.controller.workflow_policy is workspace.workflow_policy
     assert workspace.controller.alignment_repository is workspace.alignment_repository
     assert workspace.alignment_edit_service is not None
+    assert workspace.alignment_derived_data_service is not None
     assert workspace.loader.ephys_data_service is workspace.ephys_data_service
     assert workspace.loader.slice_service is workspace.slice_service
     assert workspace.slice_display_policy is not None

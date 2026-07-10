@@ -212,6 +212,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.loaddata = self.workspace.loader
         self.controller = self.workspace.controller
         self.alignment_edit_service = self.workspace.alignment_edit_service
+        self.alignment_derived_data_service = (
+            self.workspace.alignment_derived_data_service
+        )
         self.plot_data_factory = self.workspace.plot_data_factory
         self.slice_display_policy = self.workspace.slice_display_policy
 
@@ -1253,56 +1256,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return result.changed
 
     def get_scaled_histology(self) -> None:
-        if self.session.hist_mapping == "Allen":
-            self.session.hist_data["region"], self.session.hist_data["axis_label"] = (
-                self.session.ephysalign.scale_histology_regions(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
-                )
-            )
-            self.session.hist_data["colour"] = self.session.ephysalign.region_colour
-
-            self.session.scale_data["region"], self.session.scale_data["scale"] = (
-                self.session.ephysalign.get_scale_factor(
-                    self.session.hist_data["region"]
-                )
-            )
-
-            (
-                self.session.hist_data_ref["region"],
-                self.session.hist_data_ref["axis_label"],
-            ) = self.session.ephysalign.scale_histology_regions(
-                self.session.ephysalign.track_extent,
-                self.session.ephysalign.track_extent,
-            )
-            self.session.hist_data_ref["colour"] = self.session.ephysalign.region_colour
-
-        elif self.session.hist_mapping == "FP":
-            self.session.hist_data["region"], self.session.hist_data["axis_label"] = (
-                self.session.ephysalign.scale_histology_regions(
-                    self.session.features[self.session.idx],
-                    self.session.track[self.session.idx],
-                    region=self.session.region_fp,
-                    region_label=self.session.region_label_fp,
-                )
-            )
-            self.session.hist_data["colour"] = self.session.region_colour_fp
-            self.session.scale_data["region"], self.session.scale_data["scale"] = (
-                self.session.ephysalign.get_scale_factor(
-                    self.session.hist_data["region"], region_orig=self.session.region_fp
-                )
-            )
-
-            (
-                self.session.hist_data_ref["region"],
-                self.session.hist_data_ref["axis_label"],
-            ) = self.session.ephysalign.scale_histology_regions(
-                self.session.ephysalign.track_extent,
-                self.session.ephysalign.track_extent,
-                region=self.session.region_fp,
-                region_label=self.session.region_label_fp,
-            )
-            self.session.hist_data_ref["colour"] = self.session.region_colour_fp
+        derived = self.alignment_derived_data_service.compute_histology(
+            ephysalign=self.session.ephysalign,
+            feature=self.session.features[self.session.idx],
+            track=self.session.track[self.session.idx],
+            histology_mapping=self.session.hist_mapping,
+            region_fp=self.session.region_fp,
+            region_label_fp=self.session.region_label_fp,
+            region_colour_fp=self.session.region_colour_fp,
+        )
+        self.session.hist_data["region"] = derived.histology.region
+        self.session.hist_data["axis_label"] = derived.histology.axis_label
+        self.session.hist_data["colour"] = derived.histology.colour
+        self.session.hist_data_ref["region"] = derived.reference_histology.region
+        self.session.hist_data_ref["axis_label"] = (
+            derived.reference_histology.axis_label
+        )
+        self.session.hist_data_ref["colour"] = derived.reference_histology.colour
+        self.session.scale_data["region"] = derived.scale.region
+        self.session.scale_data["scale"] = derived.scale.scale
 
     def plot_scale_factor(self) -> None:
         """
@@ -1502,9 +1474,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists or self.session.ephysalign is None:
             return None
         try:
-            channel_locations_ras = self.session.ephysalign.get_channel_locations(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
+            channel_locations_ras = (
+                self.alignment_derived_data_service.compute_channel_locations(
+                    ephysalign=self.session.ephysalign,
+                    feature=self.session.features[self.session.idx],
+                    track=self.session.track[self.session.idx],
+                )
             )
             region_ids = self.loaddata.brain_atlas.get_labels(channel_locations_ras)
         except Exception:
@@ -1524,17 +1499,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.session.channel_status = True
-        self.session.channel_locations_ras = (
-            self.session.ephysalign.get_channel_locations(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            )
+        projection = self.alignment_derived_data_service.compute_channel_projection(
+            ephysalign=self.session.ephysalign,
+            feature=self.session.features[self.session.idx],
+            track=self.session.track[self.session.idx],
         )
-        # Compute tip location (200 μm below first electrode)
-        self.session.tip_location_ras = self.session.ephysalign.get_tip_location(
-            self.session.features[self.session.idx],
-            self.session.track[self.session.idx],
-        )
+        self.session.channel_locations_ras = projection.channel_locations_ras
+        self.session.tip_location_ras = projection.tip_location_ras
 
         if not self.session.slice_chns:
             self.session.slice_lines = []
@@ -1560,10 +1531,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             self.fig_slice.addItem(self.session.slice_tip)
 
-            track_lines = self.session.ephysalign.get_perp_vector(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            )
+            track_lines = projection.perpendicular_vectors
 
             logger.debug(f"Reference lines: {track_lines}")
             for ref_line in track_lines:
@@ -1580,10 +1548,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             for line in self.session.slice_lines:
                 self.fig_slice.removeItem(line)
             self.session.slice_lines = []
-            track_lines = self.session.ephysalign.get_perp_vector(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            )
+            track_lines = projection.perpendicular_vectors
 
             logger.debug(f"Reference lines: {track_lines}")
             for ref_line in track_lines:
