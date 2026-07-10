@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ephys_alignment_gui.document import AlignmentDocument
+
 PROBE_REQUIRED = "probe_required"
 CHANNEL_INFO_REQUIRED = "channel_info_required"
 OUTPUT_REQUIRED = "output_required"
@@ -51,31 +53,22 @@ CommandResult = Ok | Blocked | Failed
 PolicyResult = Ok | Blocked
 
 
-@dataclass(frozen=True)
-class LoadDataState:
-    """Minimal state needed to decide whether Load Data may run."""
-
-    probe_selected: bool
-    channel_info_loaded: bool
-    output_directory_set: bool
-
-
 class WorkflowPolicy:
     """Application workflow preconditions."""
 
-    def can_load_data(self, state: LoadDataState) -> PolicyResult:
+    def can_load_data(self, document: AlignmentDocument) -> PolicyResult:
         """Return whether the Load Data command can proceed."""
         requirements: list[Requirement] = []
-        if not state.probe_selected:
+        if not document.probe_selected:
             requirements.append(Requirement(PROBE_REQUIRED, "Select a probe first."))
-        if not state.channel_info_loaded:
+        if not document.channel_info_loaded:
             requirements.append(
                 Requirement(
                     CHANNEL_INFO_REQUIRED,
                     "Channel info not loaded. Please select a probe first.",
                 )
             )
-        if not state.output_directory_set:
+        if document.output_directory is None:
             requirements.append(
                 Requirement(
                     OUTPUT_REQUIRED,

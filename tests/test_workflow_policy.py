@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.workflow import (
     CHANNEL_INFO_REQUIRED,
     CHOOSE_OUTPUT_FOLDER,
     OUTPUT_REQUIRED,
     PROBE_REQUIRED,
     Blocked,
-    LoadDataState,
     Ok,
     WorkflowPolicy,
 )
@@ -20,13 +22,13 @@ def _check_load_data(
     channel_info_loaded: bool = True,
     output_directory_set: bool = True,
 ):
-    return WorkflowPolicy().can_load_data(
-        LoadDataState(
-            probe_selected=probe_selected,
-            channel_info_loaded=channel_info_loaded,
-            output_directory_set=output_directory_set,
-        )
-    )
+    doc = AlignmentDocument()
+    if probe_selected:
+        doc.select_probe("rec1", "probeA")
+    doc.set_channel_info_loaded(channel_info_loaded)
+    if output_directory_set:
+        doc.set_output_directory(Path("/tmp/results/rec1/probeA"))
+    return WorkflowPolicy().can_load_data(doc)
 
 
 def test_load_data_allowed_when_preconditions_are_met():

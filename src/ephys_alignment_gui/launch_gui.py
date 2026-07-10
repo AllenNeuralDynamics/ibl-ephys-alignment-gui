@@ -23,6 +23,7 @@ import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 import ephys_alignment_gui.plot_data as pd
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.docdb import write_output_to_docdb
+from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_elements import ColorBar
@@ -31,7 +32,6 @@ from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     Blocked,
-    LoadDataState,
     Ok,
     Requirement,
     WorkflowPolicy,
@@ -218,9 +218,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.configure: bool = True
         self.offline: bool = True
         self.histology_exists: bool = True
-        self.data_status: bool = False
-        self.save_root: Path | None = None
-        self.output_directory: Path | None = None
+        self.document = AlignmentDocument()
         self.use_docdb: bool = True
 
         # RAM-only cheap-save cache, keyed by probe_id. Captures the
@@ -499,10 +497,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if save_path:
             image_path_overview = Path(save_path)
         else:
-            if self.output_directory is None:
+            if self.document.output_directory is None:
                 self.on_output_folder_selected()
+            if self.document.output_directory is None:
+                return
             image_path_overview = Path(
-                self.output_directory / f"Plots_Shank_{self.session.current_shank_idx + 1}"
+                self.document.output_directory
+                / f"Plots_Shank_{self.session.current_shank_idx + 1}"
             )
 
         image_path_overview.mkdir(exist_ok=True)
@@ -1917,18 +1918,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         cached = self._stream_cache[probe_name]
         self.session = cached
         self._current_stream_key = probe_name
-        self.data_status = True
         self._clear_empty_state()
 
+        self.document.select_probe(session_name, probe_name)
         self.loaddata.select_probe(session_name, probe_name)
         self.loaddata.load_channel_info()
+        self.document.set_channel_info_loaded(True)
         shanklist = self.loaddata.get_shank_list()
         if shanklist is not None:
             self.populate_lists(shanklist, self.shank_list, self.shank_combobox)
             self.shank_combobox.setCurrentIndex(cached.current_shank_idx)
+            self.document.set_selected_shank(cached.current_shank_idx)
         self._derive_output_directory()
+        self.document.mark_data_loaded(True)
 
-        self.setup_session_view()
+        self.setup_session_view(preserve_plot_selection=True)
         # Restore this probe+shank's retained in-progress fit (captured when the
         # user navigated away) as the "auto" starting alignment.
         self._restore_auto_alignment()
@@ -1944,6 +1948,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=self.load_data_button,
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
+            preserve_plot_selection = self.document.data_loaded
+            self.document.mark_data_loaded(False)
             # Preserve the shank the user has selected so a (re)load lands on
             # that shank rather than snapping back to shank 0. Load Probe is a
             # per-probe op; shank switching is done via the dropdown. Fixes the
@@ -1989,9 +1995,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             # Setup view for current shank (common with switch_shank_view)
             ctx.update_message("Setting up visualization...")
-            self.setup_session_view()
+            self.setup_session_view(
+                preserve_plot_selection=preserve_plot_selection
+            )
 
-            self.data_status = True
+            self.document.mark_data_loaded(True)
+            self.document.set_selected_shank(self.session.current_shank_idx)
             # Cache this freshly-built stream so switching back is instant.
             self._stream_cache[probe_name] = self.session
             self._current_stream_key = probe_name
@@ -2077,7 +2086,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "Mouse root loaded",
             disable_widgets=[self.mouse_root_button, self.mouse_root_line],
         ):
-            self.data_status = False
+            self.document.mark_data_loaded(False)
             old_root = (
                 self.loaddata.mouse_root.root
                 if self.loaddata.mouse_root is not None
@@ -2088,6 +2097,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             except Exception as e:
                 logger.error(f"Failed to load mouse root {mouse_root}: {e}")
                 return False
+            self.document.set_mouse_root(mouse_root, mouse_id=mr.mouse_id)
 
             # Different mouse → probe_ids may not be meaningful anymore.
             # Same mouse → preserve auto cache so re-selecting the root
@@ -2153,6 +2163,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # evict every cached stream so memory is bounded to one session.
         self._capture_auto_alignment()
         self._evict_stream_cache()
+        self.document.clear_probe()
         self._show_empty_state()
         probes = self.loaddata.list_probes(session)
         self.populate_lists(probes, self.probe_list, self.probe_combobox)
@@ -2177,6 +2188,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._capture_auto_alignment()
         # Free the figures from the outgoing stream, keeping it in the cache.
         self._stash_and_detach_current()
+        self.document.select_probe(session, probe_name)
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
         if probe_name in self._stream_cache:
@@ -2193,12 +2205,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "Ready",
             disable_widgets=[self.probe_combobox, self.session_combobox],
         ):
-            self.data_status = False
+            self.document.mark_data_loaded(False)
             try:
                 self.loaddata.select_probe(session, probe_name)
                 self.loaddata.load_channel_info()
+                self.document.set_channel_info_loaded(True)
             except Exception as e:
                 logger.error(f"Failed to select probe {probe_name}: {e}")
+                self.document.set_channel_info_loaded(False)
                 self.load_data_button.setEnabled(False)
                 return
 
@@ -2212,6 +2226,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.init_session_variables()
             self.session.init_shanks(self.loaddata.n_shanks)
             self.session.current_shank_idx = 0
+            self.document.set_selected_shank(0)
             self.session.feature_prev = None
             self.session.track_prev = None
 
@@ -2222,11 +2237,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _derive_output_directory(self) -> None:
         """If a save-root and a probe are both set, compute the output dir."""
         probe = self.loaddata.probe_info
-        if self.save_root is None or probe is None:
+        output_root = self.document.output_root
+        if (
+            output_root is None
+            or probe is None
+            or probe.recording_id != self.document.selected_recording
+            or probe.probe_name != self.document.selected_probe
+        ):
+            self.document.set_output_directory(None)
             return
-        output_directory = self.save_root / probe.recording_id / probe.probe_name
+        output_directory = output_root / probe.recording_id / probe.probe_name
         output_directory.mkdir(parents=True, exist_ok=True)
-        self.output_directory = output_directory
+        self.document.set_output_directory(output_directory)
         self.output_folder_line.setText(str(output_directory))
         logger.info(f"Output dir: {output_directory}")
 
@@ -2238,7 +2260,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         ever loosened). Only meaningful once heavy data has been loaded
         — before that the session has no real alignment to capture.
         """
-        if not self.data_status:
+        if not self.document.data_loaded:
             return
         probe = self.loaddata.probe_info
         if probe is None or self.session is None:
@@ -2291,11 +2313,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
-        result = self.workflow_policy.can_load_data(self._load_data_state())
+        result = self.workflow_policy.can_load_data(self.document)
         if isinstance(result, Blocked):
             if not self._handle_load_data_blocked(result):
                 return
-            result = self.workflow_policy.can_load_data(self._load_data_state())
+            result = self.workflow_policy.can_load_data(self.document)
 
         if not isinstance(result, Ok):
             if isinstance(result, Blocked):
@@ -2304,14 +2326,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         logger.info("Load Data button pressed")
         self.load_heavy_data()
-
-    def _load_data_state(self) -> LoadDataState:
-        """Current GUI state relevant to the Load Data workflow policy."""
-        return LoadDataState(
-            probe_selected=self.loaddata.probe_info is not None,
-            channel_info_loaded=self.loaddata.n_shanks != 0,
-            output_directory_set=self.output_directory is not None,
-        )
 
     def _handle_load_data_blocked(self, result: Blocked) -> bool:
         """Render the first load-data requirement and return whether to retry."""
@@ -2329,7 +2343,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self, requirement: Requirement | None = None
     ) -> bool:
         """Require a save location before data workflows can autosave."""
-        if self.output_directory is not None:
+        if self.document.output_directory is not None:
             return True
 
         requirement = requirement or Requirement(
@@ -2359,7 +2373,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info("Load data cancelled: no output folder selected.")
             return False
 
-        if self.output_directory is None:
+        if self.document.output_directory is None:
             logger.error(
                 "Output folder selected but no probe output directory was derived."
             )
@@ -2375,17 +2389,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not save_root.is_dir():
             logger.error(f"Save-root is not a directory: {save_root}")
             return False
-        self.save_root = save_root
+        self.document.set_output_root(save_root)
         logger.info(f"Save root set to: {save_root}")
         self._derive_output_directory()
-        if self.output_directory is None:
+        if self.document.output_directory is None:
             # No probe yet — show the save-root itself until a probe is picked.
             self.output_folder_line.setText(str(save_root))
         return True
 
     def on_output_folder_selected(self) -> bool:
         """Prompt the user for a save-root directory."""
-        start_dir = str(self.save_root) if self.save_root is not None else ""
+        output_root = self.document.output_root
+        start_dir = str(output_root) if output_root is not None else ""
         folder = QtWidgets.QFileDialog.getExistingDirectory(
             None, "Select Save Root", directory=start_dir
         )
@@ -2460,15 +2475,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if np.any(self.session.feature_prev):
             self.create_lines(self.session.feature_prev[1:-1] * 1e6)
 
-    def setup_session_view(self) -> None:
+    def setup_session_view(self, preserve_plot_selection: bool | None = None) -> None:
         """Setup/refresh view for current session. Used by both initial load and session switching."""
         logger.info("Setting up session view")
-        self.setup_shank_view()
+        self.setup_shank_view(preserve_plot_selection=preserve_plot_selection)
 
-    def setup_shank_view(self) -> None:
+    def setup_shank_view(self, preserve_plot_selection: bool | None = None) -> None:
         """Setup/refresh view for current shank. Used by both initial load and shank switching."""
 
         logger.info(f"Setting up view for shank index {self.session.current_shank_idx}")
+        if preserve_plot_selection is None:
+            preserve_plot_selection = self.document.data_loaded
 
         # Remember which slice plot the user had selected so we can restore it
         # after the new probe's data loads. Each slice action carries
@@ -2564,12 +2581,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.slice_data = {}
             self.session.fp_slice_data = None
 
-        if not self.data_status:
+        if not preserve_plot_selection:
             self.init_menubar()
 
         # Render all plots
         logger.info("Rendering plots...")
-        if self.data_status:
+        if preserve_plot_selection:
             # Subsequent load — re-apply the user's previous unit filter on
             # the new probe's data. filter_unit_pressed recomputes filtered
             # data and calls update_plot, which fires current_img_action /
@@ -2631,8 +2648,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.plot_slice(getattr(self.session, init_attr), init_key)
 
         # Only configure the view on first launch
-        self.set_view(view=1, configure=self.configure and not self.data_status)
-        if not self.data_status:
+        self.set_view(view=1, configure=self.configure and not preserve_plot_selection)
+        if not preserve_plot_selection:
             self.configure = False
 
         logger.info("Shank view setup complete")
@@ -2646,10 +2663,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         self.session.current_shank_idx = new_shank_id - 1
+        self.document.set_selected_shank(self.session.current_shank_idx)
 
         logger.info(f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})")
 
-        if not self.data_status:
+        if not self.document.data_loaded:
             # Data not loaded yet - just update index
             logger.info("Data not loaded yet, shank index updated")
             return
@@ -2671,7 +2689,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(f"Failed to get alignment: {e}")
             return
 
-        if not self.data_status:
+        if not self.document.data_loaded:
             # Data not loaded yet - just update alignment params
             logger.info("Data not loaded yet, alignment params updated")
             return
@@ -3164,7 +3182,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed.
         Saves final channel locations to a JSON file
         """
-        if self.output_directory is None:
+        output_directory = self.document.output_directory
+        if output_directory is None:
             logger.error("Output directory not set. Please select an output directory.")
             return
 
@@ -3196,13 +3215,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info("Saving output files to results folder...")
             suffix = f"_shank{self.session.current_shank_idx + 1}" if multi_shank else ""
             channel_results_path = (
-                self.output_directory / f"channel_locations{suffix}.json"
+                output_directory / f"channel_locations{suffix}.json"
             )
             prev_alignments_path = (
-                self.output_directory / f"prev_alignments{suffix}.json"
+                output_directory / f"prev_alignments{suffix}.json"
             )
             ccf_channel_dict_path = (
-                self.output_directory / f"ccf_channel_locations{suffix}.json"
+                output_directory / f"ccf_channel_locations{suffix}.json"
             )
 
             # The "auto" entry is a RAM-only cheap save; never let it leak
@@ -3219,11 +3238,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if self.use_docdb:
                 logger.info("Writing channel locations to DocDB...")
                 probe_name_for_docdb = (
-                    f"{self.output_directory.stem}_{self.session.current_shank_idx}"
+                    f"{output_directory.stem}_{self.session.current_shank_idx}"
                 )
                 try:
                     write_output_to_docdb(
-                        self.output_directory.parent.stem,
+                        output_directory.parent.stem,
                         probe_name_for_docdb,
                         channel_results,
                         persistable_alignments,
