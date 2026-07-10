@@ -2327,45 +2327,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.feature_prev, self.session.track_prev = self.loaddata.get_alignment_idx(0)
             self.recreate_alignment_and_regions()
 
-        self.session.plotdata = pd.PlotData(self.session.probe_path, self.session.data, self.session.current_shank_idx)
+        # Build this shank's PlotData once; reuse it on revisit (it holds the
+        # shank's filtered channels/spikes and the memoized plot datasets).
+        # plotdata is per-shank (_ShankAttr), so each shank keeps its own.
+        if self.session.plotdata is None:
+            self.session.plotdata = pd.PlotData(
+                self.session.probe_path,
+                self.session.data,
+                self.session.current_shank_idx,
+            )
         self.set_lims(np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max)
 
-        # Constrain probe colour levels to in-brain channels so out-of-brain
-        # channels don't blow out the cmap. Must be set before the probe
-        # getters below compute their levels.
+        # Constrain probe AND image colour levels to in-brain channels. Set on
+        # the (persistent) plotdata before any lazy getter runs, so both the
+        # probe and image cmaps see it at compute time.
         self.session.plotdata.in_brain_depths_um = self.in_brain_channel_depths()
 
-        self.session.scat_drift_data = self.session.plotdata.get_depth_data_scatter()
-        (self.session.scat_fr_data, self.session.scat_p2t_data, self.session.scat_amp_data) = (
-            self.session.plotdata.get_fr_p2t_data_scatter()
-        )
-        self.session.img_spike_corr_data = self.session.plotdata.get_spike_correlation_data_img()
-        self.session.img_fr_data = self.session.plotdata.get_fr_img()
-
-        self.session.img_rms_APdata, self.session.probe_rms_APdata = (
-            self.session.plotdata.get_rms_data_img_probe("AP")
-        )
-        self.session.img_rms_LFPdata, self.session.probe_rms_LFPdata = (
-            self.session.plotdata.get_rms_data_img_probe("LF")
-        )
-        self.session.img_rms_APdata_main, self.session.probe_rms_APdata_main = (
-            self.session.plotdata.get_rms_data_img_probe("AP_main")
-        )
-        self.session.img_rms_LFPdata_main, self.session.probe_rms_LFPdata_main = (
-            self.session.plotdata.get_rms_data_img_probe("LF_main")
-        )
-
-        self.session.img_lfp_data, self.session.probe_lfp_data = self.session.plotdata.get_lfp_spectrum_data(
-            "lf"
-        )
-        self.session.img_lfp_data_main, self.session.probe_lfp_data_main = (
-            self.session.plotdata.get_lfp_spectrum_data("lf_main")
-        )
-
-        self.session.img_lfp_corr_data = self.session.plotdata.get_lfp_correlation_data_img()
-        self.session.line_fr_data, self.session.line_amp_data = self.session.plotdata.get_fr_amp_data_line()
-        self.session.probe_rfmap, self.session.rfmap_boundaries = self.session.plotdata.get_rfmap_data()
-        self.session.img_stim_data = self.session.plotdata.get_passive_events()
+        # Plot datasets (scatter / img / probe / line) are no longer computed
+        # eagerly here: they are lazy _LazyPlotAttr descriptors on the session,
+        # built from ``plotdata`` and memoized only when a plot is displayed.
+        # (Re)assigning ``plotdata`` above resets that per-shank memo cache.
 
         # TODO broken
         if self.offline:
@@ -2376,9 +2357,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
         if self.histology_exists:
-            self.session.slice_data, self.session.fp_slice_data = self.loaddata.get_slice_images(
-                self.session.ephysalign.track_interpolation_ras
-            )
+            # Reuse this shank's cached slice unless its track changed (e.g. the
+            # shank was re-aligned since the last visit) — instant on revisit.
+            shank = self.session.active_shank
+            track = self.session.ephysalign.track_interpolation_ras
+            if shank.cached_slice(track) is None:
+                slice_data, fp_slice_data = self.loaddata.get_slice_images(track)
+                shank.set_slice(slice_data, fp_slice_data, track)
         else:
             self.session.slice_data = {}
             self.session.fp_slice_data = None
@@ -2577,16 +2562,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.probe_img_action.trigger()
 
     def filter_unit_pressed(self, type) -> None:
+        # filter_units clears the per-shank memo cache; the lazy _LazyPlotAttr
+        # datasets recompute against the new subset on next access during
+        # update_plot. No eager recompute here.
         self.session.plotdata.filter_units(type)
-        self.session.scat_drift_data = self.session.plotdata.get_depth_data_scatter()
-        (self.session.scat_fr_data, self.session.scat_p2t_data, self.session.scat_amp_data) = (
-            self.session.plotdata.get_fr_p2t_data_scatter()
-        )
-        self.session.img_spike_corr_data = self.session.plotdata.get_spike_correlation_data_img()
-        self.session.img_fr_data = self.session.plotdata.get_fr_img()
-        self.session.line_fr_data, self.session.line_amp_data = self.session.plotdata.get_fr_amp_data_line()
-        self.session.probe_rfmap, self.session.rfmap_boundaries = self.session.plotdata.get_rfmap_data()
-        self.session.img_stim_data = self.session.plotdata.get_passive_events()
         self.img_init.setChecked(True)
         self.line_init.setChecked(True)
         self.probe_init.setChecked(True)
