@@ -6,7 +6,10 @@ import numpy as np
 import SimpleITK as sitk
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.histology_data_service import HistologyRuntimeData
+from ephys_alignment_gui.histology_data_service import (
+    HistologyDataContext,
+    HistologyRuntimeData,
+)
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 
 
@@ -18,12 +21,14 @@ def test_load_data_local_adapts_histology_runtime_data(tmp_path) -> None:
         histology_images={"histology_registration": image},
         lazy_channel_paths={"fluor": tmp_path / "fluor.nii.gz"},
     )
-    loader = LoadDataLocal(data_context=AlignmentDataContext())
+    histology_context = HistologyDataContext()
+    loader = LoadDataLocal(
+        data_context=AlignmentDataContext(),
+        histology_context=histology_context,
+    )
 
     loader.set_histology_data(histology_data)
 
     assert loader.brain_atlas is brain_atlas
     assert loader.histology_images == {"histology_registration": image}
-    assert getattr(loader, "_lazy_channel_paths") == {
-        "fluor": tmp_path / "fluor.nii.gz"
-    }
+    assert histology_context.lazy_channel_paths == {"fluor": tmp_path / "fluor.nii.gz"}

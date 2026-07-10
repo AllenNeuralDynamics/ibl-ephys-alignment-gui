@@ -2,23 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 # temporarily add this in for neuropixel course
 # until figured out fix to problem on win32
 import ssl
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-import ants
 import numpy as np
 import one.alf.io as alfio
-import pandas
 import SimpleITK as sitk
 from iblatlas import atlas
-from iblatlas.regions import BrainRegions
-from iblutil.util import Bunch
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
@@ -28,13 +22,14 @@ from ephys_alignment_gui.ephys_data_service import (
     ChannelTable,
     EphysStreamData,
 )
-from ephys_alignment_gui.histology_data_service import HistologyRuntimeData
+from ephys_alignment_gui.histology_data_service import (
+    HistologyDataContext,
+    HistologyRuntimeData,
+)
 from ephys_alignment_gui.slice_service import SliceService
 
 ssl._create_default_https_context = ssl._create_unverified_context
 logger = logging.getLogger(__name__)
-
-ANTS_DIMENSION = 3
 
 
 @dataclass
@@ -48,7 +43,7 @@ class LoadDataLocal:
     """
 
     data_context: AlignmentDataContext
-    brain_atlas: BrainAtlasAnatomical | None = None
+    histology_context: HistologyDataContext
     chn_coords: NDArray | None = None
     chn_coords_all: NDArray | None = None
     chn_contact_id_all: NDArray | None = None
@@ -57,18 +52,12 @@ class LoadDataLocal:
     channel_collection: ChannelCollectionView | None = None
     slice_service: SliceService = field(default_factory=SliceService)
 
-    histology_images: dict[str, sitk.Image] = field(default_factory=dict)
-    channel_dict: dict[str, dict[str, Any]] = field(default_factory=dict)
-
     # ------------------------------------------------------------------
     # Mouse-root / probe selection
     # ------------------------------------------------------------------
 
     def _channel_table(self) -> ChannelTable | None:
         return self.data_context.channel_table
-
-    def _n_shanks(self) -> int:
-        return self.data_context.n_shanks
 
     def _clear_channel_cache(self) -> None:
         """Clear legacy channel adapter fields derived from a selected stream."""
@@ -88,10 +77,7 @@ class LoadDataLocal:
     def reset_for_mouse_root_selection(self, *, root_changed: bool) -> None:
         """Clear loader-side caches after the selected mouse root changes."""
         if root_changed:
-            self.brain_atlas = None
-            self.histology_images = {}
-            if hasattr(self, "_lazy_channel_paths"):
-                delattr(self, "_lazy_channel_paths")
+            self.histology_context.clear()
         self._clear_channel_cache()
 
     def reset_for_probe_selection(self) -> None:
@@ -100,9 +86,17 @@ class LoadDataLocal:
 
     def set_histology_data(self, histology_data: HistologyRuntimeData) -> None:
         """Attach already-loaded atlas and histology runtime data."""
-        self.brain_atlas = histology_data.brain_atlas
-        self.histology_images = dict(histology_data.histology_images)
-        self._lazy_channel_paths = dict(histology_data.lazy_channel_paths)
+        self.histology_context.set(histology_data)
+
+    @property
+    def brain_atlas(self) -> BrainAtlasAnatomical | None:
+        """Loaded anatomical atlas, if available."""
+        return self.histology_context.brain_atlas
+
+    @property
+    def histology_images(self) -> dict[str, sitk.Image]:
+        """Loaded histology image channels."""
+        return self.histology_context.histology_images
 
     @property
     def probe_id(self) -> str | None:
@@ -226,7 +220,7 @@ class LoadDataLocal:
             self.slice_service.build_slice_set(
                 brain_atlas=self.brain_atlas,
                 histology_images=self.histology_images,
-                lazy_channel_paths=getattr(self, "_lazy_channel_paths", {}),
+                lazy_channel_paths=self.histology_context.lazy_channel_paths,
                 track_interpolation_ras=track_interpolation_ras,
             ),
             None,
@@ -262,7 +256,7 @@ class LoadDataLocal:
         return self.slice_service.build_perpendicular_slice_image(
             brain_atlas=self.brain_atlas,
             histology_images=self.histology_images,
-            lazy_channel_paths=getattr(self, "_lazy_channel_paths", {}),
+            lazy_channel_paths=self.histology_context.lazy_channel_paths,
             ephysalign=ephysalign,
             feature_ref=feature_ref,
             track_ref=track_ref,
@@ -289,155 +283,3 @@ class LoadDataLocal:
             description = region_lookup + "\n" + description
 
         return description, region_lookup
-
-    # ------------------------------------------------------------------
-    # CCF transform + alignment result export
-    # ------------------------------------------------------------------
-
-    def _transform_to_ccf(
-        self,
-        channel_locations_ras: NDArray,
-        channel_dict: dict[str, dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
-        mouse_root = self.data_context.mouse_root
-        if mouse_root is None or self.brain_atlas is None:
-            raise RuntimeError(
-                "Mouse root or brain atlas not loaded; cannot transform to CCF"
-            )
-        # Unrotate from the canonical (rotated) frame back to SPIM-native, then
-        # use the pre-rotation (SPIM-native) sitk images for the index<->physical
-        # math. The ANTs CCF chain was computed in SPIM-native coords and is
-        # invalid for rotated inputs.
-        channel_locations_ras_spim = self.brain_atlas.unrotate_to_spim_native(
-            channel_locations_ras
-        )
-        histology_img = self.brain_atlas.intensity_sitk_image_spim_native
-        pipeline_img = self.brain_atlas.pipeline_sitk_image_spim_native
-        ras_to_lps = np.array([-1, -1, 1])
-        # Convert IBL app world coordinates, RAS m, to ITK world coordinates, LPS mm
-        channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras_spim
-        reg_pipeline_physical_points: list[list[float]] = []
-        for point in channel_locations_lps_mm:
-            index = histology_img.TransformPhysicalPointToContinuousIndex(point)
-            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(index)
-            reg_pipeline_physical_points.append(list(pipeline_point))
-
-        reg_pipeline_physical_points_array = np.array(reg_pipeline_physical_points)
-
-        logger.info("Warping to ccf")
-        this_probe_df = pandas.DataFrame(
-            reg_pipeline_physical_points_array, columns=list("xyz")
-        )
-
-        tx = mouse_root.transforms
-        tx_list = [
-            str(tx.image_to_template_affine),
-            str(tx.image_to_template_warp),
-            str(tx.template_to_ccf_affine),
-            str(tx.template_to_ccf_warp),
-        ]
-        invert_list = [True, False, True, False]
-
-        logger.info("applying transforms ...")
-        ccf_coordinates_dataframe: pandas.DataFrame = ants.apply_transforms_to_points(
-            ANTS_DIMENSION,
-            this_probe_df,
-            tx_list,
-            whichtoinvert=invert_list,
-        )
-        logger.info("Done warping to ccf")
-
-        ccf_channel_dict: dict[str, dict[str, Any]] = {}
-        pattern = re.compile(r"channel_(\d+)")
-
-        channel_indices = []
-        channel_names = []
-        for ch in channel_dict.keys():
-            m = pattern.match(ch)
-            if m:
-                channel_indices.append(int(m.group(1)))
-                channel_names.append(ch)
-
-        xyz_array = ccf_coordinates_dataframe.loc[
-            channel_indices, ["x", "y", "z"]
-        ].to_numpy(dtype=np.float64)
-
-        for ch, (x, y, z) in zip(channel_names, xyz_array):
-            info = channel_dict[ch]
-            ccf_channel_dict[ch] = {
-                "x": float(x),
-                "y": float(y),
-                "z": float(z),
-                "axial": info["axial"],
-                "lateral": info["lateral"],
-                "brain_region_id": info["brain_region_id"],
-                "brain_region": info["brain_region"],
-            }
-        return ccf_channel_dict
-
-    def get_alignment_results(
-        self,
-        channel_locations_ras: NDArray,
-        chn_coords: NDArray,
-    ) -> tuple[
-        dict[str, dict[str, Any]],
-        dict[str, dict[str, Any]],
-        bool,
-    ]:
-        """Compute the histology-space + CCF channel dicts for a save.
-
-        IO-only: the alignment history itself is owned per-shank by
-        :class:`~ephys_alignment_gui.shank_alignment.ShankAlignment` (the caller
-        records the new alignment there and persists it), so this no longer
-        keeps a resident ``alignments`` dict. ``chn_coords`` is passed in rather
-        than read from loader scratch so a save is decoupled from loader state.
-        """
-        logger.info("Saving channel locations locally")
-        logger.debug(f"Channels: {channel_locations_ras}")
-        if self.brain_atlas is None:
-            raise ValueError("Brain atlas not loaded, cannot save channel locations")
-        regions: BrainRegions = self.brain_atlas.regions
-        brain_regions = regions.get(self.brain_atlas.get_labels(channel_locations_ras))
-        # Persist xyz in SPIM-native coords so external tools reading the
-        # output don't need to know about the GUI's display rotation.
-        brain_regions["xyz"] = self.brain_atlas.unrotate_to_spim_native(
-            channel_locations_ras
-        )
-        brain_regions["lateral"] = chn_coords[:, 0]
-        brain_regions["axial"] = chn_coords[:, 1]
-
-        assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
-        channel_dict = self.create_channel_dict(brain_regions)
-        self.channel_dict = channel_dict
-
-        ccf_channel_dict = self._transform_to_ccf(channel_locations_ras, channel_dict)
-
-        multi_shank = self._n_shanks() > 1
-
-        return channel_dict, ccf_channel_dict, multi_shank
-
-    @staticmethod
-    def create_channel_dict(brain_regions: Bunch) -> dict[str, dict[str, Any]]:
-        """
-        Create channel dictionary in form to write to json file
-        :param brain_regions: information about location of electrode channels in brain atlas
-        :type brain_regions: Bunch
-        :return channel_dict:
-        :type channel_dict: dictionary of dictionaries
-        """
-        channel_dict: dict[str, dict[str, Any]] = {}
-
-        for i in range(brain_regions.id.size):
-            channel = {
-                "x": np.float64(brain_regions.xyz[i, 0] * 1e6),
-                "y": np.float64(brain_regions.xyz[i, 1] * 1e6),
-                "z": np.float64(brain_regions.xyz[i, 2] * 1e6),
-                "axial": np.float64(brain_regions.axial[i]),
-                "lateral": np.float64(brain_regions.lateral[i]),
-                "brain_region_id": int(brain_regions.id[i]),
-                "brain_region": brain_regions.acronym[i],
-            }
-            data = {"channel_" + str(i): channel}
-            channel_dict.update(data)
-
-        return channel_dict

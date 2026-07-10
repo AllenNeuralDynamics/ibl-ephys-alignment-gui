@@ -33,6 +33,42 @@ class HistologyRuntimeData:
     lazy_channel_paths: dict[str, Path]
 
 
+@dataclass
+class HistologyDataContext:
+    """Mutable holder for currently loaded histology runtime data."""
+
+    runtime_data: HistologyRuntimeData | None = None
+
+    def set(self, data: HistologyRuntimeData) -> None:
+        """Store loaded histology runtime data."""
+        self.runtime_data = data
+
+    def clear(self) -> None:
+        """Clear loaded histology runtime data."""
+        self.runtime_data = None
+
+    @property
+    def brain_atlas(self) -> BrainAtlasAnatomical | None:
+        """Loaded anatomical atlas, if available."""
+        if self.runtime_data is None:
+            return None
+        return self.runtime_data.brain_atlas
+
+    @property
+    def histology_images(self) -> dict[str, sitk.Image]:
+        """Loaded histology image channels."""
+        if self.runtime_data is None:
+            return {}
+        return self.runtime_data.histology_images
+
+    @property
+    def lazy_channel_paths(self) -> dict[str, Path]:
+        """Additional histology channels available for lazy loading."""
+        if self.runtime_data is None:
+            return {}
+        return self.runtime_data.lazy_channel_paths
+
+
 class HistologyDataService:
     """Load atlas and histology images for a resolved mouse root."""
 

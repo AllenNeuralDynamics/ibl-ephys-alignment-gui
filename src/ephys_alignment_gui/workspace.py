@@ -9,11 +9,15 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
+from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
-from ephys_alignment_gui.histology_data_service import HistologyDataService
+from ephys_alignment_gui.histology_data_service import (
+    HistologyDataContext,
+    HistologyDataService,
+)
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
@@ -41,6 +45,9 @@ class AlignmentWorkspace:
     histology_data_service: HistologyDataService = field(
         default_factory=HistologyDataService
     )
+    histology_context: HistologyDataContext = field(
+        default_factory=HistologyDataContext
+    )
     slice_service: SliceService = field(default_factory=SliceService)
     slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
     workflow_policy: WorkflowPolicy = field(default_factory=WorkflowPolicy)
@@ -53,6 +60,7 @@ class AlignmentWorkspace:
     alignment_derived_data_service: AlignmentDerivedDataService = field(
         default_factory=AlignmentDerivedDataService
     )
+    alignment_output_service: AlignmentOutputService = field(init=False)
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
     auto_alignments: dict[AutoAlignmentKey, AutoAlignment] = field(default_factory=dict)
@@ -67,7 +75,12 @@ class AlignmentWorkspace:
         )
         self.loader = LoadDataLocal(
             data_context=self.data_context,
+            histology_context=self.histology_context,
             slice_service=self.slice_service,
+        )
+        self.alignment_output_service = AlignmentOutputService(
+            self.data_context,
+            self.histology_context,
         )
         self.controller = AlignmentController(
             self.document,
@@ -75,5 +88,5 @@ class AlignmentWorkspace:
             self.ephys_data_service,
             self.workflow_policy,
             alignment_repository=self.alignment_repository,
-            output_builder=self.loader,
+            output_builder=self.alignment_output_service,
         )

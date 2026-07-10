@@ -14,6 +14,7 @@ from ephys_alignment_gui.ephys_data_service import (
     EphysDataService,
     EphysStreamData,
 )
+from ephys_alignment_gui.histology_data_service import HistologyDataContext
 from ephys_alignment_gui.load_data_local import LoadDataLocal
 
 
@@ -189,7 +190,10 @@ def test_load_data_local_keeps_legacy_channel_adapter(tmp_path):
 
     context = AlignmentDataContext(probe_info=probe)
     context.attach_channel_table(table)
-    loader = LoadDataLocal(data_context=context)
+    loader = LoadDataLocal(
+        data_context=context,
+        histology_context=HistologyDataContext(),
+    )
 
     assert loader.set_channels_for_shank(1).tolist() == [0.0, 20.0]
     assert loader.chn_contact_id_all.tolist() == ["s0e0", "s0e1", "s1e0", "s1e1"]
@@ -231,7 +235,10 @@ def test_load_data_local_restores_cached_stream_without_service_reload(tmp_path)
     )
 
     context = AlignmentDataContext(probe_info=probe)
-    loader = LoadDataLocal(data_context=context)
+    loader = LoadDataLocal(
+        data_context=context,
+        histology_context=HistologyDataContext(),
+    )
     loader.set_channel_collection(stream.channel_collection(1))
 
     assert loader.ephys_stream is stream
@@ -277,7 +284,10 @@ def test_load_data_local_adapts_context_channel_collection_without_mirror_state(
     )
     context = AlignmentDataContext(probe_info=probe)
     context.attach_channel_table(table)
-    loader = LoadDataLocal(data_context=context)
+    loader = LoadDataLocal(
+        data_context=context,
+        histology_context=HistologyDataContext(),
+    )
 
     loader.set_channel_collection(stream.channel_collection(1))
 
