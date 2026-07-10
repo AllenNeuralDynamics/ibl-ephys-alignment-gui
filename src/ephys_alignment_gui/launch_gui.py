@@ -22,7 +22,6 @@ import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.controller import (
     AlignmentOutputBuilt,
     AlignmentOutputsSaved,
-    AlignmentController,
     MouseRootLoaded,
     NoPreviousAlignments,
     OutputRootSet,
@@ -31,11 +30,8 @@ from ephys_alignment_gui.controller import (
     RecordingSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
-from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_alignment import EphysAlignment, TIP_SIZE_UM
 from ephys_alignment_gui.image_levels import brain_percentile_levels
-from ephys_alignment_gui.load_data_local import LoadDataLocal
-from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.thread_worker import Worker
@@ -45,8 +41,8 @@ from ephys_alignment_gui.workflow import (
     Failed,
     Ok,
     Requirement,
-    WorkflowPolicy,
 )
+from ephys_alignment_gui.workspace import AlignmentWorkspace
 from ephys_alignment_gui.windows.features_across_region import (
     RegionFeatureWindow,
 )
@@ -217,31 +213,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.configure: bool = True
         self.offline: bool = True
         self.histology_exists: bool = True
-        self.document = AlignmentDocument()
+        self.workspace = AlignmentWorkspace()
+        self.document = self.workspace.document
+        self.loaddata = self.workspace.loader
+        self.controller = self.workspace.controller
+        self.plot_data_factory = self.workspace.plot_data_factory
         self.use_docdb: bool = True
-
-        # RAM-only cheap-save cache, keyed by probe_id. Captures the
-        # in-progress (features, track) when the user navigates off a probe
-        # so they can resume via an "auto" entry in the alignment dropdown.
-        # NEVER persisted to /results or DocDB — see complete_button_pressed_offline.
-        self._auto_alignments: dict[tuple[str, int], list[list[float]]] = {}
-
-        # Per-stream ProbeSession cache, keyed by probe name within the current
-        # recording session. Lets switching back to an already-loaded stream be
-        # instant (reuses its built ProbeSession: data, per-shank plotdata memo,
-        # cached slices, alignment history, fit buffers) rather than reloading.
-        # Evicted when the recording session changes (bounds memory to one
-        # session's streams). See _activate_stream / _evict_stream_cache.
-        self._stream_cache: dict[str, ProbeSession] = {}
-        self._current_stream_key: str | None = None
         self._empty_state_item: Any = None
-
-        self.loaddata = LoadDataLocal()
-        self.plot_data_factory = PlotDataFactory()
-        self.workflow_policy = WorkflowPolicy()
-        self.controller = AlignmentController(
-            self.document, self.loaddata, self.workflow_policy
-        )
 
         self.allen = self.loaddata.load_allen_csv()
         self.init_region_lookup(self.allen)
@@ -1962,20 +1940,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _stash_and_detach_current(self) -> None:
         """Detach the displayed session from the figures, keeping it cached.
 
-        The outgoing session stays intact in ``_stream_cache`` (if it was
+        The outgoing session stays intact in the workspace cache (if it was
         loaded) so switching back is instant; only its plot items are removed
         from the shared figures. A never-loaded (unkeyed) session is simply
         dropped. Distinct from ``_teardown_session``, which discards state.
         """
         if self.session is None:
             return
-        if self._current_stream_key is not None:
-            self._stream_cache[self._current_stream_key] = self.session
+        self.workspace.cache_current_session(self.session)
         self.session.detach(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
         self.session = None
-        self._current_stream_key = None
+        self.workspace.clear_current_stream()
 
     def _evict_stream_cache(self) -> None:
         """Tear down every cached stream (and the current one) and clear it.
@@ -1983,14 +1960,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Called when the recording session changes — the cache belongs to one
         recording session, so this bounds memory to a single session's streams.
         """
-        if self.session is not None and self._current_stream_key is not None:
-            self._stream_cache[self._current_stream_key] = self.session
+        self.workspace.cache_current_session(self.session)
         self.session = None
-        self._current_stream_key = None
         figures = self._figures()
-        for sess in self._stream_cache.values():
+        for sess in self.workspace.clear_stream_cache():
             sess.teardown(figures)
-        self._stream_cache.clear()
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
@@ -2005,6 +1979,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         load does (setup then restore), so recreate reconstructs the WIP rather
         than resetting it.
         """
+        cached = self.workspace.stream_cache[probe_name]
         result = self.controller.select_probe(
             session_name,
             probe_name,
@@ -2014,9 +1989,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(result.message)
             return False
 
-        cached = self._stream_cache[probe_name]
         self.session = cached
-        self._current_stream_key = probe_name
+        self.workspace.set_current_stream(probe_name)
         self._clear_empty_state()
 
         if result.shanks:
@@ -2054,7 +2028,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
             probe_name = self.probe_combobox.currentText()
-            self._stream_cache.pop(probe_name, None)
+            self.workspace.pop_cached_stream(probe_name)
             self._teardown_session()
             self.init_session_variables()
             self.session.init_shanks(self.loaddata.n_shanks)
@@ -2099,8 +2073,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.controller.finish_load_data(self.session.current_shank_idx)
             # Cache this freshly-built stream so switching back is instant.
-            self._stream_cache[probe_name] = self.session
-            self._current_stream_key = probe_name
+            self.workspace.stream_cache[probe_name] = self.session
+            self.workspace.set_current_stream(probe_name)
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
@@ -2190,7 +2164,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Same mouse → preserve auto cache so re-selecting the root
             # doesn't wipe in-progress work.
             if result.root_changed:
-                self._auto_alignments.clear()
+                self.workspace.auto_alignments.clear()
 
             self.mouse_root_line.setText(str(mouse_root))
 
@@ -2246,7 +2220,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not session:
             return
         # The stream cache belongs to one recording session. Capture the
-        # current probe's WIP (survives eviction in _auto_alignments), then
+        # current probe's WIP (survives stream eviction), then
         # evict every cached stream so memory is bounded to one session.
         self._capture_auto_alignment()
         self._evict_stream_cache()
@@ -2281,7 +2255,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._stash_and_detach_current()
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
-        if probe_name in self._stream_cache:
+        if probe_name in self.workspace.stream_cache:
             if self._activate_cached_stream(session, probe_name):
                 self.load_data_button.setEnabled(True)
             return
@@ -2347,7 +2321,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if features is None or track is None:
             return
         key = (probe.probe_id, self.session.current_shank_idx)
-        self._auto_alignments[key] = [
+        self.workspace.auto_alignments[key] = [
             np.asarray(features).tolist(),
             np.asarray(track).tolist(),
         ]
@@ -2364,7 +2338,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe = self.loaddata.probe_info
         if probe is None or self.session is None:
             return
-        auto = self._auto_alignments.get(
+        auto = self.workspace.auto_alignments.get(
             (probe.probe_id, self.session.current_shank_idx)
         )
         if auto is None:
@@ -3407,7 +3381,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             # A real save supersedes the auto cache for this probe+shank.
             if self.loaddata.probe_info is not None:
-                self._auto_alignments.pop(
+                self.workspace.auto_alignments.pop(
                     (self.loaddata.probe_info.probe_id, self.session.current_shank_idx),
                     None,
                 )
