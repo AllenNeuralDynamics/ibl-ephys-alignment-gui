@@ -32,3 +32,4 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.slice_service is not None
     assert workspace.slice_display_policy is not None
     assert workspace.runtime is not None
+    assert workspace.events is not None

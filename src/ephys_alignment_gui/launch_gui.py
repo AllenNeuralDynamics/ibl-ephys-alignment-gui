@@ -36,6 +36,7 @@ from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
+from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.settings import (
@@ -182,8 +183,6 @@ class BusyContext:
 
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
-    alignment_changed = QtCore.pyqtSignal(object)
-
     @staticmethod
     def _instances():
         app = QtWidgets.QApplication.instance()
@@ -224,6 +223,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.workspace = AlignmentWorkspace()
         self.runtime = self.workspace.runtime
+        self.events = self.workspace.events
         self.document = self.workspace.document
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
@@ -240,6 +240,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.slice_display_policy = self.workspace.slice_display_policy
 
         self.init_variables()
+        self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
         self._connect_alignment_changed_handlers()
@@ -1378,16 +1379,50 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._apply_alignment_histology_data(derived)
 
     def _connect_alignment_changed_handlers(self) -> None:
-        self.alignment_changed.connect(self._on_alignment_changed_apply_data)
-        self.alignment_changed.connect(self._on_alignment_changed_prepare_lines)
-        self.alignment_changed.connect(self._on_alignment_changed_histology)
-        self.alignment_changed.connect(self._on_alignment_changed_scale)
-        self.alignment_changed.connect(self._on_alignment_changed_fit)
-        self.alignment_changed.connect(self._on_alignment_changed_channels)
-        self.alignment_changed.connect(self._on_alignment_changed_perpendicular)
-        self.alignment_changed.connect(self._on_alignment_changed_lines)
-        self.alignment_changed.connect(self._on_alignment_changed_range)
-        self.alignment_changed.connect(self._on_alignment_changed_status)
+        self._event_subscriptions.extend(
+            [
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_apply_data,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_prepare_lines,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_histology,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_scale,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_fit,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_channels,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_perpendicular,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_lines,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_range,
+                ),
+                self.events.subscribe(
+                    AlignmentChanged,
+                    self._on_alignment_changed_status,
+                ),
+            ]
+        )
 
     def _emit_alignment_changed(
         self,
@@ -1423,7 +1458,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             refresh_perpendicular=refresh_perpendicular,
         )
         try:
-            self.alignment_changed.emit(event)
+            self.events.emit(event)
         finally:
             if depth_ranges:
                 self._restore_depth_plot_y_ranges(depth_ranges)

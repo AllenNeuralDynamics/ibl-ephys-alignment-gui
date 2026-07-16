@@ -14,6 +14,7 @@ from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
+from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.histology_data_service import (
     HistologyDataContext,
     HistologyDataService,
@@ -65,6 +66,7 @@ class AlignmentWorkspace:
     alignment_output_service: AlignmentOutputService = field(init=False)
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
+    events: EventBus = field(default_factory=EventBus)
     probe_data_workflow: ProbeDataWorkflow = field(init=False)
     controller: AlignmentController = field(init=False)
 
