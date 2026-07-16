@@ -9,7 +9,7 @@ import numpy as np
 from ephys_alignment_gui import alignment_state
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
-from ephys_alignment_gui.alignment_state import AlignmentState
+from ephys_alignment_gui.alignment_state import AlignmentState, PendingReferenceLines
 
 
 class _FixedDatetime:
@@ -94,3 +94,58 @@ def test_alignment_state_original_and_out_of_range_are_empty() -> None:
 
     assert state.get_alignment_idx(0) == (None, None)
     assert state.get_alignment_idx(5) == (None, None)
+
+
+def test_alignment_state_filters_legacy_auto_from_persisted_alignments() -> None:
+    state = AlignmentState()
+    state.set_alignments(
+        {
+            "auto": [[100.0], [200.0]],
+            "2026-07-09T10:00:00": [[0.0], [1.0]],
+        }
+    )
+
+    assert "auto" not in state.alignments
+    assert state.prev_align == ["2026-07-09T10:00:00", "original"]
+
+
+def test_alignment_state_pending_reference_lines_roundtrip() -> None:
+    state = AlignmentState()
+    lines = PendingReferenceLines.from_values(
+        np.array([100.0, 200.0]),
+        np.array([110.0, 210.0]),
+    )
+    assert lines is not None
+
+    state.set_pending_reference_lines(lines)
+
+    assert state.prev_align == ["original"]
+    assert state.pending_reference_lines is lines
+    np.testing.assert_array_equal(lines.feature_positions_um, [100.0, 200.0])
+    np.testing.assert_array_equal(lines.track_positions_um, [110.0, 210.0])
+
+    state.clear_pending_reference_lines()
+
+    assert state.pending_reference_lines is None
+
+
+def test_alignment_state_select_alignment_rebases_working_history() -> None:
+    state = AlignmentState()
+    state.active_alignment = ActiveAlignment(
+        np.array([9.0, 10.0]),
+        np.array([11.0, 12.0]),
+    )
+    state.set_pending_reference_lines(
+        PendingReferenceLines(np.array([1.0]), np.array([2.0]))
+    )
+    state.set_alignments({"saved": [[0.0, 1.0], [2.0, 3.0]]})
+
+    feature, track = state.select_alignment_idx(0)
+
+    np.testing.assert_array_equal(feature, [0.0, 1.0])
+    np.testing.assert_array_equal(track, [2.0, 3.0])
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [0.0, 1.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [2.0, 3.0])
+    assert state.edit_history.current_idx == 0
+    assert state.pending_reference_lines is None

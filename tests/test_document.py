@@ -145,6 +145,33 @@ def test_active_alignment_history_helpers_roundtrip() -> None:
     np.testing.assert_array_equal(saved_track, track)
 
 
+def test_active_pending_reference_lines_are_separate_from_saved_history() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    doc.active_add_alignment(np.array([0.0]), np.array([1.0]))
+
+    lines = doc.active_set_pending_reference_lines(
+        np.array([2.0, 3.0]),
+        np.array([4.0, 5.0]),
+    )
+
+    assert doc.active_prev_align is not None
+    assert len(doc.active_prev_align) == 2
+    assert doc.active_prev_align[-1] == "original"
+    assert doc.active_alignments is not None
+    assert "auto" not in doc.active_alignments
+    assert lines is not None
+    np.testing.assert_array_equal(lines.feature_positions_um, [2.0, 3.0])
+    np.testing.assert_array_equal(lines.track_positions_um, [4.0, 5.0])
+    state = doc.active_alignment_state
+    assert state is not None
+    assert state.pending_reference_lines is lines
+
+    doc.active_clear_pending_reference_lines()
+
+    assert state.pending_reference_lines is None
+
+
 def test_alignment_registry_survives_probe_clear_but_can_clear_on_new_root(
     tmp_path,
 ) -> None:

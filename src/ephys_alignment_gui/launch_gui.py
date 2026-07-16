@@ -21,11 +21,13 @@ from PyQt5.QtWidgets import QApplication
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import AlignmentChanged, LineUpdateMode
 from ephys_alignment_gui.controller import (
+    AlignmentChoicesUpdated,
     AlignmentEditApplied,
     AlignmentOutputsSaved,
     MouseRootLoaded,
     NoPreviousAlignments,
     OutputRootSet,
+    PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
@@ -2247,9 +2249,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.controller.finish_load_data(self.session.current_shank_idx)
 
         self.setup_session_view(preserve_plot_selection=True)
-        # Restore this probe+shank's retained in-progress fit (captured when the
-        # user navigated away) as the "auto" starting alignment.
-        self._restore_auto_alignment()
         logger.info(f"Activated cached stream {stream_key}")
         return True
 
@@ -2271,6 +2270,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             target_shank = (
                 self.session.current_shank_idx if self.session is not None else 0
             )
+            self._capture_pending_reference_lines()
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
             probe_name = self.probe_combobox.currentText()
@@ -2331,11 +2331,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
-            # If the user previously navigated off this probe, surface the
-            # captured (features, track) as an "auto" entry in the alignment
-            # dropdown and select it. RAM-only — see _capture_auto_alignment.
-            self._restore_auto_alignment()
-
     def load_existing_alignments(self) -> bool:
         ready = self.controller.can_load_previous_alignments()
         if isinstance(ready, Failed):
@@ -2372,15 +2367,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 logger.error(result.message)
                 return False
             if isinstance(result, PreviousAlignmentsLoaded):
-                self.document.set_active_alignments(result.alignments)
-                prev_align = self.document.active_prev_align or ["original"]
+                choices = self.controller.set_previous_alignments(
+                    result.alignments,
+                    shank_idx=self.session.current_shank_idx,
+                )
+                if isinstance(choices, Failed):
+                    logger.error(choices.message)
+                    return False
                 self.populate_lists(
-                    prev_align,
+                    choices.choices,
                     self.align_list,
                     self.align_combobox,
                 )
                 self.on_alignment_selected(0)
-                logger.info(f"Loaded {len(prev_align)} previous alignments")
+                logger.info(f"Loaded {len(choices.choices)} previous alignments")
             elif isinstance(result, NoPreviousAlignments):
                 logger.info("No previous alignments found")
 
@@ -2410,12 +2410,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if result.root_changed:
                 self.histology_context.clear()
             mr = result.mouse_root
-
-            # Different mouse → probe_ids may not be meaningful anymore.
-            # Same mouse → preserve auto cache so re-selecting the root
-            # doesn't wipe in-progress work.
-            if result.root_changed:
-                self.workspace.auto_alignments.clear()
 
             self.mouse_root_line.setText(str(mouse_root))
 
@@ -2473,7 +2467,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # The stream cache belongs to one recording session. Capture the
         # current probe's WIP (survives stream eviction), then
         # evict every cached stream so memory is bounded to one session.
-        self._capture_auto_alignment()
+        self._capture_pending_reference_lines()
         self._evict_stream_cache()
         result = self.controller.select_recording(session)
         if isinstance(result, Failed):
@@ -2498,10 +2492,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not session or not probe_name:
             return
 
-        # Cheap save: capture the OUTGOING probe's in-progress alignment
-        # (uses the still-current session + probe_info) so it can be restored
-        # as "auto" if the user comes back. RAM-only.
-        self._capture_auto_alignment()
+        # Capture outgoing reference-line coordinates before their pyqtgraph
+        # handles are torn down. Applied alignment history already lives on
+        # the document state.
+        self._capture_pending_reference_lines()
         # Free the figures from the outgoing view session. Loaded stream data
         # stays in the stream-runtime cache.
         self._stash_and_detach_current()
@@ -2554,56 +2548,42 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.output_folder_line.setText(str(output_directory))
         logger.info(f"Output dir: {output_directory}")
 
-    def _capture_auto_alignment(self) -> None:
-        """Capture the current probe's in-progress (features, track) into RAM.
+    def _capture_pending_reference_lines(self) -> None:
+        """Capture active reference-line coordinates as document state.
 
-        Called when navigating off a probe. Stored under the probe's
-        ``probe_id`` (not name, since names may collide if the schema is
-        ever loosened). Only meaningful once heavy data has been loaded
-        — before that the session has no real alignment to capture.
+        Called when line handles change or when navigating away from a loaded
+        alignment. The document stores only coordinates; pyqtgraph handles stay
+        in the view/session layer.
         """
         if not self.document.data_loaded:
             return
-        probe = self.data_context.probe_info
-        if probe is None or self.session is None:
+        if self.session is None:
             return
-        alignment = self.session.active_alignment
-        if alignment is None:
+        if len(self.session.lines_features) == 0 or len(self.session.lines_tracks) == 0:
+            result = self.controller.clear_pending_reference_lines(
+                self.session.current_shank_idx
+            )
+        else:
+            line_feature = np.array(
+                [line[0].pos().y() for line in self.session.lines_features],
+                dtype=float,
+            )
+            line_track = np.array(
+                [line[0].pos().y() for line in self.session.lines_tracks],
+                dtype=float,
+            )
+            result = self.controller.set_pending_reference_lines(
+                feature_positions_um=line_feature,
+                track_positions_um=line_track,
+                shank_idx=self.session.current_shank_idx,
+            )
+        if isinstance(result, Failed):
+            logger.error(result.message)
             return
-
-        key = (probe.probe_id, self.session.current_shank_idx)
-        self.workspace.auto_alignments[key] = [
-            np.asarray(alignment.feature).tolist(),
-            np.asarray(alignment.track).tolist(),
-        ]
-        logger.info(f"Auto-captured alignment for probe {probe.probe_id} {key}")
-
-    def _restore_auto_alignment(self) -> None:
-        """Surface a cached auto alignment for the current probe, if any.
-
-        Injects an ``"auto"`` entry into the active shank's alignment history
-        and prepends it to its dropdown so it shows up at the top. Selecting it
-        restores ``feature_prev``/``track_prev`` from RAM. Never written to disk.
-        Keyed per (probe, shank) so it can't cross-load another shank's WIP.
-        """
-        probe = self.data_context.probe_info
-        if probe is None or self.session is None:
-            return
-        auto = self.workspace.auto_alignments.get(
-            (probe.probe_id, self.session.current_shank_idx)
+        logger.debug(
+            "Captured reference lines for %s",
+            self.document.selected_alignment_key,
         )
-        if auto is None:
-            return
-        state = self.document.active_alignment_state
-        if state is None:
-            return
-        state.alignments["auto"] = auto
-        if "auto" in state.prev_align:
-            state.prev_align.remove("auto")
-        state.prev_align.insert(0, "auto")
-        self.populate_lists(state.prev_align, self.align_list, self.align_combobox)
-        self.on_alignment_selected(0)
-        logger.info(f"Restored auto alignment for probe {probe.probe_id}")
 
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
@@ -2798,10 +2778,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
         (
-            self.session.features[self.session.idx],
-            self.session.track[self.session.idx],
+            feature_init,
+            track_init,
             self.session.track_annos_and_ends_ras,
         ) = self.session.ephysalign.get_track_and_feature()
+        if self.session.active_alignment is None:
+            self.session.features[self.session.idx] = feature_init
+            self.session.track[self.session.idx] = track_init
 
         self.get_scaled_histology()
 
@@ -2820,7 +2803,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_scale_factor()
         self.plot_fit()
 
-        if np.any(self.session.feature_prev):
+        pending_lines = self.controller.active_pending_reference_lines(
+            self.session.current_shank_idx
+        )
+        if isinstance(pending_lines, Failed):
+            logger.error(pending_lines.message)
+            pending_lines = None
+        if pending_lines is not None:
+            self.create_lines(
+                pending_lines.feature_positions_um,
+                pending_lines.track_positions_um,
+            )
+        elif np.any(self.session.feature_prev):
             self.create_lines(self.session.feature_prev[1:-1] * 1e6)
 
     def setup_session_view(self, preserve_plot_selection: bool | None = None) -> None:
@@ -2886,15 +2880,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             # Refresh the previous-alignments dropdown to this key's own
             # history (not another shank's), then take its starting alignment.
-            prev_align = self.document.active_prev_align or ["original"]
+            choices = self.controller.active_alignment_choices(
+                self.session.current_shank_idx
+            )
+            if isinstance(choices, Failed):
+                logger.error(choices.message)
+                return
             self.populate_lists(
-                prev_align,
+                choices.choices,
                 self.align_list,
                 self.align_combobox,
             )
-            self.session.feature_prev, self.session.track_prev = (
-                self.document.active_get_alignment_idx(0)
-            )
+            if (
+                self.session.active_alignment is None
+                and not self._select_alignment_choice(0)
+            ):
+                return
             self.recreate_alignment_and_regions()
 
         # Build this shank's PlotData once; reuse it on revisit (it holds the
@@ -3041,6 +3042,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info(f"Shank {new_shank_id} already selected")
             return
 
+        self._capture_pending_reference_lines()
         self.session.current_shank_idx = new_shank_id - 1
         self.controller.set_selected_shank(self.session.current_shank_idx)
         self._sync_active_shank_alignment_state()
@@ -3062,13 +3064,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when selecting alignment from dropdown"""
         logger.info(f"Alignment index {idx} selected")
 
-        # Get from this alignment key's own history (no disk read)
-        try:
-            self.session.feature_prev, self.session.track_prev = (
-                self.document.active_get_alignment_idx(idx)
-            )
-        except RuntimeError as e:
-            logger.error(f"Failed to get alignment: {e}")
+        if not self._select_alignment_choice(idx):
             return
 
         if not self.document.data_loaded:
@@ -3081,6 +3077,20 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.render_histology_plots()
 
         logger.info("Alignment change complete")
+
+    def _select_alignment_choice(self, idx: int) -> bool:
+        """Select an alignment choice through the controller and project it."""
+        result = self.controller.select_previous_alignment(
+            idx,
+            shank_idx=self.session.current_shank_idx,
+        )
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return False
+        assert isinstance(result, PreviousAlignmentSelected)
+        self.session.feature_prev = result.feature_prev
+        self.session.track_prev = result.track_prev
+        return True
 
     def compute_nearby_boundaries(self) -> None:
         # If no histology we can't plot histology
@@ -3345,6 +3355,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session.lines_tracks, line_idx, axis=0
             )
             self.session.points = np.delete(self.session.points, line_idx, axis=0)
+            self._capture_pending_reference_lines()
 
     def describe_labels_pressed(self) -> None:
         # if no histology don't show
@@ -3468,6 +3479,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.lines_features = np.empty((0, 3))
         self.session.lines_tracks = np.empty((0, 2))
         self.session.points = np.empty((0, 1))
+        clear_lines = self.controller.clear_pending_reference_lines(
+            self.session.current_shank_idx
+        )
+        if isinstance(clear_lines, Failed):
+            logger.error(clear_lines.message)
         self._emit_alignment_changed(
             source="reset",
             line_update="reset_previous",
@@ -3558,10 +3574,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                             saved.saved.docdb_probe_name,
                         )
 
-            active_state = self.document.active_alignment_state
-            if active_state is not None:
+            active_choices = self.controller.active_alignment_choices(
+                self.session.current_shank_idx
+            )
+            if isinstance(active_choices, AlignmentChoicesUpdated):
                 self.populate_lists(
-                    active_state.prev_align,
+                    active_choices.choices,
                     self.align_list,
                     self.align_combobox,
                 )
@@ -3569,17 +3587,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 "Channel locations saved to results folder for %d visited alignment(s)",
                 saved_count,
             )
-
-            # A real save supersedes the auto cache for each saved shank.
-            if self.data_context.probe_info is not None:
-                for key in outputs:
-                    self.workspace.auto_alignments.pop(
-                        (
-                            self.data_context.probe_info.probe_id,
-                            key.shank_idx,
-                        ),
-                        None,
-                    )
 
     def _visited_alignment_output_inputs(
         self,
@@ -3840,6 +3847,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             self.fig_fit.addItem(point)
             self.session.points = np.vstack([self.session.points, point])
+            self._capture_pending_reference_lines()
 
     def on_mouse_hover(self, items) -> None:
         """
@@ -3883,6 +3891,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             x=[self.session.lines_features[line_idx][0].pos().y()],
             y=[self.session.lines_tracks[line_idx][0].pos().y()],
         )
+        self._capture_pending_reference_lines()
 
     def update_lines_track(self, line) -> None:
         """
@@ -3904,6 +3913,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             x=[self.session.lines_features[line_idx][0].pos().y()],
             y=[self.session.lines_tracks[line_idx][0].pos().y()],
         )
+        self._capture_pending_reference_lines()
 
     def tip_line_moved(self) -> None:
         """
@@ -3967,23 +3977,60 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             point[0].setData(
                 x=[line_feature[0].pos().y()], y=[line_feature[0].pos().y()]
             )
+        self._capture_pending_reference_lines()
 
-    def create_lines(self, positions) -> None:
-        for pos in positions:
+    def create_lines(self, positions, track_positions=None) -> None:
+        feature_positions = np.asarray(positions, dtype=float)
+        if track_positions is None:
+            track_positions = feature_positions
+        else:
+            track_positions = np.asarray(track_positions, dtype=float)
+        if feature_positions.shape != track_positions.shape:
+            logger.error(
+                "Cannot create reference lines: feature/track positions differ"
+            )
+            return
+
+        for feature_pos, track_pos in zip(feature_positions, track_positions):
             pen, brush = self.create_line_style()
-            line_track = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_track = pg.InfiniteLine(
+                pos=track_pos,
+                angle=0,
+                pen=pen,
+                movable=True,
+            )
             line_track.sigPositionChanged.connect(self.update_lines_track)
             line_track.setZValue(100)
-            line_feature1 = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_feature1 = pg.InfiniteLine(
+                pos=feature_pos,
+                angle=0,
+                pen=pen,
+                movable=True,
+            )
             line_feature1.setZValue(100)
             line_feature1.sigPositionChanged.connect(self.update_lines_features)
-            line_feature2 = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_feature2 = pg.InfiniteLine(
+                pos=feature_pos,
+                angle=0,
+                pen=pen,
+                movable=True,
+            )
             line_feature2.setZValue(100)
             line_feature2.sigPositionChanged.connect(self.update_lines_features)
-            line_feature3 = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_feature3 = pg.InfiniteLine(
+                pos=feature_pos,
+                angle=0,
+                pen=pen,
+                movable=True,
+            )
             line_feature3.setZValue(100)
             line_feature3.sigPositionChanged.connect(self.update_lines_features)
-            line_track_perp = pg.InfiniteLine(pos=pos, angle=0, pen=pen, movable=True)
+            line_track_perp = pg.InfiniteLine(
+                pos=track_pos,
+                angle=0,
+                pen=pen,
+                movable=True,
+            )
             line_track_perp.setZValue(100)
             line_track_perp.sigPositionChanged.connect(self.update_lines_track)
             self.fig_hist.addItem(line_track)

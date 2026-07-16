@@ -7,7 +7,7 @@ from pathlib import Path
 
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.alignment_state import AlignmentState
+from ephys_alignment_gui.alignment_state import AlignmentState, PendingReferenceLines
 
 
 @dataclass(frozen=True)
@@ -166,6 +166,38 @@ class AlignmentDocument:
         """Return an alignment from the active state's dropdown index."""
         state = self._require_active_alignment_state()
         return state.get_alignment_idx(idx)
+
+    def active_select_alignment_idx(
+        self, idx: int
+    ) -> tuple[NDArray | None, NDArray | None]:
+        """Select an alignment choice on the active state and return it."""
+        state = self._require_active_alignment_state()
+        return state.select_alignment_idx(idx)
+
+    def active_set_pending_reference_lines(
+        self,
+        feature_positions_um,
+        track_positions_um,
+    ) -> PendingReferenceLines | None:
+        """Store active-state reference-line coordinates."""
+        state = self._require_active_alignment_state()
+        lines = PendingReferenceLines.from_values(
+            feature_positions_um,
+            track_positions_um,
+        )
+        state.set_pending_reference_lines(lines)
+        return lines
+
+    def active_clear_pending_reference_lines(self) -> None:
+        """Clear active-state reference-line coordinates."""
+        state = self._require_active_alignment_state()
+        state.clear_pending_reference_lines()
+
+    @property
+    def active_pending_reference_lines(self) -> PendingReferenceLines | None:
+        """Pending reference-line coordinates for the active alignment state."""
+        state = self.active_alignment_state
+        return None if state is None else state.pending_reference_lines
 
     def _require_active_alignment_state(self) -> AlignmentState:
         state = self.active_alignment_state

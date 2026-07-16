@@ -15,7 +15,11 @@ from ephys_alignment_gui.alignment_repository import (
     AlignmentRepository,
     SavedAlignmentOutputs,
 )
-from ephys_alignment_gui.alignment_state import AlignmentState
+from ephys_alignment_gui.alignment_state import (
+    LEGACY_AUTO_ALIGNMENT_LABEL,
+    AlignmentState,
+    PendingReferenceLines,
+)
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.shank_runtime import ShankRuntime
@@ -81,6 +85,30 @@ class PreviousAlignmentsLoaded:
 @dataclass(frozen=True)
 class NoPreviousAlignments:
     """No previous alignments were available."""
+
+
+@dataclass(frozen=True)
+class AlignmentChoicesUpdated:
+    """Alignment dropdown choices were updated for the active state."""
+
+    choices: list[str]
+
+
+@dataclass(frozen=True)
+class PreviousAlignmentSelected:
+    """A previous/original alignment choice was selected."""
+
+    feature_prev: Any
+    track_prev: Any
+    choice: str | None
+    choices: list[str]
+
+
+@dataclass(frozen=True)
+class PendingReferenceLinesUpdated:
+    """Pending reference-line coordinates were updated for the active state."""
+
+    lines: PendingReferenceLines | None
 
 
 @dataclass(frozen=True)
@@ -332,6 +360,93 @@ class AlignmentController:
             return NoPreviousAlignments()
         return PreviousAlignmentsLoaded(loaded.alignments)
 
+    def active_alignment_choices(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentChoicesUpdated | Failed:
+        """Return dropdown choices for the active alignment state."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        return self._alignment_choices(state_or_failed)
+
+    def set_previous_alignments(
+        self,
+        alignments: AlignmentHistory,
+        shank_idx: int | None = None,
+    ) -> AlignmentChoicesUpdated | Failed:
+        """Replace persisted previous alignments on the active state."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state_or_failed.set_alignments(alignments)
+        return self._alignment_choices(state_or_failed)
+
+    def select_previous_alignment(
+        self,
+        idx: int,
+        shank_idx: int | None = None,
+    ) -> PreviousAlignmentSelected | Failed:
+        """Select a previous/original alignment on the active document state."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+        try:
+            feature_prev, track_prev = self.document.active_select_alignment_idx(idx)
+        except Exception as exc:
+            return Failed(f"Failed to select alignment: {exc}")
+
+        choices = list(state.prev_align)
+        choice = choices[idx] if 0 <= idx < len(choices) else None
+        return PreviousAlignmentSelected(
+            feature_prev=feature_prev,
+            track_prev=track_prev,
+            choice=choice,
+            choices=choices,
+        )
+
+    def set_pending_reference_lines(
+        self,
+        *,
+        feature_positions_um: Any,
+        track_positions_um: Any,
+        shank_idx: int | None = None,
+    ) -> PendingReferenceLinesUpdated | Failed:
+        """Store active pending reference-line coordinates."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        try:
+            lines = self.document.active_set_pending_reference_lines(
+                feature_positions_um,
+                track_positions_um,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to store reference lines: {exc}")
+        return PendingReferenceLinesUpdated(lines)
+
+    def clear_pending_reference_lines(
+        self,
+        shank_idx: int | None = None,
+    ) -> PendingReferenceLinesUpdated | Failed:
+        """Clear active pending reference-line coordinates."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        self.document.active_clear_pending_reference_lines()
+        return PendingReferenceLinesUpdated(None)
+
+    def active_pending_reference_lines(
+        self,
+        shank_idx: int | None = None,
+    ) -> PendingReferenceLines | None | Failed:
+        """Return pending reference-line coordinates for the active state."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        return state_or_failed.pending_reference_lines
+
     def offset_alignment_from_tip(
         self,
         *,
@@ -467,6 +582,12 @@ class AlignmentController:
         return state
 
     @staticmethod
+    def _alignment_choices(state: AlignmentState) -> AlignmentChoicesUpdated:
+        return AlignmentChoicesUpdated(
+            choices=list(state.prev_align),
+        )
+
+    @staticmethod
     def _edit_result(result: Any) -> AlignmentEditApplied | AlignmentEditNoop:
         if not result.changed or result.alignment is None:
             return AlignmentEditNoop()
@@ -550,7 +671,9 @@ class AlignmentController:
             return Failed("Choose an output folder before saving.")
 
         persistable_alignments = {
-            key: value for key, value in alignments.items() if key != "auto"
+            key: value
+            for key, value in alignments.items()
+            if key != LEGACY_AUTO_ALIGNMENT_LABEL
         }
         try:
             saved = self.alignment_repository.save_alignment_outputs(

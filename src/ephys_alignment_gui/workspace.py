@@ -27,9 +27,6 @@ from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
 from ephys_alignment_gui.workflow import WorkflowPolicy
 
-AutoAlignmentKey = tuple[str, int]
-AutoAlignment = list[list[float]]
-
 
 @dataclass
 class AlignmentWorkspace:
@@ -68,7 +65,6 @@ class AlignmentWorkspace:
     alignment_output_service: AlignmentOutputService = field(init=False)
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
-    auto_alignments: dict[AutoAlignmentKey, AutoAlignment] = field(default_factory=dict)
     probe_data_workflow: ProbeDataWorkflow = field(init=False)
     controller: AlignmentController = field(init=False)
 

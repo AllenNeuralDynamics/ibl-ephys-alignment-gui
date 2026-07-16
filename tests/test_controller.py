@@ -14,6 +14,7 @@ from ephys_alignment_gui.alignment_repository import (
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.controller import (
+    AlignmentChoicesUpdated,
     AlignmentController,
     AlignmentEditApplied,
     AlignmentOutputBuilt,
@@ -21,6 +22,8 @@ from ephys_alignment_gui.controller import (
     MouseRootLoaded,
     NoPreviousAlignments,
     OutputRootSet,
+    PendingReferenceLinesUpdated,
+    PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
@@ -438,6 +441,74 @@ def test_load_previous_alignments_reports_empty_result(tmp_path):
     )
 
     assert isinstance(result, NoPreviousAlignments)
+
+
+def test_set_previous_alignments_filters_legacy_auto_and_returns_choices() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    controller, _, _ = make_controller(doc)
+
+    result = controller.set_previous_alignments(
+        {
+            "auto": [[100.0], [200.0]],
+            "saved": [[1.0], [2.0]],
+        },
+        shank_idx=0,
+    )
+
+    assert isinstance(result, AlignmentChoicesUpdated)
+    assert result.choices == ["saved", "original"]
+    state = doc.active_alignment_state
+    assert state is not None
+    assert state.alignments == {"saved": [[1.0], [2.0]]}
+
+
+def test_set_pending_reference_lines_updates_document_state() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    controller, _, _ = make_controller(doc)
+
+    result = controller.set_pending_reference_lines(
+        feature_positions_um=np.array([0.0, 1.0]),
+        track_positions_um=np.array([2.0, 3.0]),
+        shank_idx=0,
+    )
+
+    assert isinstance(result, PendingReferenceLinesUpdated)
+    assert result.lines is not None
+    np.testing.assert_array_equal(result.lines.feature_positions_um, [0.0, 1.0])
+    np.testing.assert_array_equal(result.lines.track_positions_um, [2.0, 3.0])
+    state = doc.active_alignment_state
+    assert state is not None
+    assert state.pending_reference_lines is result.lines
+    assert state.prev_align == ["original"]
+
+
+def test_select_previous_alignment_rebases_working_state_and_clears_lines() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    doc.set_active_alignments({"saved": [[1.0, 2.0], [3.0, 4.0]]})
+    controller, _, _ = make_controller(doc)
+    controller.set_pending_reference_lines(
+        feature_positions_um=np.array([9.0]),
+        track_positions_um=np.array([10.0]),
+        shank_idx=0,
+    )
+
+    result = controller.select_previous_alignment(0, shank_idx=0)
+
+    assert isinstance(result, PreviousAlignmentSelected)
+    assert result.choice == "saved"
+    np.testing.assert_array_equal(result.feature_prev, [1.0, 2.0])
+    np.testing.assert_array_equal(result.track_prev, [3.0, 4.0])
+    state = doc.active_alignment_state
+    assert state is not None
+    np.testing.assert_array_equal(state.feature_prev, [1.0, 2.0])
+    np.testing.assert_array_equal(state.track_prev, [3.0, 4.0])
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [1.0, 2.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [3.0, 4.0])
+    assert state.pending_reference_lines is None
 
 
 def test_fit_alignment_to_reference_lines_updates_active_document_state() -> None:
