@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import QApplication
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import AlignmentChanged, LineUpdateMode
 from ephys_alignment_gui.controller import (
+    AlignmentEditApplied,
     AlignmentOutputsSaved,
     MouseRootLoaded,
     NoPreviousAlignments,
@@ -230,7 +231,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.probe_track_service = self.workspace.probe_track_service
         self.region_lookup_service = self.workspace.region_lookup_service
         self.controller = self.workspace.controller
-        self.alignment_edit_service = self.workspace.alignment_edit_service
         self.alignment_derived_data_service = (
             self.workspace.alignment_derived_data_service
         )
@@ -1319,14 +1319,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        result = self.alignment_edit_service.offset_from_tip(
-            self.session.active_shank.edit_history,
+        result = self.controller.offset_alignment_from_tip(
             tip_position_um=self.session.tip_pos.value(),
             probe_tip_um=self.session.probe_tip,
             lin_fit=self.session.lin_fit,
             track_shift_m=track_shift_m,
+            shank_idx=self.session.current_shank_idx,
         )
-        return result.changed
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return False
+        return isinstance(result, AlignmentEditApplied)
 
     def scale_hist_data(self) -> bool:
         """
@@ -1343,15 +1346,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         line_feature = np.array(
             [line[0].pos().y() for line in self.session.lines_features]
         )
-        result = self.alignment_edit_service.fit_to_reference_lines(
-            self.session.active_shank.edit_history,
-            ephysalign=self.session.ephysalign,
+        shank_runtime = self.session.active_shank.runtime
+        if shank_runtime is None:
+            logger.error("Cannot fit alignment: active shank runtime is not loaded")
+            return False
+
+        result = self.controller.fit_alignment_to_reference_lines(
+            shank_runtime,
             line_features_um=line_feature,
             line_tracks_um=line_track,
             lin_fit=self.session.lin_fit,
             extend_feature=self.session.extend_feature,
         )
-        return result.changed
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return False
+        return isinstance(result, AlignmentEditApplied)
 
     def get_scaled_histology(self) -> None:
         derived = self.alignment_derived_data_service.compute_histology(
@@ -3404,10 +3414,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        result = self.alignment_edit_service.go_next(
-            self.session.active_shank.edit_history
-        )
-        if result.changed:
+        result = self.controller.go_next_alignment(self.session.current_shank_idx)
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return
+        if isinstance(result, AlignmentEditApplied):
             self._restore_lin_fit_from_edit(result.lin_fit)
             self._emit_alignment_changed(source="next", line_update="navigation")
 
@@ -3421,10 +3432,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        result = self.alignment_edit_service.go_previous(
-            self.session.active_shank.edit_history
-        )
-        if result.changed:
+        result = self.controller.go_previous_alignment(self.session.current_shank_idx)
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return
+        if isinstance(result, AlignmentEditApplied):
             self._restore_lin_fit_from_edit(result.lin_fit)
             self._emit_alignment_changed(source="previous", line_update="navigation")
 
@@ -3437,16 +3449,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
+        shank_runtime = self.session.active_shank.runtime
+        if shank_runtime is None:
+            logger.error("Cannot reset alignment: active shank runtime is not loaded")
+            return
+
+        result = self.controller.reset_alignment_to_initial(
+            shank_runtime,
+            lin_fit=self.session.lin_fit,
+        )
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return
+        if not isinstance(result, AlignmentEditApplied):
+            return
+
         self.remove_lines_points()
         self.session.lines_features = np.empty((0, 3))
         self.session.lines_tracks = np.empty((0, 2))
         self.session.points = np.empty((0, 1))
-        self.alignment_edit_service.reset_to_initial(
-            self.session.active_shank.edit_history,
-            feature_init=self.session.ephysalign.feature_init,
-            track_init=self.session.ephysalign.track_init,
-            lin_fit=self.session.lin_fit,
-        )
         self._emit_alignment_changed(
             source="reset",
             line_update="reset_previous",

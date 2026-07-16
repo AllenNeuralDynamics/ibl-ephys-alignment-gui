@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
+
+from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.controller import (
     AlignmentController,
+    AlignmentEditApplied,
     AlignmentOutputBuilt,
     AlignmentOutputsSaved,
     MouseRootLoaded,
@@ -155,6 +160,26 @@ class FakeBatchOutputBuilder(FakeOutputBuilder):
                 channel_coordinates,
             ) in alignments.items()
         }
+
+
+class FakeEphysAlignment:
+    feature_init = np.array([1.0, 3.0])
+    track_init = np.array([2.0, 4.0])
+
+    @staticmethod
+    def feature2track(depths_track, feature_ref, track_ref):
+        return np.asarray(depths_track, dtype=float) + 10.0
+
+    @staticmethod
+    def adjust_extremes_uniform(feature, track):
+        return np.asarray(track, dtype=float) + 1.0
+
+    @staticmethod
+    def adjust_extremes_linear(feature, track, extend_feature=1):
+        return (
+            np.asarray(feature, dtype=float) + extend_feature,
+            np.asarray(track, dtype=float) + extend_feature,
+        )
 
 
 def make_controller(
@@ -413,6 +438,174 @@ def test_load_previous_alignments_reports_empty_result(tmp_path):
     )
 
     assert isinstance(result, NoPreviousAlignments)
+
+
+def test_fit_alignment_to_reference_lines_updates_active_document_state() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+    )
+    controller, _, _ = make_controller(doc)
+    shank_runtime = SimpleNamespace(shank_idx=0, ephysalign=FakeEphysAlignment())
+
+    result = controller.fit_alignment_to_reference_lines(
+        shank_runtime,
+        line_features_um=np.array([2_000_000.0]),
+        line_tracks_um=np.array([12_000_000.0]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_array_equal(result.alignment.feature, [0.0, 2.0, 4.0])
+    np.testing.assert_array_equal(result.alignment.track, [21.0, 23.0, 25.0])
+    assert result.lin_fit is False
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [0.0, 2.0, 4.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [21.0, 23.0, 25.0])
+
+
+def test_offset_alignment_from_tip_updates_active_document_state() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+        lin_fit=True,
+    )
+    controller, _, _ = make_controller(doc)
+
+    result = controller.offset_alignment_from_tip(
+        tip_position_um=100.0,
+        probe_tip_um=0.0,
+        lin_fit=False,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_array_equal(result.alignment.feature, [0.0, 4.0])
+    np.testing.assert_allclose(result.alignment.track, [10.0001, 14.0001])
+    assert result.lin_fit is False
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.track, [10.0001, 14.0001])
+
+
+def test_offset_alignment_from_tip_rejects_shank_mismatch() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+    )
+    controller, _, _ = make_controller(doc)
+
+    result = controller.offset_alignment_from_tip(
+        tip_position_um=100.0,
+        probe_tip_um=0.0,
+        lin_fit=False,
+        shank_idx=1,
+    )
+
+    assert isinstance(result, Failed)
+    assert "does not match" in result.message
+
+
+def test_go_previous_and_next_alignment_update_active_document_state() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+        lin_fit=True,
+    )
+    controller, _, _ = make_controller(doc)
+    controller.offset_alignment_from_tip(
+        tip_position_um=100.0,
+        probe_tip_um=0.0,
+        lin_fit=False,
+    )
+
+    previous_result = controller.go_previous_alignment()
+
+    assert isinstance(previous_result, AlignmentEditApplied)
+    np.testing.assert_array_equal(previous_result.alignment.track, [10.0, 14.0])
+    assert previous_result.lin_fit is True
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.track, [10.0, 14.0])
+
+    next_result = controller.go_next_alignment()
+
+    assert isinstance(next_result, AlignmentEditApplied)
+    np.testing.assert_allclose(next_result.alignment.track, [10.0001, 14.0001])
+    assert next_result.lin_fit is False
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.track, [10.0001, 14.0001])
+
+
+def test_reset_alignment_to_initial_updates_active_document_state() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+    )
+    controller, _, _ = make_controller(doc)
+    shank_runtime = SimpleNamespace(shank_idx=0, ephysalign=FakeEphysAlignment())
+
+    result = controller.reset_alignment_to_initial(shank_runtime, lin_fit=False)
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_array_equal(result.alignment.feature, [1.0, 3.0])
+    np.testing.assert_array_equal(result.alignment.track, [2.0, 4.0])
+    assert result.lin_fit is False
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [1.0, 3.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [2.0, 4.0])
+
+
+def test_fit_alignment_to_reference_lines_requires_runtime_alignment() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    controller, _, _ = make_controller(doc)
+
+    result = controller.fit_alignment_to_reference_lines(
+        SimpleNamespace(shank_idx=0, ephysalign=None),
+        line_features_um=np.array([2_000_000.0]),
+        line_tracks_um=np.array([12_000_000.0]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+
+    assert isinstance(result, Failed)
+    assert "not initialized" in result.message
+
+
+def test_fit_alignment_to_reference_lines_rejects_shank_mismatch() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    controller, _, _ = make_controller(doc)
+
+    result = controller.fit_alignment_to_reference_lines(
+        SimpleNamespace(shank_idx=1, ephysalign=FakeEphysAlignment()),
+        line_features_um=np.array([2_000_000.0]),
+        line_tracks_um=np.array([12_000_000.0]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+
+    assert isinstance(result, Failed)
+    assert "does not match" in result.message
 
 
 def test_can_save_alignment_output_requires_output_directory():

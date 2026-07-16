@@ -7,14 +7,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_repository import (
     AlignmentHistory,
     AlignmentRepository,
     SavedAlignmentOutputs,
 )
+from ephys_alignment_gui.alignment_state import AlignmentState
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import EphysDataService
+from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
 
 
@@ -96,6 +100,19 @@ class AlignmentOutputsSaved:
     previous_alignments: AlignmentHistory
 
 
+@dataclass(frozen=True)
+class AlignmentEditApplied:
+    """An editable alignment command changed the active alignment."""
+
+    alignment: ActiveAlignment
+    lin_fit: bool | None = None
+
+
+@dataclass(frozen=True)
+class AlignmentEditNoop:
+    """An editable alignment command completed without changing state."""
+
+
 class AlignmentController:
     """Coordinates workflow commands across document and Qt-free services.
 
@@ -110,6 +127,7 @@ class AlignmentController:
         ephys_data_service: EphysDataService,
         workflow_policy: WorkflowPolicy | None = None,
         alignment_repository: AlignmentRepository | None = None,
+        alignment_edit_service: AlignmentEditService | None = None,
         output_builder: Any | None = None,
     ) -> None:
         self.document = document
@@ -117,6 +135,7 @@ class AlignmentController:
         self.ephys_data_service = ephys_data_service
         self.workflow_policy = workflow_policy or WorkflowPolicy()
         self.alignment_repository = alignment_repository or AlignmentRepository()
+        self.alignment_edit_service = alignment_edit_service or AlignmentEditService()
         self.output_builder = output_builder
 
     def can_load_data(self) -> PolicyResult:
@@ -312,6 +331,149 @@ class AlignmentController:
         if loaded is None:
             return NoPreviousAlignments()
         return PreviousAlignmentsLoaded(loaded.alignments)
+
+    def offset_alignment_from_tip(
+        self,
+        *,
+        tip_position_um: float,
+        probe_tip_um: float,
+        lin_fit: bool,
+        track_shift_m: float = 0.0,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply an offset edit to the active document alignment state."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+
+        try:
+            result = self.alignment_edit_service.offset_from_tip(
+                state.edit_history,
+                tip_position_um=tip_position_um,
+                probe_tip_um=probe_tip_um,
+                lin_fit=lin_fit,
+                track_shift_m=track_shift_m,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to offset alignment: {exc}")
+
+        return self._edit_result(result)
+
+    def fit_alignment_to_reference_lines(
+        self,
+        shank_runtime: ShankRuntime,
+        *,
+        line_features_um: Any,
+        line_tracks_um: Any,
+        lin_fit: bool,
+        extend_feature: int,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply a fit edit to the active document alignment state."""
+        state_or_failed = self._active_state_for_shank(shank_runtime.shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+        if shank_runtime.ephysalign is None:
+            return Failed("Alignment runtime is not initialized.")
+
+        try:
+            result = self.alignment_edit_service.fit_to_reference_lines(
+                state.edit_history,
+                ephysalign=shank_runtime.ephysalign,
+                line_features_um=line_features_um,
+                line_tracks_um=line_tracks_um,
+                lin_fit=lin_fit,
+                extend_feature=extend_feature,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to fit alignment: {exc}")
+
+        return self._edit_result(result)
+
+    def go_next_alignment(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Move the active alignment edit cursor forward, if possible."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+
+        try:
+            result = self.alignment_edit_service.go_next(state.edit_history)
+        except Exception as exc:
+            return Failed(f"Failed to move to next alignment edit: {exc}")
+
+        return self._edit_result(result)
+
+    def go_previous_alignment(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Move the active alignment edit cursor backward, if possible."""
+        state_or_failed = self._active_state_for_shank(shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+
+        try:
+            result = self.alignment_edit_service.go_previous(state.edit_history)
+        except Exception as exc:
+            return Failed(f"Failed to move to previous alignment edit: {exc}")
+
+        return self._edit_result(result)
+
+    def reset_alignment_to_initial(
+        self,
+        shank_runtime: ShankRuntime,
+        *,
+        lin_fit: bool,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Reset the active document alignment state to runtime initial geometry."""
+        state_or_failed = self._active_state_for_shank(shank_runtime.shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+        if shank_runtime.ephysalign is None:
+            return Failed("Alignment runtime is not initialized.")
+
+        try:
+            result = self.alignment_edit_service.reset_to_initial(
+                state.edit_history,
+                feature_init=shank_runtime.ephysalign.feature_init,
+                track_init=shank_runtime.ephysalign.track_init,
+                lin_fit=lin_fit,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to reset alignment: {exc}")
+
+        return self._edit_result(result)
+
+    def _active_state_for_shank(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentState | Failed:
+        state = self.document.active_alignment_state
+        key = self.document.selected_alignment_key
+        if state is None or key is None:
+            return Failed("No active alignment state selected.")
+        if shank_idx is not None and key.shank_idx != shank_idx:
+            return Failed(
+                "Active alignment state does not match active shank: "
+                f"{key.shank_idx} != {shank_idx}"
+            )
+        return state
+
+    @staticmethod
+    def _edit_result(result: Any) -> AlignmentEditApplied | AlignmentEditNoop:
+        if not result.changed or result.alignment is None:
+            return AlignmentEditNoop()
+        return AlignmentEditApplied(
+            alignment=result.alignment,
+            lin_fit=result.lin_fit,
+        )
 
     def build_alignment_output(
         self,

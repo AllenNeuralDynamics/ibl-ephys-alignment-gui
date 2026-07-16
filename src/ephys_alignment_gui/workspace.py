@@ -87,5 +87,6 @@ class AlignmentWorkspace:
             self.ephys_data_service,
             self.workflow_policy,
             alignment_repository=self.alignment_repository,
+            alignment_edit_service=self.alignment_edit_service,
             output_builder=self.alignment_output_service,
         )
