@@ -138,6 +138,25 @@ class FakeOutputBuilder:
         )
 
 
+class FakeBatchOutputBuilder(FakeOutputBuilder):
+    def __init__(self, context: FakeDataContext) -> None:
+        super().__init__(context)
+        self.batched_alignments = None
+
+    def get_alignment_results_batch(self, alignments):
+        self.batched_alignments = alignments
+        return {
+            key: self.get_alignment_results(
+                channel_locations_ras,
+                channel_coordinates,
+            )
+            for key, (
+                channel_locations_ras,
+                channel_coordinates,
+            ) in alignments.items()
+        }
+
+
 def make_controller(
     doc: AlignmentDocument | None = None,
     context: FakeDataContext | None = None,
@@ -430,3 +449,31 @@ def test_build_and_save_alignment_output_filters_auto(tmp_path):
     assert repo.saved_kwargs["previous_alignments"] == {"saved": [[1], [2]]}
     assert repo.saved_kwargs["multi_shank"]
     assert repo.saved_kwargs["shank_idx"] == 1
+
+
+def test_build_alignment_outputs_uses_batch_builder(tmp_path):
+    doc = AlignmentDocument(output_directory=tmp_path)
+    context = FakeDataContext()
+    context.probe_info = FakeProbeInfo("rec1", "probeA", "rec1:probeA", 2)
+    context.channel_table = FakeChannelTable(2)
+    output_builder = FakeBatchOutputBuilder(context)
+    controller, _, _ = make_controller(
+        doc,
+        context=context,
+        output_builder=output_builder,
+    )
+    shank0 = AlignmentKey("rec1", "streamA", 0)
+    shank1 = AlignmentKey("rec1", "streamA", 1)
+
+    outputs = controller.build_alignment_outputs(
+        {
+            shank0: ([1, 2], [3, 4]),
+            shank1: ([5, 6], [7, 8]),
+        }
+    )
+
+    assert not isinstance(outputs, Failed)
+    assert output_builder.batched_alignments is not None
+    assert set(outputs) == {shank0, shank1}
+    assert outputs[shank0].channel_results == {"channels": [1, 2]}
+    assert outputs[shank1].ccf_channel_results == {"ccf_channels": [7, 8]}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import re
+from collections.abc import Hashable, Mapping
 from typing import Any
 
 import ants
@@ -19,6 +19,12 @@ from ephys_alignment_gui.histology_data_service import HistologyDataContext
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
+AlignmentOutputInput = tuple[NDArray, NDArray]
+AlignmentOutputResult = tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    bool,
+]
 
 
 class AlignmentOutputService:
@@ -42,8 +48,59 @@ class AlignmentOutputService:
         bool,
     ]:
         """Compute the histology-space + CCF channel dicts for a save."""
+        results = self.get_alignment_results_batch(
+            {"active": (channel_locations_ras, chn_coords)}
+        )
+        return results["active"]
+
+    def get_alignment_results_batch(
+        self,
+        alignments: Mapping[Hashable, AlignmentOutputInput],
+    ) -> dict[Hashable, AlignmentOutputResult]:
+        """Compute channel outputs for many alignments with one ANTs call."""
         logger.info("Saving channel locations locally")
-        logger.debug("Channels: %s", channel_locations_ras)
+        brain_atlas = self.histology_context.brain_atlas
+        if brain_atlas is None:
+            raise ValueError("Brain atlas not loaded, cannot save channel locations")
+        multi_shank = self.data_context.n_shanks > 1
+
+        channel_dicts: dict[Hashable, dict[str, dict[str, Any]]] = {}
+        packed_points: list[NDArray] = []
+        point_slices: dict[Hashable, slice] = {}
+        start = 0
+        for key, (channel_locations_ras, chn_coords) in alignments.items():
+            logger.debug("Channels for %s: %s", key, channel_locations_ras)
+            channel_dicts[key] = self._channel_dict_for_locations(
+                channel_locations_ras,
+                chn_coords,
+            )
+            stop = start + len(channel_locations_ras)
+            point_slices[key] = slice(start, stop)
+            packed_points.append(channel_locations_ras)
+            start = stop
+
+        if not packed_points:
+            return {}
+
+        all_channel_locations_ras = np.concatenate(packed_points, axis=0)
+        all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
+
+        results: dict[Hashable, AlignmentOutputResult] = {}
+        for key, channel_dict in channel_dicts.items():
+            ccf_xyz = all_ccf_xyz[point_slices[key]]
+            results[key] = (
+                channel_dict,
+                self._create_ccf_channel_dict(channel_dict, ccf_xyz),
+                multi_shank,
+            )
+        return results
+
+    def _channel_dict_for_locations(
+        self,
+        channel_locations_ras: NDArray,
+        chn_coords: NDArray,
+    ) -> dict[str, dict[str, Any]]:
+        """Build the histology-space channel dict for one alignment."""
         brain_atlas = self.histology_context.brain_atlas
         if brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
@@ -58,20 +115,12 @@ class AlignmentOutputService:
         brain_regions["axial"] = chn_coords[:, 1]
 
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
-        channel_dict = self.create_channel_dict(brain_regions)
-        ccf_channel_dict = self._transform_to_ccf(
-            channel_locations_ras,
-            channel_dict,
-        )
+        return self.create_channel_dict(brain_regions)
 
-        multi_shank = self.data_context.n_shanks > 1
-        return channel_dict, ccf_channel_dict, multi_shank
-
-    def _transform_to_ccf(
+    def _transform_locations_to_ccf(
         self,
         channel_locations_ras: NDArray,
-        channel_dict: dict[str, dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
+    ) -> NDArray:
         mouse_root = self.data_context.mouse_root
         brain_atlas = self.histology_context.brain_atlas
         if mouse_root is None or brain_atlas is None:
@@ -121,22 +170,17 @@ class AlignmentOutputService:
         )
         logger.info("Done warping to ccf")
 
+        return ccf_coordinates_dataframe.loc[:, ["x", "y", "z"]].to_numpy(
+            dtype=np.float64
+        )
+
+    @staticmethod
+    def _create_ccf_channel_dict(
+        channel_dict: dict[str, dict[str, Any]],
+        ccf_xyz: NDArray,
+    ) -> dict[str, dict[str, Any]]:
         ccf_channel_dict: dict[str, dict[str, Any]] = {}
-        pattern = re.compile(r"channel_(\d+)")
-
-        channel_indices = []
-        channel_names = []
-        for ch in channel_dict:
-            match = pattern.match(ch)
-            if match:
-                channel_indices.append(int(match.group(1)))
-                channel_names.append(ch)
-
-        xyz_array = ccf_coordinates_dataframe.loc[
-            channel_indices, ["x", "y", "z"]
-        ].to_numpy(dtype=np.float64)
-
-        for ch, (x, y, z) in zip(channel_names, xyz_array):
+        for ch, (x, y, z) in zip(channel_dict.keys(), ccf_xyz):
             info = channel_dict[ch]
             ccf_channel_dict[ch] = {
                 "x": float(x),

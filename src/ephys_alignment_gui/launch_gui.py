@@ -21,7 +21,6 @@ from PyQt5.QtWidgets import QApplication
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import AlignmentChanged, LineUpdateMode
 from ephys_alignment_gui.controller import (
-    AlignmentOutputBuilt,
     AlignmentOutputsSaved,
     MouseRootLoaded,
     NoPreviousAlignments,
@@ -31,6 +30,7 @@ from ephys_alignment_gui.controller import (
     RecordingSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
+from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.plot_elements import ColorBar
@@ -402,6 +402,39 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_hist.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.fig_hist_ref.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.fig_img.setYRange(min=y_min, max=y_max, padding=self.pad)
+
+    def _capture_depth_plot_y_ranges(self) -> dict[str, tuple[float, float]]:
+        """Capture current y-ranges on the linked depth plots."""
+        ranges: dict[str, tuple[float, float]] = {}
+        for name in (
+            "fig_img",
+            "fig_line",
+            "fig_probe",
+            "fig_hist",
+            "fig_hist_ref",
+            "fig_hist_perp",
+            "fig_scale",
+        ):
+            fig = getattr(self, name, None)
+            if fig is None:
+                continue
+            try:
+                y_min, y_max = fig.viewRange()[1]
+            except (AttributeError, IndexError, TypeError):
+                continue
+            ranges[name] = (float(y_min), float(y_max))
+        return ranges
+
+    def _restore_depth_plot_y_ranges(
+        self,
+        ranges: dict[str, tuple[float, float]],
+    ) -> None:
+        """Restore y-ranges captured before an alignment redraw."""
+        for name, (y_min, y_max) in ranges.items():
+            fig = getattr(self, name, None)
+            if fig is None or y_min == y_max:
+                continue
+            fig.setYRange(min=y_min, max=y_max, padding=0)
 
     def populate_lists(self, data, list_name, combobox) -> None:
         """
@@ -1305,12 +1338,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
 
         # Track --> histology plot
-        line_track = (
-            np.array([line[0].pos().y() for line in self.session.lines_tracks])
-        )
+        line_track = np.array([line[0].pos().y() for line in self.session.lines_tracks])
         # Feature --> ephys data plots
-        line_feature = (
-            np.array([line[0].pos().y() for line in self.session.lines_features])
+        line_feature = np.array(
+            [line[0].pos().y() for line in self.session.lines_features]
         )
         result = self.alignment_edit_service.fit_to_reference_lines(
             self.session.active_shank.edit_history,
@@ -1353,7 +1384,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         line_update: LineUpdateMode = "none",
         reset_histology_range: bool = False,
         refresh_perpendicular: bool = True,
+        preserve_depth_range: bool = False,
     ) -> None:
+        depth_ranges = (
+            self._capture_depth_plot_y_ranges() if preserve_depth_range else {}
+        )
         event = AlignmentChanged(
             source=source,
             active_alignment=self.session.active_alignment,
@@ -1375,7 +1410,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             reset_histology_range=reset_histology_range,
             refresh_perpendicular=refresh_perpendicular,
         )
-        self.alignment_changed.emit(event)
+        try:
+            self.alignment_changed.emit(event)
+        finally:
+            if depth_ranges:
+                self._restore_depth_plot_y_ranges(depth_ranges)
 
     def _apply_alignment_histology_data(self, derived) -> None:
         self.session.hist_data["region"] = derived.histology.region
@@ -2815,9 +2854,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 stream_runtime,
                 self.session.current_shank_idx,
             )
-            logger.debug(
-                f"Selected {len(collection.depths)} channels for this shank"
-            )
+            logger.debug(f"Selected {len(collection.depths)} channels for this shank")
 
         # Only process histology if it exists
         if self.histology_exists:
@@ -3144,6 +3181,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._emit_alignment_changed(
             source="fit",
             line_update="sync",
+            preserve_depth_range=True,
         )
 
     def offset_button_pressed(
@@ -3436,7 +3474,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def complete_button_pressed_offline(self) -> None:
         """
         Triggered when save button or Shift+S keys are pressed.
-        Saves final channel locations to a JSON file
+        Saves final channel locations for all visited shanks to JSON files.
         """
         save_ready = self.controller.can_save_alignment_output()
         if isinstance(save_ready, Blocked):
@@ -3455,64 +3493,115 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "Saved successfully",
             disable_widgets=self.complete_button,
         ):
-            # Compute histology-space + CCF channel dicts, then record the
-            # alignment on this document alignment key.
-            shank = self.session.active_shank
-            state = self.document.active_alignment_state
-            if state is None:
-                logger.error("No active alignment state selected")
+            output_inputs, states_by_key = self._visited_alignment_output_inputs()
+            if not output_inputs:
+                logger.error("No visited alignments are ready to save")
                 return
-            output = self.controller.build_alignment_output(
-                self.session.channel_locations_ras,
-                shank.chn_coords,
-            )
-            if isinstance(output, Failed):
-                logger.error(output.message)
-                return
-            assert isinstance(output, AlignmentOutputBuilt)
 
-            self.document.active_add_alignment(
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            )
-            alignments = state.alignments
-            # Reflect the new save in the alignment dropdown.
-            self.populate_lists(state.prev_align, self.align_list, self.align_combobox)
+            outputs = self.controller.build_alignment_outputs(output_inputs)
+            if isinstance(outputs, Failed):
+                logger.error(outputs.message)
+                return
+
+            for key, state in states_by_key.items():
+                alignment = state.active_alignment
+                if alignment is None:
+                    continue
+                state.add_alignment(alignment.feature, alignment.track)
 
             logger.info("Saving output files to results folder...")
-            saved = self.controller.save_alignment_output(
-                output,
-                alignments,
-                self.session.current_shank_idx,
-                self.use_docdb,
-            )
-            if isinstance(saved, Failed):
-                logger.error(saved.message)
-                return
-            assert isinstance(saved, AlignmentOutputsSaved)
-            logger.info("Channel locations saved to results folder")
-
-            if saved.saved.docdb_probe_name is not None:
-                if saved.saved.docdb_error is not None:
-                    logger.error(
-                        "Failed to write to DocDB with error %s. Output saved to results folder",
-                        saved.saved.docdb_error,
-                    )
-                else:
-                    logger.info(
-                        "Channels locations saved, and ccf coordinates saved for %s",
-                        saved.saved.docdb_probe_name,
-                    )
-
-            # A real save supersedes the auto cache for this probe+shank.
-            if self.data_context.probe_info is not None:
-                self.workspace.auto_alignments.pop(
-                    (
-                        self.data_context.probe_info.probe_id,
-                        self.session.current_shank_idx,
-                    ),
-                    None,
+            saved_count = 0
+            for key, output in outputs.items():
+                state = states_by_key[key]
+                saved = self.controller.save_alignment_output(
+                    output,
+                    state.alignments,
+                    key.shank_idx,
+                    self.use_docdb,
                 )
+                if isinstance(saved, Failed):
+                    logger.error(saved.message)
+                    return
+                assert isinstance(saved, AlignmentOutputsSaved)
+                saved_count += 1
+
+                if saved.saved.docdb_probe_name is not None:
+                    if saved.saved.docdb_error is not None:
+                        logger.error(
+                            "Failed to write to DocDB with error %s. Output saved to results folder",
+                            saved.saved.docdb_error,
+                        )
+                    else:
+                        logger.info(
+                            "Channels locations saved, and ccf coordinates saved for %s",
+                            saved.saved.docdb_probe_name,
+                        )
+
+            active_state = self.document.active_alignment_state
+            if active_state is not None:
+                self.populate_lists(
+                    active_state.prev_align,
+                    self.align_list,
+                    self.align_combobox,
+                )
+            logger.info(
+                "Channel locations saved to results folder for %d visited alignment(s)",
+                saved_count,
+            )
+
+            # A real save supersedes the auto cache for each saved shank.
+            if self.data_context.probe_info is not None:
+                for key in outputs:
+                    self.workspace.auto_alignments.pop(
+                        (
+                            self.data_context.probe_info.probe_id,
+                            key.shank_idx,
+                        ),
+                        None,
+                    )
+
+    def _visited_alignment_output_inputs(
+        self,
+    ) -> tuple[
+        dict[AlignmentKey, tuple[Any, Any]],
+        dict[AlignmentKey, Any],
+    ]:
+        """Collect channel-location save inputs for visited shanks."""
+        if self.session is None:
+            return {}, {}
+        probe = self.data_context.probe_info
+        if probe is None:
+            return {}, {}
+
+        states_for_probe = self.document.alignment_states_for_current_probe()
+        output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
+        states_by_key: dict[AlignmentKey, Any] = {}
+        for shank_idx, shank in sorted(self.session.shanks.items()):
+            key = AlignmentKey(
+                recording_id=probe.recording_id,
+                ephys_collection=probe.ephys_collection,
+                shank_idx=shank_idx,
+            )
+            state = states_for_probe.get(key)
+            if state is None or state.active_alignment is None:
+                continue
+            if shank.ephysalign is None or shank.chn_coords is None:
+                logger.info(
+                    "Skipping shank %d during save because it has not been rendered",
+                    shank_idx + 1,
+                )
+                continue
+            alignment = state.active_alignment
+            channel_locations_ras = (
+                self.alignment_derived_data_service.compute_channel_locations(
+                    ephysalign=shank.ephysalign,
+                    feature=alignment.feature,
+                    track=alignment.track,
+                )
+            )
+            output_inputs[key] = (channel_locations_ras, shank.chn_coords)
+            states_by_key[key] = state
+        return output_inputs, states_by_key
 
     def display_qc_options(self) -> None:
         # If not histology don't show

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -334,6 +335,45 @@ class AlignmentController:
             ccf_channel_results=ccf_channel_results,
             multi_shank=multi_shank,
         )
+
+    def build_alignment_outputs(
+        self,
+        alignments: Mapping[AlignmentKey, tuple[Any, Any]],
+    ) -> dict[AlignmentKey, AlignmentOutputBuilt] | Failed:
+        """Compute output dictionaries for multiple visited alignments."""
+        if self.output_builder is None:
+            return Failed("No alignment output builder is configured.")
+        try:
+            if hasattr(self.output_builder, "get_alignment_results_batch"):
+                batch_results = self.output_builder.get_alignment_results_batch(
+                    alignments
+                )
+            else:
+                batch_results = {
+                    key: self.output_builder.get_alignment_results(
+                        channel_locations_ras,
+                        channel_coordinates,
+                    )
+                    for key, (
+                        channel_locations_ras,
+                        channel_coordinates,
+                    ) in alignments.items()
+                }
+        except Exception as exc:
+            return Failed(f"Failed to build alignment outputs: {exc}")
+
+        return {
+            key: AlignmentOutputBuilt(
+                channel_results=channel_results,
+                ccf_channel_results=ccf_channel_results,
+                multi_shank=multi_shank,
+            )
+            for key, (
+                channel_results,
+                ccf_channel_results,
+                multi_shank,
+            ) in batch_results.items()
+        }
 
     def save_alignment_output(
         self,

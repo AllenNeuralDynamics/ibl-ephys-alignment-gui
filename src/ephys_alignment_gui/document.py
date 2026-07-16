@@ -38,9 +38,7 @@ class AlignmentDocument:
     selected_probe: str | None = None
     selected_shank: int = 0
     selected_alignment_key: AlignmentKey | None = None
-    alignment_states: dict[AlignmentKey, AlignmentState] = field(
-        default_factory=dict
-    )
+    alignment_states: dict[AlignmentKey, AlignmentState] = field(default_factory=dict)
     output_root: Path | None = None
     output_directory: Path | None = None
     channel_info_loaded: bool = False
@@ -118,6 +116,20 @@ class AlignmentDocument:
         if key not in self.alignment_states:
             self.alignment_states[key] = AlignmentState()
         return self.alignment_states[key]
+
+    def alignment_states_for_current_probe(
+        self,
+    ) -> dict[AlignmentKey, AlignmentState]:
+        """Return known alignment states for the active recording/stream."""
+        if self.selected_alignment_key is None:
+            return {}
+        active = self.selected_alignment_key
+        return {
+            key: state
+            for key, state in self.alignment_states.items()
+            if key.recording_id == active.recording_id
+            and key.ephys_collection == active.ephys_collection
+        }
 
     @property
     def active_alignment_state(self) -> AlignmentState | None:

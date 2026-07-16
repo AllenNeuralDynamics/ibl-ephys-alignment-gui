@@ -102,6 +102,24 @@ def test_alignment_states_are_isolated_by_key() -> None:
     assert doc.alignment_state_for(shank1).alignments == {}
 
 
+def test_alignment_states_for_current_probe_filters_by_stream() -> None:
+    doc = AlignmentDocument()
+    active = AlignmentKey("rec1", "streamA", 0)
+    same_stream = AlignmentKey("rec1", "streamA", 1)
+    other_stream = AlignmentKey("rec1", "streamB", 0)
+    other_recording = AlignmentKey("rec2", "streamA", 0)
+
+    active_state = doc.select_alignment_key(active)
+    same_stream_state = doc.alignment_state_for(same_stream)
+    doc.alignment_state_for(other_stream)
+    doc.alignment_state_for(other_recording)
+
+    assert doc.alignment_states_for_current_probe() == {
+        active: active_state,
+        same_stream: same_stream_state,
+    }
+
+
 def test_set_selected_shank_updates_active_alignment_key() -> None:
     doc = AlignmentDocument(selected_probe="probeA")
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
