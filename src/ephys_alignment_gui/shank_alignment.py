@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 from ephys_alignment_gui.alignment_state import AlignmentState
+from ephys_alignment_gui.shank_runtime import ShankRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,25 @@ def _edit_history_attr(name: str) -> property:
 
     def _set(self: Any, value: Any) -> None:
         setattr(self.edit_history, name, value)
+
+    return property(_get, _set)
+
+
+def _runtime_attr(name: str) -> property:
+    """Delegate a compatibility runtime attribute to ``runtime`` when attached."""
+
+    fallback_name = f"_{name}"
+
+    def _get(self: Any) -> Any:
+        if self.runtime is not None:
+            return getattr(self.runtime, name)
+        return getattr(self, fallback_name)
+
+    def _set(self: Any, value: Any) -> None:
+        if self.runtime is not None:
+            setattr(self.runtime, name, value)
+            return
+        setattr(self, fallback_name, value)
 
     return property(_get, _set)
 
@@ -71,6 +91,22 @@ class ShankAlignment:
     track = _edit_history_attr("track")
     features = _edit_history_attr("features")
     lin_fit_history = _edit_history_attr("lin_fit_history")
+
+    # Compatibility accessors for runtime-owned state. New code should prefer
+    # ShankRuntime directly; these keep legacy plotting call sites working.
+    chn_coords = _runtime_attr("chn_coords")
+    chn_depths = _runtime_attr("chn_depths")
+    track_annotations_ras = _runtime_attr("track_annotations_ras")
+    track_annos_and_ends_ras = _runtime_attr("track_annos_and_ends_ras")
+    channel_locations_ras = _runtime_attr("channel_locations_ras")
+    tip_location_ras = _runtime_attr("tip_location_ras")
+    ephysalign = _runtime_attr("ephysalign")
+    region_fp = _runtime_attr("region_fp")
+    region_label_fp = _runtime_attr("region_label_fp")
+    region_colour_fp = _runtime_attr("region_colour_fp")
+    plotdata = _runtime_attr("plotdata")
+    slice_data = _runtime_attr("slice_data")
+    fp_slice_data = _runtime_attr("fp_slice_data")
 
     @property
     def active_alignment(self) -> ActiveAlignment | None:
@@ -125,40 +161,39 @@ class ShankAlignment:
     def __init__(self, shank_idx: int, max_idx: int = 10) -> None:
         self.shank_idx: int = shank_idx
         self.alignment_state = AlignmentState(max_idx=max_idx)
+        self.runtime: ShankRuntime | None = None
 
-        # -- Channel geometry for this shank --
-        self.chn_coords: NDArray[Any] | None = None
-        self.chn_depths: NDArray[np.floating[Any]] | None = None
+        # -- Runtime fallback fields before a ShankRuntime is attached --
+        self._chn_coords: NDArray[Any] | None = None
+        self._chn_depths: NDArray[np.floating[Any]] | None = None
 
-        # -- Track / channel locations in atlas (RAS) space --
-        self.track_annotations_ras: NDArray[np.floating[Any]] | None = None
-        self.track_annos_and_ends_ras: NDArray[np.floating[Any]] | None = None
-        self.channel_locations_ras: NDArray[np.floating[Any]] | None = None
-        self.tip_location_ras: NDArray[np.floating[Any]] | None = None
+        self._track_annotations_ras: NDArray[np.floating[Any]] | None = None
+        self._track_annos_and_ends_ras: NDArray[np.floating[Any]] | None = None
+        self._channel_locations_ras: NDArray[np.floating[Any]] | None = None
+        self._tip_location_ras: NDArray[np.floating[Any]] | None = None
 
-        # -- Alignment engine + derived region overlays for this shank --
-        self.ephysalign: Any = None
-        self.region_fp: Any = None
-        self.region_label_fp: Any = None
-        self.region_colour_fp: Any = None
+        self._ephysalign: Any = None
+        self._region_fp: Any = None
+        self._region_label_fp: Any = None
+        self._region_colour_fp: Any = None
 
-        # -- Cached PlotData for this shank --
-        # Built once per shank (filters the probe-wide spikes/channels to this
-        # shank and memoizes its plot datasets); reused on revisit. Shares the
-        # probe-wide ``data`` dict by reference, so this is cheap to keep.
-        self.plotdata: Any = None
-
-        # -- Cached atlas/histology slice for this shank --
-        # Computed by get_slice_images() along the probe track; cached here so
-        # revisiting a shank is instant. Keyed on the track it was built from
-        # (_slice_track) so it recomputes if this shank's alignment changes.
-        self.slice_data: Any = None
-        self.fp_slice_data: Any = None
+        self._plotdata: Any = None
+        self._slice_data: Any = None
+        self._fp_slice_data: Any = None
         self._slice_track: NDArray[np.floating[Any]] | None = None
 
         # -- Output dicts produced on save --
         self.channel_dict: dict[str, dict[str, Any]] = {}
         self.ccf_channel_dict: dict[str, dict[str, Any]] = {}
+
+    def attach_runtime(self, runtime: ShankRuntime) -> None:
+        """Attach runtime-owned shank data for compatibility accessors."""
+        if runtime.shank_idx != self.shank_idx:
+            raise ValueError(
+                f"Cannot attach runtime for shank {runtime.shank_idx} "
+                f"to shank {self.shank_idx}"
+            )
+        self.runtime = runtime
 
     # -- Alignment history helpers --
 
@@ -191,12 +226,17 @@ class ShankAlignment:
         Returns ``None`` if nothing is cached yet, or if ``track`` differs from
         the track the cache was built for (i.e. the shank was re-aligned).
         """
+        if self.runtime is not None:
+            return self.runtime.cached_slice(track)
         if self._slice_track is not None and np.array_equal(self._slice_track, track):
             return self.slice_data, self.fp_slice_data
         return None
 
     def set_slice(self, slice_data: Any, fp_slice_data: Any, track: NDArray) -> None:
         """Cache the slice built for ``track`` on this shank."""
+        if self.runtime is not None:
+            self.runtime.set_slice(slice_data, fp_slice_data, track)
+            return
         self.slice_data = slice_data
         self.fp_slice_data = fp_slice_data
         self._slice_track = track

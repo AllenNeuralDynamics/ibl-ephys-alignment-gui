@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 from ephys_alignment_gui.alignment_state import AlignmentState
 from ephys_alignment_gui.shank_alignment import ShankAlignment
+from ephys_alignment_gui.shank_runtime import ShankRuntime
 
 
 class _FixedDatetime:
@@ -134,6 +136,42 @@ def test_cached_slice_hit_and_miss():
     # A different track (re-aligned) misses.
     other = track + 1.0
     assert sa.cached_slice(other) is None
+
+
+def test_runtime_fields_project_to_attached_shank_runtime() -> None:
+    collection = SimpleNamespace(
+        shank_idx=0,
+        local_coordinates=np.array([[5.0, 10.0], [6.0, 20.0]]),
+        depths=np.array([10.0, 20.0]),
+    )
+    runtime = ShankRuntime(collection)
+    sa = ShankAlignment(0)
+
+    sa.attach_runtime(runtime)
+    sa.ephysalign = "alignment-engine"
+    sa.track_annotations_ras = np.array([[1.0, 2.0, 3.0]])
+    sa.channel_locations_ras = np.array([[4.0, 5.0, 6.0]])
+    sa.plotdata = "plot-data"
+
+    assert runtime.ephysalign == "alignment-engine"
+    np.testing.assert_array_equal(runtime.track_annotations_ras, [[1.0, 2.0, 3.0]])
+    np.testing.assert_array_equal(runtime.channel_locations_ras, [[4.0, 5.0, 6.0]])
+    assert runtime.plotdata == "plot-data"
+    np.testing.assert_array_equal(sa.chn_coords, [[5.0, 10.0], [6.0, 20.0]])
+    np.testing.assert_array_equal(sa.chn_depths, [10.0, 20.0])
+
+
+def test_attaching_mismatched_runtime_is_rejected() -> None:
+    runtime = ShankRuntime(
+        SimpleNamespace(
+            shank_idx=1,
+            local_coordinates=np.array([[0.0, 0.0]]),
+            depths=np.array([0.0]),
+        )
+    )
+
+    with pytest.raises(ValueError, match="Cannot attach runtime"):
+        ShankAlignment(0).attach_runtime(runtime)
 
 
 def test_independent_state_per_instance():

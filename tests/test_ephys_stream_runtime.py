@@ -46,6 +46,18 @@ def test_collection_for_shank_returns_view_and_records_current_shank() -> None:
     assert collection.rows.tolist() == [2, 3]
 
 
+def test_shank_runtime_for_shank_is_cached() -> None:
+    runtime = EphysStreamRuntime(_stream(), FakePlotDataFactory())
+
+    first = runtime.shank_runtime_for(1)
+    second = runtime.shank_runtime_for(1)
+
+    assert first is second
+    assert first.collection.rows.tolist() == [2, 3]
+    assert first.chn_depths.tolist() == [0.0, 20.0]
+    assert runtime.visited_shank_runtimes() == {1: first}
+
+
 def test_plot_data_for_shank_is_cached_per_shank() -> None:
     factory = FakePlotDataFactory()
     runtime = EphysStreamRuntime(_stream(), factory)
@@ -65,9 +77,10 @@ def test_invalidate_plot_data_clears_one_or_all_shanks() -> None:
 
     runtime.invalidate_plot_data(0)
 
-    assert 0 not in runtime.plot_data_by_shank
-    assert 1 in runtime.plot_data_by_shank
+    assert runtime.shank_runtime_for(0).plotdata is None
+    assert runtime.shank_runtime_for(1).plotdata is not None
 
     runtime.invalidate_plot_data()
 
-    assert runtime.plot_data_by_shank == {}
+    assert runtime.shank_runtime_for(0).plotdata is None
+    assert runtime.shank_runtime_for(1).plotdata is None

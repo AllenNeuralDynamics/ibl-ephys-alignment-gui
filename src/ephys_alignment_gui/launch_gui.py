@@ -2116,14 +2116,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Project runtime stream state into the active view session."""
         if self.session is None:
             raise RuntimeError("No active ProbeSession")
-        collection = stream_runtime.collection_for_shank(shank_idx)
+        shank_runtime = stream_runtime.shank_runtime_for(shank_idx)
+        collection = shank_runtime.collection
         stream = stream_runtime.stream
         self.session.ephys_stream = stream
         self.session.probe_path = stream.ephys_dir
         self.session.sess_notes = stream.session_notes
         self.session.data = stream.alf_data
-        self.session.chn_depths = collection.depths
-        self.session.active_shank.chn_coords = collection.local_coordinates
+        self.session.active_shank.attach_runtime(shank_runtime)
         return collection
 
     def _sync_active_shank_alignment_state(self) -> None:
@@ -2172,7 +2172,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         session = self.runtime.detach_active_for_cache()
         if session is None:
             return
-        session.teardown(self._figures())
+        session.detach(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
@@ -3567,7 +3567,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         dict[AlignmentKey, Any],
     ]:
         """Collect channel-location save inputs for visited shanks."""
-        if self.session is None:
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is None:
             return {}, {}
         probe = self.data_context.probe_info
         if probe is None:
@@ -3576,7 +3577,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         states_for_probe = self.document.alignment_states_for_current_probe()
         output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
         states_by_key: dict[AlignmentKey, Any] = {}
-        for shank_idx, shank in sorted(self.session.shanks.items()):
+        for shank_idx, shank_runtime in stream_runtime.visited_shank_runtimes().items():
             key = AlignmentKey(
                 recording_id=probe.recording_id,
                 ephys_collection=probe.ephys_collection,
@@ -3585,7 +3586,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             state = states_for_probe.get(key)
             if state is None or state.active_alignment is None:
                 continue
-            if shank.ephysalign is None or shank.chn_coords is None:
+            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
                 logger.info(
                     "Skipping shank %d during save because it has not been rendered",
                     shank_idx + 1,
@@ -3594,12 +3595,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             alignment = state.active_alignment
             channel_locations_ras = (
                 self.alignment_derived_data_service.compute_channel_locations(
-                    ephysalign=shank.ephysalign,
+                    ephysalign=shank_runtime.ephysalign,
                     feature=alignment.feature,
                     track=alignment.track,
                 )
             )
-            output_inputs[key] = (channel_locations_ras, shank.chn_coords)
+            output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
             states_by_key[key] = state
         return output_inputs, states_by_key
 

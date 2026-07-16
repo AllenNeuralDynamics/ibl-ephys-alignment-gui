@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.shank_runtime import ShankRuntime
 
 
 def test_init_shanks_and_bounds():
@@ -145,3 +148,28 @@ def test_lazy_plot_attr_is_read_only():
     s.init_shanks(1)
     with pytest.raises(AttributeError):
         s.img_fr_data = "nope"
+
+
+def test_detach_preserves_runtime_state_but_teardown_clears_active_runtime():
+    runtime = ShankRuntime(
+        SimpleNamespace(
+            shank_idx=0,
+            local_coordinates=np.array([[0.0, 0.0]]),
+            depths=np.array([0.0]),
+        )
+    )
+    runtime.ephysalign = "alignment-engine"
+    runtime.plotdata = "plot-data"
+    s = ProbeSession()
+    s.init_shanks(1)
+    s.active_shank.attach_runtime(runtime)
+
+    s.detach({})
+
+    assert runtime.ephysalign == "alignment-engine"
+    assert runtime.plotdata == "plot-data"
+
+    s.teardown({})
+
+    assert runtime.ephysalign is None
+    assert runtime.plotdata is None
