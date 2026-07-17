@@ -19,7 +19,11 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.alignment_events import AlignmentChanged, LineUpdateMode
+from ephys_alignment_gui.alignment_events import (
+    AlignmentChanged,
+    LineUpdateMode,
+    ShankChanged,
+)
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -31,6 +35,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
+    ShankSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.document import AlignmentKey
@@ -244,6 +249,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
         self._connect_alignment_changed_handlers()
+        self._connect_shank_changed_handlers()
         self._set_default_output_root_from_environment()
 
         self.configure: bool = True
@@ -1424,6 +1430,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ]
         )
 
+    def _connect_shank_changed_handlers(self) -> None:
+        self._event_subscriptions.append(
+            self.events.subscribe(ShankChanged, self._on_shank_changed)
+        )
+
     def _emit_alignment_changed(
         self,
         *,
@@ -1521,6 +1532,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _on_alignment_changed_status(self, event: AlignmentChanged) -> None:
         if event.update_status:
             self.update_string()
+
+    def _on_shank_changed(self, event: ShankChanged) -> None:
+        if not event.data_loaded:
+            logger.info("Data not loaded yet, shank index updated")
+            return
+
+        logger.info("Switching shank view...")
+        self.setup_shank_view(preserve_plot_selection=event.preserve_plot_selection)
 
     def plot_scale_factor(self) -> None:
         """
@@ -3073,27 +3092,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when selecting shank from dropdown"""
         shank_text = self.shank_combobox.currentText()
         new_shank_id = int(shank_text.split("/")[0])
-        if new_shank_id - 1 == self.session.current_shank_idx:
+        new_shank_idx = new_shank_id - 1
+        if new_shank_idx == self.session.current_shank_idx:
             logger.info(f"Shank {new_shank_id} already selected")
             return
 
         self._capture_pending_reference_lines()
-        self.session.current_shank_idx = new_shank_id - 1
-        self.controller.set_selected_shank(self.session.current_shank_idx)
+        previous_shank_idx = self.session.current_shank_idx
+        self.session.current_shank_idx = new_shank_idx
+        result = self.controller.select_shank(new_shank_idx)
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            self.session.current_shank_idx = previous_shank_idx
+            return
+        if not isinstance(result, ShankSelected):
+            return
         self._sync_active_shank_alignment_state()
 
         logger.info(
             f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})"
         )
-
-        if not self.document.data_loaded:
-            # Data not loaded yet - just update index
-            logger.info("Data not loaded yet, shank index updated")
-            return
-
-        # Data already loaded - switch view without reloading heavy data
-        logger.info("Switching shank view...")
-        self.setup_shank_view()
+        self.events.emit(
+            ShankChanged(
+                source="dropdown",
+                previous_shank_idx=result.previous_shank_idx,
+                shank_idx=result.shank_idx,
+                previous_key=result.previous_key,
+                active_key=result.selected_key,
+                data_loaded=result.data_loaded,
+            )
+        )
 
     def on_alignment_selected(self, idx) -> None:
         """Triggered when selecting alignment from dropdown"""

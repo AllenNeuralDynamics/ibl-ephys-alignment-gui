@@ -76,6 +76,17 @@ class LoadDataPrepared:
 
 
 @dataclass(frozen=True)
+class ShankSelected:
+    """The active shank selection changed in the document."""
+
+    previous_key: AlignmentKey | None
+    selected_key: AlignmentKey | None
+    previous_shank_idx: int
+    shank_idx: int
+    data_loaded: bool
+
+
+@dataclass(frozen=True)
 class PreviousAlignmentsLoaded:
     """Previous alignments were loaded for the active probe/shank."""
 
@@ -308,6 +319,22 @@ class AlignmentController:
             self.document.set_selected_shank(shank_idx)
             return
         self.document.select_alignment_key(self._alignment_key_for_probe(shank_idx))
+
+    def select_shank(self, shank_idx: int) -> ShankSelected | Failed:
+        """Select a shank and return the before/after document keys."""
+        previous_key = self.document.selected_alignment_key
+        previous_shank_idx = self.document.selected_shank
+        try:
+            self.set_selected_shank(shank_idx)
+        except Exception as exc:
+            return Failed(f"Failed to select shank {shank_idx + 1}: {exc}")
+        return ShankSelected(
+            previous_key=previous_key,
+            selected_key=self.document.selected_alignment_key,
+            previous_shank_idx=previous_shank_idx,
+            shank_idx=self.document.selected_shank,
+            data_loaded=self.document.data_loaded,
+        )
 
     def _alignment_key_for_probe(self, shank_idx: int) -> AlignmentKey:
         probe = self.data_context.probe_info

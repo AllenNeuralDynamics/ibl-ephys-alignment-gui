@@ -27,6 +27,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
+    ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.workflow import Blocked, Failed, Ok
@@ -386,6 +387,25 @@ def test_set_selected_shank_updates_document_alignment_key(tmp_path):
     controller.set_selected_shank(1)
 
     assert doc.selected_alignment_key == AlignmentKey("rec1", "streamA", 1)
+    assert doc.selected_shank == 1
+
+
+def test_select_shank_returns_transition_metadata(tmp_path):
+    doc = AlignmentDocument()
+    controller, _, _ = make_controller(doc)
+    controller.set_mouse_root(tmp_path)
+    controller.select_probe("rec1", "probeA")
+    doc.mark_data_loaded(True)
+    previous_key = doc.selected_alignment_key
+
+    result = controller.select_shank(1)
+
+    assert isinstance(result, ShankSelected)
+    assert result.previous_key == previous_key
+    assert result.selected_key == AlignmentKey("rec1", "streamA", 1)
+    assert result.previous_shank_idx == 0
+    assert result.shank_idx == 1
+    assert result.data_loaded
     assert doc.selected_shank == 1
 
 

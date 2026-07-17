@@ -10,6 +10,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentHistologyData,
     ChannelProjectionData,
 )
+from ephys_alignment_gui.document import AlignmentKey
 
 LineUpdateMode = Literal["none", "navigation", "sync", "reset_previous"]
 
@@ -26,3 +27,16 @@ class AlignmentChanged:
     reset_histology_range: bool = False
     refresh_perpendicular: bool = True
     update_status: bool = True
+
+
+@dataclass(frozen=True)
+class ShankChanged:
+    """Payload emitted after the active shank selection has changed."""
+
+    source: str
+    previous_shank_idx: int
+    shank_idx: int
+    previous_key: AlignmentKey | None
+    active_key: AlignmentKey | None
+    data_loaded: bool
+    preserve_plot_selection: bool | None = None
