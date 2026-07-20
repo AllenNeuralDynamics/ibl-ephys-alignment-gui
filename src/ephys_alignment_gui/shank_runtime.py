@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Hashable
+from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
+from ephys_alignment_gui.slice_runtime import SliceCacheEntry, SliceRuntime
 
 
 @dataclass
@@ -40,9 +41,7 @@ class ShankRuntime:
 
     # -- Cached PlotData and atlas/histology slices for this shank --
     plotdata: Any = None
-    slice_data: Any = None
-    fp_slice_data: Any = None
-    _slice_track: NDArray | None = None
+    slice_runtime: SliceRuntime = field(default_factory=SliceRuntime)
 
     def __post_init__(self) -> None:
         if self.chn_coords is None:
@@ -55,14 +54,58 @@ class ShankRuntime:
         """Zero-based shank index within the stream."""
         return self.collection.shank_idx
 
-    def cached_slice(self, track: NDArray) -> tuple[Any, Any] | None:
-        """Return cached ``(slice_data, fp_slice_data)`` for ``track``."""
-        if self._slice_track is not None and np.array_equal(self._slice_track, track):
-            return self.slice_data, self.fp_slice_data
-        return None
+    @property
+    def slice_data(self) -> Any:
+        """Active coronal slice data, projected for legacy callers."""
+        return self.slice_runtime.active_slice_data
 
-    def set_slice(self, slice_data: Any, fp_slice_data: Any, track: NDArray) -> None:
+    @slice_data.setter
+    def slice_data(self, value: Any) -> None:
+        self.slice_runtime.set_active_slice_data(value, self.fp_slice_data)
+
+    @property
+    def fp_slice_data(self) -> Any:
+        """Active feature-space slice data, projected for legacy callers."""
+        return self.slice_runtime.active_fp_slice_data
+
+    @fp_slice_data.setter
+    def fp_slice_data(self, value: Any) -> None:
+        self.slice_runtime.set_active_slice_data(self.slice_data, value)
+
+    def cached_slice(
+        self,
+        track: NDArray,
+        alignment_key: Hashable | None = None,
+    ) -> tuple[Any, Any] | None:
+        """Return cached ``(slice_data, fp_slice_data)`` for ``track``."""
+        entry = self.slice_runtime.cached_coronal_slice(
+            alignment_key=self._slice_alignment_key(alignment_key),
+            track_interpolation_ras=track,
+        )
+        if entry is None:
+            return None
+        return entry.slice_data, entry.fp_slice_data
+
+    def set_slice(
+        self,
+        slice_data: Any,
+        fp_slice_data: Any,
+        track: NDArray,
+        alignment_key: Hashable | None = None,
+    ) -> SliceCacheEntry:
         """Cache slice data built for ``track``."""
-        self.slice_data = slice_data
-        self.fp_slice_data = fp_slice_data
-        self._slice_track = track
+        return self.slice_runtime.set_coronal_slice(
+            alignment_key=self._slice_alignment_key(alignment_key),
+            track_interpolation_ras=track,
+            slice_data=slice_data,
+            fp_slice_data=fp_slice_data,
+        )
+
+    def clear_slice_cache(self) -> None:
+        """Clear cached anatomical slice data for this shank."""
+        self.slice_runtime.clear()
+
+    def _slice_alignment_key(self, alignment_key: Hashable | None) -> Hashable:
+        if alignment_key is not None:
+            return alignment_key
+        return ("legacy", self.shank_idx)

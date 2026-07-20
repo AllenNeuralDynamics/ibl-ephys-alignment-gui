@@ -1205,8 +1205,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if alignment is None:
             return
 
-        try:
-            perp_image = self.slice_service.build_perpendicular_slice_image(
+        shank_runtime = self.session.active_shank.runtime
+        slice_runtime = (
+            shank_runtime.slice_runtime if shank_runtime is not None else None
+        )
+        alignment_key = self.document.selected_alignment_key
+
+        def build_perpendicular_image():
+            return self.slice_service.build_perpendicular_slice_image(
                 brain_atlas=brain_atlas,
                 histology_images=self.histology_context.histology_images,
                 lazy_channel_paths=self.histology_context.lazy_channel_paths,
@@ -1218,6 +1224,30 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 extent_m=extent_m,
                 n_perp_samples=n_perp_samples,
             )
+
+        try:
+            if slice_runtime is None or alignment_key is None:
+                perp_image = build_perpendicular_image()
+            else:
+                cache_key = slice_runtime.perpendicular_key(
+                    alignment_key=alignment_key,
+                    channel_name=channel_name,
+                    track_interpolation_ras=(
+                        self.session.ephysalign.track_interpolation_ras
+                    ),
+                    ephys_depths_along_track=(
+                        self.session.ephysalign.ephys_depths_along_track
+                    ),
+                    feature_ref=alignment.feature,
+                    track_ref=alignment.track,
+                    feature_grid_m=feature_grid_m,
+                    extent_m=extent_m,
+                    n_perp_samples=n_perp_samples,
+                )
+                perp_image = slice_runtime.get_or_build_perpendicular_slice(
+                    key=cache_key,
+                    builder=build_perpendicular_image,
+                )
         except Exception:
             # Channel can't be sampled as a scalar volume (e.g. an online-only
             # slice). Leave the perp view empty rather than crashing the coronal
@@ -3003,7 +3033,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # shank was re-aligned since the last visit) — instant on revisit.
             shank = self.session.active_shank
             track = self.session.ephysalign.track_interpolation_ras
-            if shank.cached_slice(track) is None:
+            alignment_key = self.document.selected_alignment_key
+            if shank.cached_slice(track, alignment_key=alignment_key) is None:
                 brain_atlas = self.histology_context.brain_atlas
                 if brain_atlas is None:
                     raise RuntimeError("brain_atlas not yet loaded")
@@ -3014,7 +3045,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     track_interpolation_ras=track,
                 )
                 fp_slice_data = None
-                shank.set_slice(slice_data, fp_slice_data, track)
+                shank.set_slice(
+                    slice_data,
+                    fp_slice_data,
+                    track,
+                    alignment_key=alignment_key,
+                )
         else:
             self.session.slice_data = {}
             self.session.fp_slice_data = None
