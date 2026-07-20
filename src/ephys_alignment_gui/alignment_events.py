@@ -12,7 +12,12 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.document import AlignmentKey
 
-LineUpdateMode = Literal["none", "navigation", "sync", "reset_previous"]
+LineUpdateMode = Literal[
+    "none",
+    "reattach",
+    "sync_to_alignment",
+    "reset_to_previous",
+]
 
 
 @dataclass(frozen=True)

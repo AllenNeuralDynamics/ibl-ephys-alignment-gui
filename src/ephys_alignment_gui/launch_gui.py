@@ -42,8 +42,13 @@ from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
+from ephys_alignment_gui.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.probe_session import ProbeSession
+from ephys_alignment_gui.reference_line_layer import (
+    ReferenceLineLayer,
+    ReferenceLinePlots,
+)
 from ephys_alignment_gui.settings import (
     OUTPUT_ROOT_ENV_VAR,
     output_root_from_environment,
@@ -248,6 +253,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
+        self.feature_plot = FeaturePlotView()
+        self.reference_lines = ReferenceLineLayer(
+            plots=ReferenceLinePlots(
+                histology=self.fig_hist,
+                image=self.fig_img,
+                line=self.fig_line,
+                probe=self.fig_probe,
+                perpendicular=self.fig_hist_perp,
+                fit=self.fig_fit,
+            ),
+            style_factory=self.create_line_style,
+            on_lines_changed=self._capture_pending_reference_lines,
+        )
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
         self._set_default_output_root_from_environment()
@@ -522,11 +540,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.update()
             # Manually force the axis to shift and then reset axis as axis not always correct
             # TO DO: find a better way!
-            self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10,
-                max=self.session.xrange[1] + 10,
-                padding=0,
-            )
+            if self.feature_plot.xrange is not None:
+                self.fig_img.setXRange(
+                    min=self.feature_plot.xrange[0] - 10,
+                    max=self.feature_plot.xrange[1] + 10,
+                    padding=0,
+                )
             self.reset_axis_button_pressed()
             self.fig_line.update()
             self.fig_probe.update()
@@ -561,11 +580,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_data_layout.layout.setRowStretchFactor(1, 10)
 
             self.fig_img.update()
-            self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10,
-                max=self.session.xrange[1] + 10,
-                padding=0,
-            )
+            if self.feature_plot.xrange is not None:
+                self.fig_img.setXRange(
+                    min=self.feature_plot.xrange[0] - 10,
+                    max=self.feature_plot.xrange[1] + 10,
+                    padding=0,
+                )
             self.reset_axis_button_pressed()
             self.fig_line.update()
             self.fig_probe.update()
@@ -600,11 +620,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_line.setPreferredWidth(self.fig_line_width)
 
             self.fig_img.update()
-            self.fig_img.setXRange(
-                min=self.session.xrange[0] - 10,
-                max=self.session.xrange[1] + 10,
-                padding=0,
-            )
+            if self.feature_plot.xrange is not None:
+                self.fig_img.setXRange(
+                    min=self.feature_plot.xrange[0] - 10,
+                    max=self.feature_plot.xrange[1] + 10,
+                    padding=0,
+                )
             self.reset_axis_button_pressed()
             self.fig_line.update()
             self.fig_probe.update()
@@ -1349,12 +1370,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        # Track --> histology plot
-        line_track = np.array([line[0].pos().y() for line in self.session.lines_tracks])
-        # Feature --> ephys data plots
-        line_feature = np.array(
-            [line[0].pos().y() for line in self.session.lines_features]
-        )
+        line_positions = self.reference_lines.positions()
+        if line_positions is None:
+            line_feature = np.array([], dtype=float)
+            line_track = np.array([], dtype=float)
+        else:
+            # Feature comes from ephys plots; track comes from histology plots.
+            line_feature, line_track = line_positions
         shank_runtime = self.session.active_shank.runtime
         if shank_runtime is None:
             logger.error("Cannot fit alignment: active shank runtime is not loaded")
@@ -1492,9 +1514,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.tip_location_ras = event.projection.tip_location_ras
 
     def _on_alignment_changed_prepare_lines(self, event: AlignmentChanged) -> None:
-        if event.line_update == "navigation":
-            self.remove_lines_points()
-            self.add_lines_points()
+        if event.line_update == "reattach":
+            self._reattach_reference_lines()
 
     def _on_alignment_changed_histology(self, event: AlignmentChanged) -> None:
         self.plot_histology(self.fig_hist)
@@ -1513,14 +1534,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.refresh_perpendicular_histology()
 
     def _on_alignment_changed_lines(self, event: AlignmentChanged) -> None:
-        if event.line_update == "navigation":
-            self.remove_lines_points()
-            self.add_lines_points()
-        elif event.line_update == "sync":
-            self.remove_lines_points()
-            self.add_lines_points()
+        if event.line_update == "reattach":
+            self._reattach_reference_lines()
+        elif event.line_update == "sync_to_alignment":
+            self._reattach_reference_lines()
             self.update_lines_points()
-        elif event.line_update == "reset_previous":
+        elif event.line_update == "reset_to_previous":
             if np.any(self.session.feature_prev):
                 self.create_lines(self.session.feature_prev[1:-1] * 1e6)
 
@@ -1899,15 +1918,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
             self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
-            self.session.y_scale = 1
             self.session.img_plots.append(plot)
-            self.session.data_plot = plot
-            self.session.xrange = data["xrange"]
+            self.feature_plot.set_data_plot(
+                plot,
+                x_scale=1,
+                y_scale=1,
+                xrange=data["xrange"],
+            )
 
             # TODO: is this right? Seems like it would clobber
             if data["cluster"]:
                 self.session.data = data["x"]
-                self.session.data_plot.sigClicked.connect(self.cluster_clicked)
+                self.feature_plot.connect_clicked(self.cluster_clicked)
 
     def plot_line(self, data) -> None:
         """
@@ -2116,14 +2138,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             #                        yMin=self.session.probe_tip - self.session.probe_extra - self.pad,
             #                        yMax=self.session.probe_top + self.session.probe_extra + self.pad)
             self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
-            self.session.y_scale = data["scale"][1]
-            self.session.x_scale = data["scale"][0]
-            self.session.data_plot = image
-            self.session.xrange = data["xrange"]
+            self.feature_plot.set_data_plot(
+                image,
+                x_scale=data["scale"][0],
+                y_scale=data["scale"][1],
+                xrange=data["xrange"],
+            )
 
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
         """Break reference cycles from the previous probe session."""
+        self.reference_lines.clear()
+        self.feature_plot.clear()
         if self.session is not None:
             self.session.teardown(self._figures())
             self.session = None
@@ -2238,6 +2264,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         session = self.runtime.detach_active_for_cache()
         if session is None:
             return
+        self.reference_lines.clear()
+        self.feature_plot.clear()
         session.detach(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
@@ -2248,6 +2276,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Called when the recording session changes — the cache belongs to one
         recording session, so this bounds memory to a single session's streams.
         """
+        self.reference_lines.clear()
+        self.feature_plot.clear()
         figures = self._figures()
         for sess in self.runtime.sessions_for_stream_eviction():
             sess.teardown(figures)
@@ -2613,19 +2643,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         if self.session is None:
             return
-        if len(self.session.lines_features) == 0 or len(self.session.lines_tracks) == 0:
+        positions = self.reference_lines.positions()
+        if positions is None:
             result = self.controller.clear_pending_reference_lines(
                 self.session.current_shank_idx
             )
         else:
-            line_feature = np.array(
-                [line[0].pos().y() for line in self.session.lines_features],
-                dtype=float,
-            )
-            line_track = np.array(
-                [line[0].pos().y() for line in self.session.lines_tracks],
-                dtype=float,
-            )
+            line_feature, line_track = positions
             result = self.controller.set_pending_reference_lines(
                 feature_positions_um=line_feature,
                 track_positions_um=line_track,
@@ -2894,17 +2918,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
         # Remove old user-drawn lines and disconnect their signals
-        self.remove_lines_points()
-        for arr in (self.session.lines_features, self.session.lines_tracks):
-            for group in arr:
-                for item in group if hasattr(group, "__iter__") else [group]:
-                    try:
-                        item.sigPositionChanged.disconnect()
-                    except (TypeError, AttributeError, RuntimeError):
-                        pass
-        self.session.lines_features = np.empty((0, 3))
-        self.session.lines_tracks = np.empty((0, 2))
-        self.session.points = np.empty((0, 1))
+        self.reference_lines.clear()
 
         stream_runtime = self.runtime.active_stream_runtime
         if stream_runtime is not None:
@@ -3263,7 +3277,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         self._emit_alignment_changed(
             source="fit",
-            line_update="sync",
+            line_update="sync_to_alignment",
             preserve_depth_range=True,
         )
 
@@ -3284,7 +3298,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         self._emit_alignment_changed(
             source="offset",
-            line_update="sync",
+            line_update="sync_to_alignment",
         )
 
     def movedown_button_pressed(self) -> None:
@@ -3394,31 +3408,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Deletes a reference line from the ephys and histology plots
         """
 
-        if self.session.selected_line:
-            line_idx = np.where(
-                self.session.lines_features == self.session.selected_line
-            )[0]
-            if line_idx.size == 0:
-                line_idx = np.where(
-                    self.session.lines_tracks == self.session.selected_line
-                )[0]
-            line_idx = line_idx[0]
-
-            self.fig_img.removeItem(self.session.lines_features[line_idx][0])
-            self.fig_line.removeItem(self.session.lines_features[line_idx][1])
-            self.fig_probe.removeItem(self.session.lines_features[line_idx][2])
-            self.fig_hist.removeItem(self.session.lines_tracks[line_idx, 0])
-            if self.session.lines_tracks.shape[1] > 1:
-                self.fig_hist_perp.removeItem(self.session.lines_tracks[line_idx, 1])
-            self.fig_fit.removeItem(self.session.points[line_idx, 0])
-            self.session.lines_features = np.delete(
-                self.session.lines_features, line_idx, axis=0
-            )
-            self.session.lines_tracks = np.delete(
-                self.session.lines_tracks, line_idx, axis=0
-            )
-            self.session.points = np.delete(self.session.points, line_idx, axis=0)
-            self._capture_pending_reference_lines()
+        self.reference_lines.delete_selected()
 
     def describe_labels_pressed(self) -> None:
         # if no histology don't show
@@ -3494,7 +3484,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         if isinstance(result, AlignmentEditApplied):
             self._restore_lin_fit_from_edit(result.lin_fit)
-            self._emit_alignment_changed(source="next", line_update="navigation")
+            self._emit_alignment_changed(source="next", line_update="reattach")
 
     def prev_button_pressed(self) -> None:
         """
@@ -3512,7 +3502,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         if isinstance(result, AlignmentEditApplied):
             self._restore_lin_fit_from_edit(result.lin_fit)
-            self._emit_alignment_changed(source="previous", line_update="navigation")
+            self._emit_alignment_changed(source="previous", line_update="reattach")
 
     def reset_button_pressed(self) -> None:
         """
@@ -3538,10 +3528,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not isinstance(result, AlignmentEditApplied):
             return
 
-        self.remove_lines_points()
-        self.session.lines_features = np.empty((0, 3))
-        self.session.lines_tracks = np.empty((0, 2))
-        self.session.points = np.empty((0, 1))
+        self.reference_lines.clear()
         clear_lines = self.controller.clear_pending_reference_lines(
             self.session.current_shank_idx
         )
@@ -3549,7 +3536,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(clear_lines.message)
         self._emit_alignment_changed(
             source="reset",
-            line_update="reset_previous",
+            line_update="reset_to_previous",
             reset_histology_range=True,
         )
 
@@ -3729,9 +3716,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def reset_axis_button_pressed(self) -> None:
         self.set_default_feature_y_range()
-        self.fig_img.setXRange(
-            min=self.session.xrange[0], max=self.session.xrange[1], padding=0
-        )
+        if self.feature_plot.xrange is not None:
+            self.fig_img.setXRange(
+                min=self.feature_plot.xrange[0],
+                max=self.feature_plot.xrange[1],
+                padding=0,
+            )
 
     def display_session_notes(self) -> None:
         self.session.notes_win = ephys_gui.PopupWindow(
@@ -3783,7 +3773,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use
-        if not self.histology_exists or len(self.session.lines_features) == 0:
+        if not self.histology_exists or not self.reference_lines.has_lines():
             return
 
         # Recompute alignment with new setting using existing fit logic
@@ -3857,59 +3847,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         if event.double():
-            pos = self.session.data_plot.mapFromScene(event.scenePos())
-            pen, brush = self.create_line_style()
-            line_track = pg.InfiniteLine(
-                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
-            )
-            line_track.sigPositionChanged.connect(self.update_lines_track)
-            line_track.setZValue(100)
-            line_feature1 = pg.InfiniteLine(
-                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
-            )
-            line_feature1.setZValue(100)
-            line_feature1.sigPositionChanged.connect(self.update_lines_features)
-            line_feature2 = pg.InfiniteLine(
-                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
-            )
-            line_feature2.setZValue(100)
-            line_feature2.sigPositionChanged.connect(self.update_lines_features)
-            line_feature3 = pg.InfiniteLine(
-                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
-            )
-            line_feature3.setZValue(100)
-            line_feature3.sigPositionChanged.connect(self.update_lines_features)
-            line_track_perp = pg.InfiniteLine(
-                pos=pos.y() * self.session.y_scale, angle=0, pen=pen, movable=True
-            )
-            line_track_perp.setZValue(100)
-            line_track_perp.sigPositionChanged.connect(self.update_lines_track)
-            self.fig_hist.addItem(line_track)
-            self.fig_img.addItem(line_feature1)
-            self.fig_line.addItem(line_feature2)
-            self.fig_probe.addItem(line_feature3)
-            self.fig_hist_perp.addItem(line_track_perp)
-
-            self.session.lines_features = np.vstack(
-                [
-                    self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3],
-                ]
-            )
-            self.session.lines_tracks = np.vstack(
-                [self.session.lines_tracks, [line_track, line_track_perp]]
-            )
-
-            point = pg.PlotDataItem()
-            point.setData(
-                x=[line_track.pos().y()],
-                y=[line_feature1.pos().y()],
-                symbolBrush=brush,
-                symbol="o",
-                symbolSize=10,
-            )
-            self.fig_fit.addItem(point)
-            self.session.points = np.vstack([self.session.points, point])
+            feature_y_um = self.feature_plot.feature_y_from_scene(event.scenePos())
+            if feature_y_um is None:
+                return
+            self.reference_lines.create_lines([feature_y_um])
             self._capture_pending_reference_lines()
 
     def on_mouse_hover(self, items) -> None:
@@ -3918,9 +3859,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         lines so that they can be deleted
         """
         if len(items) > 1:
-            self.session.selected_line = []
+            self.reference_lines.clear_selection()
             if type(items[0]) == pg.InfiniteLine:
-                self.session.selected_line = items[0]
+                self.reference_lines.select_line(items[0])
             elif (items[0] == self.fig_scale) & (type(items[1]) == pg.LinearRegionItem):
                 idx = np.where(self.session.scale_regions == items[1])[0][0]
                 self.fig_scale_ax.setLabel(
@@ -3933,50 +3874,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 type(items[1]) == pg.LinearRegionItem
             ):
                 self.session.selected_region = items[1]
-
-    def update_lines_features(self, line) -> None:
-        """
-        Triggered when reference line on ephys data plots is moved. Moves all three lines on the
-        img_plot, line_plot and probe_plot and adjusts the corresponding point on the fit plot
-        :param line: selected line
-        :type line: pyqtgraph InfiniteLine
-        """
-        idx = np.where(self.session.lines_features == line)
-        line_idx = idx[0][0]
-        fig_idx = np.setdiff1d(
-            np.arange(0, self.session.lines_features.shape[1]), idx[1][0]
-        )
-
-        for j in fig_idx:
-            self.session.lines_features[line_idx][j].setPos(line.value())
-
-        self.session.points[line_idx][0].setData(
-            x=[self.session.lines_features[line_idx][0].pos().y()],
-            y=[self.session.lines_tracks[line_idx][0].pos().y()],
-        )
-        self._capture_pending_reference_lines()
-
-    def update_lines_track(self, line) -> None:
-        """
-        Triggered when reference line on histology plot is moved. Adjusts the corresponding point
-        on the fit plot
-        :param line: selected line
-        :type line: pyqtgraph InfiniteLine
-        """
-        idx = np.where(self.session.lines_tracks == line)
-        line_idx = idx[0][0]
-        fig_idx = np.setdiff1d(
-            np.arange(0, self.session.lines_tracks.shape[1]), idx[1][0]
-        )
-
-        for j in fig_idx:
-            self.session.lines_tracks[line_idx][j].setPos(line.value())
-
-        self.session.points[line_idx][0].setData(
-            x=[self.session.lines_features[line_idx][0].pos().y()],
-            y=[self.session.lines_tracks[line_idx][0].pos().y()],
-        )
-        self._capture_pending_reference_lines()
 
     def tip_line_moved(self) -> None:
         """
@@ -4000,128 +3897,27 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         Removes all reference lines and scatter points from the ephys, histology and fit plots
         """
-        for line_feature, line_track, point in zip(
-            self.session.lines_features, self.session.lines_tracks, self.session.points
-        ):
-            self.fig_img.removeItem(line_feature[0])
-            self.fig_line.removeItem(line_feature[1])
-            self.fig_probe.removeItem(line_feature[2])
-            self.fig_hist.removeItem(line_track[0])
-            if len(line_track) > 1:
-                self.fig_hist_perp.removeItem(line_track[1])
-            self.fig_fit.removeItem(point[0])
+        self.reference_lines.remove_from_plots()
 
     def add_lines_points(self) -> None:
         """
         Adds all reference lines and scatter points from the ephys, histology and fit plots
         """
-        for line_feature, line_track, point in zip(
-            self.session.lines_features, self.session.lines_tracks, self.session.points
-        ):
-            self.fig_img.addItem(line_feature[0])
-            self.fig_line.addItem(line_feature[1])
-            self.fig_probe.addItem(line_feature[2])
-            self.fig_hist.addItem(line_track[0])
-            if len(line_track) > 1:
-                self.fig_hist_perp.addItem(line_track[1])
-            self.fig_fit.addItem(point[0])
+        self.reference_lines.add_to_plots()
+
+    def _reattach_reference_lines(self) -> None:
+        self.remove_lines_points()
+        self.add_lines_points()
 
     def update_lines_points(self) -> None:
         """
         Updates position of reference lines on histology plot after fit has been applied. Also
         updates location of scatter point
         """
-        for line_feature, line_track, point in zip(
-            self.session.lines_features, self.session.lines_tracks, self.session.points
-        ):
-            line_track[0].setPos(line_feature[0].getYPos())
-            if len(line_track) > 1:
-                line_track[1].setPos(line_feature[0].getYPos())
-            point[0].setData(
-                x=[line_feature[0].pos().y()], y=[line_feature[0].pos().y()]
-            )
-        self._capture_pending_reference_lines()
+        self.reference_lines.sync_track_to_feature()
 
     def create_lines(self, positions, track_positions=None) -> None:
-        feature_positions = np.asarray(positions, dtype=float)
-        if track_positions is None:
-            track_positions = feature_positions
-        else:
-            track_positions = np.asarray(track_positions, dtype=float)
-        if feature_positions.shape != track_positions.shape:
-            logger.error(
-                "Cannot create reference lines: feature/track positions differ"
-            )
-            return
-
-        for feature_pos, track_pos in zip(feature_positions, track_positions):
-            pen, brush = self.create_line_style()
-            line_track = pg.InfiniteLine(
-                pos=track_pos,
-                angle=0,
-                pen=pen,
-                movable=True,
-            )
-            line_track.sigPositionChanged.connect(self.update_lines_track)
-            line_track.setZValue(100)
-            line_feature1 = pg.InfiniteLine(
-                pos=feature_pos,
-                angle=0,
-                pen=pen,
-                movable=True,
-            )
-            line_feature1.setZValue(100)
-            line_feature1.sigPositionChanged.connect(self.update_lines_features)
-            line_feature2 = pg.InfiniteLine(
-                pos=feature_pos,
-                angle=0,
-                pen=pen,
-                movable=True,
-            )
-            line_feature2.setZValue(100)
-            line_feature2.sigPositionChanged.connect(self.update_lines_features)
-            line_feature3 = pg.InfiniteLine(
-                pos=feature_pos,
-                angle=0,
-                pen=pen,
-                movable=True,
-            )
-            line_feature3.setZValue(100)
-            line_feature3.sigPositionChanged.connect(self.update_lines_features)
-            line_track_perp = pg.InfiniteLine(
-                pos=track_pos,
-                angle=0,
-                pen=pen,
-                movable=True,
-            )
-            line_track_perp.setZValue(100)
-            line_track_perp.sigPositionChanged.connect(self.update_lines_track)
-            self.fig_hist.addItem(line_track)
-            self.fig_img.addItem(line_feature1)
-            self.fig_line.addItem(line_feature2)
-            self.fig_probe.addItem(line_feature3)
-            self.fig_hist_perp.addItem(line_track_perp)
-
-            self.session.lines_features = np.vstack(
-                [
-                    self.session.lines_features,
-                    [line_feature1, line_feature2, line_feature3],
-                ]
-            )
-            self.session.lines_tracks = np.vstack(
-                [self.session.lines_tracks, [line_track, line_track_perp]]
-            )
-
-            point = pg.PlotDataItem()
-            point.setData(
-                x=[line_track.pos().y()],
-                y=[line_feature1.pos().y()],
-                symbolBrush=brush,
-                symbol="o",
-                symbolSize=10,
-            )
-            self.fig_fit.addItem(point)
-            self.session.points = np.vstack([self.session.points, point])
+        self.reference_lines.create_lines(positions, track_positions)
 
     def create_line_style(self):
         """

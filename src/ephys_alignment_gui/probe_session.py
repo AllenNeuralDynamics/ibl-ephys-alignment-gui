@@ -183,15 +183,6 @@ class ProbeSession:
         self.channel_status: bool = True
         self.hist_bound_status: bool = True
 
-        # -- Reference lines / points --
-        # Feature-side handles live on img/line/probe plots. Track-side handles
-        # live on the histology strip and perpendicular histology slice.
-        self.lines_features: NDArray[Any] = np.empty((0, 3))
-        self.lines_tracks: NDArray[Any] = np.empty((0, 2))
-        self.points: NDArray[Any] = np.empty((0, 1))
-        self.y_scale: float = 1
-        self.x_scale: float = 1
-
         # -- Plot item caches --
         self.img_plots: list[Any] = []
         self.line_plots: list[Any] = []
@@ -272,14 +263,11 @@ class ProbeSession:
         self.tip_pos: Any = None
         self.top_pos: Any = None
         self.traj_line: Any = None
-        self.data_plot: Any = None
         self.hist_regions: Any = None
         self.hist_ref_regions: Any = None
 
         # -- Display state --
-        self.xrange: Any = None
         self.scale_factor: Any = None
-        self.selected_line: Any = []
         self.selected_region: Any = None
 
         # -- Popup windows --
@@ -367,23 +355,6 @@ class ProbeSession:
                 except TypeError:
                     pass
 
-        # -- Disconnect signals on user-drawn reference lines --
-        for arr in (self.lines_features, self.lines_tracks):
-            for group in arr:
-                for item in group if hasattr(group, "__iter__") else [group]:
-                    try:
-                        item.sigPositionChanged.disconnect()
-                    except (TypeError, AttributeError, RuntimeError):
-                        pass
-
-        # -- Disconnect scatter click signal --
-        data_plot = getattr(self, "data_plot", None)
-        if data_plot is not None:
-            try:
-                data_plot.sigClicked.disconnect()
-            except (TypeError, AttributeError):
-                pass
-
         # -- Remove plot items from figures --
         if "img" in figures:
             for plot in self.img_plots:
@@ -402,23 +373,6 @@ class ProbeSession:
             fig = figures.get(key)
             if fig is not None:
                 fig.clear()
-
-        # -- Remove user-drawn reference lines and fit points from figures --
-        for line_feature, line_track, point in zip(
-            self.lines_features, self.lines_tracks, self.points
-        ):
-            if "img" in figures:
-                figures["img"].removeItem(line_feature[0])
-            if "line" in figures:
-                figures["line"].removeItem(line_feature[1])
-            if "probe" in figures:
-                figures["probe"].removeItem(line_feature[2])
-            if "hist_perp" in figures and len(line_track) > 1:
-                figures["hist_perp"].removeItem(line_track[1])
-            if "hist" in figures:
-                figures["hist"].removeItem(line_track[0])
-            if "fit" in figures:
-                figures["fit"].removeItem(point[0])
 
         # -- Disconnect and close popup windows --
         for popup_list in (self.cluster_popups, self.label_popup):
