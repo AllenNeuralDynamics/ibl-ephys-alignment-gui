@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -17,6 +18,27 @@ class FakePlotDataFactory:
     def build(self, collection):
         self.calls.append(collection)
         return {"rows": collection.rows.copy()}
+
+
+class FakeRegistryPlotData:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+        self.calls = []
+
+    def cached(self, method: str, args: tuple = ()) -> Any:
+        self.calls.append((method, args))
+        if method == "get_fr_img":
+            return {"rows": self.rows.copy()}
+        return None
+
+
+class FakeRegistryPlotDataFactory:
+    def __init__(self) -> None:
+        self.plotdata = None
+
+    def build(self, collection):
+        self.plotdata = FakeRegistryPlotData(collection.rows.copy())
+        return self.plotdata
 
 
 def _stream() -> EphysStreamData:
@@ -68,6 +90,16 @@ def test_plot_data_for_shank_is_cached_per_shank() -> None:
     assert first is second
     assert first["rows"].tolist() == [2, 3]
     assert len(factory.calls) == 1
+
+
+def test_plot_payload_for_shank_resolves_registered_plot_spec() -> None:
+    factory = FakeRegistryPlotDataFactory()
+    runtime = EphysStreamRuntime(_stream(), factory)
+
+    payload = runtime.plot_payload_for_shank(1, "image.fr")
+
+    assert payload["rows"].tolist() == [2, 3]
+    assert factory.plotdata.calls == [("get_fr_img", ())]
 
 
 def test_invalidate_plot_data_clears_one_or_all_shanks() -> None:

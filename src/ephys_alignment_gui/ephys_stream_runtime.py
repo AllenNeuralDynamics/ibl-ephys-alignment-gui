@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from ephys_alignment_gui.ephys_data_service import (
     ChannelCollectionView,
@@ -10,6 +11,7 @@ from ephys_alignment_gui.ephys_data_service import (
 )
 from ephys_alignment_gui.plot_data import PlotData
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.plot_registry import PlotSpec, resolve_plot_payload
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 
 StreamKey = tuple[str, str]
@@ -52,6 +54,10 @@ class EphysStreamRuntime:
         if runtime.plotdata is None:
             runtime.plotdata = self.plot_data_factory.build(runtime.collection)
         return runtime.plotdata
+
+    def plot_payload_for_shank(self, shank_idx: int, spec: PlotSpec | str) -> Any:
+        """Return a plot payload for one shank by declarative plot-spec key."""
+        return resolve_plot_payload(self.plot_data_for_shank(shank_idx), spec)
 
     def invalidate_plot_data(self, shank_idx: int | None = None) -> None:
         """Clear cached PlotData for one shank, or all shanks."""

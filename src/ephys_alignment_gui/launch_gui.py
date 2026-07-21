@@ -44,6 +44,13 @@ from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamK
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.plot_elements import ColorBar
+from ephys_alignment_gui.plot_registry import (
+    PlotMenu,
+    PlotSpec,
+    plot_spec,
+    resolve_plot_bounds,
+    resolve_plot_payload,
+)
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
@@ -249,6 +256,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_data_factory = self.workspace.plot_data_factory
         self.slice_display_policy = self.workspace.slice_display_policy
 
+        self._plot_specs_by_key: dict[str, PlotSpec] = {}
         self.init_variables()
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
@@ -874,7 +882,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         current_act = options_group.checkedAction()
         actions = options_group.actions()
-        current_idx = [iA for iA, act in enumerate(actions) if act == current_act][0]
+        if not actions:
+            logger.warning("No available plot actions to toggle")
+            return
+        if current_act is None:
+            actions[0].setChecked(True)
+            actions[0].trigger()
+            return
+        try:
+            current_idx = actions.index(current_act)
+        except ValueError:
+            actions[0].setChecked(True)
+            actions[0].trigger()
+            return
         next_idx = np.mod(current_idx + (-1 if reverse else 1), len(actions))
         actions[next_idx].setChecked(True)
         actions[next_idx].trigger()
@@ -1683,6 +1703,81 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             # Hide the linear fit line when checkbox is unchecked or not enough points
             self.fit_plot_lin.setData()
+
+    def register_plot_spec(self, spec: PlotSpec) -> None:
+        """Register a menu-visible plot spec for later action dispatch."""
+        self._plot_specs_by_key[spec.key] = spec
+
+    def registered_plot_spec(self, spec_key: str) -> PlotSpec | None:
+        """Return a dynamic menu spec if present, otherwise a static registry spec."""
+        spec = self._plot_specs_by_key.get(spec_key)
+        if spec is not None:
+            return spec
+        try:
+            return plot_spec(spec_key)
+        except KeyError:
+            logger.warning("Ignoring unavailable plot spec %s", spec_key)
+            return None
+
+    def _active_plotdata(self) -> Any:
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is not None:
+            return stream_runtime.plot_data_for_shank(self.session.current_shank_idx)
+        return self.session.plotdata
+
+    def plot_payload_for_spec(self, spec_key: str) -> Any:
+        """Resolve a registered plot payload for the active shank."""
+        spec = self.registered_plot_spec(spec_key)
+        if spec is None:
+            return None
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is not None:
+            return stream_runtime.plot_payload_for_shank(
+                self.session.current_shank_idx,
+                spec,
+            )
+        if self.session.plotdata is None:
+            return None
+        return resolve_plot_payload(self.session.plotdata, spec)
+
+    def plot_bounds_for_spec(self, spec_key: str) -> Any:
+        """Resolve optional plot bounds for the active shank."""
+        plotdata = self._active_plotdata()
+        if plotdata is None:
+            return None
+        spec = self.registered_plot_spec(spec_key)
+        if spec is None:
+            return None
+        return resolve_plot_bounds(plotdata, spec)
+
+    def plot_from_spec(self, spec_key: str) -> None:
+        """Render a registered plot payload with the existing plot functions."""
+        spec = self.registered_plot_spec(spec_key)
+        if spec is None:
+            return
+        data = self.plot_payload_for_spec(spec.key)
+        if spec.renderer == "image":
+            self.plot_image(data)
+        elif spec.renderer == "scatter":
+            self.plot_scatter(data)
+        elif spec.renderer == "line":
+            self.plot_line(data)
+        elif spec.renderer == "probe":
+            self.plot_probe(data, bounds=self.plot_bounds_for_spec(spec.key))
+        else:
+            raise ValueError(f"Unsupported plot renderer: {spec.renderer!r}")
+
+    def plot_default_spec(self, menu: PlotMenu) -> None:
+        """Render the available default plot for a menu group, if present."""
+        specs = [spec for spec in self._plot_specs_by_key.values() if spec.menu == menu]
+        if not specs:
+            logger.warning("No available %s plot entries", menu)
+            return
+        for spec in specs:
+            if spec.default:
+                self.plot_from_spec(spec.key)
+                return
+        self.plot_from_spec(specs[0].key)
 
     def plot_slice(self, data, img_type) -> None:
         # If no histology we can't do alignment
@@ -2946,6 +3041,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if hasattr(self, "slice_options_group")
             else None
         )
+        prev_ephys_plot_keys = (
+            self.current_ephys_plot_keys()
+            if preserve_plot_selection and hasattr(self, "img_options")
+            else None
+        )
 
         # Remove old user-drawn lines and disconnect their signals
         self.reference_lines.clear()
@@ -3019,10 +3119,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # probe and image cmaps see it at compute time.
         self.session.plotdata.in_brain_depths_um = self.in_brain_channel_depths()
 
-        # Plot datasets (scatter / img / probe / line) are no longer computed
-        # eagerly here: they are lazy _LazyPlotAttr descriptors on the session,
-        # built from ``plotdata`` and memoized only when a plot is displayed.
-        # (Re)assigning ``plotdata`` above resets that per-shank memo cache.
+        # Plot datasets are no longer computed eagerly here: menu-visible plots
+        # resolve through the plot registry, and PlotData memoizes payloads only
+        # when a plot is displayed.
 
         # Raw image retrieval requires ONE/Alyx online access. The preprocessed
         # datapackage workflow only displays local ALF-derived plot data.
@@ -3055,8 +3154,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.slice_data = {}
             self.session.fp_slice_data = None
 
-        if not preserve_plot_selection:
+        if not preserve_plot_selection or not hasattr(self, "img_options"):
             self.init_menubar()
+        else:
+            self.rebuild_ephys_plot_menus(
+                previous_selected_keys=prev_ephys_plot_keys,
+            )
 
         # Render all plots
         logger.info("Rendering plots...")
@@ -3081,15 +3184,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     action.setChecked(True)
         else:
             # First load — apply menu defaults and render initial plots.
-            self.img_init.setChecked(True)
-            self.line_init.setChecked(True)
-            self.probe_init.setChecked(True)
+            if self.img_init is not None:
+                self.img_init.setChecked(True)
+            if self.line_init is not None:
+                self.line_init.setChecked(True)
+            if self.probe_init is not None:
+                self.probe_init.setChecked(True)
             self.unit_init.setChecked(True)
-            self.plot_image(self.session.img_fr_data)
+            self.plot_default_spec("image")
             # Plot the dataset matching probe_init (RMS AP) so the rendered
             # probe plot agrees with the checked "Probe Plots" menu item.
-            self.plot_probe(self.session.probe_rms_APdata)
-            self.plot_line(self.session.line_fr_data)
+            self.plot_default_spec("probe")
+            self.plot_default_spec("line")
 
         self.render_histology_plots()
 
@@ -3288,13 +3394,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.probe_img_action.trigger()
 
     def filter_unit_pressed(self, type) -> None:
-        # filter_units clears the per-shank memo cache; the lazy _LazyPlotAttr
-        # datasets recompute against the new subset on next access during
-        # update_plot. No eager recompute here.
+        # filter_units clears the per-shank PlotData memo cache. Registered
+        # plot payloads recompute against the new subset on next access during
+        # update_plot.
         self.session.plotdata.filter_units(type)
-        self.img_init.setChecked(True)
-        self.line_init.setChecked(True)
-        self.probe_init.setChecked(True)
+        if self.img_init is not None:
+            self.img_init.setChecked(True)
+        if self.line_init is not None:
+            self.line_init.setChecked(True)
+        if self.probe_init is not None:
+            self.probe_init.setChecked(True)
 
         self.update_plot()
 

@@ -6,12 +6,117 @@ import pyqtgraph.exporters
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ephys_alignment_gui.plot_elements import replace_axis
+from ephys_alignment_gui.plot_menu_state import build_plot_menu_state
 
 pg.setConfigOption("background", "w")
 pg.setConfigOption("foreground", "k")
 
 
 class Setup:
+    def _add_plot_spec_action(self, menu, group, spec, checked=False):
+        self.register_plot_spec(spec)
+        action = QtWidgets.QAction(
+            spec.label,
+            self,
+            checkable=True,
+            checked=checked,
+        )
+        action.setData({"plot_spec": spec.key})
+        action.triggered.connect(
+            lambda _checked=False, key=spec.key: self.plot_from_spec(key)
+        )
+        menu.addAction(action)
+        group.addAction(action)
+        return action
+
+    def _plot_spec_key_from_action(self, action):
+        if action is None:
+            return None
+        data = action.data()
+        if not isinstance(data, dict):
+            return None
+        key = data.get("plot_spec")
+        return key if isinstance(key, str) else None
+
+    def current_ephys_plot_keys(self):
+        return {
+            "image": self._plot_spec_key_from_action(
+                getattr(self, "current_img_action", None)
+            ),
+            "line": self._plot_spec_key_from_action(
+                getattr(self, "line_img_action", None)
+            ),
+            "probe": self._plot_spec_key_from_action(
+                getattr(self, "probe_img_action", None)
+            ),
+        }
+
+    def _rebuild_plot_menu_group(
+        self,
+        *,
+        menu,
+        state,
+        action_group_attr,
+        selected_action_attr,
+        init_action_attr,
+        triggered_callback,
+    ):
+        menu.clear()
+        group = QtWidgets.QActionGroup(menu)
+        group.setExclusive(True)
+        group.triggered.connect(triggered_callback)
+        setattr(self, action_group_attr, group)
+
+        selected_action = None
+        for spec in state.specs:
+            action = self._add_plot_spec_action(
+                menu,
+                group,
+                spec,
+                checked=spec.key == state.selected_key,
+            )
+            if spec.key == state.selected_key:
+                selected_action = action
+
+        menu.setEnabled(state.enabled)
+        setattr(self, init_action_attr, selected_action)
+        setattr(self, selected_action_attr, selected_action)
+        if selected_action is not None:
+            selected_action.setChecked(True)
+
+    def rebuild_ephys_plot_menus(self, previous_selected_keys=None) -> None:
+        self._plot_specs_by_key = {}
+        self.plot_menu_state = build_plot_menu_state(
+            self.session.plotdata,
+            previous_selected_keys=previous_selected_keys,
+            raw_image_payloads=self.session.img_raw_data,
+        )
+
+        self._rebuild_plot_menu_group(
+            menu=self.img_options,
+            state=self.plot_menu_state.group("image"),
+            action_group_attr="img_options_group",
+            selected_action_attr="current_img_action",
+            init_action_attr="img_init",
+            triggered_callback=self._on_img_action_triggered,
+        )
+        self._rebuild_plot_menu_group(
+            menu=self.line_options,
+            state=self.plot_menu_state.group("line"),
+            action_group_attr="line_options_group",
+            selected_action_attr="line_img_action",
+            init_action_attr="line_init",
+            triggered_callback=self._on_line_action_triggered,
+        )
+        self._rebuild_plot_menu_group(
+            menu=self.probe_options,
+            state=self.plot_menu_state.group("probe"),
+            action_group_attr="probe_options_group",
+            selected_action_attr="probe_img_action",
+            init_action_attr="probe_init",
+            triggered_callback=self._on_probe_action_triggered,
+        )
+
     def init_layout(self, main_window, offline=False) -> None:
         self.resize(1600, 800)
         self.setWindowTitle("IBL Ephys Alignment GUI")
@@ -57,232 +162,17 @@ class Setup:
         self.setMenuBar(menu_bar)
 
         # IMAGE PLOTS MENU BAR
-        # Define all 2D scatter/ image plot options
-        scatter_drift = QtWidgets.QAction(
-            "Amplitude", self, checkable=True, checked=False
-        )
-        scatter_drift.triggered.connect(
-            lambda: self.plot_scatter(self.session.scat_drift_data)
-        )
-        scatter_fr = QtWidgets.QAction(
-            "Cluster Amp vs Depth vs FR", self, checkable=True, checked=False
-        )
-        scatter_fr.triggered.connect(
-            lambda: self.plot_scatter(self.session.scat_fr_data)
-        )
-        scatter_p2t = QtWidgets.QAction(
-            "Cluster Amp vs Depth vs Duration",
-            self,
-            checkable=True,
-            checked=False,
-        )
-        scatter_p2t.triggered.connect(
-            lambda: self.plot_scatter(self.session.scat_p2t_data)
-        )
-        scatter_amp = QtWidgets.QAction(
-            "Cluster FR vs Depth vs Amp", self, checkable=True, checked=False
-        )
-        scatter_amp.triggered.connect(
-            lambda: self.plot_scatter(self.session.scat_amp_data)
-        )
-        img_fr = QtWidgets.QAction("Firing Rate", self, checkable=True, checked=True)
-        img_fr.triggered.connect(lambda: self.plot_image(self.session.img_fr_data))
-        img_spike_corr = QtWidgets.QAction(
-            "Spike Correlation", self, checkable=True, checked=False
-        )
-        img_spike_corr.triggered.connect(
-            lambda: self.plot_image(self.session.img_spike_corr_data)
-        )
-        img_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=False)
-        img_rmsAP.triggered.connect(
-            lambda: self.plot_image(self.session.img_rms_APdata)
-        )
-        img_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        img_rmsLFP.triggered.connect(
-            lambda: self.plot_image(self.session.img_rms_LFPdata)
-        )
-        img_LFP = QtWidgets.QAction("LFP Spectrum", self, checkable=True, checked=False)
-        img_LFP.triggered.connect(lambda: self.plot_image(self.session.img_lfp_data))
-
-        img_lfp_corr_list = []
-        for lfp_corr_key in self.session.img_lfp_corr_data:
-            img_lfp_corr = QtWidgets.QAction(
-                f"LFP Correlation ({lfp_corr_key})",
-                self,
-                checkable=True,
-                checked=False,
-            )
-            img_lfp_corr.triggered.connect(
-                lambda checked, key=lfp_corr_key: self.plot_image(
-                    self.session.img_lfp_corr_data[key]
-                )
-            )
-            img_lfp_corr_list.append(img_lfp_corr)
-
-        img_rmsAP_main = QtWidgets.QAction(
-            "RMS AP Main Rec", self, checkable=True, checked=False
-        )
-        img_rmsAP_main.triggered.connect(
-            lambda: self.plot_image(self.session.img_rms_APdata_main)
-        )
-        img_rmsLFP_main = QtWidgets.QAction(
-            "RMS LFP Main Rec", self, checkable=True, checked=False
-        )
-        img_rmsLFP_main.triggered.connect(
-            lambda: self.plot_image(self.session.img_rms_LFPdata_main)
-        )
-        img_LFP_main = QtWidgets.QAction(
-            "LFP Spectrum Main Rec", self, checkable=True, checked=False
-        )
-        img_LFP_main.triggered.connect(
-            lambda: self.plot_image(self.session.img_lfp_data_main)
-        )
-
-        # Initialise with firing rate 2D plot
-        self.img_init = img_fr
-
         # Add menu bar for 2D scatter/ image plot options
-        img_options = menu_bar.addMenu("Image Plots")
-        # Add action group so we can toggle through 2D scatter/ image plot options
-        self.img_options_group = QtWidgets.QActionGroup(img_options)
-        # Only allow one to plot to be selected at any one time
-        self.img_options_group.setExclusive(True)
-        img_options.addAction(img_fr)
-        self.img_options_group.addAction(img_fr)
-        img_options.addAction(scatter_drift)
-        self.img_options_group.addAction(scatter_drift)
-        img_options.addAction(img_spike_corr)
-        self.img_options_group.addAction(img_spike_corr)
-        img_options.addAction(img_rmsAP)
-        self.img_options_group.addAction(img_rmsAP)
-        img_options.addAction(img_rmsAP_main)
-        self.img_options_group.addAction(img_rmsAP_main)
-        img_options.addAction(img_rmsLFP)
-        self.img_options_group.addAction(img_rmsLFP)
-
-        for img_lfp_corr in img_lfp_corr_list:
-            img_options.addAction(img_lfp_corr)
-            self.img_options_group.addAction(img_lfp_corr)
-
-        img_options.addAction(img_rmsLFP_main)
-        self.img_options_group.addAction(img_rmsLFP_main)
-        img_options.addAction(img_LFP)
-        self.img_options_group.addAction(img_LFP)
-        img_options.addAction(img_LFP_main)
-        self.img_options_group.addAction(img_LFP_main)
-        img_options.addAction(scatter_fr)
-        self.img_options_group.addAction(scatter_fr)
-        img_options.addAction(scatter_p2t)
-        self.img_options_group.addAction(scatter_p2t)
-        img_options.addAction(scatter_amp)
-        self.img_options_group.addAction(scatter_amp)
-
-        raw_type = list(self.session.img_raw_data.keys())
-        for raw in raw_type:
-            img = QtWidgets.QAction(raw, self, checkable=True, checked=False)
-            img.triggered.connect(
-                lambda checked, item=raw: self.plot_image(
-                    self.session.img_raw_data[item]
-                )
-            )
-            img_options.addAction(img)
-            self.img_options_group.addAction(img)
-
-        stim_type = list(self.session.img_stim_data.keys())
-        for stim in stim_type:
-            img = QtWidgets.QAction(stim, self, checkable=True, checked=False)
-            img.triggered.connect(
-                lambda checked, item=stim: self.plot_image(
-                    self.session.img_stim_data[item]
-                )
-            )
-            img_options.addAction(img)
-            self.img_options_group.addAction(img)
-
-        self.img_options_group.triggered.connect(self._on_img_action_triggered)
-        self.current_img_action = self.img_init
-        self.current_img_action.setChecked(
-            True
-        )  # makes sure menu reflects initial plot
+        self.img_options = menu_bar.addMenu("Image Plots")
 
         # LINE PLOTS MENU BAR
-        # Define all 1D line plot options
-        line_fr = QtWidgets.QAction("Firing Rate", self, checkable=True, checked=True)
-        line_fr.triggered.connect(lambda: self.plot_line(self.session.line_fr_data))
-        line_amp = QtWidgets.QAction("Amplitude", self, checkable=True, checked=False)
-        line_amp.triggered.connect(lambda: self.plot_line(self.session.line_amp_data))
-        # Initialise with firing rate 1D plot
-        self.line_init = line_fr
         # Add menu bar for 1D line plot options
-        line_options = menu_bar.addMenu("Line Plots")
-        # Add action group so we can toggle through 2D scatter/ image plot options
-        self.line_options_group = QtWidgets.QActionGroup(line_options)
-        # Only allow one to plot to be selected at any one time
-        self.line_options_group.setExclusive(True)
-        line_options.addAction(line_fr)
-        self.line_options_group.addAction(line_fr)
-        line_options.addAction(line_amp)
-        self.line_options_group.addAction(line_amp)
-
-        self.line_options_group.triggered.connect(self._on_line_action_triggered)
-        self.line_img_action = self.line_init
-        self.line_img_action.setChecked(True)  # makes sure menu reflects initial plot
+        self.line_options = menu_bar.addMenu("Line Plots")
 
         # PROBE PLOTS MENU BAR
-        # Define all 2D probe plot options
-        # In two stages 1) RMS plots manually, 2) frequency plots in for loop
-        probe_rmsAP = QtWidgets.QAction("RMS AP", self, checkable=True, checked=True)
-        probe_rmsAP.triggered.connect(
-            lambda: self.plot_probe(self.session.probe_rms_APdata)
-        )
-        probe_rmsLFP = QtWidgets.QAction("RMS LFP", self, checkable=True, checked=False)
-        probe_rmsLFP.triggered.connect(
-            lambda: self.plot_probe(self.session.probe_rms_LFPdata)
-        )
-
-        # Initialise with rms of AP probe plot
-        self.probe_init = probe_rmsAP
-
         # Add menu bar for 2D probe plot options
-        probe_options = menu_bar.addMenu("Probe Plots")
-        # Add action group so we can toggle through probe plot options
-        self.probe_options_group = QtWidgets.QActionGroup(probe_options)
-        self.probe_options_group.setExclusive(True)
-        probe_options.addAction(probe_rmsAP)
-        self.probe_options_group.addAction(probe_rmsAP)
-        probe_options.addAction(probe_rmsLFP)
-        self.probe_options_group.addAction(probe_rmsLFP)
-
-        self.probe_options_group.triggered.connect(self._on_probe_action_triggered)
-        self.probe_img_action = self.probe_init
-        self.probe_img_action.setChecked(True)  # makes sure menu reflects initial plot
-
-        # Add the different frequency band options in a loop. These bands must be the same as
-        # defined in plot_data
-        freq_bands = np.vstack(([0, 4], [4, 10], [10, 30], [30, 80], [80, 200]))
-        for iF, freq in enumerate(freq_bands):
-            band = f"{freq[0]} - {freq[1]} Hz"
-            probe = QtWidgets.QAction(band, self, checkable=True, checked=False)
-            probe.triggered.connect(
-                lambda checked, item=band: self.plot_probe(
-                    self.session.probe_lfp_data[item]
-                )
-            )
-            probe_options.addAction(probe)
-            self.probe_options_group.addAction(probe)
-
-        sub_types = list(self.session.probe_rfmap.keys())
-        for sub in sub_types:
-            probe = QtWidgets.QAction(
-                f"RF Map - {sub}", self, checkable=True, checked=False
-            )
-            probe.triggered.connect(
-                lambda checked, item=sub: self.plot_probe(
-                    self.session.probe_rfmap[item], bounds=self.session.rfmap_boundaries
-                )
-            )
-            probe_options.addAction(probe)
-            self.probe_options_group.addAction(probe)
+        self.probe_options = menu_bar.addMenu("Probe Plots")
+        self.rebuild_ephys_plot_menus()
 
         # SLICE PLOTS MENU BAR
         self.init_slice_menu()
