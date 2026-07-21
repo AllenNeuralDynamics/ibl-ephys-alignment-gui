@@ -239,7 +239,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.workspace = AlignmentWorkspace()
         self.app = self.workspace.app
         self.runtime = self.workspace.runtime
-        self.events = self.app.events
         self.document = self.workspace.document
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
@@ -1458,43 +1457,43 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _connect_alignment_changed_handlers(self) -> None:
         self._event_subscriptions.extend(
             [
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_apply_data,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_prepare_lines,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_histology,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_scale,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_fit,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_channels,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_perpendicular,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_lines,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_range,
                 ),
-                self.events.subscribe(
+                self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_status,
                 ),
@@ -1503,7 +1502,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _connect_shank_changed_handlers(self) -> None:
         self._event_subscriptions.append(
-            self.events.subscribe(ShankChanged, self._on_shank_changed)
+            self.app.events.subscribe(ShankChanged, self._on_shank_changed)
         )
 
     def _emit_alignment_changed(
@@ -1540,7 +1539,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             refresh_perpendicular=refresh_perpendicular,
         )
         try:
-            self.events.emit(event)
+            self.app.events.emit(event)
         finally:
             if depth_ranges:
                 self._restore_depth_plot_y_ranges(depth_ranges)
@@ -3258,7 +3257,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         logger.info(
             f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})"
         )
-        self.events.emit(
+        self.app.events.emit(
             ShankChanged(
                 source="dropdown",
                 previous_shank_idx=result.previous_shank_idx,
