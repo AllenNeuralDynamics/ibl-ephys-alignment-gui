@@ -11,6 +11,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
+from ephys_alignment_gui.app import AlignmentApp, AlignmentCommands, AlignmentQueries
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
@@ -69,6 +70,7 @@ class AlignmentWorkspace:
     events: EventBus = field(default_factory=EventBus)
     probe_data_workflow: ProbeDataWorkflow = field(init=False)
     controller: AlignmentController = field(init=False)
+    app: AlignmentApp = field(init=False)
 
     def __post_init__(self) -> None:
         self.probe_data_workflow = ProbeDataWorkflow(
@@ -87,4 +89,12 @@ class AlignmentWorkspace:
             alignment_repository=self.alignment_repository,
             alignment_edit_service=self.alignment_edit_service,
             output_builder=self.alignment_output_service,
+        )
+        self.app = AlignmentApp(
+            commands=AlignmentCommands(self.controller),
+            queries=AlignmentQueries(
+                document=self.document,
+                runtime=self.runtime,
+            ),
+            events=self.events,
         )

@@ -6,7 +6,6 @@ import pyqtgraph.exporters
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ephys_alignment_gui.plot_elements import replace_axis
-from ephys_alignment_gui.plot_menu_state import build_plot_menu_state
 
 pg.setConfigOption("background", "w")
 pg.setConfigOption("foreground", "k")
@@ -86,10 +85,10 @@ class Setup:
 
     def rebuild_ephys_plot_menus(self, previous_selected_keys=None) -> None:
         self._plot_specs_by_key = {}
-        self.plot_menu_state = build_plot_menu_state(
-            self.session.plotdata,
+        self.plot_menu_state = self.app.queries.active_plot_menu_state(
             previous_selected_keys=previous_selected_keys,
             raw_image_payloads=self.session.img_raw_data,
+            legacy_plotdata=self.session.plotdata,
         )
 
         self._rebuild_plot_menu_group(

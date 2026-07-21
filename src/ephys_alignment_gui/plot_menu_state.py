@@ -72,7 +72,7 @@ def choose_plot_key(
 
 
 def build_plot_menu_state(
-    plotdata: Any,
+    plotdata: Any | None,
     *,
     previous_selected_keys: Mapping[PlotMenu, str | None] | None = None,
     raw_image_payloads: Mapping[Any, Any] | None = None,
@@ -83,7 +83,11 @@ def build_plot_menu_state(
 
     groups: dict[PlotMenu, PlotMenuGroupState] = {}
     for menu in EPHYS_PLOT_MENUS:
-        specs = list(available_plot_specs_for_menu(plotdata, menu))
+        specs = (
+            list(available_plot_specs_for_menu(plotdata, menu))
+            if plotdata is not None
+            else []
+        )
         if menu == "image":
             specs.extend(
                 mapping_plot_specs(

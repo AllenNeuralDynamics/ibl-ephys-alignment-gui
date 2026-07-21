@@ -48,8 +48,6 @@ from ephys_alignment_gui.plot_registry import (
     PlotMenu,
     PlotSpec,
     plot_spec,
-    resolve_plot_bounds,
-    resolve_plot_payload,
 )
 from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.reference_line_layer import (
@@ -239,8 +237,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         offline = True
 
         self.workspace = AlignmentWorkspace()
+        self.app = self.workspace.app
         self.runtime = self.workspace.runtime
-        self.events = self.workspace.events
+        self.events = self.app.events
         self.document = self.workspace.document
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
@@ -1719,36 +1718,27 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("Ignoring unavailable plot spec %s", spec_key)
             return None
 
-    def _active_plotdata(self) -> Any:
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is not None:
-            return stream_runtime.plot_data_for_shank(self.session.current_shank_idx)
-        return self.session.plotdata
-
     def plot_payload_for_spec(self, spec_key: str) -> Any:
         """Resolve a registered plot payload for the active shank."""
         spec = self.registered_plot_spec(spec_key)
         if spec is None:
             return None
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is not None:
-            return stream_runtime.plot_payload_for_shank(
-                self.session.current_shank_idx,
-                spec,
-            )
-        if self.session.plotdata is None:
-            return None
-        return resolve_plot_payload(self.session.plotdata, spec)
+        return self.app.queries.active_plot_payload(
+            spec.key,
+            raw_image_payloads=self.session.img_raw_data,
+            legacy_plotdata=self.session.plotdata,
+        )
 
     def plot_bounds_for_spec(self, spec_key: str) -> Any:
         """Resolve optional plot bounds for the active shank."""
-        plotdata = self._active_plotdata()
-        if plotdata is None:
-            return None
         spec = self.registered_plot_spec(spec_key)
         if spec is None:
             return None
-        return resolve_plot_bounds(plotdata, spec)
+        return self.app.queries.active_plot_bounds(
+            spec.key,
+            raw_image_payloads=self.session.img_raw_data,
+            legacy_plotdata=self.session.plotdata,
+        )
 
     def plot_from_spec(self, spec_key: str) -> None:
         """Render a registered plot payload with the existing plot functions."""
