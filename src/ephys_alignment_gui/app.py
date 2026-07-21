@@ -7,8 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.controller import AlignmentController, Failed, ShankSelected
+from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plot_registry import (
@@ -22,6 +23,24 @@ from ephys_alignment_gui.session_runtime import SessionRuntime
 logger = logging.getLogger(__name__)
 
 
+class _ReferenceLinesNotProvided:
+    pass
+
+
+_REFERENCE_LINES_NOT_PROVIDED = _ReferenceLinesNotProvided()
+ReferenceLineCapture = tuple[Any, Any] | None | _ReferenceLinesNotProvided
+
+
+@dataclass(frozen=True)
+class ShankSelectionState:
+    """Read model for the active shank selection."""
+
+    shank_idx: int
+    shank_id: int
+    alignment_key: AlignmentKey | None
+    data_loaded: bool
+
+
 @dataclass
 class AlignmentCommands:
     """Command-side app port.
@@ -31,6 +50,59 @@ class AlignmentCommands:
     """
 
     _controller: AlignmentController
+    _events: EventBus
+
+    def select_shank(
+        self,
+        shank_idx: int,
+        *,
+        outgoing_reference_lines: ReferenceLineCapture = _REFERENCE_LINES_NOT_PROVIDED,
+        source: str = "command",
+        preserve_plot_selection: bool | None = None,
+    ) -> ShankSelected | Failed:
+        """Select a shank as a complete app-level transaction."""
+        if (
+            self._controller.document.data_loaded
+            and outgoing_reference_lines is not _REFERENCE_LINES_NOT_PROVIDED
+        ):
+            capture_result = self._capture_outgoing_reference_lines(
+                outgoing_reference_lines
+            )
+            if isinstance(capture_result, Failed):
+                return capture_result
+
+        result = self._controller.select_shank(shank_idx)
+        if isinstance(result, ShankSelected):
+            self._events.emit(
+                ShankChanged(
+                    source=source,
+                    previous_shank_idx=result.previous_shank_idx,
+                    shank_idx=result.shank_idx,
+                    previous_key=result.previous_key,
+                    active_key=result.selected_key,
+                    data_loaded=result.data_loaded,
+                    preserve_plot_selection=preserve_plot_selection,
+                )
+            )
+        return result
+
+    def _capture_outgoing_reference_lines(
+        self,
+        outgoing_reference_lines: ReferenceLineCapture,
+    ) -> Any:
+        outgoing_shank_idx = self._controller.document.selected_shank
+        if outgoing_reference_lines is None:
+            return self._controller.clear_pending_reference_lines(outgoing_shank_idx)
+
+        if outgoing_reference_lines is _REFERENCE_LINES_NOT_PROVIDED:
+            return None
+
+        feature_positions_um, track_positions_um = outgoing_reference_lines
+        return self._controller.set_pending_reference_lines(
+            feature_positions_um=feature_positions_um,
+            track_positions_um=track_positions_um,
+            shank_idx=outgoing_shank_idx,
+        )
 
 
 @dataclass
@@ -39,6 +111,16 @@ class AlignmentQueries:
 
     document: AlignmentDocument
     runtime: SessionRuntime
+
+    def active_shank_selection(self) -> ShankSelectionState:
+        """Return the current document-owned shank selection."""
+        shank_idx = self._active_shank_idx()
+        return ShankSelectionState(
+            shank_idx=shank_idx,
+            shank_id=shank_idx + 1,
+            alignment_key=self.document.selected_alignment_key,
+            data_loaded=self.document.data_loaded,
+        )
 
     def active_plot_menu_state(
         self,

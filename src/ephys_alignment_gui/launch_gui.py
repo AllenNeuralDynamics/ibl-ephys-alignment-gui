@@ -1601,12 +1601,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.update_string()
 
     def _on_shank_changed(self, event: ShankChanged) -> None:
+        self._apply_shank_changed_to_legacy_session(event)
+
         if not event.data_loaded:
             logger.info("Data not loaded yet, shank index updated")
             return
 
         logger.info("Switching shank view...")
-        self.setup_shank_view(preserve_plot_selection=event.preserve_plot_selection)
+        self.setup_shank_view(
+            shank_idx=event.shank_idx,
+            preserve_plot_selection=event.preserve_plot_selection,
+        )
+
+    def _apply_shank_changed_to_legacy_session(self, event: ShankChanged) -> None:
+        """Sync document-owned shank selection into transitional ProbeSession."""
+        if self.session is None:
+            return
+        self.session.current_shank_idx = event.shank_idx
+        self._sync_active_shank_alignment_state()
 
     def plot_scale_factor(self) -> None:
         """
@@ -2980,10 +2992,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.get_scaled_histology()
 
-    def render_histology_plots(self) -> None:
+    def render_histology_plots(self, *, shank_idx: int | None = None) -> None:
         """Render all histology plots. Common code."""
         if not self.histology_exists:
             return
+        if shank_idx is None:
+            shank_idx = self.app.queries.active_shank_selection().shank_idx
 
         self.plot_histology_ref(self.fig_hist_ref)
         self.plot_histology(self.fig_hist)
@@ -2995,9 +3009,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_scale_factor()
         self.plot_fit()
 
-        pending_lines = self.controller.active_pending_reference_lines(
-            self.session.current_shank_idx
-        )
+        pending_lines = self.controller.active_pending_reference_lines(shank_idx)
         if isinstance(pending_lines, Failed):
             logger.error(pending_lines.message)
             pending_lines = None
@@ -3009,15 +3021,30 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         elif np.any(self.session.feature_prev):
             self.create_lines(self.session.feature_prev[1:-1] * 1e6)
 
-    def setup_session_view(self, preserve_plot_selection: bool | None = None) -> None:
+    def setup_session_view(
+        self,
+        preserve_plot_selection: bool | None = None,
+        *,
+        shank_idx: int | None = None,
+    ) -> None:
         """Setup/refresh view for current session. Used by both initial load and session switching."""
         logger.info("Setting up session view")
-        self.setup_shank_view(preserve_plot_selection=preserve_plot_selection)
+        if shank_idx is None:
+            shank_idx = self.app.queries.active_shank_selection().shank_idx
+        self.setup_shank_view(
+            shank_idx=shank_idx,
+            preserve_plot_selection=preserve_plot_selection,
+        )
 
-    def setup_shank_view(self, preserve_plot_selection: bool | None = None) -> None:
+    def setup_shank_view(
+        self,
+        *,
+        shank_idx: int,
+        preserve_plot_selection: bool | None = None,
+    ) -> None:
         """Setup/refresh view for current shank. Used by both initial load and shank switching."""
 
-        logger.info(f"Setting up view for shank index {self.session.current_shank_idx}")
+        logger.info(f"Setting up view for shank index {shank_idx}")
         if preserve_plot_selection is None:
             preserve_plot_selection = self.document.data_loaded
         self._sync_active_shank_alignment_state()
@@ -3043,7 +3070,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if stream_runtime is not None:
             collection = self._attach_stream_runtime_to_session(
                 stream_runtime,
-                self.session.current_shank_idx,
+                shank_idx,
             )
             logger.debug(f"Selected {len(collection.depths)} channels for this shank")
 
@@ -3059,7 +3086,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.track_annotations_ras = (
                 self.probe_track_service.load_track_annotations(
                     probe=probe,
-                    shank_idx=self.session.current_shank_idx,
+                    shank_idx=shank_idx,
                     brain_atlas=brain_atlas,
                 )
             )
@@ -3067,9 +3094,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             # Refresh the previous-alignments dropdown to this key's own
             # history (not another shank's), then take its starting alignment.
-            choices = self.controller.active_alignment_choices(
-                self.session.current_shank_idx
-            )
+            choices = self.controller.active_alignment_choices(shank_idx)
             if isinstance(choices, Failed):
                 logger.error(choices.message)
                 return
@@ -3090,14 +3115,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # plotdata is per-shank (_ShankAttr), so each shank keeps its own.
         if self.session.plotdata is None:
             if stream_runtime is not None:
-                self.session.plotdata = stream_runtime.plot_data_for_shank(
-                    self.session.current_shank_idx
-                )
+                self.session.plotdata = stream_runtime.plot_data_for_shank(shank_idx)
             else:
                 self.session.plotdata = self.plot_data_factory.build_legacy(
                     self.session.probe_path,
                     self.session.data,
-                    self.session.current_shank_idx,
+                    shank_idx,
                 )
         self.set_lims(
             np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max
@@ -3186,7 +3209,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.plot_default_spec("probe")
             self.plot_default_spec("line")
 
-        self.render_histology_plots()
+        self.render_histology_plots(shank_idx=shank_idx)
 
         # Restore the previously-selected slice plot if its data is still
         # available for this probe; otherwise fall back to the default slice
@@ -3238,35 +3261,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         shank_text = self.shank_combobox.currentText()
         new_shank_id = int(shank_text.split("/")[0])
         new_shank_idx = new_shank_id - 1
-        if new_shank_idx == self.session.current_shank_idx:
+        selection = self.app.queries.active_shank_selection()
+        if new_shank_idx == selection.shank_idx:
             logger.info(f"Shank {new_shank_id} already selected")
             return
 
-        self._capture_pending_reference_lines()
-        previous_shank_idx = self.session.current_shank_idx
-        self.session.current_shank_idx = new_shank_idx
-        result = self.controller.select_shank(new_shank_idx)
+        result = self.app.commands.select_shank(
+            new_shank_idx,
+            outgoing_reference_lines=self.reference_lines.positions(),
+            source="dropdown",
+        )
         if isinstance(result, Failed):
             logger.error(result.message)
-            self.session.current_shank_idx = previous_shank_idx
             return
         if not isinstance(result, ShankSelected):
             return
-        self._sync_active_shank_alignment_state()
 
-        logger.info(
-            f"Shank {new_shank_id} selected (index {self.session.current_shank_idx})"
-        )
-        self.app.events.emit(
-            ShankChanged(
-                source="dropdown",
-                previous_shank_idx=result.previous_shank_idx,
-                shank_idx=result.shank_idx,
-                previous_key=result.previous_key,
-                active_key=result.selected_key,
-                data_loaded=result.data_loaded,
-            )
-        )
+        logger.info(f"Shank {new_shank_id} selected (index {result.shank_idx})")
 
     def on_alignment_selected(self, idx) -> None:
         """Triggered when selecting alignment from dropdown"""
