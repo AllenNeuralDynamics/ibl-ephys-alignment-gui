@@ -24,6 +24,8 @@ from ephys_alignment_gui.alignment_events import (
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
     ActiveSliceDataState,
+    ActiveSliceMenuState,
+    ActiveSliceRenderState,
     PerpendicularSliceRenderState,
 )
 from ephys_alignment_gui.controller import (
@@ -49,6 +51,7 @@ from ephys_alignment_gui.plot_registry import (
 )
 from ephys_alignment_gui.session_runtime import SessionRuntime
 from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceCacheEntry
 from ephys_alignment_gui.workflow import Ok
 
@@ -294,6 +297,9 @@ class AlignmentQueries:
     )
     histology_context: Any | None = None
     slice_service: Any | None = None
+    slice_display_policy: SliceDisplayPolicy = field(
+        default_factory=SliceDisplayPolicy
+    )
 
     def active_shank_selection(self) -> ShankSelectionState:
         """Return the current document-owned shank selection."""
@@ -464,6 +470,85 @@ class AlignmentQueries:
         if state is None:
             return {"slice_data": None, "fp_slice_data": None}
         return state.data_by_attr
+
+    def active_slice_menu_state(
+        self,
+        *,
+        offline: bool,
+        previous_selection: SliceSelection | None = None,
+    ) -> ActiveSliceMenuState | None:
+        """Return menu and fallback-selection state for active slice data."""
+        state = self.active_slice_data_state()
+        if state is None:
+            return None
+        slice_data = state.slice_data or {}
+        if not isinstance(slice_data, Mapping):
+            return None
+        fp_slice_data = (
+            state.fp_slice_data if isinstance(state.fp_slice_data, Mapping) else None
+        )
+        items = self.slice_display_policy.menu_items(
+            slice_data=slice_data,
+            fp_slice_data=fp_slice_data,
+            offline=offline,
+        )
+        default_selection = self.slice_display_policy.default_selection(slice_data)
+        selection = self.slice_display_policy.choose_selection(
+            previous=previous_selection,
+            default=default_selection,
+            data_by_attr=state.data_by_attr,
+        )
+        return ActiveSliceMenuState(
+            key=state.key,
+            items=tuple(items),
+            default_selection=default_selection,
+            selection=selection,
+        )
+
+    def active_slice_render_state(
+        self,
+        selection: SliceSelection,
+    ) -> ActiveSliceRenderState | None:
+        """Return a render payload for one active coronal slice selection."""
+        slice_state = self.active_slice_data_state()
+        context = self._active_alignment_context()
+        if slice_state is None or context is None:
+            return None
+        _key, active_alignment, shank_runtime = context
+        data = slice_state.data_by_attr.get(selection.data_attr)
+        if not isinstance(data, Mapping) or selection.key not in data:
+            return None
+        image = data[selection.key]
+        decision = self.slice_display_policy.render_decision(data, selection.key)
+        base_slice_data = slice_state.slice_data
+        if not isinstance(base_slice_data, Mapping):
+            base_slice_data = {}
+        scale = np.asarray(data.get("scale", base_slice_data.get("scale")))
+        offset = np.asarray(data.get("offset", base_slice_data.get("offset")))
+        if scale.size < 2 or offset.size < 2:
+            logger.warning(
+                "Cannot render slice %s: missing scale/offset metadata",
+                selection,
+            )
+            return None
+        track_annos_and_ends_ras = shank_runtime.track_annos_and_ends_ras
+        if track_annos_and_ends_ras is None:
+            return None
+        projection = self.derived_data_service.compute_channel_projection(
+            ephysalign=shank_runtime.ephysalign,
+            feature=active_alignment.feature,
+            track=active_alignment.track,
+        )
+        return ActiveSliceRenderState(
+            key=slice_state.key,
+            selection=selection,
+            image=image,
+            scale=scale,
+            offset=offset,
+            decision=decision,
+            track_annos_and_ends_ras=track_annos_and_ends_ras,
+            projection=projection,
+        )
 
     def active_perpendicular_slice_state(
         self,

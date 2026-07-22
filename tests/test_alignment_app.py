@@ -25,6 +25,7 @@ from ephys_alignment_gui.controller import (
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceRuntime
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
@@ -141,6 +142,48 @@ def _workspace_with_probe_state(
     workspace.data_context.channel_table = SimpleNamespace(n_shanks=2)
     workspace.document.select_alignment_key(AlignmentKey("rec", "stream", shank_idx))
     return workspace
+
+
+def _queries_with_cached_slice(
+    *,
+    slice_data: dict[str, Any],
+    fp_slice_data: dict[str, Any] | None = None,
+    derived: FakeDerivedDataService | None = None,
+) -> tuple[AlignmentQueries, AlignmentKey, Any]:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    state.active_alignment = active_alignment
+    track = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]])
+    slice_runtime = SliceRuntime()
+    slice_runtime.set_coronal_slice(
+        alignment_key=key,
+        track_interpolation_ras=track,
+        slice_data=slice_data,
+        fp_slice_data=fp_slice_data,
+    )
+    ephysalign = SimpleNamespace(track_interpolation_ras=track)
+    shank_runtime = SimpleNamespace(
+        ephysalign=ephysalign,
+        slice_runtime=slice_runtime,
+        track_annos_and_ends_ras=np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]]
+        ),
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        derived_data_service=derived or FakeDerivedDataService(),
+    )
+    return queries, key, ephysalign
 
 
 def test_workspace_exposes_app_port() -> None:
@@ -625,6 +668,97 @@ def test_queries_ensure_active_slice_data_state_uses_runtime_cache() -> None:
     assert call["lazy_channel_paths"] == {}
     assert call["track_interpolation_ras"] is track
     assert queries.active_slice_data_by_attr()["slice_data"] is first.slice_data
+
+
+def test_queries_build_active_slice_menu_state_with_fallback_selection() -> None:
+    slice_data = {
+        "ccf": np.zeros((2, 2)),
+        "label": np.zeros((2, 2, 3)),
+        "histology_registration": np.ones((2, 2)),
+        "scale": np.array([1.0, 2.0]),
+        "offset": np.array([3.0, 4.0]),
+    }
+    queries, key, _ephysalign = _queries_with_cached_slice(
+        slice_data=slice_data,
+        fp_slice_data={"label": np.zeros((2, 2, 3))},
+    )
+
+    restored = queries.active_slice_menu_state(
+        offline=True,
+        previous_selection=SliceSelection("slice_data", "histology_registration"),
+    )
+    fallback = queries.active_slice_menu_state(
+        offline=True,
+        previous_selection=SliceSelection("slice_data", "missing"),
+    )
+
+    assert restored is not None
+    assert fallback is not None
+    assert restored.key == key
+    assert [item.label for item in restored.items] == [
+        "CCF",
+        "Annotation",
+        "Annotation FP",
+        "histology_registration",
+    ]
+    assert restored.default_selection == SliceSelection(
+        "slice_data",
+        "histology_registration",
+    )
+    assert restored.selection.selection == SliceSelection(
+        "slice_data",
+        "histology_registration",
+    )
+    assert restored.selection.used_previous
+    assert fallback.selection.selection == restored.default_selection
+    assert not fallback.selection.used_previous
+
+
+def test_queries_build_active_slice_render_state_for_selection() -> None:
+    image = np.arange(4.0).reshape(2, 2)
+    slice_data = {
+        "ccf": np.zeros((2, 2)),
+        "label": np.zeros((2, 2, 3)),
+        "annotation_ids": np.array([[1, 1], [0, 1]]),
+        "histology_registration": image,
+        "scale": np.array([1.0, 2.0]),
+        "offset": np.array([3.0, 4.0]),
+    }
+    derived = FakeDerivedDataService(projection="projection")
+    queries, key, ephysalign = _queries_with_cached_slice(
+        slice_data=slice_data,
+        derived=derived,
+    )
+
+    render_state = queries.active_slice_render_state(
+        SliceSelection("slice_data", "histology_registration")
+    )
+
+    assert render_state is not None
+    assert render_state.key == key
+    assert render_state.selection == SliceSelection(
+        "slice_data",
+        "histology_registration",
+    )
+    assert render_state.image is image
+    np.testing.assert_allclose(render_state.scale, [1.0, 2.0])
+    np.testing.assert_allclose(render_state.offset, [3.0, 4.0])
+    assert render_state.decision.kind is SliceImageKind.SCALAR
+    assert render_state.scalar_channel == "histology_registration"
+    np.testing.assert_allclose(
+        render_state.track_annos_and_ends_ras,
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]],
+    )
+    assert render_state.projection == "projection"
+    assert derived.projection_kwargs["ephysalign"] is ephysalign
+    np.testing.assert_allclose(
+        derived.projection_kwargs["feature"],
+        [0.0, 1.0],
+    )
+    np.testing.assert_allclose(
+        derived.projection_kwargs["track"],
+        [2.0, 3.0],
+    )
 
 
 def test_queries_build_active_perpendicular_slice_state_from_runtime_cache() -> None:

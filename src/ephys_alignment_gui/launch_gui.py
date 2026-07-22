@@ -20,7 +20,10 @@ from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import ShankChanged
-from ephys_alignment_gui.alignment_read_models import PerpendicularSliceRenderState
+from ephys_alignment_gui.alignment_read_models import (
+    ActiveSliceRenderState,
+    PerpendicularSliceRenderState,
+)
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -254,7 +257,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.desktop_alignment_presenter = DesktopAlignmentPresenter(self.app.events)
         self.plot_data_factory = self.workspace.plot_data_factory
-        self.slice_display_policy = self.workspace.slice_display_policy
 
         self._plot_specs_by_key: dict[str, PlotSpec] = {}
         self.init_variables()
@@ -1287,40 +1289,33 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _current_scalar_slice_channel(self) -> str | None:
         """Return the selected scalar slice channel, if the slice UI has one."""
+        render_state = self._current_slice_render_state()
+        if render_state is None:
+            return None
+        return render_state.scalar_channel
+
+    def _current_slice_render_state(self) -> ActiveSliceRenderState | None:
+        """Return render state for the currently checked slice action."""
+        selection = self._current_slice_selection()
+        if selection is None:
+            return None
+        return self.app.queries.active_slice_render_state(selection)
+
+    def _current_slice_selection(self) -> SliceSelection | None:
+        """Return the slice selection stored on the checked QAction."""
         if not hasattr(self, "slice_options_group"):
             return None
         action = self.slice_options_group.checkedAction()
         if action is None:
             return None
-        selection = self.slice_display_policy.selection_from_payload(action.data())
-        if selection is None:
-            return None
-        return self.slice_display_policy.scalar_channel_for_selection(
-            self._slice_data_by_attr(),
-            selection,
-        )
-
-    def _slice_data_by_attr(self) -> dict[str, Any]:
-        """Return slice data keyed by the QAction payload data-attr names."""
-        data_by_attr = self.app.queries.active_slice_data_by_attr()
-        if (
-            data_by_attr["slice_data"] is None
-            and data_by_attr["fp_slice_data"] is None
-        ):
-            return {
-                "slice_data": self.session.slice_data,
-                "fp_slice_data": self.session.fp_slice_data,
-            }
-        return data_by_attr
+        return SliceSelection.from_payload(action.data())
 
     def _slice_action_for_selection(self, selection: SliceSelection) -> Any:
         """Find the QAction that represents a slice selection."""
         if not hasattr(self, "slice_options_group"):
             return None
         for action in self.slice_options_group.actions():
-            action_selection = self.slice_display_policy.selection_from_payload(
-                action.data()
-            )
+            action_selection = SliceSelection.from_payload(action.data())
             if action_selection == selection:
                 return action
         return None
@@ -1617,26 +1612,59 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_from_spec(specs[0].key)
 
     def plot_slice(self, data, img_type) -> None:
-        # If no histology we can't do alignment
+        """Compatibility wrapper for legacy slice-data call sites."""
+        selection = self._selection_for_slice_payload(data, img_type)
+        if selection is None:
+            logger.warning("Cannot resolve legacy slice payload '%s'", img_type)
+            return
+        self.plot_slice_selection(selection)
+
+    def _selection_for_slice_payload(
+        self,
+        data: Any,
+        img_type: str,
+    ) -> SliceSelection | None:
+        """Map a legacy slice mapping object back to a SliceSelection."""
+        state = self.app.queries.active_slice_data_state()
+        if state is None:
+            return None
+        if data is state.slice_data:
+            return SliceSelection("slice_data", img_type)
+        if data is state.fp_slice_data:
+            return SliceSelection("fp_slice_data", img_type)
+        return None
+
+    def plot_slice_selection(self, selection: SliceSelection) -> None:
+        """Render a coronal slice selection from the application read model."""
+        if not self.histology_exists:
+            return
+        render_state = self.app.queries.active_slice_render_state(selection)
+        if render_state is None:
+            logger.warning("No active slice render state for %s", selection)
+            return
+        self.render_slice(render_state)
+
+    def render_slice(self, render_state: ActiveSliceRenderState) -> None:
+        """Render a coronal slice payload with desktop plot items."""
+        decision = render_state.decision
+
         if not self.histology_exists:
             return
 
         self.fig_slice.clear()
         self.session.slice_chns = []
         self.session.slice_lines = []
-        image = data[img_type]
-        decision = self.slice_display_policy.render_decision(data, img_type)
         img = pg.ImageItem()
-        img.setImage(image)
+        img.setImage(render_state.image)
         transform = [
-            data["scale"][0],
+            render_state.scale[0],
             0.0,
             0.0,
             0.0,
-            data["scale"][1],
+            render_state.scale[1],
             0.0,
-            data["offset"][0],
-            data["offset"][1],
+            render_state.offset[0],
+            render_state.offset[1],
             1.0,
         ]
         img.setTransform(QtGui.QTransform(*transform))
@@ -1658,7 +1686,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session.slice_hist_levels = None
             self.session.perp_image_item = None
             self.fig_hist_perp.clear()
-            pass
         else:
             self.session.slice_color_bar = ColorBar("cividis")
             lut = self.session.slice_color_bar.getColourMap()
@@ -1688,7 +1715,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # showing in the coronal view, so the two are different views of the
             # same tissue. slice_hist_levels is set above, so the perp picks up
             # matched levels (same value -> same colour).
-            self.plot_perpendicular_histology(decision.scalar_channel or img_type)
+            if render_state.scalar_channel is not None:
+                self.plot_perpendicular_histology(render_state.scalar_channel)
 
             # Live-update the perp levels as the user drags the histogram
             # handles (sigLevelsChanged fires continuously; the finished-only
@@ -1702,12 +1730,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_slice.addItem(img)
         self.session.traj_line = pg.PlotCurveItem()
         self.session.traj_line.setData(
-            x=self.session.track_annos_and_ends_ras[:, 0],
-            y=self.session.track_annos_and_ends_ras[:, 2],
+            x=render_state.track_annos_and_ends_ras[:, 0],
+            y=render_state.track_annos_and_ends_ras[:, 2],
             pen=self.kpen_solid,
         )
         self.fig_slice.addItem(self.session.traj_line)
-        self.plot_channels()
+        self.plot_channels(render_state.projection)
 
     def in_brain_channel_depths(self):
         """Depths (um) of channels inside the brain for the current alignment.
@@ -3056,39 +3084,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # available for this probe; otherwise fall back to the default slice
         # (slice_init — the histology registration channel when present, else
         # CCF).
-        previous_selection = self.slice_display_policy.selection_from_payload(
+        previous_selection = SliceSelection.from_payload(
             prev_slice_action.data() if prev_slice_action is not None else None
         )
-        default_selection = self.slice_display_policy.selection_from_payload(
-            self.slice_init.data()
+        slice_menu_state = self.app.queries.active_slice_menu_state(
+            offline=self.offline,
+            previous_selection=previous_selection,
         )
-        if default_selection is None:
+        if slice_menu_state is None:
             logger.warning("No default slice selection is available")
         else:
-            choice = self.slice_display_policy.choose_selection(
-                previous=previous_selection,
-                default=default_selection,
-                data_by_attr=self._slice_data_by_attr(),
-            )
+            choice = slice_menu_state.selection
             selected_action = self._slice_action_for_selection(choice.selection)
             if selected_action is None:
                 selected_action = self.slice_init
-            if (
-                prev_slice_action is not None
-                and selected_action is not prev_slice_action
-                and not choice.used_previous
-            ):
-                logger.info(
-                    f"Slice selection '{prev_slice_action.text()}' not available for "
-                    f"this probe; falling back to '{selected_action.text()}'"
-                )
-            selected_action.setChecked(True)
-            selected_selection = self.slice_display_policy.selection_from_payload(
-                selected_action.data()
-            )
-            if selected_selection is not None:
-                slice_data = getattr(self.session, selected_selection.data_attr)
-                self.plot_slice(slice_data, selected_selection.key)
+            if selected_action is None:
+                logger.warning("No slice action is available")
+            else:
+                if (
+                    prev_slice_action is not None
+                    and selected_action is not prev_slice_action
+                    and not choice.used_previous
+                ):
+                    logger.info(
+                        f"Slice selection '{prev_slice_action.text()}' not available "
+                        f"for this probe; falling back to '{selected_action.text()}'"
+                    )
+                selected_action.setChecked(True)
+                selected_selection = SliceSelection.from_payload(selected_action.data())
+                if selected_selection is not None:
+                    self.plot_slice_selection(selected_selection)
 
         # Only configure the view on first launch
         self.set_view(view=1, configure=self.configure and not preserve_plot_selection)

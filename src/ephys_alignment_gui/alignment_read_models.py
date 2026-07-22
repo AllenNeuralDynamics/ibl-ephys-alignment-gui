@@ -13,6 +13,12 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     ChannelProjectionData,
 )
 from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.slice_display_policy import (
+    SliceMenuItem,
+    SliceRenderDecision,
+    SliceSelection,
+    SliceSelectionDecision,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,35 @@ class ActiveSliceDataState:
             "slice_data": self.slice_data,
             "fp_slice_data": self.fp_slice_data,
         }
+
+
+@dataclass(frozen=True)
+class ActiveSliceMenuState:
+    """Available coronal slice menu items and selected fallback policy."""
+
+    key: AlignmentKey
+    items: tuple[SliceMenuItem, ...]
+    default_selection: SliceSelection
+    selection: SliceSelectionDecision
+
+
+@dataclass(frozen=True)
+class ActiveSliceRenderState:
+    """Coronal slice image and geometry ready for frontend rendering."""
+
+    key: AlignmentKey
+    selection: SliceSelection
+    image: Any
+    scale: NDArray[Any]
+    offset: NDArray[Any]
+    decision: SliceRenderDecision
+    track_annos_and_ends_ras: NDArray[Any]
+    projection: ChannelProjectionData
+
+    @property
+    def scalar_channel(self) -> str | None:
+        """Scalar volume channel, when this selection can drive perpendicular view."""
+        return self.decision.scalar_channel
 
 
 @dataclass(frozen=True)

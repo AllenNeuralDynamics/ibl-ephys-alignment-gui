@@ -442,15 +442,13 @@ class Setup:
         self.slice_options_group.setExclusive(True)
         self.slice_init = None
 
-        menu_items = self.slice_display_policy.menu_items(
-            slice_data=self.session.slice_data,
-            fp_slice_data=self.session.fp_slice_data,
+        menu_state = self.app.queries.active_slice_menu_state(
             offline=self.offline,
         )
-        default_selection = self.slice_display_policy.default_selection(
-            self.session.slice_data
-        )
-        for item in menu_items:
+        if menu_state is None:
+            return
+
+        for item in menu_state.items:
             action = QtWidgets.QAction(
                 item.label,
                 self,
@@ -459,14 +457,13 @@ class Setup:
             )
             action.setData(item.selection.to_payload())
             action.triggered.connect(
-                lambda _checked=False, selection=item.selection: self.plot_slice(
-                    getattr(self.session, selection.data_attr),
-                    selection.key,
+                lambda _checked=False, selection=item.selection: (
+                    self.plot_slice_selection(selection)
                 )
             )
             slice_options.addAction(action)
             self.slice_options_group.addAction(action)
-            if item.selection == default_selection:
+            if item.selection == menu_state.default_selection:
                 self.slice_init = action
 
         if self.slice_init is None and self.slice_options_group.actions():

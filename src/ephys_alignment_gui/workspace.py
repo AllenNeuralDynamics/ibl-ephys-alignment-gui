@@ -101,6 +101,7 @@ class AlignmentWorkspace:
                 derived_data_service=self.alignment_derived_data_service,
                 histology_context=self.histology_context,
                 slice_service=self.slice_service,
+                slice_display_policy=self.slice_display_policy,
             ),
             events=self.events,
         )
