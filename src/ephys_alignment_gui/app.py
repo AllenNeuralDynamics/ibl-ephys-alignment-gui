@@ -10,6 +10,7 @@ from typing import Any
 from ephys_alignment_gui.alignment_events import ShankChanged
 from ephys_alignment_gui.controller import AlignmentController, Failed, ShankSelected
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plot_registry import (
@@ -120,6 +121,23 @@ class AlignmentQueries:
             shank_id=shank_idx + 1,
             alignment_key=self.document.selected_alignment_key,
             data_loaded=self.document.data_loaded,
+        )
+
+    def is_loaded_stream_shank(
+        self,
+        stream_key: StreamKey | None,
+        shank_idx: int,
+    ) -> bool:
+        """Return whether the requested stream/shank is already active."""
+        if stream_key is None or not self.document.data_loaded:
+            return False
+        stream_runtime = self.runtime.active_stream_runtime
+        return (
+            stream_runtime is not None
+            and self.runtime.current_stream_key == stream_key
+            and stream_runtime.stream_key == stream_key
+            and stream_runtime.current_shank_idx == shank_idx
+            and self._active_shank_idx() == shank_idx
         )
 
     def active_plot_menu_state(

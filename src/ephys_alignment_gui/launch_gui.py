@@ -2353,6 +2353,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         self.session.active_shank.alignment_state = state
 
+    def _valid_session_shank_idx(self, shank_idx: int) -> int:
+        """Return a shank index valid for the initialized view session."""
+        if self.session is None or not self.session.has_shank(shank_idx):
+            return 0
+        return shank_idx
+
+    def _select_shank_for_view_session(
+        self,
+        shank_idx: int,
+        *,
+        source: str,
+    ) -> int | None:
+        """Select a document shank and sync the transitional ProbeSession."""
+        target_shank = self._valid_session_shank_idx(shank_idx)
+        result = self.app.commands.select_shank(target_shank, source=source)
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return None
+        if not isinstance(result, ShankSelected):
+            return None
+        return result.shank_idx
+
     # -- Empty-state placeholder ---------------------------------------
 
     def _show_empty_state(self, text: str = "Select and load data") -> None:
@@ -2438,12 +2460,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.init_session_variables()
             self.session.init_shanks(self.data_context.n_shanks)
             self.runtime.activate_cached_stream(stream_key)
-            target_shank = cached_runtime.current_shank_idx
-            if not self.session.has_shank(target_shank):
-                target_shank = 0
-            self.session.current_shank_idx = target_shank
-            self.controller.set_selected_shank(target_shank)
-            self._sync_active_shank_alignment_state()
+            target_shank = self._select_shank_for_view_session(
+                cached_runtime.current_shank_idx,
+                source="cached-stream",
+            )
+            if target_shank is None:
+                return False
             self._attach_stream_runtime_to_session(cached_runtime, target_shank)
         except Exception as exc:
             logger.error(f"Failed to restore cached stream runtime: {exc}")
@@ -2453,17 +2475,30 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if result.shanks:
             self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
-            self.shank_combobox.setCurrentIndex(self.session.current_shank_idx)
-            self.controller.set_selected_shank(self.session.current_shank_idx)
+            self.shank_combobox.setCurrentIndex(target_shank)
         self._display_output_directory(result.output_directory)
-        self.controller.finish_load_data(self.session.current_shank_idx)
+        self.controller.finish_load_data(target_shank)
 
-        self.setup_session_view(preserve_plot_selection=True)
+        self.setup_session_view(preserve_plot_selection=True, shank_idx=target_shank)
         logger.info(f"Activated cached stream {stream_key}")
         return True
 
     def load_heavy_data(self) -> None:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
+
+        target_shank = self.app.queries.active_shank_selection().shank_idx
+        probe_name = self.probe_combobox.currentText()
+        stream_key = self._stream_key_for_selection(
+            self.session_combobox.currentText(),
+            probe_name,
+        )
+        if self.app.queries.is_loaded_stream_shank(stream_key, target_shank):
+            logger.info(
+                "Data already loaded for stream %s shank %s; skipping load",
+                stream_key,
+                target_shank,
+            )
+            return
 
         with BusyContext(
             self,
@@ -2472,42 +2507,37 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             disable_widgets=self.load_data_button,
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
+            self._capture_pending_reference_lines()
             prepared = self.controller.prepare_load_data()
             # Preserve the shank the user has selected so a (re)load lands on
             # that shank rather than snapping back to shank 0. Load Probe is a
             # per-probe op; shank switching is done via the dropdown. Fixes the
             # dropdown <-> displayed-shank drift on load.
-            target_shank = (
-                self.session.current_shank_idx if self.session is not None else 0
-            )
-            self._capture_pending_reference_lines()
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
-            probe_name = self.probe_combobox.currentText()
-            stream_key = self._stream_key_for_selection(
-                self.session_combobox.currentText(),
-                probe_name,
-            )
             if stream_key is not None:
                 self.runtime.pop_cached_stream(stream_key)
             self._teardown_session()
             self.init_session_variables()
             self.session.init_shanks(self.data_context.n_shanks)
-            if self.session.has_shank(target_shank):
-                self.session.current_shank_idx = target_shank
-            self.controller.set_selected_shank(self.session.current_shank_idx)
-            self._sync_active_shank_alignment_state()
+            selected_shank = self._select_shank_for_view_session(
+                target_shank,
+                source="load-data",
+            )
+            if selected_shank is None:
+                return
+            target_shank = selected_shank
             logger.info(f"Loading probe data, active shank index {target_shank}")
 
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
-            loaded = self.probe_data_workflow.load(self.session.current_shank_idx)
+            loaded = self.probe_data_workflow.load(target_shank)
             stream_runtime = self._new_stream_runtime(loaded.stream)
             self.runtime.cache_loaded_stream(stream_runtime)
             self._attach_stream_runtime_to_session(
                 stream_runtime,
-                self.session.current_shank_idx,
+                target_shank,
             )
 
             if not self.session.probe_path:
@@ -2534,10 +2564,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Setup view for current shank (common with switch_shank_view)
             ctx.update_message("Setting up visualization...")
             self.setup_session_view(
-                preserve_plot_selection=prepared.preserve_plot_selection
+                preserve_plot_selection=prepared.preserve_plot_selection,
+                shank_idx=target_shank,
             )
 
-            self.controller.finish_load_data(self.session.current_shank_idx)
+            self.controller.finish_load_data(target_shank)
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
@@ -2741,9 +2772,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # probe's shank count, reset to shank 0.
             self.init_session_variables()
             self.session.init_shanks(self.data_context.n_shanks)
-            self.session.current_shank_idx = 0
-            self.controller.set_selected_shank(0)
-            self._sync_active_shank_alignment_state()
+            if self._select_shank_for_view_session(0, source="probe-selected") is None:
+                self.load_data_button.setEnabled(False)
+                return
             self.session.feature_prev = None
             self.session.track_prev = None
 

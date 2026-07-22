@@ -157,6 +157,48 @@ def test_queries_return_active_shank_selection_state() -> None:
     assert state.data_loaded
 
 
+def test_queries_identify_loaded_stream_shank() -> None:
+    document = AlignmentDocument()
+    document.select_alignment_key(AlignmentKey("rec", "stream", 1))
+    document.mark_data_loaded(True)
+    stream_runtime = SimpleNamespace(
+        stream_key=("rec", "stream"),
+        current_shank_idx=1,
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=stream_runtime,
+            current_stream_key=("rec", "stream"),
+        ),
+    )
+
+    assert queries.is_loaded_stream_shank(("rec", "stream"), 1)
+
+
+def test_queries_reject_loaded_stream_shank_mismatches() -> None:
+    document = AlignmentDocument()
+    document.select_alignment_key(AlignmentKey("rec", "stream", 1))
+    document.mark_data_loaded(True)
+    stream_runtime = SimpleNamespace(
+        stream_key=("rec", "stream"),
+        current_shank_idx=1,
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=stream_runtime,
+            current_stream_key=("rec", "stream"),
+        ),
+    )
+
+    assert not queries.is_loaded_stream_shank(("rec", "other-stream"), 1)
+    assert not queries.is_loaded_stream_shank(("rec", "stream"), 0)
+    assert not queries.is_loaded_stream_shank(None, 1)
+    document.mark_data_loaded(False)
+    assert not queries.is_loaded_stream_shank(("rec", "stream"), 1)
+
+
 def test_queries_build_plot_menu_state_from_active_runtime_shank() -> None:
     document = AlignmentDocument()
     document.select_alignment_key(
