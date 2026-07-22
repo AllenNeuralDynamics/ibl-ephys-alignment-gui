@@ -20,10 +20,6 @@ from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import ShankChanged
-from ephys_alignment_gui.alignment_read_models import (
-    ActiveSliceRenderState,
-    PerpendicularSliceRenderState,
-)
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -42,7 +38,7 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentRenderCallbacks,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
+from ephys_alignment_gui.ephys_alignment import EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.feature_plot_view import FeaturePlotView
@@ -61,7 +57,12 @@ from ephys_alignment_gui.settings import (
     OUTPUT_ROOT_ENV_VAR,
     output_root_from_environment,
 )
-from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
+from ephys_alignment_gui.slice_display_policy import SliceSelection
+from ephys_alignment_gui.slice_panel_presenter import (
+    SlicePanelPlots,
+    SlicePanelPresenter,
+    SlicePanelStyle,
+)
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
 from ephys_alignment_gui.workflow import (
@@ -275,6 +276,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
             style_factory=self.create_line_style,
             on_lines_changed=self._capture_pending_reference_lines,
+        )
+        self.slice_panel = SlicePanelPresenter(
+            app=self.app,
+            plots=SlicePanelPlots(
+                coronal=self.fig_slice,
+                coronal_layout=self.fig_slice_layout,
+                histogram_alt=self.fig_slice_hist_alt,
+                perpendicular=self.fig_hist_perp,
+            ),
+            style=SlicePanelStyle(
+                dotted_pen=self.kpen_dot,
+                solid_pen=self.kpen_solid,
+                reference_line_pen=self.reference_line_kpen,
+            ),
+            session_provider=lambda: self.session,
+            histology_exists=lambda: getattr(self, "histology_exists", False),
+            action_group_provider=lambda: getattr(self, "slice_options_group", None),
+            slice_item=self.slice_item,
         )
         self.desktop_alignment_presenter.configure(
             queries=self.app.queries,
@@ -1173,152 +1192,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fig.addItem(self.session.top_pos)
 
     def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
-        """
-        Plot the perpendicular histology slice for the current alignment.
-
-        Each column of the image is a line of voxels perpendicular to the
-        (smoothed) probe trajectory at a feature-space depth. Feature-space
-        y-axis lines up with ``fig_hist`` via the shared ``fig_hist_perp``
-        Y-link.
-
-        Parameters
-        ----------
-        channel_name : str
-            Which scalar-intensity volume to sample — ``"ccf"`` (the atlas
-            template, the default and same source as the "CCF" coronal slice)
-            or a histology channel name. This should match the channel shown in
-            the coronal ``fig_slice`` so the two are different views of the same
-            tissue and, with shared levels, render the same value as the same
-            colour.
-        """
-        if not self.histology_exists:
-            return
-
-        self.fig_hist_perp.clear()
-
-        render_state = self.app.queries.active_perpendicular_slice_state(channel_name)
-        if render_state is None:
-            return
-
-        self._render_perpendicular_histology(render_state)
-
-    def _render_perpendicular_histology(
-        self,
-        render_state: PerpendicularSliceRenderState,
-    ) -> None:
-        """Render a perpendicular slice payload with desktop plot items."""
-        # pyqtgraph's ImageItem default axisOrder is col-major: axis 0 -> x.
-        # Our sampler returns (n_perp, n_depths) so axis 0 is perpendicular
-        # (= x) and axis 1 is depth (= y) — exactly what we want.
-        self.session.perp_image_item = pg.ImageItem()
-        self.session.perp_image_item.setImage(render_state.image)
-
-        transform = [
-            render_state.scale_x_um,
-            0.0,
-            0.0,
-            0.0,
-            render_state.scale_y_um,
-            0.0,
-            -render_state.extent_um,
-            render_state.feature_min_um,
-            1.0,
-        ]
-        self.session.perp_image_item.setTransform(QtGui.QTransform(*transform))
-
-        if self.session.slice_color_bar is None:
-            self.session.slice_color_bar = ColorBar("cividis")
-        lut = self.session.slice_color_bar.getColourMap()
-        self.session.perp_image_item.setLookupTable(lut)
-
-        if self.session.slice_hist_levels is not None:
-            self.session.perp_image_item.setLevels(self.session.slice_hist_levels)
-
-        self.fig_hist_perp.addItem(self.session.perp_image_item)
-
-        self.fig_hist_perp.setXRange(
-            min=-render_state.extent_um,
-            max=render_state.extent_um,
-            padding=0,
-        )
-
-        if self.session.channel_status:
-            self.session.perp_probe_line = pg.InfiniteLine(
-                pos=0, angle=90, pen=self.kpen_dot
-            )
-            self.fig_hist_perp.addItem(self.session.perp_probe_line)
-
-            self.session.perp_channel_dots = pg.ScatterPlotItem()
-            self.session.perp_channel_dots.setData(
-                x=np.zeros(len(render_state.channel_depths_um)),
-                y=render_state.channel_depths_um,
-                pen="r",
-                brush="r",
-                size=4,
-            )
-            self.fig_hist_perp.addItem(self.session.perp_channel_dots)
-
-            self.session.perp_tip_marker = pg.ScatterPlotItem()
-            self.session.perp_tip_marker.setData(
-                x=[0],
-                y=[-TIP_SIZE_UM],
-                pen="m",
-                brush="m",
-                size=5,
-            )
-            self.fig_hist_perp.addItem(self.session.perp_tip_marker)
+        """Compatibility wrapper for perpendicular slice rendering."""
+        self.slice_panel.plot_perpendicular_histology(channel_name)
 
     def update_perpendicular_levels(self) -> None:
-        """
-        Sync perpendicular plot levels with main slice histogram levels.
-        """
-        if self.session.perp_image_item is None:
-            return
-        if getattr(self, "fig_slice_hist", None) is None:
-            return
-        levels = self.fig_slice_hist.getLevels()
-        self.session.perp_image_item.setLevels(levels)
-        self.session.slice_hist_levels = levels
+        """Compatibility wrapper for slice/perpendicular lookup synchronization."""
+        self.slice_panel.update_perpendicular_levels()
 
     def refresh_perpendicular_histology(self) -> None:
-        """Refresh perpendicular slice for the currently selected scalar slice."""
-        channel_name = self._current_scalar_slice_channel()
-        if channel_name is None:
-            return
-        self.plot_perpendicular_histology(channel_name)
+        """Compatibility wrapper for refreshing the perpendicular slice."""
+        self.slice_panel.refresh_perpendicular_histology()
 
     def _current_scalar_slice_channel(self) -> str | None:
-        """Return the selected scalar slice channel, if the slice UI has one."""
-        render_state = self._current_slice_render_state()
-        if render_state is None:
-            return None
-        return render_state.scalar_channel
+        """Compatibility wrapper for current scalar slice selection."""
+        return self.slice_panel.current_scalar_slice_channel()
 
-    def _current_slice_render_state(self) -> ActiveSliceRenderState | None:
-        """Return render state for the currently checked slice action."""
-        selection = self._current_slice_selection()
-        if selection is None:
-            return None
-        return self.app.queries.active_slice_render_state(selection)
+    def _current_slice_render_state(self) -> Any:
+        """Compatibility wrapper for current slice render state."""
+        return self.slice_panel.current_slice_render_state()
 
     def _current_slice_selection(self) -> SliceSelection | None:
-        """Return the slice selection stored on the checked QAction."""
-        if not hasattr(self, "slice_options_group"):
-            return None
-        action = self.slice_options_group.checkedAction()
-        if action is None:
-            return None
-        return SliceSelection.from_payload(action.data())
+        """Compatibility wrapper for current slice selection."""
+        return self.slice_panel.current_slice_selection()
 
     def _slice_action_for_selection(self, selection: SliceSelection) -> Any:
-        """Find the QAction that represents a slice selection."""
-        if not hasattr(self, "slice_options_group"):
-            return None
-        for action in self.slice_options_group.actions():
-            action_selection = SliceSelection.from_payload(action.data())
-            if action_selection == selection:
-                return action
-        return None
+        """Compatibility wrapper for slice QAction lookup."""
+        return self.slice_panel.action_for_selection(selection)
 
     def offset_hist_data(self, track_shift_m: float = 0.0) -> bool:
         """
@@ -1401,8 +1300,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             plot_histology=lambda: self.plot_histology(self.fig_hist),
             plot_scale_factor=self.plot_scale_factor,
             plot_fit=self.plot_fit,
-            plot_channels=self.plot_channels,
-            refresh_perpendicular_histology=self.refresh_perpendicular_histology,
+            plot_channels=self.slice_panel.plot_channels,
+            refresh_perpendicular_histology=(
+                self.slice_panel.refresh_perpendicular_histology
+            ),
             update_reference_lines_to_alignment=self.update_lines_points,
             create_reference_lines_for_previous_alignment=(
                 self._create_reference_lines_for_previous_alignment
@@ -1613,129 +1514,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_slice(self, data, img_type) -> None:
         """Compatibility wrapper for legacy slice-data call sites."""
-        selection = self._selection_for_slice_payload(data, img_type)
-        if selection is None:
-            logger.warning("Cannot resolve legacy slice payload '%s'", img_type)
-            return
-        self.plot_slice_selection(selection)
+        self.slice_panel.plot_slice(data, img_type)
 
     def _selection_for_slice_payload(
         self,
         data: Any,
         img_type: str,
     ) -> SliceSelection | None:
-        """Map a legacy slice mapping object back to a SliceSelection."""
-        state = self.app.queries.active_slice_data_state()
-        if state is None:
-            return None
-        if data is state.slice_data:
-            return SliceSelection("slice_data", img_type)
-        if data is state.fp_slice_data:
-            return SliceSelection("fp_slice_data", img_type)
-        return None
+        """Compatibility wrapper for legacy slice-data selection lookup."""
+        return self.slice_panel.selection_for_slice_payload(data, img_type)
 
     def plot_slice_selection(self, selection: SliceSelection) -> None:
-        """Render a coronal slice selection from the application read model."""
-        if not self.histology_exists:
-            return
-        render_state = self.app.queries.active_slice_render_state(selection)
-        if render_state is None:
-            logger.warning("No active slice render state for %s", selection)
-            return
-        self.render_slice(render_state)
+        """Compatibility wrapper for coronal slice selection rendering."""
+        self.slice_panel.plot_slice_selection(selection)
 
-    def render_slice(self, render_state: ActiveSliceRenderState) -> None:
-        """Render a coronal slice payload with desktop plot items."""
-        decision = render_state.decision
-
-        if not self.histology_exists:
-            return
-
-        self.fig_slice.clear()
-        self.session.slice_chns = []
-        self.session.slice_lines = []
-        img = pg.ImageItem()
-        img.setImage(render_state.image)
-        transform = [
-            render_state.scale[0],
-            0.0,
-            0.0,
-            0.0,
-            render_state.scale[1],
-            0.0,
-            render_state.offset[0],
-            render_state.offset[1],
-            1.0,
-        ]
-        img.setTransform(QtGui.QTransform(*transform))
-
-        # Remove previous histogram/colorbar if present
-        if self.slice_item is not None:
-            self.fig_slice_layout.removeItem(self.slice_item)
-            self.slice_item = None
-
-        if decision.kind is SliceImageKind.LABEL:
-            self.session.slice_hist_levels = None
-            self.session.perp_image_item = None
-            self.fig_hist_perp.clear()
-            self.fig_slice_layout.addItem(self.fig_slice_hist_alt, 0, 1)
-            self.slice_item = self.fig_slice_hist_alt
-        elif decision.kind is SliceImageKind.RGB:
-            # Pre-rendered RGBA image (e.g. coherency phase) —
-            # no colormap or histogram needed
-            self.session.slice_hist_levels = None
-            self.session.perp_image_item = None
-            self.fig_hist_perp.clear()
-        else:
-            self.session.slice_color_bar = ColorBar("cividis")
-            lut = self.session.slice_color_bar.getColourMap()
-            img.setLookupTable(lut)
-            self.fig_slice_hist = pg.HistogramLUTItem()
-            self.fig_slice_hist.axis.hide()
-            self.fig_slice_hist.setImageItem(img)
-            self.fig_slice_hist.gradient.setColorMap(self.session.slice_color_bar.map)
-            self.fig_slice_hist.autoHistogramRange()
-            self.fig_slice_layout.addItem(self.fig_slice_hist, 0, 1)
-            if decision.initial_levels is not None:
-                self.fig_slice_hist.setLevels(
-                    min=decision.initial_levels[0],
-                    max=decision.initial_levels[1],
-                )
-            else:
-                hist_levels = self.fig_slice_hist.getLevels()
-                hist_val, hist_count = img.getHistogram()
-                populated = np.where(hist_count > 10)[0]
-                if populated.size and hist_levels[0] != 0:
-                    upper_val = hist_val[populated[-1]]
-                    self.fig_slice_hist.setLevels(min=hist_levels[0], max=upper_val)
-
-            self.session.slice_hist_levels = self.fig_slice_hist.getLevels()
-
-            # Re-render the perpendicular slice from the SAME scalar channel now
-            # showing in the coronal view, so the two are different views of the
-            # same tissue. slice_hist_levels is set above, so the perp picks up
-            # matched levels (same value -> same colour).
-            if render_state.scalar_channel is not None:
-                self.plot_perpendicular_histology(render_state.scalar_channel)
-
-            # Live-update the perp levels as the user drags the histogram
-            # handles (sigLevelsChanged fires continuously; the finished-only
-            # signal would leave the perp lagging until release).
-            self.fig_slice_hist.sigLevelsChanged.connect(
-                self.update_perpendicular_levels
-            )
-
-            self.slice_item = self.fig_slice_hist
-
-        self.fig_slice.addItem(img)
-        self.session.traj_line = pg.PlotCurveItem()
-        self.session.traj_line.setData(
-            x=render_state.track_annos_and_ends_ras[:, 0],
-            y=render_state.track_annos_and_ends_ras[:, 2],
-            pen=self.kpen_solid,
-        )
-        self.fig_slice.addItem(self.session.traj_line)
-        self.plot_channels(render_state.projection)
+    def render_slice(self, render_state: Any) -> None:
+        """Compatibility wrapper for coronal slice rendering."""
+        self.slice_panel.render_slice(render_state)
 
     def in_brain_channel_depths(self):
         """Depths (um) of channels inside the brain for the current alignment.
@@ -1771,88 +1566,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return np.asarray(self.session.chn_depths)[in_brain]
 
     def plot_channels(self, projection=None) -> None:
-        # If no histology we can't do alignment
-        if not self.histology_exists:
-            return
-
-        self.session.channel_status = True
-        if projection is None:
-            projection = self.alignment_derived_data_service.compute_channel_projection(
-                ephysalign=self.session.ephysalign,
-                feature=self.session.features[self.session.idx],
-                track=self.session.track[self.session.idx],
-            )
-        self.session.channel_locations_ras = projection.channel_locations_ras
-        self.session.tip_location_ras = projection.tip_location_ras
-
-        if not self.session.slice_chns:
-            self.session.slice_lines = []
-            # Plot channels (red dots)
-            self.session.slice_chns = pg.ScatterPlotItem()
-            self.session.slice_chns.setData(
-                x=self.session.channel_locations_ras[:, 0],
-                y=self.session.channel_locations_ras[:, 2],
-                pen="r",
-                brush="r",
-                size=4,
-            )
-            self.fig_slice.addItem(self.session.slice_chns)
-
-            # Plot tip (pink/magenta dot, larger size)
-            self.session.slice_tip = pg.ScatterPlotItem()
-            self.session.slice_tip.setData(
-                x=[self.session.tip_location_ras[0]],
-                y=[self.session.tip_location_ras[2]],
-                pen="m",  # Magenta
-                brush="m",
-                size=5,  # Larger than the channel dots
-            )
-            self.fig_slice.addItem(self.session.slice_tip)
-
-            track_lines = projection.perpendicular_vectors
-
-            logger.debug(f"Reference lines: {track_lines}")
-            for ref_line in track_lines:
-                line = pg.PlotCurveItem()
-                line.setData(
-                    x=ref_line[:, 0],
-                    y=ref_line[:, 2],
-                    pen=self.reference_line_kpen,
-                )
-                self.fig_slice.addItem(line)
-                self.session.slice_lines.append(line)
-
-        else:
-            for line in self.session.slice_lines:
-                self.fig_slice.removeItem(line)
-            self.session.slice_lines = []
-            track_lines = projection.perpendicular_vectors
-
-            logger.debug(f"Reference lines: {track_lines}")
-            for ref_line in track_lines:
-                line = pg.PlotCurveItem()
-                line.setData(
-                    x=ref_line[:, 0],
-                    y=ref_line[:, 2],
-                    pen=self.reference_line_kpen,
-                )
-                self.fig_slice.addItem(line)
-                self.session.slice_lines.append(line)
-            # Update channels
-            self.session.slice_chns.setData(
-                x=self.session.channel_locations_ras[:, 0],
-                y=self.session.channel_locations_ras[:, 2],
-                pen="r",
-                brush="r",
-            )
-            # Update tip
-            self.session.slice_tip.setData(
-                x=[self.session.tip_location_ras[0]],
-                y=[self.session.tip_location_ras[2]],
-                pen="m",
-                brush="m",
-                size=10,
-            )
+        """Compatibility wrapper for coronal slice channel overlays."""
+        self.slice_panel.plot_channels(projection)
 
     def plot_scatter(self, data) -> None:
         """
@@ -2888,7 +2603,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.plot_histology_ref(self.fig_hist_ref)
         self.plot_histology(self.fig_hist)
-        self.refresh_perpendicular_histology()
+        self.slice_panel.refresh_perpendicular_histology()
         # force labels off then on to refresh
         # TODO better way to do this?
         self.session.label_status = False
@@ -3095,7 +2810,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("No default slice selection is available")
         else:
             choice = slice_menu_state.selection
-            selected_action = self._slice_action_for_selection(choice.selection)
+            selected_action = self.slice_panel.action_for_selection(choice.selection)
             if selected_action is None:
                 selected_action = self.slice_init
             if selected_action is None:
@@ -3113,7 +2828,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 selected_action.setChecked(True)
                 selected_selection = SliceSelection.from_payload(selected_action.data())
                 if selected_selection is not None:
-                    self.plot_slice_selection(selected_selection)
+                    self.slice_panel.plot_slice_selection(selected_selection)
 
         # Only configure the view on first launch
         self.set_view(view=1, configure=self.configure and not preserve_plot_selection)
@@ -3363,40 +3078,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
         and perpendicular slice image
         """
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        self.session.channel_status = not self.session.channel_status
-        if not self.session.channel_status:
-            self.fig_slice.removeItem(self.session.traj_line)
-            self.fig_slice.removeItem(self.session.slice_chns)
-            if self.session.slice_tip is not None:
-                self.fig_slice.removeItem(self.session.slice_tip)
-            for line in self.session.slice_lines:
-                self.fig_slice.removeItem(line)
-
-            if self.session.perp_probe_line is not None:
-                self.fig_hist_perp.removeItem(self.session.perp_probe_line)
-            if self.session.perp_channel_dots is not None:
-                self.fig_hist_perp.removeItem(self.session.perp_channel_dots)
-            if self.session.perp_tip_marker is not None:
-                self.fig_hist_perp.removeItem(self.session.perp_tip_marker)
-
-        else:
-            self.fig_slice.addItem(self.session.traj_line)
-            self.fig_slice.addItem(self.session.slice_chns)
-            if self.session.slice_tip is not None:
-                self.fig_slice.addItem(self.session.slice_tip)
-            for line in self.session.slice_lines:
-                self.fig_slice.addItem(line)
-
-            if self.session.perp_probe_line is not None:
-                self.fig_hist_perp.addItem(self.session.perp_probe_line)
-            if self.session.perp_channel_dots is not None:
-                self.fig_hist_perp.addItem(self.session.perp_channel_dots)
-            if self.session.perp_tip_marker is not None:
-                self.fig_hist_perp.addItem(self.session.perp_tip_marker)
+        self.slice_panel.toggle_channel_visibility()
 
     def delete_line_button_pressed(self) -> None:
         """

@@ -458,7 +458,7 @@ class Setup:
             action.setData(item.selection.to_payload())
             action.triggered.connect(
                 lambda _checked=False, selection=item.selection: (
-                    self.plot_slice_selection(selection)
+                    self.slice_panel.plot_slice_selection(selection)
                 )
             )
             slice_options.addAction(action)
