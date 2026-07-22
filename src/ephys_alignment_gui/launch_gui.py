@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import QApplication
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import (
     AlignmentChanged,
-    LineUpdateMode,
+    AlignmentEdited,
     ShankChanged,
 )
 from ephys_alignment_gui.controller import (
@@ -37,6 +37,10 @@ from ephys_alignment_gui.controller import (
     ShankSelected,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
+from ephys_alignment_gui.desktop_alignment_presenter import (
+    DesktopAlignmentPresenter,
+    desktop_presentation_options_for_edit,
+)
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
@@ -239,6 +243,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.app = self.workspace.app
         self.runtime = self.workspace.runtime
         self.document = self.workspace.document
+        self.display_state = self.workspace.display_state
         self.data_context = self.workspace.data_context
         self.probe_data_workflow = self.workspace.probe_data_workflow
         self.histology_data_service = self.workspace.histology_data_service
@@ -250,6 +255,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.alignment_derived_data_service = (
             self.workspace.alignment_derived_data_service
         )
+        self.desktop_alignment_presenter = DesktopAlignmentPresenter(self.app.events)
         self.plot_data_factory = self.workspace.plot_data_factory
         self.slice_display_policy = self.workspace.slice_display_policy
 
@@ -352,6 +358,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
         self.runtime.new_session()
+        self.display_state.reset_region_annotation_source()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -1396,12 +1403,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        result = self.controller.offset_alignment_from_tip(
+        result = self.app.commands.offset_alignment_from_tip(
             tip_position_um=self.session.tip_pos.value(),
             probe_tip_um=self.session.probe_tip,
             lin_fit=self.session.lin_fit,
             track_shift_m=track_shift_m,
-            shank_idx=self.session.current_shank_idx,
         )
         if isinstance(result, Failed):
             logger.error(result.message)
@@ -1429,7 +1435,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error("Cannot fit alignment: active shank runtime is not loaded")
             return False
 
-        result = self.controller.fit_alignment_to_reference_lines(
+        result = self.app.commands.fit_alignment_to_reference_lines(
             shank_runtime,
             line_features_um=line_feature,
             line_tracks_um=line_track,
@@ -1442,20 +1448,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return isinstance(result, AlignmentEditApplied)
 
     def get_scaled_histology(self) -> None:
-        derived = self.alignment_derived_data_service.compute_histology(
-            ephysalign=self.session.ephysalign,
-            feature=self.session.features[self.session.idx],
-            track=self.session.track[self.session.idx],
-            histology_mapping=self.session.hist_mapping,
-            region_fp=self.session.region_fp,
-            region_label_fp=self.session.region_label_fp,
-            region_colour_fp=self.session.region_colour_fp,
-        )
-        self._apply_alignment_histology_data(derived)
+        render_state = self.app.queries.active_alignment_render_state()
+        if render_state is None:
+            logger.error("Cannot scale histology: active alignment data is not loaded")
+            return
+        self._apply_alignment_histology_data(render_state.histology)
 
     def _connect_alignment_changed_handlers(self) -> None:
         self._event_subscriptions.extend(
             [
+                self.app.events.subscribe(
+                    AlignmentEdited,
+                    self._on_alignment_edited,
+                ),
                 self.app.events.subscribe(
                     AlignmentChanged,
                     self._on_alignment_changed_apply_data,
@@ -1504,41 +1509,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.app.events.subscribe(ShankChanged, self._on_shank_changed)
         )
 
-    def _emit_alignment_changed(
-        self,
-        *,
-        source: str,
-        line_update: LineUpdateMode = "none",
-        reset_histology_range: bool = False,
-        refresh_perpendicular: bool = True,
-        preserve_depth_range: bool = False,
-    ) -> None:
+    def _on_alignment_edited(self, event: AlignmentEdited) -> None:
+        options = desktop_presentation_options_for_edit(event.edit_kind)
+        self._restore_lin_fit_from_edit(event.lin_fit)
+        render_state = self.app.queries.active_alignment_render_state()
+        if render_state is None:
+            logger.error("Cannot refresh alignment: active alignment data is not loaded")
+            return
+        if options.clear_reference_lines:
+            self.reference_lines.clear()
         depth_ranges = (
-            self._capture_depth_plot_y_ranges() if preserve_depth_range else {}
-        )
-        event = AlignmentChanged(
-            source=source,
-            active_alignment=self.session.active_alignment,
-            histology=self.alignment_derived_data_service.compute_histology(
-                ephysalign=self.session.ephysalign,
-                feature=self.session.features[self.session.idx],
-                track=self.session.track[self.session.idx],
-                histology_mapping=self.session.hist_mapping,
-                region_fp=self.session.region_fp,
-                region_label_fp=self.session.region_label_fp,
-                region_colour_fp=self.session.region_colour_fp,
-            ),
-            projection=self.alignment_derived_data_service.compute_channel_projection(
-                ephysalign=self.session.ephysalign,
-                feature=self.session.features[self.session.idx],
-                track=self.session.track[self.session.idx],
-            ),
-            line_update=line_update,
-            reset_histology_range=reset_histology_range,
-            refresh_perpendicular=refresh_perpendicular,
+            self._capture_depth_plot_y_ranges()
+            if options.preserve_depth_range
+            else {}
         )
         try:
-            self.app.events.emit(event)
+            self.desktop_alignment_presenter.emit_legacy_alignment_changed(
+                render_state=render_state,
+                source=event.edit_kind,
+                line_update=options.line_update,
+                reset_histology_range=options.reset_histology_range,
+                refresh_perpendicular=options.refresh_perpendicular,
+            )
         finally:
             if depth_ranges:
                 self._restore_depth_plot_y_ranges(depth_ranges)
@@ -3378,10 +3370,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.plot_histology_ref(self.fig_hist_ref)
 
     def toggle_histology_map_button_pressed(self) -> None:
-        if self.session.hist_mapping == "Allen":
-            self.session.hist_mapping = "FP"
-        else:
-            self.session.hist_mapping = "Allen"
+        self.display_state.toggle_region_annotation_source()
 
         self.get_scaled_histology()
         self.plot_histology(self.fig_hist)
@@ -3439,11 +3428,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.scale_hist_data():
             return
-        self._emit_alignment_changed(
-            source="fit",
-            line_update="sync_to_alignment",
-            preserve_depth_range=True,
-        )
 
     def offset_button_pressed(
         self, _checked: bool = False, *, track_shift_m: float = 0.0
@@ -3460,10 +3444,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.offset_hist_data(track_shift_m=track_shift_m):
             return
-        self._emit_alignment_changed(
-            source="offset",
-            line_update="sync_to_alignment",
-        )
 
     def movedown_button_pressed(self) -> None:
         """
@@ -3642,13 +3622,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        result = self.controller.go_next_alignment(self.session.current_shank_idx)
+        result = self.app.commands.go_next_alignment()
         if isinstance(result, Failed):
             logger.error(result.message)
             return
-        if isinstance(result, AlignmentEditApplied):
-            self._restore_lin_fit_from_edit(result.lin_fit)
-            self._emit_alignment_changed(source="next", line_update="reattach")
 
     def prev_button_pressed(self) -> None:
         """
@@ -3660,13 +3637,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        result = self.controller.go_previous_alignment(self.session.current_shank_idx)
+        result = self.app.commands.go_previous_alignment()
         if isinstance(result, Failed):
             logger.error(result.message)
             return
-        if isinstance(result, AlignmentEditApplied):
-            self._restore_lin_fit_from_edit(result.lin_fit)
-            self._emit_alignment_changed(source="previous", line_update="reattach")
 
     def reset_button_pressed(self) -> None:
         """
@@ -3682,7 +3656,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error("Cannot reset alignment: active shank runtime is not loaded")
             return
 
-        result = self.controller.reset_alignment_to_initial(
+        result = self.app.commands.reset_alignment_to_initial(
             shank_runtime,
             lin_fit=self.session.lin_fit,
         )
@@ -3691,18 +3665,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         if not isinstance(result, AlignmentEditApplied):
             return
-
-        self.reference_lines.clear()
-        clear_lines = self.controller.clear_pending_reference_lines(
-            self.session.current_shank_idx
-        )
-        if isinstance(clear_lines, Failed):
-            logger.error(clear_lines.message)
-        self._emit_alignment_changed(
-            source="reset",
-            line_update="reset_to_previous",
-            reset_histology_range=True,
-        )
 
     def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
         if lin_fit is None:

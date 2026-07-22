@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.alignment_derived_data_service import (
+    AlignmentDerivedDataService,
+)
+from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.alignment_events import (
+    AlignmentEdited,
+    AlignmentEditKind,
+    ShankChanged,
+)
+from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentController,
+    AlignmentEditApplied,
+    AlignmentEditNoop,
     Failed,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
@@ -29,6 +40,7 @@ from ephys_alignment_gui.plot_registry import (
     resolve_plot_payload,
 )
 from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.workflow import Ok
 
 logger = logging.getLogger(__name__)
@@ -158,6 +170,108 @@ class AlignmentCommands:
         """Return whether previous alignments can be loaded."""
         return self._controller.can_load_previous_alignments()
 
+    def offset_alignment_from_tip(
+        self,
+        *,
+        tip_position_um: float,
+        probe_tip_um: float,
+        lin_fit: bool,
+        track_shift_m: float = 0.0,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply an offset edit on a document-selected shank."""
+        result = self._controller.offset_alignment_from_tip(
+            tip_position_um=tip_position_um,
+            probe_tip_um=probe_tip_um,
+            lin_fit=lin_fit,
+            track_shift_m=track_shift_m,
+            shank_idx=self._active_or_given_shank(shank_idx),
+        )
+        self._emit_alignment_edited("offset", result)
+        return result
+
+    def fit_alignment_to_reference_lines(
+        self,
+        shank_runtime: Any,
+        *,
+        line_features_um: Any,
+        line_tracks_um: Any,
+        lin_fit: bool,
+        extend_feature: int,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply a reference-line fit for a document-selected shank runtime."""
+        result = self._controller.fit_alignment_to_reference_lines(
+            shank_runtime,
+            line_features_um=line_features_um,
+            line_tracks_um=line_tracks_um,
+            lin_fit=lin_fit,
+            extend_feature=extend_feature,
+        )
+        self._emit_alignment_edited("fit", result)
+        return result
+
+    def go_next_alignment(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Move the active alignment edit cursor forward."""
+        result = self._controller.go_next_alignment(
+            self._active_or_given_shank(shank_idx)
+        )
+        self._emit_alignment_edited("next", result)
+        return result
+
+    def go_previous_alignment(
+        self,
+        shank_idx: int | None = None,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Move the active alignment edit cursor backward."""
+        result = self._controller.go_previous_alignment(
+            self._active_or_given_shank(shank_idx)
+        )
+        self._emit_alignment_edited("previous", result)
+        return result
+
+    def reset_alignment_to_initial(
+        self,
+        shank_runtime: Any,
+        *,
+        lin_fit: bool,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Reset active alignment state to the loaded runtime's initial geometry."""
+        result = self._controller.reset_alignment_to_initial(
+            shank_runtime,
+            lin_fit=lin_fit,
+        )
+        if isinstance(result, AlignmentEditApplied):
+            clear_result = self._controller.clear_pending_reference_lines(
+                shank_runtime.shank_idx
+            )
+            if isinstance(clear_result, Failed):
+                logger.error(clear_result.message)
+            self._emit_alignment_edited("reset", result)
+        return result
+
+    def _emit_alignment_edited(
+        self,
+        edit_kind: AlignmentEditKind,
+        result: AlignmentEditApplied | AlignmentEditNoop | Failed,
+    ) -> None:
+        if not isinstance(result, AlignmentEditApplied):
+            return
+        active_key = self._controller.document.selected_alignment_key
+        if active_key is None:
+            logger.error("Cannot emit alignment edit event without an active key")
+            return
+        self._events.emit(
+            AlignmentEdited(
+                edit_kind=edit_kind,
+                active_key=active_key,
+                active_alignment=result.alignment,
+                lin_fit=result.lin_fit,
+            )
+        )
+
 
 @dataclass
 class AlignmentQueries:
@@ -165,6 +279,10 @@ class AlignmentQueries:
 
     document: AlignmentDocument
     runtime: SessionRuntime
+    display_state: AlignmentDisplayState = field(default_factory=AlignmentDisplayState)
+    derived_data_service: AlignmentDerivedDataService = field(
+        default_factory=AlignmentDerivedDataService
+    )
 
     def active_shank_selection(self) -> ShankSelectionState:
         """Return the current document-owned shank selection."""
@@ -259,6 +377,39 @@ class AlignmentQueries:
             return None
         return resolve_plot_bounds(plotdata, spec)
 
+    def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
+        """Return derived render data for the active alignment, if available."""
+        key = self.document.selected_alignment_key
+        state = self.document.active_alignment_state
+        if key is None or state is None:
+            return None
+        active_alignment = state.active_alignment
+        if active_alignment is None:
+            return None
+        shank_runtime = self._active_shank_runtime()
+        if shank_runtime is None or shank_runtime.ephysalign is None:
+            return None
+        return ActiveAlignmentRenderState(
+            key=key,
+            active_alignment=active_alignment,
+            histology=self.derived_data_service.compute_histology(
+                ephysalign=shank_runtime.ephysalign,
+                feature=active_alignment.feature,
+                track=active_alignment.track,
+                region_annotation_source=(
+                    self.display_state.region_annotation_source
+                ),
+                region_fp=shank_runtime.region_fp,
+                region_label_fp=shank_runtime.region_label_fp,
+                region_colour_fp=shank_runtime.region_colour_fp,
+            ),
+            projection=self.derived_data_service.compute_channel_projection(
+                ephysalign=shank_runtime.ephysalign,
+                feature=active_alignment.feature,
+                track=active_alignment.track,
+            ),
+        )
+
     def _plot_menu_state_for_plotdata(
         self,
         plotdata: Any,
@@ -288,6 +439,12 @@ class AlignmentQueries:
         if stream_runtime is None:
             return legacy_plotdata
         return stream_runtime.plot_data_for_shank(self._active_shank_idx())
+
+    def _active_shank_runtime(self) -> ShankRuntime | None:
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is None:
+            return None
+        return stream_runtime.shank_runtime_by_idx.get(self._active_shank_idx())
 
     def _active_shank_idx(self) -> int:
         key = self.document.selected_alignment_key

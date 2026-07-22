@@ -7,6 +7,8 @@ from typing import Any
 
 from numpy.typing import NDArray
 
+from ephys_alignment_gui.alignment_display_state import RegionAnnotationSource
+
 
 @dataclass(frozen=True)
 class HistologyPlotData:
@@ -52,13 +54,13 @@ class AlignmentDerivedDataService:
         ephysalign: Any,
         feature: NDArray[Any],
         track: NDArray[Any],
-        histology_mapping: str,
+        region_annotation_source: RegionAnnotationSource,
         region_fp: Any = None,
         region_label_fp: Any = None,
         region_colour_fp: Any = None,
     ) -> AlignmentHistologyData:
         """Compute scaled histology and scale factors for one alignment."""
-        if histology_mapping == "Allen":
+        if region_annotation_source == "Allen":
             region, axis_label = ephysalign.scale_histology_regions(feature, track)
             colour = ephysalign.region_colour
             scale_region, scale = ephysalign.get_scale_factor(region)
@@ -69,7 +71,7 @@ class AlignmentDerivedDataService:
                 )
             )
             reference_colour = ephysalign.region_colour
-        elif histology_mapping == "FP":
+        elif region_annotation_source == "FranklinPaxinos":
             region, axis_label = ephysalign.scale_histology_regions(
                 feature,
                 track,
@@ -91,7 +93,9 @@ class AlignmentDerivedDataService:
             )
             reference_colour = region_colour_fp
         else:
-            raise ValueError(f"Unknown histology mapping: {histology_mapping}")
+            raise ValueError(
+                f"Unknown region annotation source: {region_annotation_source}"
+            )
 
         return AlignmentHistologyData(
             histology=HistologyPlotData(

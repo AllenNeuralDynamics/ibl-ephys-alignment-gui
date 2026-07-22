@@ -42,14 +42,14 @@ class FakeEphysAlignment:
         return [np.array([[feature[0], 0.0, track[0]], [feature[-1], 0.0, track[-1]]])]
 
 
-def test_compute_histology_for_allen_mapping() -> None:
+def test_compute_histology_for_allen_annotation_source() -> None:
     ephysalign = FakeEphysAlignment()
 
     derived = AlignmentDerivedDataService().compute_histology(
         ephysalign=ephysalign,
         feature=np.array([0.0, 4.0]),
         track=np.array([10.0, 14.0]),
-        histology_mapping="Allen",
+        region_annotation_source="Allen",
     )
 
     np.testing.assert_array_equal(derived.histology.region, [[10.0, 20.0]])
@@ -64,7 +64,7 @@ def test_compute_histology_for_allen_mapping() -> None:
     assert ephysalign.scale_factor_calls[0][1] is None
 
 
-def test_compute_histology_for_fp_mapping() -> None:
+def test_compute_histology_for_franklin_paxinos_annotation_source() -> None:
     ephysalign = FakeEphysAlignment()
     region_fp = np.array([[0.0, 1.0]])
     region_label_fp = np.array([[0.5, "FP"]], dtype=object)
@@ -74,7 +74,7 @@ def test_compute_histology_for_fp_mapping() -> None:
         ephysalign=ephysalign,
         feature=np.array([0.0, 4.0]),
         track=np.array([10.0, 14.0]),
-        histology_mapping="FP",
+        region_annotation_source="FranklinPaxinos",
         region_fp=region_fp,
         region_label_fp=region_label_fp,
         region_colour_fp=region_colour_fp,
@@ -90,13 +90,13 @@ def test_compute_histology_for_fp_mapping() -> None:
     assert ephysalign.scale_factor_calls[0][1] is region_fp
 
 
-def test_compute_histology_rejects_unknown_mapping() -> None:
-    with pytest.raises(ValueError, match="Unknown histology mapping"):
+def test_compute_histology_rejects_unknown_annotation_source() -> None:
+    with pytest.raises(ValueError, match="Unknown region annotation source"):
         AlignmentDerivedDataService().compute_histology(
             ephysalign=FakeEphysAlignment(),
             feature=np.array([0.0, 4.0]),
             track=np.array([10.0, 14.0]),
-            histology_mapping="Other",
+            region_annotation_source="Other",
         )
 
 

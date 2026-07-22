@@ -7,11 +7,14 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.active_alignment import ActiveAlignment
+from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
 from ephys_alignment_gui.alignment_repository import LoadedAlignmentHistory
 from ephys_alignment_gui.app import AlignmentQueries
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
+    AlignmentEditApplied,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     ShankSelected,
@@ -51,6 +54,7 @@ class FakePlotData:
 class FakeStreamRuntime:
     def __init__(self) -> None:
         self.calls: list[int] = []
+        self.shank_runtime_by_idx = {}
         self.plotdata_by_shank = {
             1: FakePlotData("shank-1"),
             2: FakePlotData("shank-2"),
@@ -71,6 +75,20 @@ class FakeAlignmentRepository:
         if self.loaded_alignments is None:
             return None
         return LoadedAlignmentHistory(self.loaded_alignments)
+
+
+class FakeDerivedDataService:
+    def __init__(self) -> None:
+        self.histology_kwargs = None
+        self.projection_kwargs = None
+
+    def compute_histology(self, **kwargs):
+        self.histology_kwargs = kwargs
+        return "histology"
+
+    def compute_channel_projection(self, **kwargs):
+        self.projection_kwargs = kwargs
+        return "projection"
 
 
 def _workspace_with_probe_state(
@@ -229,6 +247,106 @@ def test_commands_select_previous_alignment_defaults_to_active_shank() -> None:
     assert workspace.document.alignment_state_for(other_key).feature_prev is None
 
 
+def test_commands_offset_alignment_defaults_to_active_shank() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    events: list[AlignmentEdited] = []
+    workspace.app.events.subscribe(AlignmentEdited, events.append)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+        lin_fit=True,
+    )
+
+    result = workspace.app.commands.offset_alignment_from_tip(
+        tip_position_um=100.0,
+        probe_tip_um=0.0,
+        lin_fit=False,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_allclose(result.alignment.track, [10.0001, 14.0001])
+    assert result.lin_fit is False
+    np.testing.assert_allclose(state.active_alignment.track, [10.0001, 14.0001])
+    assert len(events) == 1
+    assert events[0].edit_kind == "offset"
+    assert events[0].active_key == active_key
+    assert events[0].active_alignment == result.alignment
+    assert events[0].lin_fit is False
+
+
+def test_commands_previous_next_alignment_default_to_active_shank() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+        lin_fit=True,
+    )
+    workspace.app.commands.offset_alignment_from_tip(
+        tip_position_um=100.0,
+        probe_tip_um=0.0,
+        lin_fit=False,
+    )
+
+    previous_result = workspace.app.commands.go_previous_alignment()
+    next_result = workspace.app.commands.go_next_alignment()
+
+    assert isinstance(previous_result, AlignmentEditApplied)
+    np.testing.assert_allclose(previous_result.alignment.track, [10.0, 14.0])
+    assert previous_result.lin_fit is True
+    assert isinstance(next_result, AlignmentEditApplied)
+    np.testing.assert_allclose(next_result.alignment.track, [10.0001, 14.0001])
+    assert next_result.lin_fit is False
+
+
+def test_commands_do_not_emit_alignment_event_for_noop_edit() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    events: list[AlignmentEdited] = []
+    workspace.app.events.subscribe(AlignmentEdited, events.append)
+
+    result = workspace.app.commands.go_next_alignment()
+
+    assert not isinstance(result, AlignmentEditApplied)
+    assert events == []
+
+
+def test_commands_reset_alignment_to_initial_clears_pending_lines() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    pending_lines_at_event: list[object] = []
+    workspace.app.events.subscribe(
+        AlignmentEdited,
+        lambda _event: pending_lines_at_event.append(state.pending_reference_lines),
+    )
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+    )
+    workspace.document.active_set_pending_reference_lines([10.0], [11.0])
+    shank_runtime = SimpleNamespace(
+        shank_idx=1,
+        ephysalign=SimpleNamespace(
+            feature_init=np.array([1.0, 3.0]),
+            track_init=np.array([2.0, 4.0]),
+        ),
+    )
+
+    result = workspace.app.commands.reset_alignment_to_initial(
+        shank_runtime,
+        lin_fit=False,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_allclose(result.alignment.feature, [1.0, 3.0])
+    np.testing.assert_allclose(result.alignment.track, [2.0, 4.0])
+    assert state.pending_reference_lines is None
+    assert pending_lines_at_event == [None]
+
+
 def test_queries_return_active_shank_selection_state() -> None:
     document = AlignmentDocument()
     key = AlignmentKey("rec", "stream", 2)
@@ -353,3 +471,77 @@ def test_queries_fail_closed_without_plotdata_or_raw_payloads() -> None:
 
     assert not state.group("image").enabled
     assert queries.active_plot_payload("image.fr") is None
+
+
+def test_queries_build_active_alignment_render_state_from_document_runtime() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    state.active_alignment = active_alignment
+    display_state = AlignmentDisplayState(
+        region_annotation_source="FranklinPaxinos"
+    )
+    shank_runtime = SimpleNamespace(
+        ephysalign="aligner",
+        region_fp="region-fp",
+        region_label_fp="region-label-fp",
+        region_colour_fp="region-colour-fp",
+    )
+    derived = FakeDerivedDataService()
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        display_state=display_state,
+        derived_data_service=derived,
+    )
+
+    render_state = queries.active_alignment_render_state()
+
+    assert render_state is not None
+    assert render_state.key == key
+    np.testing.assert_allclose(
+        render_state.active_alignment.feature,
+        active_alignment.feature,
+    )
+    np.testing.assert_allclose(
+        render_state.active_alignment.track,
+        active_alignment.track,
+    )
+    assert render_state.histology == "histology"
+    assert render_state.projection == "projection"
+    assert derived.histology_kwargs["ephysalign"] == "aligner"
+    assert derived.histology_kwargs["feature"] is render_state.active_alignment.feature
+    assert derived.histology_kwargs["track"] is render_state.active_alignment.track
+    assert (
+        derived.histology_kwargs["region_annotation_source"]
+        == "FranklinPaxinos"
+    )
+    assert derived.histology_kwargs["region_fp"] == "region-fp"
+    assert derived.histology_kwargs["region_label_fp"] == "region-label-fp"
+    assert derived.histology_kwargs["region_colour_fp"] == "region-colour-fp"
+    assert derived.projection_kwargs["ephysalign"] == "aligner"
+    assert derived.projection_kwargs["feature"] is render_state.active_alignment.feature
+    assert derived.projection_kwargs["track"] is render_state.active_alignment.track
+
+
+def test_queries_active_alignment_render_state_fails_closed_without_runtime() -> None:
+    document = AlignmentDocument()
+    state = document.select_alignment_key(AlignmentKey("rec", "stream", 1))
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(active_stream_runtime=None),
+    )
+
+    assert queries.active_alignment_render_state() is None

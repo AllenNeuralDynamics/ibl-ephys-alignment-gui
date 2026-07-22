@@ -18,11 +18,32 @@ LineUpdateMode = Literal[
     "sync_to_alignment",
     "reset_to_previous",
 ]
+AlignmentEditKind = Literal[
+    "fit",
+    "offset",
+    "next",
+    "previous",
+    "reset",
+]
+
+
+@dataclass(frozen=True)
+class AlignmentEdited:
+    """Application event emitted after editable alignment state changes.
+
+    This is the durable command-level event. It intentionally carries no
+    plot-specific payloads or desktop refresh instructions.
+    """
+
+    edit_kind: AlignmentEditKind
+    active_key: AlignmentKey
+    active_alignment: ActiveAlignment
+    lin_fit: bool | None = None
 
 
 @dataclass(frozen=True)
 class AlignmentChanged:
-    """Payload emitted after the active alignment has changed."""
+    """Desktop render payload emitted after the active alignment changes."""
 
     source: str
     active_alignment: ActiveAlignment | None

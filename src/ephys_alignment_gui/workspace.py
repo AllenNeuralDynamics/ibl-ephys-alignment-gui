@@ -8,6 +8,7 @@ from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
+from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
@@ -40,6 +41,7 @@ class AlignmentWorkspace:
     """
 
     document: AlignmentDocument = field(default_factory=AlignmentDocument)
+    display_state: AlignmentDisplayState = field(default_factory=AlignmentDisplayState)
     data_context: AlignmentDataContext = field(default_factory=AlignmentDataContext)
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
     histology_data_service: HistologyDataService = field(
@@ -95,6 +97,8 @@ class AlignmentWorkspace:
             queries=AlignmentQueries(
                 document=self.document,
                 runtime=self.runtime,
+                display_state=self.display_state,
+                derived_data_service=self.alignment_derived_data_service,
             ),
             events=self.events,
         )

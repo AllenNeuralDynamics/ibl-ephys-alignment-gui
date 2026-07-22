@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from numpy.typing import NDArray
 
@@ -176,8 +177,8 @@ class AlignmentDocument:
 
     def active_set_pending_reference_lines(
         self,
-        feature_positions_um,
-        track_positions_um,
+        feature_positions_um: Any,
+        track_positions_um: Any,
     ) -> PendingReferenceLines | None:
         """Store active-state reference-line coordinates."""
         state = self._require_active_alignment_state()

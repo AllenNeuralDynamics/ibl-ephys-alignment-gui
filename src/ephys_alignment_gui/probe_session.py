@@ -174,7 +174,6 @@ class ProbeSession:
         self.hist_nearby_parent_x: Any = None
         self.hist_nearby_parent_y: Any = None
         self.hist_nearby_parent_col: Any = None
-        self.hist_mapping: str = "Allen"
 
         # NOTE: fit history (track/features/lin_fit_history + idx cursors),
         # track/channel-location arrays, chn_depths, ephysalign, the selected
