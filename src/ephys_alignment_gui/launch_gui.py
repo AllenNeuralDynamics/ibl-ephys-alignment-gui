@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.alignment_read_models import PerpendicularSliceRenderState
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -1193,113 +1194,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.fig_hist_perp.clear()
 
-        # Build a uniform feature-space grid in metres covering the current
-        # fig_hist display range. Sampling density matches the atlas DV voxel
-        # size so the rows line up row-for-row with the histology plot.
-        #
-        # Span the full annotation-region depth extent that fig_hist draws
-        # (fig_hist_perp is Y-linked to fig_hist), not just the probe: the
-        # region rectangles run over the whole track, so bounding the grid to
-        # the probe span leaves the perp empty below the deepest contact. The
-        # probe span is kept as a floor so a degenerate/empty region set falls
-        # back to the previous behaviour. The trajectory is extrapolated past
-        # the track ends (see position_and_tangent_at_arc_lengths), so deeper
-        # rows continue the straight probe line; out-of-volume samples stay
-        # transparent.
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            return
-        dv_voxel_m = abs(brain_atlas.bc.dxyz[2])
-        feat_min_um = self.session.probe_tip - self.session.probe_extra
-        feat_max_um = self.session.probe_top + self.session.probe_extra
-        regions = self.session.hist_data.get("region")
-        if regions is not None and len(regions):
-            reg = np.asarray(regions, dtype=float)
-            feat_min_um = min(feat_min_um, float(reg.min()))
-            feat_max_um = max(feat_max_um, float(reg.max()))
-        n_depths = int(round((feat_max_um - feat_min_um) * 1e-6 / dv_voxel_m)) + 1
-        feature_grid_um = np.linspace(feat_min_um, feat_max_um, n_depths)
-        feature_grid_m = feature_grid_um * 1e-6
-
-        extent_m = 500e-6
-        n_perp_samples = int(round(2 * extent_m / dv_voxel_m)) + 1
-        extent_um = extent_m * 1e6
-
-        alignment = self.session.active_alignment
-        if alignment is None:
+        render_state = self.app.queries.active_perpendicular_slice_state(channel_name)
+        if render_state is None:
             return
 
-        shank_runtime = self.session.active_shank.runtime
-        slice_runtime = (
-            shank_runtime.slice_runtime if shank_runtime is not None else None
-        )
-        alignment_key = self.document.selected_alignment_key
+        self._render_perpendicular_histology(render_state)
 
-        def build_perpendicular_image():
-            return self.slice_service.build_perpendicular_slice_image(
-                brain_atlas=brain_atlas,
-                histology_images=self.histology_context.histology_images,
-                lazy_channel_paths=self.histology_context.lazy_channel_paths,
-                ephysalign=self.session.ephysalign,
-                feature_ref=alignment.feature,
-                track_ref=alignment.track,
-                feature_grid_m=feature_grid_m,
-                channel_name=channel_name,
-                extent_m=extent_m,
-                n_perp_samples=n_perp_samples,
-            )
-
-        try:
-            if slice_runtime is None or alignment_key is None:
-                perp_image = build_perpendicular_image()
-            else:
-                cache_key = slice_runtime.perpendicular_key(
-                    alignment_key=alignment_key,
-                    channel_name=channel_name,
-                    track_interpolation_ras=(
-                        self.session.ephysalign.track_interpolation_ras
-                    ),
-                    ephys_depths_along_track=(
-                        self.session.ephysalign.ephys_depths_along_track
-                    ),
-                    feature_ref=alignment.feature,
-                    track_ref=alignment.track,
-                    feature_grid_m=feature_grid_m,
-                    extent_m=extent_m,
-                    n_perp_samples=n_perp_samples,
-                )
-                perp_image = slice_runtime.get_or_build_perpendicular_slice(
-                    key=cache_key,
-                    builder=build_perpendicular_image,
-                )
-        except Exception:
-            # Channel can't be sampled as a scalar volume (e.g. an online-only
-            # slice). Leave the perp view empty rather than crashing the coronal
-            # slice redraw that called us.
-            logger.warning(
-                "Could not build perpendicular slice for channel '%s'",
-                channel_name,
-                exc_info=True,
-            )
-            return
-
+    def _render_perpendicular_histology(
+        self,
+        render_state: PerpendicularSliceRenderState,
+    ) -> None:
+        """Render a perpendicular slice payload with desktop plot items."""
         # pyqtgraph's ImageItem default axisOrder is col-major: axis 0 -> x.
         # Our sampler returns (n_perp, n_depths) so axis 0 is perpendicular
         # (= x) and axis 1 is depth (= y) — exactly what we want.
         self.session.perp_image_item = pg.ImageItem()
-        self.session.perp_image_item.setImage(perp_image)
+        self.session.perp_image_item.setImage(render_state.image)
 
-        scale_x = (2 * extent_um) / (n_perp_samples - 1) if n_perp_samples > 1 else 1.0
-        scale_y = (feat_max_um - feat_min_um) / (n_depths - 1) if n_depths > 1 else 1.0
         transform = [
-            scale_x,
+            render_state.scale_x_um,
             0.0,
             0.0,
             0.0,
-            scale_y,
+            render_state.scale_y_um,
             0.0,
-            -extent_um,
-            feat_min_um,
+            -render_state.extent_um,
+            render_state.feature_min_um,
             1.0,
         ]
         self.session.perp_image_item.setTransform(QtGui.QTransform(*transform))
@@ -1314,7 +1234,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.fig_hist_perp.addItem(self.session.perp_image_item)
 
-        self.fig_hist_perp.setXRange(min=-extent_um, max=extent_um, padding=0)
+        self.fig_hist_perp.setXRange(
+            min=-render_state.extent_um,
+            max=render_state.extent_um,
+            padding=0,
+        )
 
         if self.session.channel_status:
             self.session.perp_probe_line = pg.InfiniteLine(
@@ -1324,8 +1248,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
             self.session.perp_channel_dots = pg.ScatterPlotItem()
             self.session.perp_channel_dots.setData(
-                x=np.zeros(len(self.session.chn_depths)),
-                y=self.session.chn_depths,
+                x=np.zeros(len(render_state.channel_depths_um)),
+                y=render_state.channel_depths_um,
                 pen="r",
                 brush="r",
                 size=4,
@@ -1378,10 +1302,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _slice_data_by_attr(self) -> dict[str, Any]:
         """Return slice data keyed by the QAction payload data-attr names."""
-        return {
-            "slice_data": self.session.slice_data,
-            "fp_slice_data": self.session.fp_slice_data,
-        }
+        data_by_attr = self.app.queries.active_slice_data_by_attr()
+        if (
+            data_by_attr["slice_data"] is None
+            and data_by_attr["fp_slice_data"] is None
+        ):
+            return {
+                "slice_data": self.session.slice_data,
+                "fp_slice_data": self.session.fp_slice_data,
+            }
+        return data_by_attr
 
     def _slice_action_for_selection(self, selection: SliceSelection) -> Any:
         """Find the QAction that represents a slice selection."""
@@ -3071,26 +3001,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if self.histology_exists:
             # Reuse this shank's cached slice unless its track changed (e.g. the
             # shank was re-aligned since the last visit) — instant on revisit.
-            shank = self.session.active_shank
-            track = self.session.ephysalign.track_interpolation_ras
-            alignment_key = self.document.selected_alignment_key
-            if shank.cached_slice(track, alignment_key=alignment_key) is None:
-                brain_atlas = self.histology_context.brain_atlas
-                if brain_atlas is None:
-                    raise RuntimeError("brain_atlas not yet loaded")
-                slice_data = self.slice_service.build_slice_set(
-                    brain_atlas=brain_atlas,
-                    histology_images=self.histology_context.histology_images,
-                    lazy_channel_paths=self.histology_context.lazy_channel_paths,
-                    track_interpolation_ras=track,
-                )
-                fp_slice_data = None
-                shank.set_slice(
-                    slice_data,
-                    fp_slice_data,
-                    track,
-                    alignment_key=alignment_key,
-                )
+            if self.app.queries.ensure_active_slice_data_state() is None:
+                raise RuntimeError("Could not build active slice data")
         else:
             self.session.slice_data = {}
             self.session.fp_slice_data = None

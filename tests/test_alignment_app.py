@@ -8,6 +8,11 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
+from ephys_alignment_gui.alignment_derived_data_service import (
+    AlignmentHistologyData,
+    HistologyPlotData,
+    ScaleFactorData,
+)
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
 from ephys_alignment_gui.alignment_repository import LoadedAlignmentHistory
@@ -20,6 +25,7 @@ from ephys_alignment_gui.controller import (
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.slice_runtime import SliceRuntime
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 
@@ -78,17 +84,45 @@ class FakeAlignmentRepository:
 
 
 class FakeDerivedDataService:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        histology: Any = "histology",
+        projection: Any = "projection",
+    ) -> None:
+        self.histology = histology
+        self.projection = projection
         self.histology_kwargs = None
         self.projection_kwargs = None
 
     def compute_histology(self, **kwargs):
         self.histology_kwargs = kwargs
-        return "histology"
+        return self.histology
 
     def compute_channel_projection(self, **kwargs):
         self.projection_kwargs = kwargs
-        return "projection"
+        return self.projection
+
+
+class FakeSliceService:
+    def __init__(self) -> None:
+        self.slice_set_calls: list[dict[str, Any]] = []
+        self.perpendicular_calls: list[dict[str, Any]] = []
+
+    def build_slice_set(self, **kwargs):
+        self.slice_set_calls.append(kwargs)
+        return {"ccf": np.array([[1.0]]), "scale": [1.0, 1.0], "offset": [0.0, 0.0]}
+
+    def build_perpendicular_slice_image(self, **kwargs):
+        self.perpendicular_calls.append(kwargs)
+        n_perp_samples = kwargs["n_perp_samples"]
+        n_depths = len(kwargs["feature_grid_m"])
+        return np.ones((n_perp_samples, n_depths))
+
+
+class FakeBrainAtlas:
+    def __init__(self, dv_voxel_m: float = 20e-6) -> None:
+        self.bc = SimpleNamespace(dxyz=[20e-6, 20e-6, dv_voxel_m])
 
 
 def _workspace_with_probe_state(
@@ -545,3 +579,124 @@ def test_queries_active_alignment_render_state_fails_closed_without_runtime() ->
     )
 
     assert queries.active_alignment_render_state() is None
+
+
+def test_queries_ensure_active_slice_data_state_uses_runtime_cache() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    track = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]])
+    shank_runtime = SimpleNamespace(
+        ephysalign=SimpleNamespace(track_interpolation_ras=track),
+        slice_runtime=SliceRuntime(),
+    )
+    slice_service = FakeSliceService()
+    histology_context = SimpleNamespace(
+        brain_atlas=FakeBrainAtlas(),
+        histology_images={},
+        lazy_channel_paths={},
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        histology_context=histology_context,
+        slice_service=slice_service,
+    )
+
+    first = queries.ensure_active_slice_data_state()
+    second = queries.ensure_active_slice_data_state()
+
+    assert first is not None
+    assert second is not None
+    assert first.key == key
+    assert second.slice_data is first.slice_data
+    assert len(slice_service.slice_set_calls) == 1
+    call = slice_service.slice_set_calls[0]
+    assert call["brain_atlas"] is histology_context.brain_atlas
+    assert call["histology_images"] == {}
+    assert call["lazy_channel_paths"] == {}
+    assert call["track_interpolation_ras"] is track
+    assert queries.active_slice_data_by_attr()["slice_data"] is first.slice_data
+
+
+def test_queries_build_active_perpendicular_slice_state_from_runtime_cache() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    state.active_alignment = active_alignment
+    histology = AlignmentHistologyData(
+        histology=HistologyPlotData(
+            region=np.array([-200.0, 5000.0]),
+            axis_label=[],
+            colour=[],
+        ),
+        reference_histology=HistologyPlotData(region=[], axis_label=[], colour=[]),
+        scale=ScaleFactorData(region=[], scale=[]),
+    )
+    track_interpolation = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0], [2.0, 0.0, 4.0]]
+    )
+    ephysalign = SimpleNamespace(
+        track_interpolation_ras=track_interpolation,
+        ephys_depths_along_track=np.array([0.0, 1.0, 2.0]),
+    )
+    shank_runtime = SimpleNamespace(
+        ephysalign=ephysalign,
+        slice_runtime=SliceRuntime(),
+        chn_depths=np.array([0.0, 100.0]),
+        region_fp=None,
+        region_label_fp=None,
+        region_colour_fp=None,
+    )
+    slice_service = FakeSliceService()
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        derived_data_service=FakeDerivedDataService(histology=histology),
+        histology_context=SimpleNamespace(
+            brain_atlas=FakeBrainAtlas(dv_voxel_m=20e-6),
+            histology_images={},
+            lazy_channel_paths={},
+        ),
+        slice_service=slice_service,
+    )
+
+    first = queries.active_perpendicular_slice_state("ccf")
+    second = queries.active_perpendicular_slice_state("ccf")
+
+    assert first is not None
+    assert second is not None
+    assert first.key == key
+    assert first.channel_name == "ccf"
+    assert first.extent_um == 500.0
+    assert first.feature_min_um == -200.0
+    assert first.feature_max_um == 5000.0
+    assert first.n_perp_samples == 51
+    assert first.n_depths == 261
+    assert first.image.shape == (51, 261)
+    assert second.image is first.image
+    assert len(slice_service.perpendicular_calls) == 1
+    call = slice_service.perpendicular_calls[0]
+    assert call["brain_atlas"] is queries.histology_context.brain_atlas
+    assert call["ephysalign"] is ephysalign
+    assert call["channel_name"] == "ccf"
+    assert call["n_perp_samples"] == 51
+    np.testing.assert_allclose(call["feature_ref"], active_alignment.feature)
+    np.testing.assert_allclose(call["track_ref"], active_alignment.track)
+    np.testing.assert_allclose(first.channel_depths_um, [0.0, 100.0])

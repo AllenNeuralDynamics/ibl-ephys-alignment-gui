@@ -99,6 +99,8 @@ class AlignmentWorkspace:
                 runtime=self.runtime,
                 display_state=self.display_state,
                 derived_data_service=self.alignment_derived_data_service,
+                histology_context=self.histology_context,
+                slice_service=self.slice_service,
             ),
             events=self.events,
         )
