@@ -32,7 +32,6 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     OutputRootSet,
     PreviousAlignmentSelected,
-    PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
     ShankSelected,
@@ -2573,7 +2572,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info("=== Heavy data load complete ===")
 
     def load_existing_alignments(self) -> bool:
-        ready = self.controller.can_load_previous_alignments()
+        ready = self.app.commands.can_load_previous_alignments()
         if isinstance(ready, Failed):
             logger.error(ready.message)
             return False
@@ -2599,29 +2598,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info(
                 f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
             )
-            result = self.controller.load_previous_alignments(
+            result = self.app.commands.load_previous_alignments(
                 folder=folder_path,
-                shank_idx=self.session.current_shank_idx,
                 use_docdb=self.use_docdb,
             )
             if isinstance(result, Failed):
                 logger.error(result.message)
                 return False
-            if isinstance(result, PreviousAlignmentsLoaded):
-                choices = self.controller.set_previous_alignments(
-                    result.alignments,
-                    shank_idx=self.session.current_shank_idx,
-                )
-                if isinstance(choices, Failed):
-                    logger.error(choices.message)
-                    return False
+            if isinstance(result, AlignmentChoicesUpdated):
                 self.populate_lists(
-                    choices.choices,
+                    result.choices,
                     self.align_list,
                     self.align_combobox,
                 )
                 self.on_alignment_selected(0)
-                logger.info(f"Loaded {len(choices.choices)} previous alignments")
+                logger.info(f"Loaded {len(result.choices)} previous alignments")
             elif isinstance(result, NoPreviousAlignments):
                 logger.info("No previous alignments found")
 
@@ -3330,10 +3321,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _select_alignment_choice(self, idx: int) -> bool:
         """Select an alignment choice through the controller and project it."""
-        result = self.controller.select_previous_alignment(
-            idx,
-            shank_idx=self.session.current_shank_idx,
-        )
+        result = self.app.commands.select_previous_alignment(idx)
         if isinstance(result, Failed):
             logger.error(result.message)
             return False

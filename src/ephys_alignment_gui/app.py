@@ -5,10 +5,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.alignment_events import ShankChanged
-from ephys_alignment_gui.controller import AlignmentController, Failed, ShankSelected
+from ephys_alignment_gui.controller import (
+    AlignmentChoicesUpdated,
+    AlignmentController,
+    Failed,
+    NoPreviousAlignments,
+    PreviousAlignmentSelected,
+    PreviousAlignmentsLoaded,
+    ShankSelected,
+)
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
@@ -20,6 +29,7 @@ from ephys_alignment_gui.plot_registry import (
     resolve_plot_payload,
 )
 from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.workflow import Ok
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +114,49 @@ class AlignmentCommands:
             track_positions_um=track_positions_um,
             shank_idx=outgoing_shank_idx,
         )
+
+    def load_previous_alignments(
+        self,
+        *,
+        folder: Path | None,
+        use_docdb: bool,
+        shank_idx: int | None = None,
+    ) -> AlignmentChoicesUpdated | NoPreviousAlignments | Failed:
+        """Load and store previous alignments for a document-selected shank."""
+        target_shank = self._active_or_given_shank(shank_idx)
+        loaded = self._controller.load_previous_alignments(
+            folder=folder,
+            shank_idx=target_shank,
+            use_docdb=use_docdb,
+        )
+        if isinstance(loaded, Failed | NoPreviousAlignments):
+            return loaded
+        assert isinstance(loaded, PreviousAlignmentsLoaded)
+        return self._controller.set_previous_alignments(
+            loaded.alignments,
+            shank_idx=target_shank,
+        )
+
+    def select_previous_alignment(
+        self,
+        idx: int,
+        *,
+        shank_idx: int | None = None,
+    ) -> PreviousAlignmentSelected | Failed:
+        """Select a previous/original alignment on a document-selected shank."""
+        return self._controller.select_previous_alignment(
+            idx,
+            shank_idx=self._active_or_given_shank(shank_idx),
+        )
+
+    def _active_or_given_shank(self, shank_idx: int | None) -> int:
+        if shank_idx is not None:
+            return shank_idx
+        return self._controller.document.selected_shank
+
+    def can_load_previous_alignments(self) -> Ok | Failed:
+        """Return whether previous alignments can be loaded."""
+        return self._controller.can_load_previous_alignments()
 
 
 @dataclass

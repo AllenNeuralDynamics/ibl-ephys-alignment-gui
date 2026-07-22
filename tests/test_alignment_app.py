@@ -8,8 +8,14 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.alignment_repository import LoadedAlignmentHistory
 from ephys_alignment_gui.app import AlignmentQueries
-from ephys_alignment_gui.controller import ShankSelected
+from ephys_alignment_gui.controller import (
+    AlignmentChoicesUpdated,
+    NoPreviousAlignments,
+    PreviousAlignmentSelected,
+    ShankSelected,
+)
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
@@ -53,6 +59,36 @@ class FakeStreamRuntime:
     def plot_data_for_shank(self, shank_idx: int) -> FakePlotData:
         self.calls.append(shank_idx)
         return self.plotdata_by_shank[shank_idx]
+
+
+class FakeAlignmentRepository:
+    def __init__(self) -> None:
+        self.loaded_alignments = None
+        self.loaded_kwargs = None
+
+    def load_previous_alignments(self, **kwargs):
+        self.loaded_kwargs = kwargs
+        if self.loaded_alignments is None:
+            return None
+        return LoadedAlignmentHistory(self.loaded_alignments)
+
+
+def _workspace_with_probe_state(
+    *,
+    shank_idx: int = 1,
+    repo: FakeAlignmentRepository | None = None,
+) -> AlignmentWorkspace:
+    workspace = AlignmentWorkspace()
+    if repo is not None:
+        workspace.controller.alignment_repository = repo
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    workspace.data_context.channel_table = SimpleNamespace(n_shanks=2)
+    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", shank_idx))
+    return workspace
 
 
 def test_workspace_exposes_app_port() -> None:
@@ -137,6 +173,60 @@ def test_commands_select_shank_without_line_state_leaves_pending_lines() -> None
     assert pending is not None
     np.testing.assert_allclose(pending.feature_positions_um, [1.0])
     np.testing.assert_allclose(pending.track_positions_um, [2.0])
+
+
+def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) -> None:
+    repo = FakeAlignmentRepository()
+    repo.loaded_alignments = {
+        "auto": [[100.0], [200.0]],
+        "saved": [[1.0], [2.0]],
+    }
+    workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
+
+    result = workspace.app.commands.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=True,
+    )
+
+    assert isinstance(result, AlignmentChoicesUpdated)
+    assert result.choices == ["saved", "original"]
+    assert repo.loaded_kwargs["shank_idx"] == 1
+    state = workspace.document.alignment_state_for(AlignmentKey("rec", "stream", 1))
+    assert state.alignments == {"saved": [[1.0], [2.0]]}
+
+
+def test_commands_load_previous_alignments_reports_missing_history(tmp_path) -> None:
+    repo = FakeAlignmentRepository()
+    workspace = _workspace_with_probe_state(repo=repo)
+
+    result = workspace.app.commands.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=False,
+    )
+
+    assert isinstance(result, NoPreviousAlignments)
+
+
+def test_commands_select_previous_alignment_defaults_to_active_shank() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    other_key = AlignmentKey("rec", "stream", 0)
+    workspace.document.alignment_state_for(other_key).set_alignments(
+        {"other": [[9.0], [10.0]]}
+    )
+    workspace.document.alignment_state_for(active_key).set_alignments(
+        {"saved": [[1.0, 2.0], [3.0, 4.0]]}
+    )
+
+    result = workspace.app.commands.select_previous_alignment(0)
+
+    assert isinstance(result, PreviousAlignmentSelected)
+    assert result.choice == "saved"
+    np.testing.assert_allclose(result.feature_prev, [1.0, 2.0])
+    np.testing.assert_allclose(result.track_prev, [3.0, 4.0])
+    active_state = workspace.document.alignment_state_for(active_key)
+    np.testing.assert_allclose(active_state.feature_prev, [1.0, 2.0])
+    assert workspace.document.alignment_state_for(other_key).feature_prev is None
 
 
 def test_queries_return_active_shank_selection_state() -> None:
