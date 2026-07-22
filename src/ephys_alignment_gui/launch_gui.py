@@ -19,11 +19,7 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.alignment_events import (
-    AlignmentChanged,
-    AlignmentEdited,
-    ShankChanged,
-)
+from ephys_alignment_gui.alignment_events import ShankChanged
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -39,7 +35,7 @@ from ephys_alignment_gui.controller import (
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
-    desktop_presentation_options_for_edit,
+    DesktopAlignmentRenderCallbacks,
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM, EphysAlignment
@@ -276,6 +272,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
             style_factory=self.create_line_style,
             on_lines_changed=self._capture_pending_reference_lines,
+        )
+        self.desktop_alignment_presenter.configure(
+            queries=self.app.queries,
+            callbacks=self._desktop_alignment_render_callbacks(),
         )
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
@@ -1456,52 +1456,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _connect_alignment_changed_handlers(self) -> None:
         self._event_subscriptions.extend(
-            [
-                self.app.events.subscribe(
-                    AlignmentEdited,
-                    self._on_alignment_edited,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_apply_data,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_prepare_lines,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_histology,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_scale,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_fit,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_channels,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_perpendicular,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_lines,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_range,
-                ),
-                self.app.events.subscribe(
-                    AlignmentChanged,
-                    self._on_alignment_changed_status,
-                ),
-            ]
+            self.desktop_alignment_presenter.connect_alignment_events()
         )
 
     def _connect_shank_changed_handlers(self) -> None:
@@ -1509,31 +1464,27 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.app.events.subscribe(ShankChanged, self._on_shank_changed)
         )
 
-    def _on_alignment_edited(self, event: AlignmentEdited) -> None:
-        options = desktop_presentation_options_for_edit(event.edit_kind)
-        self._restore_lin_fit_from_edit(event.lin_fit)
-        render_state = self.app.queries.active_alignment_render_state()
-        if render_state is None:
-            logger.error("Cannot refresh alignment: active alignment data is not loaded")
-            return
-        if options.clear_reference_lines:
-            self.reference_lines.clear()
-        depth_ranges = (
-            self._capture_depth_plot_y_ranges()
-            if options.preserve_depth_range
-            else {}
+    def _desktop_alignment_render_callbacks(self) -> DesktopAlignmentRenderCallbacks:
+        return DesktopAlignmentRenderCallbacks(
+            restore_lin_fit=self._restore_lin_fit_from_edit,
+            clear_reference_lines=self.reference_lines.clear,
+            capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
+            restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
+            apply_histology_data=self._apply_alignment_histology_data,
+            apply_channel_projection=self._apply_alignment_projection_data,
+            reattach_reference_lines=self._reattach_reference_lines,
+            plot_histology=lambda: self.plot_histology(self.fig_hist),
+            plot_scale_factor=self.plot_scale_factor,
+            plot_fit=self.plot_fit,
+            plot_channels=self.plot_channels,
+            refresh_perpendicular_histology=self.refresh_perpendicular_histology,
+            update_reference_lines_to_alignment=self.update_lines_points,
+            create_reference_lines_for_previous_alignment=(
+                self._create_reference_lines_for_previous_alignment
+            ),
+            set_default_feature_y_range=self.set_default_feature_y_range,
+            update_status=self.update_string,
         )
-        try:
-            self.desktop_alignment_presenter.emit_legacy_alignment_changed(
-                render_state=render_state,
-                source=event.edit_kind,
-                line_update=options.line_update,
-                reset_histology_range=options.reset_histology_range,
-                refresh_perpendicular=options.refresh_perpendicular,
-            )
-        finally:
-            if depth_ranges:
-                self._restore_depth_plot_y_ranges(depth_ranges)
 
     def _apply_alignment_histology_data(self, derived) -> None:
         self.session.hist_data["region"] = derived.histology.region
@@ -1547,49 +1498,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.scale_data["region"] = derived.scale.region
         self.session.scale_data["scale"] = derived.scale.scale
 
-    def _on_alignment_changed_apply_data(self, event: AlignmentChanged) -> None:
-        self._apply_alignment_histology_data(event.histology)
-        self.session.channel_locations_ras = event.projection.channel_locations_ras
-        self.session.tip_location_ras = event.projection.tip_location_ras
+    def _apply_alignment_projection_data(self, projection: Any) -> None:
+        self.session.channel_locations_ras = projection.channel_locations_ras
+        self.session.tip_location_ras = projection.tip_location_ras
 
-    def _on_alignment_changed_prepare_lines(self, event: AlignmentChanged) -> None:
-        if event.line_update == "reattach":
-            self._reattach_reference_lines()
-
-    def _on_alignment_changed_histology(self, event: AlignmentChanged) -> None:
-        self.plot_histology(self.fig_hist)
-
-    def _on_alignment_changed_scale(self, event: AlignmentChanged) -> None:
-        self.plot_scale_factor()
-
-    def _on_alignment_changed_fit(self, event: AlignmentChanged) -> None:
-        self.plot_fit()
-
-    def _on_alignment_changed_channels(self, event: AlignmentChanged) -> None:
-        self.plot_channels(event.projection)
-
-    def _on_alignment_changed_perpendicular(self, event: AlignmentChanged) -> None:
-        if event.refresh_perpendicular:
-            self.refresh_perpendicular_histology()
-
-    def _on_alignment_changed_lines(self, event: AlignmentChanged) -> None:
-        if event.line_update == "reattach":
-            self._reattach_reference_lines()
-        elif event.line_update == "sync_to_alignment":
-            self._reattach_reference_lines()
-            self.update_lines_points()
-        elif event.line_update == "reset_to_previous":
-            if np.any(self.session.feature_prev):
-                self.create_lines(self.session.feature_prev[1:-1] * 1e6)
-
-    def _on_alignment_changed_range(self, event: AlignmentChanged) -> None:
-        if not event.reset_histology_range:
-            return
-        self.set_default_feature_y_range()
-
-    def _on_alignment_changed_status(self, event: AlignmentChanged) -> None:
-        if event.update_status:
-            self.update_string()
+    def _create_reference_lines_for_previous_alignment(self) -> None:
+        if np.any(self.session.feature_prev):
+            self.create_lines(self.session.feature_prev[1:-1] * 1e6)
 
     def _on_shank_changed(self, event: ShankChanged) -> None:
         self._apply_shank_changed_to_legacy_session(event)
