@@ -122,7 +122,6 @@ class ProbeSession:
         # -- UI toggle state --
         self.line_status: bool = True
         self.label_status: bool = True
-        self.channel_status: bool = True
         self.hist_bound_status: bool = True
 
         # -- Plot item caches --
@@ -132,21 +131,9 @@ class ProbeSession:
         self.img_cbars: list[Any] = []
         self.probe_cbars: list[Any] = []
         self.scale_regions: NDArray[Any] = np.empty((0, 1))
-        self.slice_lines: list[Any] = []
-        self.slice_items: list[Any] = []
-        self.slice_chns: list[Any] = []
-        self.slice_tip: Any = None
         self.probe_bounds: list[Any] = []
         self.hist_label_items: list[Any] = []
         self.hist_ref_label_items: list[Any] = []
-
-        # -- Perpendicular slice plot items --
-        self.perp_image_item: Any = None
-        self.perp_probe_line: Any = None
-        self.perp_channel_dots: Any = None
-        self.perp_tip_marker: Any = None
-        self.slice_color_bar: Any = None
-        self.slice_hist_levels: Any = None
 
         # -- Popups --
         self.cluster_popups: list[Any] = []
@@ -202,7 +189,6 @@ class ProbeSession:
         # -- Plot items (per-session, have signal connections) --
         self.tip_pos: Any = None
         self.top_pos: Any = None
-        self.traj_line: Any = None
         self.hist_regions: Any = None
         self.hist_ref_regions: Any = None
 

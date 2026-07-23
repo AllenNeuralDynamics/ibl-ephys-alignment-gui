@@ -849,12 +849,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         start_plot = self.slice_options_group.checkedAction()
         while plot != start_plot:
             self.toggle_channel_button_pressed()
-            self.session.traj_line.setData(
-                x=self.session.channel_locations_ras[:, 0],
-                y=self.session.channel_locations_ras[:, 2],
-                pen=self.rpen_dot,
-            )
-            self.fig_slice.addItem(self.session.traj_line)
+            self.slice_panel.render_export_trajectory_overlay(self.rpen_dot)
             self.plot_channels()
 
             slice_name = self.slice_options_group.checkedAction().text()
@@ -873,12 +868,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         start_plot = self.slice_options_group.checkedAction()
         while plot != start_plot:
             self.toggle_channel_button_pressed()
-            self.session.traj_line.setData(
-                x=self.session.channel_locations_ras[:, 0],
-                y=self.session.channel_locations_ras[:, 2],
-                pen=self.rpen_dot,
-            )
-            self.fig_slice.addItem(self.session.traj_line)
+            self.slice_panel.render_export_trajectory_overlay(self.rpen_dot)
             self.plot_channels()
 
             slice_name = self.slice_options_group.checkedAction().text()
@@ -2850,7 +2840,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         idx = self.histology_panel.selected_region_index()
         if idx is not None:
-
             description, lookup = self.region_lookup_service.get_region_description(
                 self.session.ephysalign.region_id[idx][0]
             )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -42,6 +42,39 @@ class SlicePanelStyle:
 
 
 @dataclass
+class SlicePanelViewState:
+    """Desktop-only pyqtgraph handles and slice-panel UI state."""
+
+    channel_status: bool = True
+    slice_lines: list[Any] = field(default_factory=list)
+    slice_chns: Any = None
+    slice_tip: Any = None
+    traj_line: Any = None
+    perp_image_item: Any = None
+    perp_probe_line: Any = None
+    perp_channel_dots: Any = None
+    perp_tip_marker: Any = None
+    slice_color_bar: Any = None
+    slice_hist_levels: Any = None
+    slice_item: Any = None
+    histogram_item: Any = None
+
+    def reset_coronal_overlays(self) -> None:
+        """Forget coronal overlay handles after the plot is cleared."""
+        self.slice_lines = []
+        self.slice_chns = None
+        self.slice_tip = None
+        self.traj_line = None
+
+    def reset_perpendicular_overlays(self) -> None:
+        """Forget perpendicular plot handles after the plot is cleared."""
+        self.perp_image_item = None
+        self.perp_probe_line = None
+        self.perp_channel_dots = None
+        self.perp_tip_marker = None
+
+
+@dataclass
 class SlicePanelPresenter:
     """Render slice query read models into the desktop pyqtgraph panels."""
 
@@ -51,12 +84,16 @@ class SlicePanelPresenter:
     session_provider: Callable[[], Any]
     histology_exists: Callable[[], bool]
     action_group_provider: Callable[[], Any | None]
+    view_state: SlicePanelViewState = field(default_factory=SlicePanelViewState)
     slice_item: Any = None
-    histogram_item: Any = None
 
     def __post_init__(self) -> None:
-        if self.slice_item is None:
-            self.slice_item = self.plots.histogram_alt
+        if self.view_state.slice_item is None:
+            self.view_state.slice_item = (
+                self.slice_item
+                if self.slice_item is not None
+                else self.plots.histogram_alt
+            )
 
     def current_scalar_slice_channel(self) -> str | None:
         """Return the selected scalar slice channel, if the slice UI has one."""
@@ -116,11 +153,10 @@ class SlicePanelPresenter:
         if not self.histology_exists():
             return
 
-        session = self._session()
+        view_state = self.view_state
         decision = render_state.decision
         self.plots.coronal.clear()
-        session.slice_chns = []
-        session.slice_lines = []
+        view_state.reset_coronal_overlays()
 
         img = pg.ImageItem()
         img.setImage(render_state.image)
@@ -140,26 +176,26 @@ class SlicePanelPresenter:
 
         self._remove_histogram_item()
         if decision.kind is SliceImageKind.LABEL:
-            session.slice_hist_levels = None
-            session.perp_image_item = None
+            view_state.slice_hist_levels = None
+            view_state.reset_perpendicular_overlays()
             self.plots.perpendicular.clear()
             self.plots.coronal_layout.addItem(self.plots.histogram_alt, 0, 1)
-            self.slice_item = self.plots.histogram_alt
+            view_state.slice_item = self.plots.histogram_alt
         elif decision.kind is SliceImageKind.RGB:
-            session.slice_hist_levels = None
-            session.perp_image_item = None
+            view_state.slice_hist_levels = None
+            view_state.reset_perpendicular_overlays()
             self.plots.perpendicular.clear()
         else:
-            self._render_scalar_slice_controls(session, img, render_state)
+            self._render_scalar_slice_controls(img, render_state)
 
         self.plots.coronal.addItem(img)
-        session.traj_line = pg.PlotCurveItem()
-        session.traj_line.setData(
+        view_state.traj_line = pg.PlotCurveItem()
+        view_state.traj_line.setData(
             x=render_state.track_annos_and_ends_ras[:, 0],
             y=render_state.track_annos_and_ends_ras[:, 2],
             pen=self.style.solid_pen,
         )
-        self.plots.coronal.addItem(session.traj_line)
+        self.plots.coronal.addItem(view_state.traj_line)
         self.plot_channels(render_state.projection)
 
     def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
@@ -179,10 +215,11 @@ class SlicePanelPresenter:
         render_state: PerpendicularSliceRenderState,
     ) -> None:
         """Render a perpendicular slice payload with desktop plot items."""
-        session = self._session()
-        session.perp_image_item = pg.ImageItem()
-        session.perp_image_item.setImage(render_state.image)
-        session.perp_image_item.setTransform(
+        view_state = self.view_state
+        view_state.reset_perpendicular_overlays()
+        view_state.perp_image_item = pg.ImageItem()
+        view_state.perp_image_item.setImage(render_state.image)
+        view_state.perp_image_item.setTransform(
             QtGui.QTransform(
                 render_state.scale_x_um,
                 0.0,
@@ -196,31 +233,33 @@ class SlicePanelPresenter:
             )
         )
 
-        if session.slice_color_bar is None:
-            session.slice_color_bar = ColorBar("cividis")
-        session.perp_image_item.setLookupTable(session.slice_color_bar.getColourMap())
+        if view_state.slice_color_bar is None:
+            view_state.slice_color_bar = ColorBar("cividis")
+        view_state.perp_image_item.setLookupTable(
+            view_state.slice_color_bar.getColourMap()
+        )
 
-        if session.slice_hist_levels is not None:
-            session.perp_image_item.setLevels(session.slice_hist_levels)
+        if view_state.slice_hist_levels is not None:
+            view_state.perp_image_item.setLevels(view_state.slice_hist_levels)
 
-        self.plots.perpendicular.addItem(session.perp_image_item)
+        self.plots.perpendicular.addItem(view_state.perp_image_item)
         self.plots.perpendicular.setXRange(
             min=-render_state.extent_um,
             max=render_state.extent_um,
             padding=0,
         )
 
-        if session.channel_status:
-            self._render_perpendicular_channel_overlay(session, render_state)
+        if view_state.channel_status:
+            self._render_perpendicular_channel_overlay(render_state)
 
     def update_perpendicular_levels(self) -> None:
         """Sync perpendicular plot levels with main slice histogram levels."""
-        session = self._session()
-        if session.perp_image_item is None or self.histogram_item is None:
+        view_state = self.view_state
+        if view_state.perp_image_item is None or view_state.histogram_item is None:
             return
-        levels = self.histogram_item.getLevels()
-        session.perp_image_item.setLevels(levels)
-        session.slice_hist_levels = levels
+        levels = view_state.histogram_item.getLevels()
+        view_state.perp_image_item.setLevels(levels)
+        view_state.slice_hist_levels = levels
 
     def refresh_perpendicular_histology(self) -> None:
         """Refresh perpendicular slice for the selected scalar slice."""
@@ -235,7 +274,8 @@ class SlicePanelPresenter:
             return
 
         session = self._session()
-        session.channel_status = True
+        view_state = self.view_state
+        view_state.channel_status = True
         if projection is None:
             render_state = self.current_slice_render_state()
             if render_state is None:
@@ -245,7 +285,7 @@ class SlicePanelPresenter:
         session.channel_locations_ras = projection.channel_locations_ras
         session.tip_location_ras = projection.tip_location_ras
 
-        if not session.slice_chns:
+        if view_state.slice_chns is None:
             self._create_channel_overlay(session, projection)
             return
         self._update_channel_overlay(session, projection)
@@ -255,12 +295,27 @@ class SlicePanelPresenter:
         if not self.histology_exists():
             return
 
-        session = self._session()
-        session.channel_status = not session.channel_status
-        if not session.channel_status:
-            self._remove_slice_overlays(session)
+        view_state = self.view_state
+        view_state.channel_status = not view_state.channel_status
+        if not view_state.channel_status:
+            self._remove_slice_overlays()
             return
-        self._add_slice_overlays(session)
+        self._add_slice_overlays()
+
+    def render_export_trajectory_overlay(self, pen: Any) -> None:
+        """Render the coronal trajectory overlay used by overview exports."""
+        if not self.histology_exists():
+            return
+        session = self._session()
+        view_state = self.view_state
+        if view_state.traj_line is None:
+            view_state.traj_line = pg.PlotCurveItem()
+        view_state.traj_line.setData(
+            x=session.channel_locations_ras[:, 0],
+            y=session.channel_locations_ras[:, 2],
+            pen=pen,
+        )
+        self.plots.coronal.addItem(view_state.traj_line)
 
     def selection_for_slice_payload(
         self,
@@ -279,104 +334,113 @@ class SlicePanelPresenter:
 
     def _render_scalar_slice_controls(
         self,
-        session: Any,
         img: Any,
         render_state: ActiveSliceRenderState,
     ) -> None:
         decision = render_state.decision
-        session.slice_color_bar = ColorBar("cividis")
-        img.setLookupTable(session.slice_color_bar.getColourMap())
-        self.histogram_item = pg.HistogramLUTItem()
-        self.histogram_item.axis.hide()
-        self.histogram_item.setImageItem(img)
-        self.histogram_item.gradient.setColorMap(session.slice_color_bar.map)
-        self.histogram_item.autoHistogramRange()
-        self.plots.coronal_layout.addItem(self.histogram_item, 0, 1)
+        view_state = self.view_state
+        view_state.slice_color_bar = ColorBar("cividis")
+        img.setLookupTable(view_state.slice_color_bar.getColourMap())
+        view_state.histogram_item = pg.HistogramLUTItem()
+        view_state.histogram_item.axis.hide()
+        view_state.histogram_item.setImageItem(img)
+        view_state.histogram_item.gradient.setColorMap(view_state.slice_color_bar.map)
+        view_state.histogram_item.autoHistogramRange()
+        self.plots.coronal_layout.addItem(view_state.histogram_item, 0, 1)
         if decision.initial_levels is not None:
-            self.histogram_item.setLevels(
+            view_state.histogram_item.setLevels(
                 min=decision.initial_levels[0],
                 max=decision.initial_levels[1],
             )
         else:
-            hist_levels = self.histogram_item.getLevels()
+            hist_levels = view_state.histogram_item.getLevels()
             hist_val, hist_count = img.getHistogram()
             populated = np.where(hist_count > 10)[0]
             if populated.size and hist_levels[0] != 0:
                 upper_val = hist_val[populated[-1]]
-                self.histogram_item.setLevels(min=hist_levels[0], max=upper_val)
+                view_state.histogram_item.setLevels(
+                    min=hist_levels[0],
+                    max=upper_val,
+                )
 
-        session.slice_hist_levels = self.histogram_item.getLevels()
+        view_state.slice_hist_levels = view_state.histogram_item.getLevels()
         if render_state.scalar_channel is not None:
             self.plot_perpendicular_histology(render_state.scalar_channel)
-        self.histogram_item.sigLevelsChanged.connect(self.update_perpendicular_levels)
-        self.slice_item = self.histogram_item
+        view_state.histogram_item.sigLevelsChanged.connect(
+            self.update_perpendicular_levels
+        )
+        view_state.slice_item = view_state.histogram_item
 
     def _render_perpendicular_channel_overlay(
         self,
-        session: Any,
         render_state: PerpendicularSliceRenderState,
     ) -> None:
-        session.perp_probe_line = pg.InfiniteLine(
-            pos=0, angle=90, pen=self.style.dotted_pen
+        view_state = self.view_state
+        view_state.perp_probe_line = pg.InfiniteLine(
+            pos=0,
+            angle=90,
+            pen=self.style.dotted_pen,
         )
-        self.plots.perpendicular.addItem(session.perp_probe_line)
+        self.plots.perpendicular.addItem(view_state.perp_probe_line)
 
-        session.perp_channel_dots = pg.ScatterPlotItem()
-        session.perp_channel_dots.setData(
+        view_state.perp_channel_dots = pg.ScatterPlotItem()
+        view_state.perp_channel_dots.setData(
             x=np.zeros(len(render_state.channel_depths_um)),
             y=render_state.channel_depths_um,
             pen="r",
             brush="r",
             size=4,
         )
-        self.plots.perpendicular.addItem(session.perp_channel_dots)
+        self.plots.perpendicular.addItem(view_state.perp_channel_dots)
 
-        session.perp_tip_marker = pg.ScatterPlotItem()
-        session.perp_tip_marker.setData(
+        view_state.perp_tip_marker = pg.ScatterPlotItem()
+        view_state.perp_tip_marker.setData(
             x=[0],
             y=[-TIP_SIZE_UM],
             pen="m",
             brush="m",
             size=5,
         )
-        self.plots.perpendicular.addItem(session.perp_tip_marker)
+        self.plots.perpendicular.addItem(view_state.perp_tip_marker)
 
     def _create_channel_overlay(self, session: Any, projection: Any) -> None:
-        session.slice_lines = []
-        session.slice_chns = pg.ScatterPlotItem()
-        session.slice_chns.setData(
+        view_state = self.view_state
+        view_state.slice_lines = []
+        view_state.slice_chns = pg.ScatterPlotItem()
+        view_state.slice_chns.setData(
             x=session.channel_locations_ras[:, 0],
             y=session.channel_locations_ras[:, 2],
             pen="r",
             brush="r",
             size=4,
         )
-        self.plots.coronal.addItem(session.slice_chns)
+        self.plots.coronal.addItem(view_state.slice_chns)
 
-        session.slice_tip = pg.ScatterPlotItem()
-        session.slice_tip.setData(
+        view_state.slice_tip = pg.ScatterPlotItem()
+        view_state.slice_tip.setData(
             x=[session.tip_location_ras[0]],
             y=[session.tip_location_ras[2]],
             pen="m",
             brush="m",
             size=5,
         )
-        self.plots.coronal.addItem(session.slice_tip)
+        self.plots.coronal.addItem(view_state.slice_tip)
 
-        self._add_perpendicular_vectors(session, projection)
+        self._add_perpendicular_vectors(projection)
 
     def _update_channel_overlay(self, session: Any, projection: Any) -> None:
-        for line in session.slice_lines:
+        view_state = self.view_state
+        for line in view_state.slice_lines:
             self.plots.coronal.removeItem(line)
-        session.slice_lines = []
-        self._add_perpendicular_vectors(session, projection)
-        session.slice_chns.setData(
+        view_state.slice_lines = []
+        self._add_perpendicular_vectors(projection)
+        view_state.slice_chns.setData(
             x=session.channel_locations_ras[:, 0],
             y=session.channel_locations_ras[:, 2],
             pen="r",
             brush="r",
         )
-        session.slice_tip.setData(
+        view_state.slice_tip.setData(
             x=[session.tip_location_ras[0]],
             y=[session.tip_location_ras[2]],
             pen="m",
@@ -384,7 +448,7 @@ class SlicePanelPresenter:
             size=10,
         )
 
-    def _add_perpendicular_vectors(self, session: Any, projection: Any) -> None:
+    def _add_perpendicular_vectors(self, projection: Any) -> None:
         logger.debug("Reference lines: %s", projection.perpendicular_vectors)
         for ref_line in projection.perpendicular_vectors:
             line = pg.PlotCurveItem()
@@ -394,44 +458,47 @@ class SlicePanelPresenter:
                 pen=self.style.reference_line_pen,
             )
             self.plots.coronal.addItem(line)
-            session.slice_lines.append(line)
+            self.view_state.slice_lines.append(line)
 
-    def _remove_slice_overlays(self, session: Any) -> None:
-        self._remove_item(self.plots.coronal, session.traj_line)
-        self._remove_item(self.plots.coronal, session.slice_chns)
-        if session.slice_tip is not None:
-            self._remove_item(self.plots.coronal, session.slice_tip)
-        for line in session.slice_lines:
+    def _remove_slice_overlays(self) -> None:
+        view_state = self.view_state
+        self._remove_item(self.plots.coronal, view_state.traj_line)
+        self._remove_item(self.plots.coronal, view_state.slice_chns)
+        if view_state.slice_tip is not None:
+            self._remove_item(self.plots.coronal, view_state.slice_tip)
+        for line in view_state.slice_lines:
             self._remove_item(self.plots.coronal, line)
 
-        if session.perp_probe_line is not None:
-            self._remove_item(self.plots.perpendicular, session.perp_probe_line)
-        if session.perp_channel_dots is not None:
-            self._remove_item(self.plots.perpendicular, session.perp_channel_dots)
-        if session.perp_tip_marker is not None:
-            self._remove_item(self.plots.perpendicular, session.perp_tip_marker)
+        if view_state.perp_probe_line is not None:
+            self._remove_item(self.plots.perpendicular, view_state.perp_probe_line)
+        if view_state.perp_channel_dots is not None:
+            self._remove_item(self.plots.perpendicular, view_state.perp_channel_dots)
+        if view_state.perp_tip_marker is not None:
+            self._remove_item(self.plots.perpendicular, view_state.perp_tip_marker)
 
-    def _add_slice_overlays(self, session: Any) -> None:
-        self._add_item(self.plots.coronal, session.traj_line)
-        self._add_item(self.plots.coronal, session.slice_chns)
-        if session.slice_tip is not None:
-            self._add_item(self.plots.coronal, session.slice_tip)
-        for line in session.slice_lines:
+    def _add_slice_overlays(self) -> None:
+        view_state = self.view_state
+        self._add_item(self.plots.coronal, view_state.traj_line)
+        self._add_item(self.plots.coronal, view_state.slice_chns)
+        if view_state.slice_tip is not None:
+            self._add_item(self.plots.coronal, view_state.slice_tip)
+        for line in view_state.slice_lines:
             self._add_item(self.plots.coronal, line)
 
-        if session.perp_probe_line is not None:
-            self._add_item(self.plots.perpendicular, session.perp_probe_line)
-        if session.perp_channel_dots is not None:
-            self._add_item(self.plots.perpendicular, session.perp_channel_dots)
-        if session.perp_tip_marker is not None:
-            self._add_item(self.plots.perpendicular, session.perp_tip_marker)
+        if view_state.perp_probe_line is not None:
+            self._add_item(self.plots.perpendicular, view_state.perp_probe_line)
+        if view_state.perp_channel_dots is not None:
+            self._add_item(self.plots.perpendicular, view_state.perp_channel_dots)
+        if view_state.perp_tip_marker is not None:
+            self._add_item(self.plots.perpendicular, view_state.perp_tip_marker)
 
     def _remove_histogram_item(self) -> None:
-        if self.slice_item is None:
+        view_state = self.view_state
+        if view_state.slice_item is None:
             return
-        self.plots.coronal_layout.removeItem(self.slice_item)
-        self.slice_item = None
-        self.histogram_item = None
+        self.plots.coronal_layout.removeItem(view_state.slice_item)
+        view_state.slice_item = None
+        view_state.histogram_item = None
 
     @staticmethod
     def _add_item(plot: Any, item: Any) -> None:
