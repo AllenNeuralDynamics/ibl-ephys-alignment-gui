@@ -42,6 +42,12 @@ from ephys_alignment_gui.ephys_alignment import EphysAlignment
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.feature_plot_view import FeaturePlotView
+from ephys_alignment_gui.histology_panel_presenter import (
+    HistologyPanelAxes,
+    HistologyPanelPlots,
+    HistologyPanelPresenter,
+    HistologyPanelStyle,
+)
 from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.plot_registry import (
     PlotMenu,
@@ -294,6 +300,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             histology_exists=lambda: getattr(self, "histology_exists", False),
             action_group_provider=lambda: getattr(self, "slice_options_group", None),
             slice_item=self.slice_item,
+        )
+        self.histology_panel = HistologyPanelPresenter(
+            plots=HistologyPanelPlots(
+                aligned=self.fig_hist,
+                reference=self.fig_hist_ref,
+            ),
+            axes=HistologyPanelAxes(
+                aligned=self.ax_hist,
+                reference=self.ax_hist_ref,
+            ),
+            style=HistologyPanelStyle(dotted_pen=self.kpen_dot),
+            session_provider=lambda: self.session,
+            histology_exists=lambda: getattr(self, "histology_exists", False),
+            set_axis=self.set_axis,
+            tip_line_moved=self.tip_line_moved,
+            top_line_moved=self.top_line_moved,
+            padding_provider=lambda: self.pad,
         )
         self.desktop_alignment_presenter.configure(
             queries=self.app.queries,
@@ -930,266 +953,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     """
 
     def plot_histology(self, fig, ax="left", movable=True) -> None:
-        """
-        Plots histology figure - brain regions that intersect with probe track
-        :param fig: figure on which to plot
-        :type fig: pyqtgraph PlotWidget
-        :param ax: orientation of axis, must be one of 'left' (fig_hist) or 'right' (fig_hist_ref)
-        :type ax: string
-        :param movable: whether probe reference lines can be moved, True for fig_hist, False for
-                        fig_hist_ref
-        :type movable: Bool
-        """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-        fig.clear()
-        self.session.hist_regions = np.empty((0, 1))
-        self.session.hist_label_items = []
-        self.set_axis(self.fig_hist, "bottom", pen="w", label="blank")
-
-        # Plot each histology region
-        for ir, reg in enumerate(self.session.hist_data["region"]):
-            colour = QtGui.QColor(*self.session.hist_data["colour"][ir])
-            region = pg.LinearRegionItem(
-                values=(reg[0], reg[1]),
-                orientation=pg.LinearRegionItem.Horizontal,
-                brush=colour,
-                movable=False,
-            )
-            # Add a white line at the boundary between regions
-            bound = pg.InfiniteLine(pos=reg[0], angle=0, pen="w")
-            fig.addItem(region)
-            fig.addItem(bound)
-            # Need to keep track of each histology region for label pressed interaction
-            self.session.hist_regions = np.vstack([self.session.hist_regions, region])
-
-            region_center_y = (reg[0] + reg[1]) / 2
-            label_text = self.session.hist_data["axis_label"][ir][1]
-            text_item = pg.TextItem(
-                text=label_text,
-                anchor=(0.5, 0.5),
-                color="white",
-            )
-            text_item.setPos(0, region_center_y)
-            fig.addItem(text_item)
-            self.session.hist_label_items.append(text_item)
-
-        self.session.selected_region = self.session.hist_regions[-2]
-
-        # Boundary for final region
-        bound = pg.InfiniteLine(
-            pos=self.session.hist_data["region"][-1][1], angle=0, pen="w"
-        )
-
-        fig.addItem(bound)
-        # Add dotted lines to plot to indicate region along probe track where electrode
-        # channels are distributed
-        # Disconnect old tip/top signals before replacing
-        for item in (self.session.tip_pos, self.session.top_pos):
-            if item is not None:
-                try:
-                    item.sigPositionChanged.disconnect()
-                except TypeError:
-                    pass
-
-        # Create InfiniteLines at probe tip and top positions
-        # These are in feature space (distance from probe tip in um)
-        # since fig_hist displays in feature space
-        self.session.tip_pos = pg.InfiniteLine(
-            pos=self.session.probe_tip, angle=0, pen=self.kpen_dot, movable=movable
-        )
-        self.session.top_pos = pg.InfiniteLine(
-            pos=self.session.probe_top, angle=0, pen=self.kpen_dot, movable=movable
-        )
-
-        # Lines can be moved to adjust location of channels along the probe track
-        # Ensure distance between bottom and top channel is always constant and that
-        # lines can't be moved outside interpolation bounds
-        # Add offset of 1um to keep within bounds of interpolation
-        offset = 1
-
-        # Calculate bounds in feature space (not track space)
-        # since fig_hist displays in feature space
-        feature_top_um = 1e6 * self.session.features[self.session.idx][-1] - offset
-
-        # Validation: Check if probe span exceeds available feature range
-        if self.session.probe_top > feature_top_um:
-            logger.warning(
-                f"Probe span ({self.session.probe_top:.0f} μm) exceeds feature range "
-                f"({feature_top_um:.0f} μm). Using safe fallback bounds. "
-                f"Consider recording with larger channel span or adjusting initialization range."
-            )
-            # Use safe fallback bounds - just constrain to feature range
-            self.session.tip_pos.setBounds(
-                (
-                    self.session.features[self.session.idx][0] * 1e6 + offset,
-                    self.session.features[self.session.idx][-1] * 1e6 - offset,
-                )
-            )
-            self.session.top_pos.setBounds(
-                (
-                    self.session.features[self.session.idx][0] * 1e6 + offset,
-                    self.session.features[self.session.idx][-1] * 1e6 - offset,
-                )
-            )
-        else:
-            # Normal bounds calculation using feature space
-            self.session.tip_pos.setBounds(
-                (
-                    self.session.features[self.session.idx][0] * 1e6 + offset,
-                    self.session.features[self.session.idx][-1] * 1e6
-                    - (self.session.probe_top + offset),
-                )
-            )
-            self.session.top_pos.setBounds(
-                (
-                    self.session.features[self.session.idx][0] * 1e6
-                    + (self.session.probe_top + offset),
-                    self.session.features[self.session.idx][-1] * 1e6 - offset,
-                )
-            )
-        self.session.tip_pos.sigPositionChanged.connect(self.tip_line_moved)
-        self.session.top_pos.sigPositionChanged.connect(self.top_line_moved)
-
-        # Add lines to figure
-        fig.addItem(self.session.tip_pos)
-        fig.addItem(self.session.top_pos)
+        """Compatibility wrapper for aligned histology rendering."""
+        self.histology_panel.plot_aligned(fig, movable=movable)
 
     def plot_histology_ref(self, fig, ax="right", movable=False) -> None:
-        """
-        Plots histology figure - brain regions that intersect with probe track
-        :param fig: figure on which to plot
-        :type fig: pyqtgraph PlotWidget
-        :param ax: orientation of axis, must be one of 'left' (fig_hist) or 'right' (fig_hist_ref)
-        :type ax: string
-        :param movable: whether probe reference lines can be moved, True for fig_hist, False for
-                        fig_hist_ref
-        :type movable: Bool
-        """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        fig.clear()
-        self.session.hist_ref_regions = np.empty((0, 1))
-        self.session.hist_ref_label_items = []
-        self.set_axis(self.fig_hist_ref, "bottom", pen="w", label="blank")
-
-        # Plot each histology region
-        for ir, reg in enumerate(self.session.hist_data_ref["region"]):
-            colour = QtGui.QColor(*self.session.hist_data_ref["colour"][ir])
-            region = pg.LinearRegionItem(
-                values=(reg[0], reg[1]),
-                orientation=pg.LinearRegionItem.Horizontal,
-                brush=colour,
-                movable=False,
-            )
-            bound = pg.InfiniteLine(pos=reg[0], angle=0, pen="w")
-            fig.addItem(region)
-            fig.addItem(bound)
-            self.session.hist_ref_regions = np.vstack(
-                [self.session.hist_ref_regions, region]
-            )
-
-            region_center_y = (reg[0] + reg[1]) / 2
-            label_text = self.session.hist_data_ref["axis_label"][ir][1]
-            text_item = pg.TextItem(
-                text=label_text,
-                anchor=(0.5, 0.5),
-                color="white",
-            )
-            text_item.setPos(0, region_center_y)
-            fig.addItem(text_item)
-            self.session.hist_ref_label_items.append(text_item)
-
-        bound = pg.InfiniteLine(
-            pos=self.session.hist_data_ref["region"][-1][1], angle=0, pen="w"
-        )
-        fig.addItem(bound)
-        # Add dotted lines to plot to indicate region along probe track where electrode
-        # channels are distributed
-        self.session.tip_pos = pg.InfiniteLine(
-            pos=self.session.probe_tip, angle=0, pen=self.kpen_dot, movable=movable
-        )
-        self.session.top_pos = pg.InfiniteLine(
-            pos=self.session.probe_top, angle=0, pen=self.kpen_dot, movable=movable
-        )
-        # Add lines to figure
-        fig.addItem(self.session.tip_pos)
-        fig.addItem(self.session.top_pos)
+        """Compatibility wrapper for reference histology rendering."""
+        self.histology_panel.plot_reference(fig, movable=movable)
 
     def plot_histology_nearby(self, fig, ax="right", movable=False) -> None:
-        """
-        Plots histology figure - brain regions that intersect with probe track
-        :param fig: figure on which to plot
-        :type fig: pyqtgraph PlotWidget
-        :param ax: orientation of axis, must be one of 'left' (fig_hist) or 'right' (fig_hist_ref)
-        :type ax: string
-        :param movable: whether probe reference lines can be moved, True for fig_hist, False for
-                        fig_hist_ref
-        :type movable: Bool
-        """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        fig.clear()
-        self.session.hist_ref_regions = np.empty((0, 1))
-        # hist_ref_label_items is shared with plot_histology_ref
-
-        self.set_axis(fig, "bottom", label="dist to boundary (um)")
-        fig.setXRange(min=0, max=100)
-        fig.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
-
-        # Plot nearby regions
-        for ir, (x, y, c) in enumerate(
-            zip(
-                self.session.hist_nearby_x,
-                self.session.hist_nearby_y,
-                self.session.hist_nearby_col,
-            )
-        ):
-            colour = QtGui.QColor(c)
-            plot = pg.PlotCurveItem()
-            plot.setData(x=x, y=y * 1e6, fillLevel=10, fillOutline=True)
-            plot.setBrush(colour)
-            plot.setPen(colour)
-            fig.addItem(plot)
-
-        for ir, (x, y, c) in enumerate(
-            zip(
-                self.session.hist_nearby_parent_x,
-                self.session.hist_nearby_parent_y,
-                self.session.hist_nearby_parent_col,
-            )
-        ):
-            colour = QtGui.QColor(c)
-            colour.setAlpha(70)
-            plot = pg.PlotCurveItem()
-            plot.setData(x=x, y=y * 1e6, fillLevel=10, fillOutline=True)
-            plot.setBrush(colour)
-            plot.setPen(colour)
-            fig.addItem(plot)
-
-        # Add dotted lines to plot to indicate region along probe track where electrode
-        # channels are distributed
-        self.session.tip_pos = pg.InfiniteLine(
-            pos=self.session.probe_tip, angle=0, pen=self.kpen_dot, movable=movable
-        )
-        self.session.top_pos = pg.InfiniteLine(
-            pos=self.session.probe_top, angle=0, pen=self.kpen_dot, movable=movable
-        )
-        # Add lines to figure
-        fig.addItem(self.session.tip_pos)
-        fig.addItem(self.session.top_pos)
+        """Compatibility wrapper for nearby histology boundary rendering."""
+        self.histology_panel.plot_nearby(fig, movable=movable)
 
     def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
         """Compatibility wrapper for perpendicular slice rendering."""
@@ -1297,7 +1070,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             apply_histology_data=self._apply_alignment_histology_data,
             apply_channel_projection=self._apply_alignment_projection_data,
             reattach_reference_lines=self._reattach_reference_lines,
-            plot_histology=lambda: self.plot_histology(self.fig_hist),
+            plot_histology=self.histology_panel.plot_aligned,
             plot_scale_factor=self.plot_scale_factor,
             plot_fit=self.plot_fit,
             plot_channels=self.slice_panel.plot_channels,
@@ -2601,8 +2374,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
 
-        self.plot_histology_ref(self.fig_hist_ref)
-        self.plot_histology(self.fig_hist)
+        self.histology_panel.plot_reference()
+        self.histology_panel.plot_aligned()
         self.slice_panel.refresh_perpendicular_histology()
         # force labels off then on to refresh
         # TODO better way to do this?
@@ -2932,16 +2705,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if self.session.hist_nearby_x is None:
                 self.compute_nearby_boundaries()
 
-            self.plot_histology_nearby(self.fig_hist_ref)
+            self.histology_panel.plot_nearby()
         else:
-            self.plot_histology_ref(self.fig_hist_ref)
+            self.histology_panel.plot_reference()
 
     def toggle_histology_map_button_pressed(self) -> None:
         self.display_state.toggle_region_annotation_source()
 
         self.get_scaled_histology()
-        self.plot_histology(self.fig_hist)
-        self.plot_histology_ref(self.fig_hist_ref)
+        self.histology_panel.plot_aligned()
+        self.histology_panel.plot_reference()
         self.remove_lines_points()
         self.add_lines_points()
 
@@ -3045,22 +2818,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+A key pressed. Shows/hides labels Allen atlas labels on brain regions
         in histology plots
         """
-        self.session.label_status = not self.session.label_status
-        if not self.session.label_status:
-            self.ax_hist_ref.setPen(None)
-            self.ax_hist_ref.setTextPen(None)
-            self.ax_hist.setPen(None)
-            self.ax_hist.setTextPen(None)
-            self.fig_hist_ref.update()
-            self.fig_hist.update()
-
-        else:
-            self.ax_hist_ref.setPen("k")
-            self.ax_hist_ref.setTextPen("k")
-            self.ax_hist.setPen("k")
-            self.ax_hist.setTextPen("k")
-            self.fig_hist_ref.update()
-            self.fig_hist.update()
+        self.histology_panel.toggle_labels()
 
     def toggle_line_button_pressed(self) -> None:
         """
