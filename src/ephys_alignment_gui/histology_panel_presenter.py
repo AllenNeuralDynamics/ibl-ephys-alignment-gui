@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
+
+from ephys_alignment_gui.alignment_read_models import (
+    FitPlotRenderState,
+    HistologyPanelRenderState,
+    NearbyBoundaryRenderState,
+    ProbeExtentRenderState,
+    ScaleFactorRenderState,
+)
+from ephys_alignment_gui.plot_elements import ColorBar
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +29,17 @@ class HistologyPanelPlots:
 
     aligned: Any
     reference: Any
+    scale: Any | None = None
+    scale_colorbar: Any | None = None
+
+
+@dataclass(frozen=True)
+class FitPanelItems:
+    """Pyqtgraph items owned by the desktop fit panel."""
+
+    fit_curve: Any
+    fit_scatter: Any
+    linear_fit_curve: Any
 
 
 @dataclass(frozen=True)
@@ -44,109 +64,213 @@ class HistologyPanelPresenter:
     plots: HistologyPanelPlots
     axes: HistologyPanelAxes
     style: HistologyPanelStyle
-    session_provider: Callable[[], Any]
-    histology_exists: Callable[[], bool]
     set_axis: Callable[..., Any]
-    tip_line_moved: Callable[[], None]
-    top_line_moved: Callable[[], None]
     padding_provider: Callable[[], float]
+    fit_items: FitPanelItems | None = None
+    label_status: bool = True
+    tip_pos: Any = None
+    top_pos: Any = None
+    hist_regions: np.ndarray = field(
+        default_factory=lambda: np.empty((0, 1), dtype=object)
+    )
+    hist_ref_regions: np.ndarray = field(
+        default_factory=lambda: np.empty((0, 1), dtype=object)
+    )
+    scale_regions: np.ndarray = field(
+        default_factory=lambda: np.empty((0, 1), dtype=object)
+    )
+    scale_factor: Any = None
+    selected_region: Any = None
+    hist_label_items: list[Any] = field(default_factory=list)
+    hist_ref_label_items: list[Any] = field(default_factory=list)
+    _probe_extent: ProbeExtentRenderState | None = None
 
-    def plot_aligned(self, fig: Any | None = None, *, movable: bool = True) -> None:
+    def render_aligned(
+        self,
+        state: HistologyPanelRenderState,
+        fig: Any | None = None,
+        *,
+        movable: bool = True,
+    ) -> None:
         """Plot aligned histology regions and editable probe extent lines."""
-        if not self.histology_exists():
-            return
-
-        session = self._session()
         fig = self.plots.aligned if fig is None else fig
         fig.clear()
-        session.hist_label_items = []
+        self.hist_label_items = []
         self.set_axis(self.plots.aligned, "bottom", pen="w", label="blank")
 
-        session.hist_regions = self._plot_region_bands(
+        self.hist_regions = self._plot_region_bands(
             fig,
-            session.hist_data,
-            session.hist_label_items,
+            state.histology.histology,
+            self.hist_label_items,
         )
-        session.selected_region = self._default_selected_region(session.hist_regions)
+        self.selected_region = self._default_selected_region(self.hist_regions)
         self._add_probe_extent_lines(
-            session,
+            state.probe_extent,
             fig,
             movable=movable,
             connect_tip_top=True,
         )
 
-    def plot_reference(self, fig: Any | None = None, *, movable: bool = False) -> None:
+    def render_reference(
+        self,
+        state: HistologyPanelRenderState,
+        fig: Any | None = None,
+        *,
+        movable: bool = False,
+    ) -> None:
         """Plot original/reference histology regions and probe extent lines."""
-        if not self.histology_exists():
-            return
-
-        session = self._session()
         fig = self.plots.reference if fig is None else fig
         fig.clear()
-        session.hist_ref_label_items = []
+        self.hist_ref_label_items = []
         self.set_axis(self.plots.reference, "bottom", pen="w", label="blank")
 
-        session.hist_ref_regions = self._plot_region_bands(
+        self.hist_ref_regions = self._plot_region_bands(
             fig,
-            session.hist_data_ref,
-            session.hist_ref_label_items,
+            state.histology.reference_histology,
+            self.hist_ref_label_items,
         )
         self._add_probe_extent_lines(
-            session,
+            state.probe_extent,
             fig,
             movable=movable,
             connect_tip_top=False,
         )
 
-    def plot_nearby(self, fig: Any | None = None, *, movable: bool = False) -> None:
+    def render_nearby(
+        self,
+        state: NearbyBoundaryRenderState,
+        fig: Any | None = None,
+        *,
+        movable: bool = False,
+    ) -> None:
         """Plot nearby-region boundary distances in the reference panel."""
-        if not self.histology_exists():
-            return
-
-        session = self._session()
         fig = self.plots.reference if fig is None else fig
         fig.clear()
-        session.hist_ref_regions = np.empty((0, 1), dtype=object)
+        self.hist_ref_regions = np.empty((0, 1), dtype=object)
 
         self.set_axis(fig, "bottom", label="dist to boundary (um)")
         fig.setXRange(min=0, max=100)
         fig.setYRange(
-            min=session.probe_tip - session.probe_extra,
-            max=session.probe_top + session.probe_extra,
+            min=state.probe_extent.probe_tip_um - state.probe_extent.probe_extra_um,
+            max=state.probe_extent.probe_top_um + state.probe_extent.probe_extra_um,
             padding=self.padding_provider(),
         )
 
         self._plot_nearby_region_curves(
             fig,
-            session.hist_nearby_x,
-            session.hist_nearby_y,
-            session.hist_nearby_col,
+            state.x,
+            state.y,
+            state.colours,
             alpha=None,
         )
         self._plot_nearby_region_curves(
             fig,
-            session.hist_nearby_parent_x,
-            session.hist_nearby_parent_y,
-            session.hist_nearby_parent_col,
+            state.parent_x,
+            state.parent_y,
+            state.parent_colours,
             alpha=70,
         )
         self._add_probe_extent_lines(
-            session,
+            state.probe_extent,
             fig,
             movable=movable,
             connect_tip_top=False,
         )
 
+    def render_scale_factor(
+        self,
+        state: ScaleFactorRenderState,
+        *,
+        y_range: tuple[float, float],
+    ) -> None:
+        """Render the scale-factor strip beside the histology panel."""
+        if self.plots.scale is None or self.plots.scale_colorbar is None:
+            return
+
+        self.plots.scale.clear()
+        self.scale_regions = np.empty((0, 1), dtype=object)
+        self.scale_factor = state.scale
+        scale = np.asarray(state.scale)
+        regions = state.region
+        scale_factor = scale - 0.5
+        color_bar = ColorBar("seismic")
+        cbar = color_bar.makeColourBar(
+            20,
+            5,
+            self.plots.scale_colorbar,
+            min=0.5,
+            max=1.5,
+            label="Scale Factor",
+        )
+        colours = color_bar.map.mapToQColor(scale_factor)
+        y_min, y_max = y_range
+
+        for ir, reg in enumerate(regions):
+            region = pg.LinearRegionItem(
+                values=(reg[0], reg[1]),
+                orientation=pg.LinearRegionItem.Horizontal,
+                brush=colours[ir],
+                movable=False,
+            )
+            bound = pg.InfiniteLine(pos=reg[0], angle=0, pen=colours[ir])
+
+            self.plots.scale.addItem(region)
+            self.plots.scale.addItem(bound)
+            self.scale_regions = np.vstack(
+                [self.scale_regions, np.array([[region]], dtype=object)]
+            )
+
+            text_y = (max(y_min, reg[0]) + min(y_max, reg[1])) / 2
+            text_item = pg.TextItem(
+                text=f"{scale[ir]:.2f}",
+                anchor=(0.5, 0.5),
+                color="black",
+            )
+            text_item.setPos(-0.05, text_y)
+            self.plots.scale.addItem(text_item)
+
+        if len(regions) > 0:
+            bound = pg.InfiniteLine(pos=regions[-1][1], angle=0, pen=colours[-1])
+            self.plots.scale.addItem(bound)
+
+        self.plots.scale.setYRange(
+            min=state.probe_extent.probe_tip_um - state.probe_extent.probe_extra_um,
+            max=state.probe_extent.probe_top_um + state.probe_extent.probe_extra_um,
+            padding=self.padding_provider(),
+        )
+        self.set_axis(self.plots.scale, "bottom", pen="w", label="blank")
+        self.plots.scale_colorbar.addItem(cbar)
+
+    def render_fit(self, state: FitPlotRenderState) -> None:
+        """Render feature/track fit curves."""
+        if self.fit_items is None:
+            return
+
+        self.fit_items.fit_curve.setData(
+            x=state.feature_um,
+            y=state.track_um,
+        )
+        self.fit_items.fit_scatter.setData(
+            x=state.feature_um,
+            y=state.track_um,
+        )
+        if state.linear_feature_um is not None and state.linear_track_um is not None:
+            self.fit_items.linear_fit_curve.setData(
+                x=state.linear_feature_um,
+                y=state.linear_track_um,
+            )
+        else:
+            self.fit_items.linear_fit_curve.setData()
+
     def toggle_labels(self) -> None:
         """Toggle atlas label axis visibility for both histology panels."""
-        session = self._session()
-        session.label_status = not session.label_status
-        if not session.label_status:
-            pen = None
-            text_pen = None
-        else:
-            pen = "k"
-            text_pen = "k"
+        self.set_labels_visible(not self.label_status)
+
+    def set_labels_visible(self, visible: bool) -> None:
+        """Set atlas label axis visibility for both histology panels."""
+        self.label_status = visible
+        pen = "k" if visible else None
+        text_pen = "k" if visible else None
 
         for axis in (self.axes.reference, self.axes.aligned):
             axis.setPen(pen)
@@ -157,12 +281,12 @@ class HistologyPanelPresenter:
     def _plot_region_bands(
         self,
         fig: Any,
-        hist_data: dict[str, list[Any]],
+        hist_data: Any,
         label_items: list[Any],
     ) -> np.ndarray:
         regions = np.empty((0, 1), dtype=object)
-        for ir, reg in enumerate(hist_data["region"]):
-            colour = QtGui.QColor(*hist_data["colour"][ir])
+        for ir, reg in enumerate(hist_data.region):
+            colour = QtGui.QColor(*hist_data.colour[ir])
             region = pg.LinearRegionItem(
                 values=(reg[0], reg[1]),
                 orientation=pg.LinearRegionItem.Horizontal,
@@ -175,7 +299,7 @@ class HistologyPanelPresenter:
             regions = np.vstack([regions, np.array([[region]], dtype=object)])
 
             region_center_y = (reg[0] + reg[1]) / 2
-            label_text = hist_data["axis_label"][ir][1]
+            label_text = hist_data.axis_label[ir][1]
             text_item = pg.TextItem(
                 text=label_text,
                 anchor=(0.5, 0.5),
@@ -185,9 +309,9 @@ class HistologyPanelPresenter:
             fig.addItem(text_item)
             label_items.append(text_item)
 
-        if len(hist_data["region"]) > 0:
+        if len(hist_data.region) > 0:
             final_boundary = pg.InfiniteLine(
-                pos=hist_data["region"][-1][1],
+                pos=hist_data.region[-1][1],
                 angle=0,
                 pen="w",
             )
@@ -218,71 +342,97 @@ class HistologyPanelPresenter:
 
     def _add_probe_extent_lines(
         self,
-        session: Any,
+        probe_extent: ProbeExtentRenderState,
         fig: Any,
         *,
         movable: bool,
         connect_tip_top: bool,
     ) -> None:
         if connect_tip_top:
-            self._disconnect_tip_top(session)
+            self._disconnect_tip_top()
 
-        session.tip_pos = pg.InfiniteLine(
-            pos=session.probe_tip,
+        tip_pos = pg.InfiniteLine(
+            pos=probe_extent.probe_tip_um,
             angle=0,
             pen=self.style.dotted_pen,
             movable=movable,
         )
-        session.top_pos = pg.InfiniteLine(
-            pos=session.probe_top,
+        top_pos = pg.InfiniteLine(
+            pos=probe_extent.probe_top_um,
             angle=0,
             pen=self.style.dotted_pen,
             movable=movable,
         )
 
         if connect_tip_top:
-            self._set_aligned_probe_extent_bounds(session)
-            session.tip_pos.sigPositionChanged.connect(self.tip_line_moved)
-            session.top_pos.sigPositionChanged.connect(self.top_line_moved)
+            self._probe_extent = probe_extent
+            self.tip_pos = tip_pos
+            self.top_pos = top_pos
+            self._set_aligned_probe_extent_bounds(probe_extent)
+            self.tip_pos.sigPositionChanged.connect(self.sync_top_to_tip)
+            self.top_pos.sigPositionChanged.connect(self.sync_tip_to_top)
 
-        fig.addItem(session.tip_pos)
-        fig.addItem(session.top_pos)
+        fig.addItem(tip_pos)
+        fig.addItem(top_pos)
 
-    def _set_aligned_probe_extent_bounds(self, session: Any) -> None:
-        offset = 1
-        feature_min_um = session.features[session.idx][0] * 1e6
-        feature_max_um = session.features[session.idx][-1] * 1e6
-        feature_top_um = feature_max_um - offset
-
-        if session.probe_top > feature_top_um:
+    def _set_aligned_probe_extent_bounds(
+        self,
+        probe_extent: ProbeExtentRenderState,
+    ) -> None:
+        feature_top_um = probe_extent.feature_max_um - 1.0
+        if probe_extent.probe_top_um > feature_top_um:
             logger.warning(
                 "Probe span (%.0f um) exceeds feature range (%.0f um). "
                 "Using safe fallback bounds. Consider recording with larger "
                 "channel span or adjusting initialization range.",
-                session.probe_top,
+                probe_extent.probe_top_um,
                 feature_top_um,
             )
-            fallback_bounds = (feature_min_um + offset, feature_max_um - offset)
-            session.tip_pos.setBounds(fallback_bounds)
-            session.top_pos.setBounds(fallback_bounds)
+        self.tip_pos.setBounds(probe_extent.tip_bounds_um)
+        self.top_pos.setBounds(probe_extent.top_bounds_um)
+
+    def sync_top_to_tip(self) -> None:
+        """Keep the top line at the configured probe span above the tip line."""
+        if self.tip_pos is None or self.top_pos is None or self._probe_extent is None:
             return
+        self.top_pos.setPos(self.tip_pos.value() + self._probe_extent.probe_top_um)
 
-        session.tip_pos.setBounds(
-            (
-                feature_min_um + offset,
-                feature_max_um - (session.probe_top + offset),
-            )
-        )
-        session.top_pos.setBounds(
-            (
-                feature_min_um + (session.probe_top + offset),
-                feature_max_um - offset,
-            )
-        )
+    def sync_tip_to_top(self) -> None:
+        """Keep the tip line at the configured probe span below the top line."""
+        if self.tip_pos is None or self.top_pos is None or self._probe_extent is None:
+            return
+        self.tip_pos.setPos(self.top_pos.value() - self._probe_extent.probe_top_um)
 
-    @staticmethod
-    def _disconnect_tip_top(session: Any) -> None:
-        for item in (session.tip_pos, session.top_pos):
+    def tip_position_um(self) -> float | None:
+        """Return the current editable tip-line position."""
+        if self.tip_pos is None:
+            return None
+        return float(self.tip_pos.value())
+
+    def select_region(self, item: Any) -> None:
+        """Record the currently hovered/selected histology region item."""
+        self.selected_region = item
+
+    def selected_region_index(self) -> int | None:
+        """Return the index of the selected histology/ref region."""
+        if self.selected_region is None:
+            return None
+        idx = np.where(self.hist_regions == self.selected_region)[0]
+        if idx.size == 0:
+            idx = np.where(self.hist_ref_regions == self.selected_region)[0]
+        if idx.size == 0:
+            return None
+        return int(idx[0])
+
+    def scale_factor_for_region_item(self, item: Any) -> float | None:
+        """Return the scale factor associated with a rendered scale-region item."""
+        idx = np.where(self.scale_regions == item)[0]
+        if idx.size == 0 or self.scale_factor is None:
+            return None
+        return float(self.scale_factor[int(idx[0])])
+
+    def _disconnect_tip_top(self) -> None:
+        for item in (self.tip_pos, self.top_pos):
             if item is None:
                 continue
             try:
@@ -297,9 +447,3 @@ class HistologyPanelPresenter:
         if regions.shape[0] >= 2:
             return regions[-2, 0]
         return regions[-1, 0]
-
-    def _session(self) -> Any:
-        session = self.session_provider()
-        if session is None:
-            raise RuntimeError("Histology panel session is not available")
-        return session

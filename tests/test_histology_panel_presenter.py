@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
+
+import numpy as np
 
 from ephys_alignment_gui.histology_panel_presenter import (
     HistologyPanelAxes,
@@ -34,9 +35,6 @@ class FakePlot:
 
 
 def _presenter(
-    *,
-    session: Any | None = None,
-    histology_exists: bool = True,
 ) -> tuple[HistologyPanelPresenter, FakeAxis, FakeAxis, FakePlot, FakePlot]:
     aligned_axis = FakeAxis()
     reference_axis = FakeAxis()
@@ -52,25 +50,18 @@ def _presenter(
             reference=reference_axis,
         ),
         style=HistologyPanelStyle(dotted_pen=None),
-        session_provider=lambda: session,
-        histology_exists=lambda: histology_exists,
         set_axis=lambda *args, **kwargs: None,
-        tip_line_moved=lambda: None,
-        top_line_moved=lambda: None,
         padding_provider=lambda: 0.0,
     )
     return presenter, aligned_axis, reference_axis, aligned_plot, reference_plot
 
 
 def test_histology_panel_toggles_label_axis_visibility() -> None:
-    session = SimpleNamespace(label_status=True)
-    presenter, aligned_axis, reference_axis, aligned_plot, reference_plot = _presenter(
-        session=session
-    )
+    presenter, aligned_axis, reference_axis, aligned_plot, reference_plot = _presenter()
 
     presenter.toggle_labels()
 
-    assert session.label_status is False
+    assert presenter.label_status is False
     assert aligned_axis.pen is None
     assert aligned_axis.text_pen is None
     assert reference_axis.pen is None
@@ -80,7 +71,7 @@ def test_histology_panel_toggles_label_axis_visibility() -> None:
 
     presenter.toggle_labels()
 
-    assert session.label_status is True
+    assert presenter.label_status is True
     assert aligned_axis.pen == "k"
     assert aligned_axis.text_pen == "k"
     assert reference_axis.pen == "k"
@@ -89,13 +80,22 @@ def test_histology_panel_toggles_label_axis_visibility() -> None:
     assert reference_plot.update_count == 2
 
 
-def test_histology_panel_plotting_is_guarded_when_histology_is_absent() -> None:
-    def raise_if_session_requested() -> Any:
-        raise AssertionError("session should not be requested")
+def test_histology_panel_owns_selected_region_lookup() -> None:
+    presenter, *_ = _presenter()
+    selected = object()
+    other = object()
+    presenter.hist_regions = np.array([[other], [selected]], dtype=object)
+    presenter.hist_ref_regions = np.array([[object()]], dtype=object)
 
-    presenter, *_ = _presenter(histology_exists=False)
-    presenter.session_provider = raise_if_session_requested
+    presenter.select_region(selected)
 
-    presenter.plot_aligned()
-    presenter.plot_reference()
-    presenter.plot_nearby()
+    assert presenter.selected_region_index() == 1
+
+
+def test_histology_panel_owns_scale_factor_lookup() -> None:
+    presenter, *_ = _presenter()
+    selected = object()
+    presenter.scale_regions = np.array([[object()], [selected]], dtype=object)
+    presenter.scale_factor = np.array([0.75, 1.25])
+
+    assert presenter.scale_factor_for_region_item(selected) == 1.25

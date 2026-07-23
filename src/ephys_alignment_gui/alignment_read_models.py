@@ -32,6 +32,63 @@ class ActiveAlignmentRenderState:
 
 
 @dataclass(frozen=True)
+class ProbeExtentRenderState:
+    """Probe extent and interaction bounds in feature-depth units."""
+
+    probe_tip_um: float
+    probe_top_um: float
+    probe_extra_um: float
+    feature_min_um: float
+    feature_max_um: float
+    tip_bounds_um: tuple[float, float]
+    top_bounds_um: tuple[float, float]
+
+
+@dataclass(frozen=True)
+class HistologyPanelRenderState:
+    """Histology region data ready for frontend panel rendering."""
+
+    key: AlignmentKey
+    histology: AlignmentHistologyData
+    probe_extent: ProbeExtentRenderState
+
+
+@dataclass(frozen=True)
+class ScaleFactorRenderState:
+    """Scale-factor regions ready for frontend rendering."""
+
+    key: AlignmentKey
+    region: Any
+    scale: Any
+    probe_extent: ProbeExtentRenderState
+
+
+@dataclass(frozen=True)
+class FitPlotRenderState:
+    """Feature/track fit curve data ready for frontend rendering."""
+
+    key: AlignmentKey
+    feature_um: NDArray[Any]
+    track_um: NDArray[Any]
+    linear_feature_um: NDArray[Any] | None = None
+    linear_track_um: NDArray[Any] | None = None
+
+
+@dataclass(frozen=True)
+class NearbyBoundaryRenderState:
+    """Nearby boundary curves ready for frontend rendering."""
+
+    key: AlignmentKey | None
+    x: Any
+    y: Any
+    colours: Any
+    parent_x: Any
+    parent_y: Any
+    parent_colours: Any
+    probe_extent: ProbeExtentRenderState
+
+
+@dataclass(frozen=True)
 class ActiveSliceDataState:
     """Runtime slice data available for the active alignment."""
 

@@ -126,6 +126,15 @@ class FakeBrainAtlas:
         self.bc = SimpleNamespace(dxyz=[20e-6, 20e-6, dv_voxel_m])
 
 
+class FakeFitAligner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, Any, Any]] = []
+
+    def feature2track_lin(self, depths, feature, track):
+        self.calls.append((depths, feature, track))
+        return depths + 0.001
+
+
 def _workspace_with_probe_state(
     *,
     shank_idx: int = 1,
@@ -607,6 +616,109 @@ def test_queries_build_active_alignment_render_state_from_document_runtime() -> 
     assert derived.projection_kwargs["ephysalign"] == "aligner"
     assert derived.projection_kwargs["feature"] is render_state.active_alignment.feature
     assert derived.projection_kwargs["track"] is render_state.active_alignment.track
+
+
+def test_queries_build_histology_and_scale_panel_states() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.005]),
+        np.array([0.0, 0.004]),
+    )
+    histology = AlignmentHistologyData(
+        histology=HistologyPlotData(
+            region=np.array([[0.0, 100.0]]),
+            axis_label=np.array([[50.0, "VISp"]], dtype=object),
+            colour=np.array([[1, 2, 3]]),
+        ),
+        reference_histology=HistologyPlotData(
+            region=np.array([[0.0, 120.0]]),
+            axis_label=np.array([[60.0, "VISp"]], dtype=object),
+            colour=np.array([[4, 5, 6]]),
+        ),
+        scale=ScaleFactorData(
+            region=np.array([[0.0, 100.0]]),
+            scale=np.array([1.1]),
+        ),
+    )
+    derived = FakeDerivedDataService(histology=histology)
+    shank_runtime = SimpleNamespace(
+        ephysalign="aligner",
+        region_fp=None,
+        region_label_fp=None,
+        region_colour_fp=None,
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        derived_data_service=derived,
+    )
+
+    histology_state = queries.active_histology_panel_state(
+        probe_tip_um=0.0,
+        probe_top_um=3840.0,
+        probe_extra_um=100.0,
+    )
+    scale_state = queries.active_scale_factor_state(
+        probe_tip_um=0.0,
+        probe_top_um=3840.0,
+        probe_extra_um=100.0,
+    )
+
+    assert histology_state is not None
+    assert histology_state.key == key
+    assert histology_state.histology is histology
+    assert histology_state.probe_extent.tip_bounds_um == (1.0, 1159.0)
+    assert histology_state.probe_extent.top_bounds_um == (3841.0, 4999.0)
+    assert scale_state is not None
+    assert scale_state.key == key
+    assert scale_state.region is histology.scale.region
+    assert scale_state.scale is histology.scale.scale
+
+
+def test_queries_build_fit_plot_state() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.001, 0.002, 0.003, 0.004]),
+        np.array([0.0, 0.0015, 0.002, 0.0035, 0.004]),
+    )
+    ephysalign = FakeFitAligner()
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={
+                    1: SimpleNamespace(ephysalign=ephysalign)
+                }
+            )
+        ),
+    )
+
+    fit_state = queries.active_fit_plot_state(
+        depth_um=np.array([0.0, 20.0]),
+        lin_fit=True,
+    )
+
+    assert fit_state is not None
+    assert fit_state.key == key
+    np.testing.assert_allclose(
+        fit_state.feature_um,
+        [0.0, 1000.0, 2000.0, 3000.0, 4000.0],
+    )
+    np.testing.assert_allclose(
+        fit_state.track_um,
+        [0.0, 1500.0, 2000.0, 3500.0, 4000.0],
+    )
+    np.testing.assert_allclose(fit_state.linear_feature_um, [0.0, 20.0])
+    np.testing.assert_allclose(fit_state.linear_track_um, [1000.0, 1020.0])
+    assert len(ephysalign.calls) == 1
 
 
 def test_queries_active_alignment_render_state_fails_closed_without_runtime() -> None:

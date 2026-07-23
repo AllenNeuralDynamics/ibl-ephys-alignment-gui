@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_events import ShankChanged
+from ephys_alignment_gui.alignment_read_models import NearbyBoundaryRenderState
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -43,6 +44,7 @@ from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamK
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.histology_panel_presenter import (
+    FitPanelItems,
     HistologyPanelAxes,
     HistologyPanelPlots,
     HistologyPanelPresenter,
@@ -305,18 +307,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             plots=HistologyPanelPlots(
                 aligned=self.fig_hist,
                 reference=self.fig_hist_ref,
+                scale=self.fig_scale,
+                scale_colorbar=self.fig_scale_cb,
             ),
             axes=HistologyPanelAxes(
                 aligned=self.ax_hist,
                 reference=self.ax_hist_ref,
             ),
             style=HistologyPanelStyle(dotted_pen=self.kpen_dot),
-            session_provider=lambda: self.session,
-            histology_exists=lambda: getattr(self, "histology_exists", False),
             set_axis=self.set_axis,
-            tip_line_moved=self.tip_line_moved,
-            top_line_moved=self.top_line_moved,
             padding_provider=lambda: self.pad,
+            fit_items=FitPanelItems(
+                fit_curve=self.fit_plot,
+                fit_scatter=self.fit_scatter,
+                linear_fit_curve=self.fit_plot_lin,
+            ),
         )
         self.desktop_alignment_presenter.configure(
             queries=self.app.queries,
@@ -952,17 +957,72 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     Plot functions
     """
 
-    def plot_histology(self, fig, ax="left", movable=True) -> None:
+    def plot_histology(self, fig=None, ax="left", movable=True) -> None:
         """Compatibility wrapper for aligned histology rendering."""
-        self.histology_panel.plot_aligned(fig, movable=movable)
+        state = self._active_histology_panel_state()
+        if state is not None:
+            self.histology_panel.render_aligned(state, fig, movable=movable)
 
-    def plot_histology_ref(self, fig, ax="right", movable=False) -> None:
+    def plot_histology_ref(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for reference histology rendering."""
-        self.histology_panel.plot_reference(fig, movable=movable)
+        state = self._active_histology_panel_state()
+        if state is not None:
+            self.histology_panel.render_reference(state, fig, movable=movable)
 
-    def plot_histology_nearby(self, fig, ax="right", movable=False) -> None:
+    def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for nearby histology boundary rendering."""
-        self.histology_panel.plot_nearby(fig, movable=movable)
+        state = self._active_nearby_boundary_state()
+        if state is not None:
+            self.histology_panel.render_nearby(state, fig, movable=movable)
+
+    def _probe_extent_query_kwargs(self) -> dict[str, float]:
+        return {
+            "probe_tip_um": float(self.session.probe_tip),
+            "probe_top_um": float(self.session.probe_top),
+            "probe_extra_um": float(self.session.probe_extra),
+        }
+
+    def _active_histology_panel_state(self):
+        state = self.app.queries.active_histology_panel_state(
+            **self._probe_extent_query_kwargs()
+        )
+        if state is None:
+            logger.error("Cannot render histology: active alignment data is not loaded")
+        return state
+
+    def _active_scale_factor_state(self):
+        state = self.app.queries.active_scale_factor_state(
+            **self._probe_extent_query_kwargs()
+        )
+        if state is None:
+            logger.error(
+                "Cannot render scale factor: active alignment data is not loaded"
+            )
+        return state
+
+    def _active_fit_plot_state(self):
+        state = self.app.queries.active_fit_plot_state(
+            depth_um=self.session.depth,
+            lin_fit=self.session.lin_fit,
+        )
+        if state is None:
+            logger.error("Cannot render fit: active alignment data is not loaded")
+        return state
+
+    def _active_nearby_boundary_state(self):
+        histology_state = self._active_histology_panel_state()
+        if histology_state is None:
+            return None
+        return NearbyBoundaryRenderState(
+            key=histology_state.key,
+            x=self.session.hist_nearby_x,
+            y=self.session.hist_nearby_y,
+            colours=self.session.hist_nearby_col,
+            parent_x=self.session.hist_nearby_parent_x,
+            parent_y=self.session.hist_nearby_parent_y,
+            parent_colours=self.session.hist_nearby_parent_col,
+            probe_extent=histology_state.probe_extent,
+        )
 
     def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
         """Compatibility wrapper for perpendicular slice rendering."""
@@ -1000,8 +1060,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
+        tip_position_um = self.histology_panel.tip_position_um()
+        if tip_position_um is None:
+            logger.error("Cannot offset alignment: probe tip line is not rendered")
+            return False
+
         result = self.app.commands.offset_alignment_from_tip(
-            tip_position_um=self.session.tip_pos.value(),
+            tip_position_um=tip_position_um,
             probe_tip_um=self.session.probe_tip,
             lin_fit=self.session.lin_fit,
             track_shift_m=track_shift_m,
@@ -1045,11 +1110,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return isinstance(result, AlignmentEditApplied)
 
     def get_scaled_histology(self) -> None:
-        render_state = self.app.queries.active_alignment_render_state()
-        if render_state is None:
-            logger.error("Cannot scale histology: active alignment data is not loaded")
+        state = self._active_histology_panel_state()
+        if state is None:
             return
-        self._apply_alignment_histology_data(render_state.histology)
+        self._apply_alignment_histology_data(state.histology)
 
     def _connect_alignment_changed_handlers(self) -> None:
         self._event_subscriptions.extend(
@@ -1070,7 +1134,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             apply_histology_data=self._apply_alignment_histology_data,
             apply_channel_projection=self._apply_alignment_projection_data,
             reattach_reference_lines=self._reattach_reference_lines,
-            plot_histology=self.histology_panel.plot_aligned,
+            plot_histology=self.plot_histology,
             plot_scale_factor=self.plot_scale_factor,
             plot_fit=self.plot_fit,
             plot_channels=self.slice_panel.plot_channels,
@@ -1135,55 +1199,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        self.fig_scale.clear()
-        self.session.scale_regions = np.empty((0, 1))
-        self.session.scale_factor = self.session.scale_data["scale"]
-        scale_factor = self.session.scale_data["scale"] - 0.5
-        color_bar = ColorBar("seismic")
-        cbar = color_bar.makeColourBar(
-            20, 5, self.fig_scale_cb, min=0.5, max=1.5, label="Scale Factor"
-        )
-        colours = color_bar.map.mapToQColor(scale_factor)
+        state = self._active_scale_factor_state()
+        if state is None:
+            return
         y_min, y_max = self.fig_img.viewRange()[1]
-
-        for ir, reg in enumerate(self.session.scale_data["region"]):
-            region = pg.LinearRegionItem(
-                values=(reg[0], reg[1]),
-                orientation=pg.LinearRegionItem.Horizontal,
-                brush=colours[ir],
-                movable=False,
-            )
-            bound = pg.InfiniteLine(pos=reg[0], angle=0, pen=colours[ir])
-
-            self.fig_scale.addItem(region)
-            self.fig_scale.addItem(bound)
-            self.session.scale_regions = np.vstack([self.session.scale_regions, region])
-
-            # Add text label showing the scale factor
-            text_y = (
-                max(y_min, reg[0]) + min(y_max, reg[1])
-            ) / 2  # Center of the region
-            text_item = pg.TextItem(
-                text=f"{self.session.scale_data['scale'][ir]:.2f}",
-                anchor=(0.5, 0.5),
-                color="black",
-            )
-            text_item.setPos(-0.05, text_y)  # Position at minimum x axis
-            self.fig_scale.addItem(text_item)
-
-        bound = pg.InfiniteLine(
-            pos=self.session.scale_data["region"][-1][1], angle=0, pen=colours[-1]
-        )
-
-        self.fig_scale.addItem(bound)
-
-        self.fig_scale.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
-        self.set_axis(self.fig_scale, "bottom", pen="w", label="blank")
-        self.fig_scale_cb.addItem(cbar)
+        self.histology_panel.render_scale_factor(state, y_range=(y_min, y_max))
 
     def plot_fit(self) -> None:
         """
@@ -1195,29 +1215,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        self.fit_plot.setData(
-            x=self.session.features[self.session.idx] * 1e6,
-            y=self.session.track[self.session.idx] * 1e6,
-        )
-        self.fit_scatter.setData(
-            x=self.session.features[self.session.idx] * 1e6,
-            y=self.session.track[self.session.idx] * 1e6,
-        )
-
-        # Only show linear fit line if checkbox is checked and we have enough points
-        if self.session.lin_fit and (self.session.features[self.session.idx].size >= 5):
-            depth_lin = self.session.ephysalign.feature2track_lin(
-                self.session.depth / 1e6,
-                self.session.features[self.session.idx],
-                self.session.track[self.session.idx],
-            )
-            if np.any(depth_lin):
-                self.fit_plot_lin.setData(x=self.session.depth, y=depth_lin * 1e6)
-            else:
-                self.fit_plot_lin.setData()
-        else:
-            # Hide the linear fit line when checkbox is unchecked or not enough points
-            self.fit_plot_lin.setData()
+        state = self._active_fit_plot_state()
+        if state is not None:
+            self.histology_panel.render_fit(state)
 
     def register_plot_spec(self, spec: PlotSpec) -> None:
         """Register a menu-visible plot spec for later action dispatch."""
@@ -2374,13 +2374,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
 
-        self.histology_panel.plot_reference()
-        self.histology_panel.plot_aligned()
+        self.plot_histology_ref()
+        self.plot_histology()
         self.slice_panel.refresh_perpendicular_histology()
-        # force labels off then on to refresh
-        # TODO better way to do this?
-        self.session.label_status = False
-        self.toggle_labels_button_pressed()
+        self.histology_panel.set_labels_visible(True)
         self.plot_scale_factor()
         self.plot_fit()
 
@@ -2705,16 +2702,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if self.session.hist_nearby_x is None:
                 self.compute_nearby_boundaries()
 
-            self.histology_panel.plot_nearby()
+            self.plot_histology_nearby()
         else:
-            self.histology_panel.plot_reference()
+            self.plot_histology_ref()
 
     def toggle_histology_map_button_pressed(self) -> None:
         self.display_state.toggle_region_annotation_source()
 
         self.get_scaled_histology()
-        self.histology_panel.plot_aligned()
-        self.histology_panel.plot_reference()
+        self.plot_histology()
+        self.plot_histology_ref()
         self.remove_lines_points()
         self.add_lines_points()
 
@@ -2851,20 +2848,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        if self.session.selected_region:
-            idx = np.where(self.session.hist_regions == self.session.selected_region)[0]
-            # Test emptiness with .size, not np.any(): a genuine match at index
-            # 0 gives idx == [0], and np.any([0]) is False — which would drop
-            # the first region and mis-resolve it.
-            if idx.size == 0:
-                idx = np.where(
-                    self.session.hist_ref_regions == self.session.selected_region
-                )[0]
-            if idx.size == 0:
-                idx = np.array([0])
+        idx = self.histology_panel.selected_region_index()
+        if idx is not None:
 
             description, lookup = self.region_lookup_service.get_region_description(
-                self.session.ephysalign.region_id[idx[0]][0]
+                self.session.ephysalign.region_id[idx][0]
             )
             item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
             model_item = self.struct_list.indexFromItem(item[0])
@@ -3281,35 +3269,33 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if type(items[0]) == pg.InfiniteLine:
                 self.reference_lines.select_line(items[0])
             elif (items[0] == self.fig_scale) & (type(items[1]) == pg.LinearRegionItem):
-                idx = np.where(self.session.scale_regions == items[1])[0][0]
-                self.fig_scale_ax.setLabel(
-                    "Scale Factor = "
-                    + str(np.around(self.session.scale_factor[idx], 2))
+                scale_factor = self.histology_panel.scale_factor_for_region_item(
+                    items[1]
                 )
+                if scale_factor is not None:
+                    self.fig_scale_ax.setLabel(
+                        "Scale Factor = " + str(np.around(scale_factor, 2))
+                    )
             elif (items[0] == self.fig_hist) & (type(items[1]) == pg.LinearRegionItem):
-                self.session.selected_region = items[1]
+                self.histology_panel.select_region(items[1])
             elif (items[0] == self.fig_hist_ref) & (
                 type(items[1]) == pg.LinearRegionItem
             ):
-                self.session.selected_region = items[1]
+                self.histology_panel.select_region(items[1])
 
     def tip_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
-        self.session.top_pos.setPos(
-            self.session.tip_pos.value() + self.session.probe_top
-        )
+        self.histology_panel.sync_top_to_tip()
 
     def top_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
-        self.session.tip_pos.setPos(
-            self.session.top_pos.value() - self.session.probe_top
-        )
+        self.histology_panel.sync_tip_to_top()
 
     def remove_lines_points(self) -> None:
         """

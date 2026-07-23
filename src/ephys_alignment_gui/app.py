@@ -26,7 +26,11 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveSliceDataState,
     ActiveSliceMenuState,
     ActiveSliceRenderState,
+    FitPlotRenderState,
+    HistologyPanelRenderState,
     PerpendicularSliceRenderState,
+    ProbeExtentRenderState,
+    ScaleFactorRenderState,
 )
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
@@ -411,6 +415,92 @@ class AlignmentQueries:
             ),
         )
 
+    def active_histology_panel_state(
+        self,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+    ) -> HistologyPanelRenderState | None:
+        """Return histology-region render data for the active alignment."""
+        context = self._active_alignment_context()
+        if context is None:
+            return None
+        key, active_alignment, shank_runtime = context
+        probe_extent = self._probe_extent_render_state(
+            active_alignment,
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+        if probe_extent is None:
+            return None
+        return HistologyPanelRenderState(
+            key=key,
+            histology=self._compute_active_histology(
+                active_alignment,
+                shank_runtime,
+            ),
+            probe_extent=probe_extent,
+        )
+
+    def active_scale_factor_state(
+        self,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+    ) -> ScaleFactorRenderState | None:
+        """Return scale-factor render data for the active alignment."""
+        histology_state = self.active_histology_panel_state(
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+        if histology_state is None:
+            return None
+        return ScaleFactorRenderState(
+            key=histology_state.key,
+            region=histology_state.histology.scale.region,
+            scale=histology_state.histology.scale.scale,
+            probe_extent=histology_state.probe_extent,
+        )
+
+    def active_fit_plot_state(
+        self,
+        *,
+        depth_um: Any,
+        lin_fit: bool,
+    ) -> FitPlotRenderState | None:
+        """Return feature/track fit curve render data for the active alignment."""
+        context = self._active_alignment_context()
+        if context is None:
+            return None
+        key, active_alignment, shank_runtime = context
+        feature = np.asarray(active_alignment.feature, dtype=float)
+        track = np.asarray(active_alignment.track, dtype=float)
+        feature_um = feature * 1e6
+        track_um = track * 1e6
+        linear_feature_um = None
+        linear_track_um = None
+        depth_um = np.asarray(depth_um, dtype=float)
+        if lin_fit and feature.size >= 5 and depth_um.size > 0:
+            depth_lin = shank_runtime.ephysalign.feature2track_lin(
+                depth_um / 1e6,
+                feature,
+                track,
+            )
+            if np.any(depth_lin):
+                linear_feature_um = depth_um
+                linear_track_um = np.asarray(depth_lin, dtype=float) * 1e6
+        return FitPlotRenderState(
+            key=key,
+            feature_um=feature_um,
+            track_um=track_um,
+            linear_feature_um=linear_feature_um,
+            linear_track_um=linear_track_um,
+        )
+
     def ensure_active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Build/cache and return coronal slice data for the active alignment."""
         context = self._active_alignment_context()
@@ -697,6 +787,49 @@ class AlignmentQueries:
             region_fp=shank_runtime.region_fp,
             region_label_fp=shank_runtime.region_label_fp,
             region_colour_fp=shank_runtime.region_colour_fp,
+        )
+
+    def _probe_extent_render_state(
+        self,
+        active_alignment: ActiveAlignment,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+    ) -> ProbeExtentRenderState | None:
+        feature = np.asarray(active_alignment.feature, dtype=float)
+        if feature.size == 0:
+            return None
+
+        offset_um = 1.0
+        feature_min_um = float(feature[0] * 1e6)
+        feature_max_um = float(feature[-1] * 1e6)
+        feature_top_um = feature_max_um - offset_um
+        if probe_top_um > feature_top_um:
+            fallback_bounds = (
+                feature_min_um + offset_um,
+                feature_max_um - offset_um,
+            )
+            tip_bounds_um = fallback_bounds
+            top_bounds_um = fallback_bounds
+        else:
+            tip_bounds_um = (
+                feature_min_um + offset_um,
+                feature_max_um - (probe_top_um + offset_um),
+            )
+            top_bounds_um = (
+                feature_min_um + (probe_top_um + offset_um),
+                feature_max_um - offset_um,
+            )
+
+        return ProbeExtentRenderState(
+            probe_tip_um=float(probe_tip_um),
+            probe_top_um=float(probe_top_um),
+            probe_extra_um=float(probe_extra_um),
+            feature_min_um=feature_min_um,
+            feature_max_um=feature_max_um,
+            tip_bounds_um=tip_bounds_um,
+            top_bounds_um=top_bounds_um,
         )
 
     def _perpendicular_feature_grid_um(
