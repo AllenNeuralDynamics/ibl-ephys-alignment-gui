@@ -20,6 +20,7 @@ dependencies = [
   "aws-requests-auth",
   "iblatlas",
   "iblutil",
+  "jsonschema>=4.26.0",
   "nibabel",
   "PyQt5",
   "pyqtgraph",
@@ -36,6 +37,11 @@ launch = 'ephys_alignment_gui.launch_gui:main'
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ephys_alignment_gui = [
+  "schemas/aind-ibl-ephys-alignment-datapackage/3.1.0/datapackage.schema.json",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "ephys_alignment_gui.__version__" }
@@ -136,6 +142,10 @@ show_error_codes = true
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

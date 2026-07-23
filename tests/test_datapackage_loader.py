@@ -25,7 +25,7 @@ def _load(root: Path):
 def _make_mouse_root(
     tmp_path: Path,
     *,
-    schema_version: str = "3.0.0",
+    schema_version: str = "3.1.0",
     extra_probes: dict[str, dict[str, dict]] | None = None,
     ephys: str | None = "rec1/probeA",
     channels_rel: str | None = None,
@@ -87,9 +87,7 @@ def _make_mouse_root(
                 "ephys": _ref(ephys) if ephys else None,
                 "xyz_picks": [
                     {
-                        "ccf": None
-                        if ccf_null
-                        else _ref("rec1/probeA/xyz_picks.json"),
+                        "ccf": None if ccf_null else _ref("rec1/probeA/xyz_picks.json"),
                         "image_space": _ref("rec1/probeA/xyz_picks_image_space.json"),
                     }
                 ],
@@ -166,7 +164,7 @@ def test_loads_basic_mouse_root(tmp_path):
     root = _make_mouse_root(tmp_path)
     mr = _load(root)
     assert mr.mouse_id == "mouse42"
-    assert mr.schema_version == "3.0.0"
+    assert mr.schema_version == "3.1.0"
     assert mr.sessions == ["rec1"]
     assert mr.probes_for_session("rec1") == ["probeA"]
 
@@ -279,7 +277,6 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
 
     dp_path = root / "datapackage.json"
     data = json.loads(dp_path.read_text())
-    data["schema_version"] = "3.0.0"
     data["probes"] = {
         "rec1": {
             "ProbeD": {
@@ -408,6 +405,12 @@ def test_rejects_older_schema(tmp_path):
         _load(root)
 
 
+def test_rejects_unvendored_schema_version(tmp_path):
+    root = _make_mouse_root(tmp_path, schema_version="3.0.0")
+    with pytest.raises(DataPackageError, match="GUI supports bundled schemas: 3.1.0"):
+        _load(root)
+
+
 def test_rejects_incompatible_major_schema(tmp_path):
     root = _make_mouse_root(tmp_path, schema_version="4.0.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
@@ -429,6 +432,46 @@ def test_malformed_json_raises_datapackage_error(tmp_path):
     root.mkdir(parents=True)
     (root / "datapackage.json").write_text("{not valid json")
     with pytest.raises(DataPackageError, match="Malformed"):
+        _load(root)
+
+
+def test_schema_rejects_legacy_string_path(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["transforms"]["image_to_template_affine"] = (
+        "image_atlas_alignment/Ex_561_Em_600/ls_to_template_SyN_0GenericAffine.mat"
+    )
+    dp_path.write_text(json.dumps(data))
+
+    with pytest.raises(
+        DataPackageError,
+        match="does not match vendored schema 3.1.0",
+    ):
+        _load(root)
+
+
+def test_schema_rejects_path_reference_without_asset_key(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["histology"]["image_space"]["registration"] = {
+        "path": "image_space_histology/histology_registration.nrrd"
+    }
+    dp_path.write_text(json.dumps(data))
+
+    with pytest.raises(DataPackageError, match="'asset' is a required property"):
+        _load(root)
+
+
+def test_schema_rejects_missing_required_image_space_pick(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["probes"]["rec1"]["probeA"]["xyz_picks"][0].pop("image_space")
+    dp_path.write_text(json.dumps(data))
+
+    with pytest.raises(DataPackageError, match="'image_space' is a required property"):
         _load(root)
 
 

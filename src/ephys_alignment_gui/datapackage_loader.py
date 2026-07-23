@@ -19,12 +19,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Minimum datapackage schema this loader can read. Major bump from 2.x:
-# all path fields are now reference objects ``{asset, path}``; older relative
-# string paths could encode producer-local mount layouts and are intentionally
-# rejected.
-MIN_SCHEMA_MAJOR = 3
-MIN_SCHEMA_MINOR = 0
+from ephys_alignment_gui.datapackage_schema import (
+    DatapackageContractError,
+    validate_datapackage_contract,
+)
 
 
 class DataPackageError(RuntimeError):
@@ -278,7 +276,11 @@ def load_mouse_root(
     except json.JSONDecodeError as e:
         raise DataPackageError(f"Malformed {dp_path}: {e}") from e
 
-    _check_schema_version(raw.get("schema_version", ""))
+    try:
+        validate_datapackage_contract(raw)
+    except DatapackageContractError as e:
+        raise DataPackageError(str(e)) from e
+
     external_assets = _parse_external_assets(raw.get("external_assets", {}))
     runtime_config = _load_asset_config_file()
     resolver = RootSearchResolver(
@@ -302,21 +304,6 @@ def load_mouse_root(
         histology=histology,
         probes=probes,
     )
-
-
-def _check_schema_version(version: str) -> None:
-    if not version:
-        raise DataPackageError("datapackage.json has no schema_version")
-    try:
-        major, minor = (int(p) for p in version.split(".")[:2])
-    except ValueError as e:
-        raise DataPackageError(f"Invalid schema_version {version!r}: {e}") from e
-    if major != MIN_SCHEMA_MAJOR or minor < MIN_SCHEMA_MINOR:
-        raise DataPackageError(
-            f"Unsupported datapackage schema {version}. "
-            f"GUI requires {MIN_SCHEMA_MAJOR}.{MIN_SCHEMA_MINOR}.x or newer "
-            "(regenerate datapackage.json or re-run preprocessing)."
-        )
 
 
 def _load_asset_config_file() -> dict[str, object]:

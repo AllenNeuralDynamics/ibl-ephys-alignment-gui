@@ -1,0 +1,431 @@
+{
+  "$defs": {
+    "CcfSpaceHistology": {
+      "description": "References to CCF-space histology volumes.",
+      "properties": {
+        "additional_channels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PathReference"
+          },
+          "title": "Additional Channels",
+          "type": "array"
+        },
+        "registration": {
+          "$ref": "#/$defs/PathReference"
+        }
+      },
+      "required": [
+        "registration"
+      ],
+      "title": "CcfSpaceHistology",
+      "type": "object"
+    },
+    "ChannelTablePaths": {
+      "description": "References to the producer-owned ephys channel geometry table.",
+      "properties": {
+        "contact_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "local_coordinates": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "raw_ind": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "shank_ind": {
+          "$ref": "#/$defs/PathReference"
+        }
+      },
+      "required": [
+        "local_coordinates",
+        "raw_ind",
+        "shank_ind"
+      ],
+      "title": "ChannelTablePaths",
+      "type": "object"
+    },
+    "ExternalAsset": {
+      "description": "External asset descriptor used to resolve path references.",
+      "properties": {
+        "checksum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checksum"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uri"
+        }
+      },
+      "required": [
+        "role",
+        "name"
+      ],
+      "title": "ExternalAsset",
+      "type": "object"
+    },
+    "HistologyPaths": {
+      "description": "Histology output paths grouped by coordinate space.\n\n``ccf_space`` (histology volumes warped into CCF) is a QC output the GUI\nnever reads; it is omitted (``None``) unless the pipeline ran with\n``emit_qc``.",
+      "properties": {
+        "ccf_space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CcfSpaceHistology"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "image_space": {
+          "$ref": "#/$defs/ImageSpaceHistology"
+        }
+      },
+      "required": [
+        "image_space"
+      ],
+      "title": "HistologyPaths",
+      "type": "object"
+    },
+    "ImageSpaceHistology": {
+      "description": "References to image-space histology volumes.",
+      "properties": {
+        "additional_channels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PathReference"
+          },
+          "title": "Additional Channels",
+          "type": "array"
+        },
+        "ccf_template": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "labels": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "registration": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "registration_pipeline": {
+          "$ref": "#/$defs/PathReference"
+        }
+      },
+      "required": [
+        "registration",
+        "registration_pipeline",
+        "ccf_template",
+        "labels"
+      ],
+      "title": "ImageSpaceHistology",
+      "type": "object"
+    },
+    "PathReference": {
+      "description": "A path inside either the datapackage asset or an external asset.",
+      "properties": {
+        "asset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Asset"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset",
+        "path"
+      ],
+      "title": "PathReference",
+      "type": "object"
+    },
+    "ProbeEntry": {
+      "description": "Manifest entry for one ephys collection within a recording session.\n\nUniquely identified by the ``(recording_id, ephys_collection)`` pair from\nthe parent dict path. ``logical_probe`` may be shared by multiple ephys\ncollections when the acquisition split one physical probe into streams.",
+      "properties": {
+        "channel_table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelTablePaths"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ephys": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ephys_collection": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ephys Collection"
+        },
+        "logical_probe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logical Probe"
+        },
+        "num_shanks": {
+          "title": "Num Shanks",
+          "type": "integer"
+        },
+        "probe_id": {
+          "title": "Probe Id",
+          "type": "string"
+        },
+        "xyz_picks": {
+          "items": {
+            "$ref": "#/$defs/XyzPicks"
+          },
+          "title": "Xyz Picks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "probe_id",
+        "num_shanks",
+        "xyz_picks"
+      ],
+      "title": "ProbeEntry",
+      "type": "object"
+    },
+    "TransformPaths": {
+      "description": "References to the ANTs transform chain files.",
+      "properties": {
+        "image_to_template_affine": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "image_to_template_warp": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "template_to_ccf_affine": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "template_to_ccf_warp": {
+          "$ref": "#/$defs/PathReference"
+        }
+      },
+      "required": [
+        "image_to_template_affine",
+        "image_to_template_warp",
+        "template_to_ccf_affine",
+        "template_to_ccf_warp"
+      ],
+      "title": "TransformPaths",
+      "type": "object"
+    },
+    "XyzPicks": {
+      "description": "References to xyz-picks JSON files for one shank (or whole probe).\n\n``ccf`` is a QC output the alignment GUI never reads (it recomputes CCF from\n``image_space`` + the transforms). It is omitted (``None``) unless the\npipeline ran with ``emit_qc``.",
+      "properties": {
+        "ccf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ephys_shank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ephys Shank"
+        },
+        "histology_shank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Histology Shank"
+        },
+        "histology_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Histology Track Id"
+        },
+        "image_space": {
+          "$ref": "#/$defs/PathReference"
+        },
+        "shank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shank"
+        }
+      },
+      "required": [
+        "image_space"
+      ],
+      "title": "XyzPicks",
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.allenneuraldynamics.org/aind-ibl-ephys-alignment-datapackage/3.1.0/datapackage.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Top-level datapackage for preprocessing outputs.",
+  "properties": {
+    "external_assets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ExternalAsset"
+      },
+      "title": "External Assets",
+      "type": "object"
+    },
+    "histology": {
+      "$ref": "#/$defs/HistologyPaths"
+    },
+    "mouse_id": {
+      "title": "Mouse Id",
+      "type": "string"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "probes": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/ProbeEntry"
+        },
+        "type": "object"
+      },
+      "title": "Probes",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "3.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transforms": {
+      "$ref": "#/$defs/TransformPaths"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mouse_id",
+    "platform",
+    "external_assets",
+    "transforms",
+    "histology",
+    "probes"
+  ],
+  "title": "DataPackage",
+  "type": "object"
+}

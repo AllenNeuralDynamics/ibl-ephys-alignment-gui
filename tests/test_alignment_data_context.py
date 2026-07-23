@@ -35,7 +35,7 @@ def _probe(
 def _mouse_root(root: Path, probe: ProbeInfo) -> MouseRoot:
     return MouseRoot(
         root=root,
-        schema_version="3.0.0",
+        schema_version="3.1.0",
         mouse_id="mouse1",
         transforms=None,
         histology=None,
