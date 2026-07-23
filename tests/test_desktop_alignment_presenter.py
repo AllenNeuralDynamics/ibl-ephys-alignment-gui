@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_events import AlignmentChanged, AlignmentEdited
+from ephys_alignment_gui.alignment_events import AlignmentEdited, AlignmentEditKind
 from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
@@ -26,6 +26,19 @@ class FakeQueries:
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         self.calls.append("query")
         return self.render_state
+
+
+def _render_state() -> ActiveAlignmentRenderState:
+    active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    return ActiveAlignmentRenderState(
+        key=AlignmentKey("rec", "stream", 1),
+        active_alignment=active_alignment,
+        histology="histology",
+        projection="projection",
+    )
 
 
 def _recording_callbacks(calls: list[Any]) -> DesktopAlignmentRenderCallbacks:
@@ -55,39 +68,35 @@ def _recording_callbacks(calls: list[Any]) -> DesktopAlignmentRenderCallbacks:
     )
 
 
-def test_desktop_presenter_builds_and_emits_legacy_render_payload() -> None:
+def _configured_presenter(
+    render_state: ActiveAlignmentRenderState | None,
+    calls: list[Any],
+) -> tuple[EventBus, FakeQueries, DesktopAlignmentPresenter]:
     events = EventBus()
-    presenter = DesktopAlignmentPresenter(events)
-    received: list[AlignmentChanged] = []
-    events.subscribe(AlignmentChanged, received.append)
-    active_alignment = ActiveAlignment(
-        np.array([0.0, 1.0]),
-        np.array([2.0, 3.0]),
+    queries = FakeQueries(render_state)
+    presenter = DesktopAlignmentPresenter(
+        events,
+        queries=queries,
+        callbacks=_recording_callbacks(calls),
     )
-    render_state = ActiveAlignmentRenderState(
-        key=AlignmentKey("rec", "stream", 1),
-        active_alignment=active_alignment,
-        histology="histology",
-        projection="projection",
-    )
+    return events, queries, presenter
 
-    presenter.emit_legacy_alignment_changed(
-        render_state=render_state,
-        source="fit",
-        line_update="sync_to_alignment",
-        reset_histology_range=True,
-        refresh_perpendicular=False,
-    )
 
-    assert len(received) == 1
-    event = received[0]
-    assert event.source == "fit"
-    assert event.active_alignment is active_alignment
-    assert event.histology == "histology"
-    assert event.projection == "projection"
-    assert event.line_update == "sync_to_alignment"
-    assert event.reset_histology_range
-    assert not event.refresh_perpendicular
+def _emit_edit(
+    events: EventBus,
+    render_state: ActiveAlignmentRenderState,
+    edit_kind: AlignmentEditKind,
+    *,
+    lin_fit: bool | None = None,
+) -> None:
+    events.emit(
+        AlignmentEdited(
+            edit_kind=edit_kind,
+            active_key=render_state.key,
+            active_alignment=render_state.active_alignment,
+            lin_fit=lin_fit,
+        )
+    )
 
 
 def test_desktop_presentation_options_are_derived_from_edit_kind() -> None:
@@ -103,35 +112,14 @@ def test_desktop_presentation_options_are_derived_from_edit_kind() -> None:
 
 
 def test_desktop_presenter_coordinates_alignment_edit_rendering() -> None:
-    events = EventBus()
-    active_alignment = ActiveAlignment(
-        np.array([0.0, 1.0]),
-        np.array([2.0, 3.0]),
-    )
-    render_state = ActiveAlignmentRenderState(
-        key=AlignmentKey("rec", "stream", 1),
-        active_alignment=active_alignment,
-        histology="histology",
-        projection="projection",
-    )
-    queries = FakeQueries(render_state)
+    render_state = _render_state()
     calls: list[Any] = []
-    presenter = DesktopAlignmentPresenter(
-        events,
-        queries=queries,
-        callbacks=_recording_callbacks(calls),
-    )
+    events, queries, presenter = _configured_presenter(render_state, calls)
     subscriptions = presenter.connect_alignment_events()
 
-    events.emit(
-        AlignmentEdited(
-            edit_kind="fit",
-            active_key=render_state.key,
-            active_alignment=active_alignment,
-            lin_fit=False,
-        )
-    )
+    _emit_edit(events, render_state, "fit", lin_fit=False)
 
+    assert len(subscriptions) == 1
     assert all(subscription.active for subscription in subscriptions)
     assert queries.calls == ["query"]
     assert calls == [
@@ -148,4 +136,78 @@ def test_desktop_presenter_coordinates_alignment_edit_rendering() -> None:
         "update_lines",
         "update_status",
         ("restore_depth", {"y": 1}),
+    ]
+
+
+def test_desktop_presenter_coordinates_offset_rendering() -> None:
+    render_state = _render_state()
+    calls: list[Any] = []
+    events, queries, presenter = _configured_presenter(render_state, calls)
+    presenter.connect_alignment_events()
+
+    _emit_edit(events, render_state, "offset", lin_fit=True)
+
+    assert queries.calls == ["query"]
+    assert calls == [
+        ("restore_lin_fit", True),
+        ("histology", "histology"),
+        ("projection", "projection"),
+        "plot_histology",
+        "plot_scale",
+        "plot_fit",
+        ("plot_channels", "projection"),
+        "refresh_perp",
+        "reattach_lines",
+        "update_lines",
+        "update_status",
+    ]
+
+
+def test_desktop_presenter_coordinates_previous_and_next_rendering() -> None:
+    for edit_kind in ("previous", "next"):
+        render_state = _render_state()
+        calls: list[Any] = []
+        events, queries, presenter = _configured_presenter(render_state, calls)
+        presenter.connect_alignment_events()
+
+        _emit_edit(events, render_state, edit_kind)
+
+        assert queries.calls == ["query"]
+        assert calls == [
+            ("restore_lin_fit", None),
+            ("histology", "histology"),
+            ("projection", "projection"),
+            "reattach_lines",
+            "plot_histology",
+            "plot_scale",
+            "plot_fit",
+            ("plot_channels", "projection"),
+            "refresh_perp",
+            "reattach_lines",
+            "update_status",
+        ]
+
+
+def test_desktop_presenter_coordinates_reset_rendering() -> None:
+    render_state = _render_state()
+    calls: list[Any] = []
+    events, queries, presenter = _configured_presenter(render_state, calls)
+    presenter.connect_alignment_events()
+
+    _emit_edit(events, render_state, "reset", lin_fit=False)
+
+    assert queries.calls == ["query"]
+    assert calls == [
+        ("restore_lin_fit", False),
+        "clear_reference_lines",
+        ("histology", "histology"),
+        ("projection", "projection"),
+        "plot_histology",
+        "plot_scale",
+        "plot_fit",
+        ("plot_channels", "projection"),
+        "refresh_perp",
+        "create_previous_lines",
+        "set_default_range",
+        "update_status",
     ]

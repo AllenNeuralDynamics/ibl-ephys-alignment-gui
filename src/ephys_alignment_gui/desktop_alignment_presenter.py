@@ -5,18 +5,23 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from ephys_alignment_gui.alignment_events import (
-    AlignmentChanged,
     AlignmentEdited,
     AlignmentEditKind,
-    LineUpdateMode,
 )
 from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
 from ephys_alignment_gui.event_bus import EventBus, EventSubscription
 
 logger = logging.getLogger(__name__)
+
+LineUpdateMode = Literal[
+    "none",
+    "reattach",
+    "sync_to_alignment",
+    "reset_to_previous",
+]
 
 
 @dataclass(frozen=True)
@@ -92,49 +97,7 @@ class DesktopAlignmentPresenter:
 
     def connect_alignment_events(self) -> list[EventSubscription]:
         """Subscribe presenter handlers for alignment edit/render events."""
-        return [
-            self.events.subscribe(AlignmentEdited, self.on_alignment_edited),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_apply_data,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_prepare_lines,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_histology,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_scale,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_fit,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_channels,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_perpendicular,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_lines,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_range,
-            ),
-            self.events.subscribe(
-                AlignmentChanged,
-                self.on_alignment_changed_status,
-            ),
-        ]
+        return [self.events.subscribe(AlignmentEdited, self.on_alignment_edited)]
 
     def on_alignment_edited(self, event: AlignmentEdited) -> None:
         """Present a semantic alignment edit in the desktop shell."""
@@ -156,109 +119,57 @@ class DesktopAlignmentPresenter:
             else {}
         )
         try:
-            self.emit_legacy_alignment_changed(
+            self.render_alignment_edit(
                 render_state=render_state,
-                source=event.edit_kind,
-                line_update=options.line_update,
-                reset_histology_range=options.reset_histology_range,
-                refresh_perpendicular=options.refresh_perpendicular,
+                options=options,
             )
         finally:
             if depth_ranges:
                 callbacks.restore_depth_plot_y_ranges(depth_ranges)
 
-    def on_alignment_changed_apply_data(self, event: AlignmentChanged) -> None:
-        """Apply derived alignment data to desktop compatibility state."""
+    def render_alignment_edit(
+        self,
+        *,
+        render_state: ActiveAlignmentRenderState,
+        options: DesktopAlignmentPresentationOptions,
+    ) -> None:
+        """Apply one alignment edit to focused desktop render callbacks."""
         callbacks = self._require_callbacks()
-        callbacks.apply_histology_data(event.histology)
-        callbacks.apply_channel_projection(event.projection)
+        callbacks.apply_histology_data(render_state.histology)
+        callbacks.apply_channel_projection(render_state.projection)
+        self._prepare_reference_lines_before_render(options)
+        callbacks.plot_histology()
+        callbacks.plot_scale_factor()
+        callbacks.plot_fit()
+        callbacks.plot_channels(render_state.projection)
+        if options.refresh_perpendicular:
+            callbacks.refresh_perpendicular_histology()
+        self._update_reference_lines_after_render(options)
+        if options.reset_histology_range:
+            callbacks.set_default_feature_y_range()
+        callbacks.update_status()
 
-    def on_alignment_changed_prepare_lines(self, event: AlignmentChanged) -> None:
-        """Prepare reference-line handles before plotting updates."""
-        if event.line_update == "reattach":
+    def _prepare_reference_lines_before_render(
+        self,
+        options: DesktopAlignmentPresentationOptions,
+    ) -> None:
+        """Prepare reference-line handles before plot refreshes."""
+        if options.line_update == "reattach":
             self._require_callbacks().reattach_reference_lines()
 
-    def on_alignment_changed_histology(self, event: AlignmentChanged) -> None:
-        """Render histology region overlays."""
-        self._require_callbacks().plot_histology()
-
-    def on_alignment_changed_scale(self, event: AlignmentChanged) -> None:
-        """Render scale-factor plot."""
-        self._require_callbacks().plot_scale_factor()
-
-    def on_alignment_changed_fit(self, event: AlignmentChanged) -> None:
-        """Render fit plot."""
-        self._require_callbacks().plot_fit()
-
-    def on_alignment_changed_channels(self, event: AlignmentChanged) -> None:
-        """Render channel projection overlays."""
-        self._require_callbacks().plot_channels(event.projection)
-
-    def on_alignment_changed_perpendicular(self, event: AlignmentChanged) -> None:
-        """Refresh perpendicular histology when required."""
-        if event.refresh_perpendicular:
-            self._require_callbacks().refresh_perpendicular_histology()
-
-    def on_alignment_changed_lines(self, event: AlignmentChanged) -> None:
-        """Update desktop reference-line handles after alignment changes."""
+    def _update_reference_lines_after_render(
+        self,
+        options: DesktopAlignmentPresentationOptions,
+    ) -> None:
+        """Update desktop reference-line handles after plot refreshes."""
         callbacks = self._require_callbacks()
-        if event.line_update == "reattach":
+        if options.line_update == "reattach":
             callbacks.reattach_reference_lines()
-        elif event.line_update == "sync_to_alignment":
+        elif options.line_update == "sync_to_alignment":
             callbacks.reattach_reference_lines()
             callbacks.update_reference_lines_to_alignment()
-        elif event.line_update == "reset_to_previous":
+        elif options.line_update == "reset_to_previous":
             callbacks.create_reference_lines_for_previous_alignment()
-
-    def on_alignment_changed_range(self, event: AlignmentChanged) -> None:
-        """Apply desktop plot range policy."""
-        if event.reset_histology_range:
-            self._require_callbacks().set_default_feature_y_range()
-
-    def on_alignment_changed_status(self, event: AlignmentChanged) -> None:
-        """Refresh desktop status text when required."""
-        if event.update_status:
-            self._require_callbacks().update_status()
-
-    def emit_legacy_alignment_changed(
-        self,
-        *,
-        render_state: ActiveAlignmentRenderState,
-        source: str,
-        line_update: LineUpdateMode = "none",
-        reset_histology_range: bool = False,
-        refresh_perpendicular: bool = True,
-    ) -> None:
-        """Publish the legacy desktop ``AlignmentChanged`` render packet."""
-        self.events.emit(
-            self.build_legacy_alignment_changed(
-                render_state=render_state,
-                source=source,
-                line_update=line_update,
-                reset_histology_range=reset_histology_range,
-                refresh_perpendicular=refresh_perpendicular,
-            )
-        )
-
-    def build_legacy_alignment_changed(
-        self,
-        *,
-        render_state: ActiveAlignmentRenderState,
-        source: str,
-        line_update: LineUpdateMode = "none",
-        reset_histology_range: bool = False,
-        refresh_perpendicular: bool = True,
-    ) -> AlignmentChanged:
-        """Return the desktop compatibility refresh payload."""
-        return AlignmentChanged(
-            source=source,
-            active_alignment=render_state.active_alignment,
-            histology=render_state.histology,
-            projection=render_state.projection,
-            line_update=line_update,
-            reset_histology_range=reset_histology_range,
-            refresh_perpendicular=refresh_perpendicular,
-        )
 
     def _require_queries(self) -> Any:
         if self.queries is None:

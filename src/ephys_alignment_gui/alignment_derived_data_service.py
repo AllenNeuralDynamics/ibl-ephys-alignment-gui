@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.alignment_display_state import RegionAnnotationSource
@@ -64,11 +65,9 @@ class AlignmentDerivedDataService:
             region, axis_label = ephysalign.scale_histology_regions(feature, track)
             colour = ephysalign.region_colour
             scale_region, scale = ephysalign.get_scale_factor(region)
-            reference_region, reference_axis_label = (
-                ephysalign.scale_histology_regions(
-                    ephysalign.track_extent,
-                    ephysalign.track_extent,
-                )
+            reference_region, reference_axis_label = ephysalign.scale_histology_regions(
+                ephysalign.track_extent,
+                ephysalign.track_extent,
             )
             reference_colour = ephysalign.region_colour
         elif region_annotation_source == "FranklinPaxinos":
@@ -83,13 +82,11 @@ class AlignmentDerivedDataService:
                 region,
                 region_orig=region_fp,
             )
-            reference_region, reference_axis_label = (
-                ephysalign.scale_histology_regions(
-                    ephysalign.track_extent,
-                    ephysalign.track_extent,
-                    region=region_fp,
-                    region_label=region_label_fp,
-                )
+            reference_region, reference_axis_label = ephysalign.scale_histology_regions(
+                ephysalign.track_extent,
+                ephysalign.track_extent,
+                region=region_fp,
+                region_label=region_label_fp,
             )
             reference_colour = region_colour_fp
         else:
@@ -133,4 +130,4 @@ class AlignmentDerivedDataService:
         track: NDArray[Any],
     ) -> NDArray[Any]:
         """Compute only channel locations when plotting artifacts are not needed."""
-        return ephysalign.get_channel_locations(feature, track)
+        return np.asarray(ephysalign.get_channel_locations(feature, track))
