@@ -29,6 +29,7 @@ def _make_mouse_root(
     extra_probes: dict[str, dict[str, dict]] | None = None,
     ephys: str | None = "rec1/probeA",
     channels_rel: str | None = None,
+    ccf_null: bool = False,
 ) -> Path:
     """Create a minimal mouse-root directory with a datapackage.json.
 
@@ -86,7 +87,9 @@ def _make_mouse_root(
                 "ephys": _ref(ephys) if ephys else None,
                 "xyz_picks": [
                     {
-                        "ccf": _ref("rec1/probeA/xyz_picks.json"),
+                        "ccf": None
+                        if ccf_null
+                        else _ref("rec1/probeA/xyz_picks.json"),
                         "image_space": _ref("rec1/probeA/xyz_picks_image_space.json"),
                     }
                 ],
@@ -247,6 +250,18 @@ def test_probe_info_resolves_paths(tmp_path):
     assert pk.image_space.is_file()
     assert pk.ccf.is_file()
     assert pk.shank is None
+
+
+def test_null_ccf_pick_is_tolerated(tmp_path):
+    # CCF picks are a QC-only output (emit_qc); the producer writes
+    # ``ccf: null`` when QC is off. The GUI never reads them, so loading
+    # must not choke on the null.
+    root = _make_mouse_root(tmp_path, ccf_null=True)
+    mr = _load(root)
+    probe = mr.get_probe("rec1", "probeA")
+    pk = probe.picks_for_shank(0)
+    assert pk.ccf is None
+    assert pk.image_space.is_file()
 
 
 def test_loads_explicit_ephys_geometry_fields(tmp_path):

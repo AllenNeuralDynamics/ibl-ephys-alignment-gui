@@ -139,10 +139,14 @@ class HistologyImagePaths:
 
 @dataclass(frozen=True)
 class XyzPicks:
-    """Absolute paths to xyz-picks JSON files for one shank (or whole probe)."""
+    """Absolute paths to xyz-picks JSON files for one shank (or whole probe).
+
+    ``ccf`` is a QC-only output (written only when the pipeline ran with
+    ``emit_qc``); the GUI never reads it, so it is ``None`` when absent.
+    """
 
     image_space: Path
-    ccf: Path
+    ccf: Path | None = None
     histology_track_id: str | None = None
     histology_shank: int | None = None
     ephys_shank: int | None = None
@@ -486,7 +490,12 @@ def _parse_probes(
             picks = tuple(
                 XyzPicks(
                     image_space=_resolve_ref(p["image_space"], resolver, assets),
-                    ccf=_resolve_ref(p["ccf"], resolver, assets),
+                    # CCF picks are a QC-only output (emit_qc); the GUI never
+                    # reads them (it recomputes CCF from image_space + the
+                    # transforms), so ``ccf`` is null unless QC was emitted.
+                    ccf=_resolve_ref(p["ccf"], resolver, assets)
+                    if p.get("ccf") is not None
+                    else None,
                     histology_track_id=p.get("histology_track_id"),
                     histology_shank=p.get("histology_shank"),
                     ephys_shank=p.get("ephys_shank"),
