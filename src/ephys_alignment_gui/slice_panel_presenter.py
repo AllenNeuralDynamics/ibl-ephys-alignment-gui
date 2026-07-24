@@ -46,6 +46,7 @@ class SlicePanelViewState:
     """Desktop-only pyqtgraph handles and slice-panel UI state."""
 
     channel_status: bool = True
+    channel_projection: Any = None
     slice_lines: list[Any] = field(default_factory=list)
     slice_chns: Any = None
     slice_tip: Any = None
@@ -61,6 +62,7 @@ class SlicePanelViewState:
 
     def reset_coronal_overlays(self) -> None:
         """Forget coronal overlay handles after the plot is cleared."""
+        self.channel_projection = None
         self.slice_lines = []
         self.slice_chns = None
         self.slice_tip = None
@@ -81,7 +83,6 @@ class SlicePanelPresenter:
     app: Any
     plots: SlicePanelPlots
     style: SlicePanelStyle
-    session_provider: Callable[[], Any]
     histology_exists: Callable[[], bool]
     action_group_provider: Callable[[], Any | None]
     view_state: SlicePanelViewState = field(default_factory=SlicePanelViewState)
@@ -273,7 +274,6 @@ class SlicePanelPresenter:
         if not self.histology_exists():
             return
 
-        session = self._session()
         view_state = self.view_state
         view_state.channel_status = True
         if projection is None:
@@ -281,14 +281,12 @@ class SlicePanelPresenter:
             if render_state is None:
                 return
             projection = render_state.projection
-
-        session.channel_locations_ras = projection.channel_locations_ras
-        session.tip_location_ras = projection.tip_location_ras
+        view_state.channel_projection = projection
 
         if view_state.slice_chns is None:
-            self._create_channel_overlay(session, projection)
+            self._create_channel_overlay(projection)
             return
-        self._update_channel_overlay(session, projection)
+        self._update_channel_overlay(projection)
 
     def toggle_channel_visibility(self) -> None:
         """Toggle channel, tip, trajectory, and perpendicular overlays."""
@@ -306,16 +304,29 @@ class SlicePanelPresenter:
         """Render the coronal trajectory overlay used by overview exports."""
         if not self.histology_exists():
             return
-        session = self._session()
+        channel_locations_ras = self.current_channel_locations_ras()
+        if channel_locations_ras is None:
+            return
         view_state = self.view_state
         if view_state.traj_line is None:
             view_state.traj_line = pg.PlotCurveItem()
         view_state.traj_line.setData(
-            x=session.channel_locations_ras[:, 0],
-            y=session.channel_locations_ras[:, 2],
+            x=channel_locations_ras[:, 0],
+            y=channel_locations_ras[:, 2],
             pen=pen,
         )
         self.plots.coronal.addItem(view_state.traj_line)
+
+    def current_channel_locations_ras(self) -> Any | None:
+        """Return channel locations for the current slice overlay."""
+        projection = self.view_state.channel_projection
+        if projection is None:
+            render_state = self.current_slice_render_state()
+            if render_state is None:
+                return None
+            projection = render_state.projection
+            self.view_state.channel_projection = projection
+        return projection.channel_locations_ras
 
     def selection_for_slice_payload(
         self,
@@ -403,13 +414,13 @@ class SlicePanelPresenter:
         )
         self.plots.perpendicular.addItem(view_state.perp_tip_marker)
 
-    def _create_channel_overlay(self, session: Any, projection: Any) -> None:
+    def _create_channel_overlay(self, projection: Any) -> None:
         view_state = self.view_state
         view_state.slice_lines = []
         view_state.slice_chns = pg.ScatterPlotItem()
         view_state.slice_chns.setData(
-            x=session.channel_locations_ras[:, 0],
-            y=session.channel_locations_ras[:, 2],
+            x=projection.channel_locations_ras[:, 0],
+            y=projection.channel_locations_ras[:, 2],
             pen="r",
             brush="r",
             size=4,
@@ -418,8 +429,8 @@ class SlicePanelPresenter:
 
         view_state.slice_tip = pg.ScatterPlotItem()
         view_state.slice_tip.setData(
-            x=[session.tip_location_ras[0]],
-            y=[session.tip_location_ras[2]],
+            x=[projection.tip_location_ras[0]],
+            y=[projection.tip_location_ras[2]],
             pen="m",
             brush="m",
             size=5,
@@ -428,21 +439,21 @@ class SlicePanelPresenter:
 
         self._add_perpendicular_vectors(projection)
 
-    def _update_channel_overlay(self, session: Any, projection: Any) -> None:
+    def _update_channel_overlay(self, projection: Any) -> None:
         view_state = self.view_state
         for line in view_state.slice_lines:
             self.plots.coronal.removeItem(line)
         view_state.slice_lines = []
         self._add_perpendicular_vectors(projection)
         view_state.slice_chns.setData(
-            x=session.channel_locations_ras[:, 0],
-            y=session.channel_locations_ras[:, 2],
+            x=projection.channel_locations_ras[:, 0],
+            y=projection.channel_locations_ras[:, 2],
             pen="r",
             brush="r",
         )
         view_state.slice_tip.setData(
-            x=[session.tip_location_ras[0]],
-            y=[session.tip_location_ras[2]],
+            x=[projection.tip_location_ras[0]],
+            y=[projection.tip_location_ras[2]],
             pen="m",
             brush="m",
             size=10,
@@ -509,9 +520,3 @@ class SlicePanelPresenter:
     def _remove_item(plot: Any, item: Any) -> None:
         if item is not None:
             plot.removeItem(item)
-
-    def _session(self) -> Any:
-        session = self.session_provider()
-        if session is None:
-            raise RuntimeError("Slice panel session is not available")
-        return session

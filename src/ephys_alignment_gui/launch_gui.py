@@ -41,7 +41,9 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankRenderCallbacks,
     DesktopShankSelectionState,
 )
+from ephys_alignment_gui.desktop_view_session import DesktopViewSession
 from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.feature_plot_view import FeaturePlotView
@@ -58,7 +60,6 @@ from ephys_alignment_gui.plot_registry import (
     PlotSpec,
     plot_spec,
 )
-from ephys_alignment_gui.probe_session import ProbeSession
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
     ReferenceLinePlots,
@@ -271,6 +272,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_data_factory = self.workspace.plot_data_factory
 
         self._plot_specs_by_key: dict[str, PlotSpec] = {}
+        self._session: DesktopViewSession | None = None
+        self.ephys_plot_items = EphysPlotItems()
         self.init_variables()
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
@@ -301,7 +304,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 solid_pen=self.kpen_solid,
                 reference_line_pen=self.reference_line_kpen,
             ),
-            session_provider=lambda: self.session,
             histology_exists=lambda: getattr(self, "histology_exists", False),
             action_group_provider=lambda: getattr(self, "slice_options_group", None),
             slice_item=self.slice_item,
@@ -374,20 +376,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
     @property
-    def session(self) -> ProbeSession | None:
-        """Active ProbeSession owned by the runtime manager."""
-        runtime = getattr(self, "runtime", None)
-        if runtime is None:
-            return getattr(self, "_session_before_runtime", None)
-        return runtime.active_session
+    def session(self) -> DesktopViewSession | None:
+        """Active desktop view session."""
+        return self._session
 
     @session.setter
-    def session(self, session: ProbeSession | None) -> None:
-        runtime = getattr(self, "runtime", None)
-        if runtime is None:
-            self._session_before_runtime = session
-            return
-        runtime.active_session = session
+    def session(self, session: DesktopViewSession | None) -> None:
+        self._session = session
 
     def init_variables(self) -> None:
         """
@@ -413,7 +408,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
-        self.runtime.new_session()
+        self.session = DesktopViewSession()
+        self.runtime.clear_active_stream()
         self.display_state.reset_region_annotation_source()
         self.display_state.reset_unit_filter()
 
@@ -830,7 +826,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.toggle_plots(self.line_options_group)
             plot = self.line_options_group.checkedAction()
 
-        [self.fig_probe_cb.addItem(cbar) for cbar in self.session.probe_cbars]
+        [
+            self.fig_probe_cb.addItem(cbar)
+            for cbar in self.ephys_plot_items.probe_colorbars
+        ]
         self.set_axis(self.fig_probe_cb, "top", pen="k", label=text)
         self.set_font(self.fig_line, "left", ptsize=8, width=ax_width)
         self.set_font(self.fig_line, "bottom", ptsize=8)
@@ -874,13 +873,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.plot_channels()
 
             slice_name = self.slice_options_group.checkedAction().text()
+            channel_locations_ras = self.slice_panel.current_channel_locations_ras()
+            if channel_locations_ras is None:
+                self.toggle_plots(self.slice_options_group)
+                plot = self.slice_options_group.checkedAction()
+                continue
             self.fig_slice.setXRange(
-                min=np.min(self.session.channel_locations_ras[:, 0]) - 200 / 1e6,
-                max=np.max(self.session.channel_locations_ras[:, 0]) + 200 / 1e6,
+                min=np.min(channel_locations_ras[:, 0]) - 200 / 1e6,
+                max=np.max(channel_locations_ras[:, 0]) + 200 / 1e6,
             )
             self.fig_slice.setYRange(
-                min=np.min(self.session.channel_locations_ras[:, 2]) - 500 / 1e6,
-                max=np.max(self.session.channel_locations_ras[:, 2]) + 500 / 1e6,
+                min=np.min(channel_locations_ras[:, 2]) - 500 / 1e6,
+                max=np.max(channel_locations_ras[:, 2]) + 500 / 1e6,
             )
             self.fig_slice.resize(50, self.slice_height)
             exporter = pg.exporters.ImageExporter(self.fig_slice)
@@ -1104,12 +1108,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
         return isinstance(result, AlignmentEditApplied)
 
-    def get_scaled_histology(self) -> None:
-        state = self._active_histology_panel_state()
-        if state is None:
-            return
-        self._apply_alignment_histology_data(state.histology)
-
     def _connect_alignment_changed_handlers(self) -> None:
         self._event_subscriptions.extend(
             self.desktop_alignment_presenter.connect_alignment_events()
@@ -1126,8 +1124,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             clear_reference_lines=self.reference_lines.clear,
             capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
-            apply_histology_data=self._apply_alignment_histology_data,
-            apply_channel_projection=self._apply_alignment_projection_data,
             reattach_reference_lines=self._reattach_reference_lines,
             plot_histology=self.plot_histology,
             plot_scale_factor=self.plot_scale_factor,
@@ -1143,22 +1139,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             set_default_feature_y_range=self.set_default_feature_y_range,
             update_status=self.update_string,
         )
-
-    def _apply_alignment_histology_data(self, derived) -> None:
-        self.session.hist_data["region"] = derived.histology.region
-        self.session.hist_data["axis_label"] = derived.histology.axis_label
-        self.session.hist_data["colour"] = derived.histology.colour
-        self.session.hist_data_ref["region"] = derived.reference_histology.region
-        self.session.hist_data_ref["axis_label"] = (
-            derived.reference_histology.axis_label
-        )
-        self.session.hist_data_ref["colour"] = derived.reference_histology.colour
-        self.session.scale_data["region"] = derived.scale.region
-        self.session.scale_data["scale"] = derived.scale.scale
-
-    def _apply_alignment_projection_data(self, projection: Any) -> None:
-        self.session.channel_locations_ras = projection.channel_locations_ras
-        self.session.tip_location_ras = projection.tip_location_ras
 
     def _create_reference_lines_for_previous_alignment(self) -> None:
         if np.any(self.session.feature_prev):
@@ -1184,7 +1164,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
     def _apply_shank_selection_to_legacy_session(self, shank_idx: int) -> None:
-        """Sync document-owned shank selection into transitional ProbeSession."""
+        """Sync document-owned shank selection into transitional view session."""
         if self.session is None:
             return
         self.session.current_shank_idx = shank_idx
@@ -1358,11 +1338,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("data for this plot not available")
             return
         else:
-            [self.fig_img.removeItem(plot) for plot in self.session.img_plots]
-            [self.fig_img_cb.removeItem(cbar) for cbar in self.session.img_cbars]
-
-            self.session.img_plots = []
-            self.session.img_cbars = []
+            self.ephys_plot_items.clear_image(self.fig_img, self.fig_img_cb)
 
             size = data["size"].tolist()
             symbol = data["symbol"].tolist()
@@ -1377,7 +1353,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 label=data["title"],
             )
             self.fig_img_cb.addItem(cbar)
-            self.session.img_cbars.append(cbar)
+            self.ephys_plot_items.image_colorbars.append(cbar)
 
             brush = data["colours"].tolist()
             plot = pg.ScatterPlotItem()
@@ -1395,7 +1371,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
             self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
-            self.session.img_plots.append(plot)
+            self.ephys_plot_items.image_plots.append(plot)
             self.feature_plot.set_data_plot(
                 plot,
                 x_scale=1,
@@ -1423,8 +1399,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("data for this plot not available")
             return
         else:
-            [self.fig_line.removeItem(plot) for plot in self.session.line_plots]
-            self.session.line_plots = []
+            self.ephys_plot_items.clear_line(self.fig_line)
             line = pg.PlotCurveItem()
             line.setData(x=data["x"], y=data["y"])
             line.setPen(self.kpen_solid)
@@ -1433,7 +1408,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
             self.set_axis(self.fig_line, "bottom", label=data["xaxis"])
-            self.session.line_plots.append(line)
+            self.ephys_plot_items.line_plots.append(line)
 
     def plot_probe(self, data, bounds=None) -> None:
         """
@@ -1453,13 +1428,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("data for this plot not available")
             return
         else:
-            [self.fig_probe.removeItem(plot) for plot in self.session.probe_plots]
-            [self.fig_probe_cb.removeItem(cbar) for cbar in self.session.probe_cbars]
-            [self.fig_probe.removeItem(line) for line in self.session.probe_bounds]
+            self.ephys_plot_items.clear_probe(self.fig_probe, self.fig_probe_cb)
             self.set_axis(self.fig_probe_cb, "top", pen="w")
-            self.session.probe_plots = []
-            self.session.probe_cbars = []
-            self.session.probe_bounds = []
             color_bar = ColorBar(data["cmap"])
             lut = color_bar.getColourMap()
             for img, scale, offset in zip(data["img"], data["scale"], data["offset"]):
@@ -1480,7 +1450,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 image.setLookupTable(lut)
                 image.setLevels((data["levels"][0], data["levels"][1]))
                 self.fig_probe.addItem(image)
-                self.session.probe_plots.append(image)
+                self.ephys_plot_items.probe_plots.append(image)
 
             cbar = color_bar.makeColourBar(
                 20,
@@ -1492,7 +1462,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 lim=True,
             )
             self.fig_probe_cb.addItem(cbar)
-            self.session.probe_cbars.append(cbar)
+            self.ephys_plot_items.probe_colorbars.append(cbar)
 
             self.fig_probe.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
@@ -1504,7 +1474,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 for bound in bounds:
                     line = pg.InfiniteLine(pos=bound, angle=0, pen="w")
                     self.fig_probe.addItem(line)
-                    self.session.probe_bounds.append(line)
+                    self.ephys_plot_items.probe_bounds.append(line)
 
     def plot_image(self, data) -> None:
         """
@@ -1525,11 +1495,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.warning("data for this plot not available")
             return
         else:
-            [self.fig_img.removeItem(plot) for plot in self.session.img_plots]
-            [self.fig_img_cb.removeItem(cbar) for cbar in self.session.img_cbars]
+            self.ephys_plot_items.clear_image(self.fig_img, self.fig_img_cb)
             self.set_axis(self.fig_img_cb, "top", pen="w")
-            self.session.img_plots = []
-            self.session.img_cbars = []
 
             image = pg.ImageItem()
             img_data = data["img"]
@@ -1565,7 +1532,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     label=data["title"],
                 )
                 self.fig_img_cb.addItem(cbar)
-                self.session.img_cbars.append(cbar)
+                self.ephys_plot_items.image_colorbars.append(cbar)
             elif img_data.ndim == 3:
                 # Phase legend: two horizontal bars
                 from matplotlib.colors import hsv_to_rgb
@@ -1595,7 +1562,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 cbar_img = pg.ImageItem()
                 cbar_img.setImage(combined, autoLevels=False)
                 self.fig_img_cb.addItem(cbar_img)
-                self.session.img_cbars.append(cbar_img)
+                self.ephys_plot_items.image_colorbars.append(cbar_img)
                 self.set_axis(
                     self.fig_img_cb,
                     "top",
@@ -1606,7 +1573,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 image.setLevels((1, 0))
 
             self.fig_img.addItem(image)
-            self.session.img_plots.append(image)
+            self.ephys_plot_items.image_plots.append(image)
             self.fig_img.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
@@ -1627,9 +1594,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Break reference cycles from the previous probe session."""
         self.reference_lines.clear()
         self.feature_plot.clear()
+        self.ephys_plot_items.detach(self._figures())
         if self.session is not None:
             self.session.teardown(self._figures())
             self.session = None
+        self.runtime.clear_active_stream()
 
         # Reset persistent widgets that aren't owned by the session
         self.fit_plot.setData()
@@ -1639,8 +1608,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Return a map of figure names to widgets for session teardown."""
         return {
             "img": self.fig_img,
+            "img_cb": self.fig_img_cb,
             "line": self.fig_line,
             "probe": self.fig_probe,
+            "probe_cb": self.fig_probe_cb,
             "slice": self.fig_slice,
             "hist": self.fig_hist,
             "hist_ref": self.fig_hist_ref,
@@ -1684,7 +1655,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     ):
         """Project runtime stream state into the active view session."""
         if self.session is None:
-            raise RuntimeError("No active ProbeSession")
+            raise RuntimeError("No active desktop view session")
         shank_runtime = stream_runtime.shank_runtime_for(shank_idx)
         collection = shank_runtime.collection
         stream = stream_runtime.stream
@@ -1716,7 +1687,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         *,
         source: str,
     ) -> int | None:
-        """Select a document shank and sync the transitional ProbeSession."""
+        """Select a document shank and sync the transitional view session."""
         target_shank = self._valid_session_shank_idx(shank_idx)
         result = self.app.commands.select_shank(target_shank, source=source)
         if isinstance(result, Failed):
@@ -1760,11 +1731,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _stash_and_detach_current(self) -> None:
         """Tear down the displayed view session, keeping stream runtime cached."""
-        session = self.runtime.detach_active_for_cache()
+        session = self.session
+        self.session = None
+        self.runtime.clear_active_stream()
         if session is None:
             return
         self.reference_lines.clear()
         self.feature_plot.clear()
+        self.ephys_plot_items.detach(self._figures())
         session.detach(self._figures())
         self.fit_plot.setData()
         self.fit_scatter.setData()
@@ -1778,8 +1752,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.reference_lines.clear()
         self.feature_plot.clear()
         figures = self._figures()
-        for sess in self.runtime.sessions_for_stream_eviction():
-            sess.teardown(figures)
+        self.ephys_plot_items.detach(figures)
+        session = self.session
+        self.session = None
+        self.runtime.clear_stream_cache()
+        if session is not None:
+            session.teardown(figures)
         self.fit_plot.setData()
         self.fit_scatter.setData()
 
@@ -1791,7 +1769,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     ) -> bool:
         """Display an already-loaded stream from the cache — no heavy reload.
 
-        Reuses cached stream data and per-shank PlotData. A fresh ProbeSession
+        Reuses cached stream data and per-shank PlotData. A fresh view session
         is created as a view adapter; document-owned edit state is projected
         onto the active shank compatibility object.
         """
@@ -2351,7 +2329,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
 
         self._sync_active_shank_alignment_state()
-        self.get_scaled_histology()
         return True
 
     def render_histology_plots(self, *, shank_idx: int | None = None) -> None:
@@ -2666,9 +2643,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def toggle_histology_map_button_pressed(self) -> None:
         self.display_state.toggle_region_annotation_source()
 
-        self.get_scaled_histology()
         self.plot_histology()
         self.plot_histology_ref()
+        self.plot_scale_factor()
         self.remove_lines_points()
         self.add_lines_points()
 

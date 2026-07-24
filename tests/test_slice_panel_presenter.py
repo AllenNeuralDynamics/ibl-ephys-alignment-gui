@@ -147,15 +147,12 @@ def _presenter(
             solid_pen=None,
             reference_line_pen=None,
         ),
-        session_provider=lambda: SimpleNamespace(),
         histology_exists=lambda: True,
         action_group_provider=lambda: action_group,
     )
 
 
-def _presenter_with_plots(
-    session: Any,
-) -> tuple[SlicePanelPresenter, FakePlot, FakePlot]:
+def _presenter_with_plots() -> tuple[SlicePanelPresenter, FakePlot, FakePlot]:
     coronal = FakePlot()
     perpendicular = FakePlot()
     return (
@@ -172,7 +169,6 @@ def _presenter_with_plots(
                 solid_pen="solid",
                 reference_line_pen="ref",
             ),
-            session_provider=lambda: session,
             histology_exists=lambda: True,
             action_group_provider=lambda: None,
             view_state=SlicePanelViewState(),
@@ -229,13 +225,13 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    session = SimpleNamespace()
-    presenter, coronal, perpendicular = _presenter_with_plots(session)
+    presenter, coronal, perpendicular = _presenter_with_plots()
     projection = _projection()
 
     presenter.plot_channels(projection)
 
     state = presenter.view_state
+    assert state.channel_projection is projection
     assert state.channel_status
     assert isinstance(state.slice_chns, FakePlotItem)
     assert isinstance(state.slice_tip, FakePlotItem)
@@ -243,9 +239,6 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
     assert state.slice_chns in coronal.added
     assert state.slice_tip in coronal.added
     assert state.slice_lines[0] in coronal.added
-    assert not hasattr(session, "slice_chns")
-    assert not hasattr(session, "slice_lines")
-    assert not hasattr(session, "channel_status")
 
     presenter.toggle_channel_visibility()
 
@@ -268,15 +261,8 @@ def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    session = SimpleNamespace(
-        channel_locations_ras=np.array(
-            [
-                [1.0, 2.0, 3.0],
-                [4.0, 5.0, 6.0],
-            ]
-        )
-    )
-    presenter, coronal, _perpendicular = _presenter_with_plots(session)
+    presenter, coronal, _perpendicular = _presenter_with_plots()
+    presenter.view_state.channel_projection = _projection()
 
     presenter.render_export_trajectory_overlay("export-pen")
 
@@ -287,7 +273,6 @@ def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
     np.testing.assert_array_equal(state.traj_line.data["x"], [1.0, 4.0])
     np.testing.assert_array_equal(state.traj_line.data["y"], [3.0, 6.0])
     assert state.traj_line.data["pen"] == "export-pen"
-    assert not hasattr(session, "traj_line")
 
 
 def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
@@ -307,8 +292,7 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.ColorBar",
         FakeColorBar,
     )
-    session = SimpleNamespace()
-    presenter, _coronal, perpendicular = _presenter_with_plots(session)
+    presenter, _coronal, perpendicular = _presenter_with_plots()
     presenter.view_state.slice_hist_levels = (5.0, 95.0)
 
     presenter.render_perpendicular_histology(
@@ -337,7 +321,3 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
     assert state.perp_channel_dots in perpendicular.added
     assert state.perp_tip_marker in perpendicular.added
     assert perpendicular.x_ranges == [{"min": -100.0, "max": 100.0, "padding": 0}]
-    assert not hasattr(session, "perp_image_item")
-    assert not hasattr(session, "perp_probe_line")
-    assert not hasattr(session, "perp_channel_dots")
-    assert not hasattr(session, "perp_tip_marker")

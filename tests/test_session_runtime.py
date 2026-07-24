@@ -1,4 +1,4 @@
-"""Tests for active view-session and cached stream-runtime ownership."""
+"""Tests for cached stream-runtime ownership."""
 
 from __future__ import annotations
 
@@ -32,45 +32,25 @@ def _stream_runtime(collection: str = "streamA") -> EphysStreamRuntime:
     return EphysStreamRuntime(stream, FakePlotDataFactory())
 
 
-def test_new_session_replaces_active_and_clears_current_stream() -> None:
+def test_clear_active_stream_clears_current_stream_without_evicting_cache() -> None:
     runtime = SessionRuntime()
-    old = runtime.active_session
     stream_runtime = _stream_runtime()
     runtime.cache_loaded_stream(stream_runtime)
 
-    new = runtime.new_session()
+    runtime.clear_active_stream()
 
-    assert new is runtime.active_session
-    assert new is not old
-    assert runtime.active_stream_runtime is None
-    assert runtime.current_stream_key is None
-
-
-def test_detach_active_for_cache_returns_session_without_caching_it() -> None:
-    runtime = SessionRuntime()
-    active = runtime.active_session
-    stream_runtime = _stream_runtime()
-    runtime.cache_loaded_stream(stream_runtime)
-
-    detached = runtime.detach_active_for_cache()
-
-    assert detached is active
-    assert runtime.active_session is None
     assert runtime.active_stream_runtime is None
     assert runtime.current_stream_key is None
     assert runtime.stream_cache[("rec1", "streamA")] is stream_runtime
 
 
-def test_sessions_for_stream_eviction_returns_active_session_and_clears_streams():
+def test_clear_stream_cache_removes_cached_streams_and_active_selection() -> None:
     runtime = SessionRuntime()
-    active = runtime.active_session
     runtime.cache_loaded_stream(_stream_runtime("streamA"))
     runtime.cache_loaded_stream(_stream_runtime("streamB"))
 
-    sessions = runtime.sessions_for_stream_eviction()
+    runtime.clear_stream_cache()
 
-    assert sessions == [active]
-    assert runtime.active_session is None
     assert runtime.stream_cache == {}
     assert runtime.active_stream_runtime is None
     assert runtime.current_stream_key is None

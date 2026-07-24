@@ -36,9 +36,9 @@ from ephys_alignment_gui.workflow import WorkflowPolicy
 class AlignmentWorkspace:
     """Owns document, controllers, services, and runtime caches.
 
-    This is intentionally Qt-free. The active :class:`ProbeSession` still lives
-    in the view layer for now because it owns plot items and signal lifetimes,
-    but the cache boundaries belong to the workspace.
+    This is intentionally Qt-free. The active desktop view session lives in the
+    desktop layer because it owns plot items and signal lifetimes, but the
+    stream-cache boundaries belong to the workspace.
     """
 
     document: AlignmentDocument = field(default_factory=AlignmentDocument)

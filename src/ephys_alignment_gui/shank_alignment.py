@@ -82,7 +82,7 @@ class ShankAlignment:
 
     # Compatibility accessors for the edit buffer. The storage lives on
     # AlignmentEditHistory; callers can keep using ``shank.idx`` etc while the
-    # broader ProbeSession split proceeds.
+    # broader desktop view-session split proceeds.
     idx = _edit_history_attr("idx")
     current_idx = _edit_history_attr("current_idx")
     total_idx = _edit_history_attr("total_idx")

@@ -63,8 +63,6 @@ class DesktopAlignmentRenderCallbacks:
     clear_reference_lines: Callable[[], None]
     capture_depth_plot_y_ranges: Callable[[], Any]
     restore_depth_plot_y_ranges: Callable[[Any], None]
-    apply_histology_data: Callable[[Any], None]
-    apply_channel_projection: Callable[[Any], None]
     reattach_reference_lines: Callable[[], None]
     plot_histology: Callable[[], None]
     plot_scale_factor: Callable[[], None]
@@ -135,8 +133,6 @@ class DesktopAlignmentPresenter:
     ) -> None:
         """Apply one alignment edit to focused desktop render callbacks."""
         callbacks = self._require_callbacks()
-        callbacks.apply_histology_data(render_state.histology)
-        callbacks.apply_channel_projection(render_state.projection)
         self._prepare_reference_lines_before_render(options)
         callbacks.plot_histology()
         callbacks.plot_scale_factor()

@@ -49,10 +49,6 @@ def _recording_callbacks(calls: list[Any]) -> DesktopAlignmentRenderCallbacks:
         restore_depth_plot_y_ranges=lambda ranges: calls.append(
             ("restore_depth", ranges)
         ),
-        apply_histology_data=lambda histology: calls.append(("histology", histology)),
-        apply_channel_projection=lambda projection: calls.append(
-            ("projection", projection)
-        ),
         reattach_reference_lines=lambda: calls.append("reattach_lines"),
         plot_histology=lambda: calls.append("plot_histology"),
         plot_scale_factor=lambda: calls.append("plot_scale"),
@@ -125,8 +121,6 @@ def test_desktop_presenter_coordinates_alignment_edit_rendering() -> None:
     assert calls == [
         ("restore_lin_fit", False),
         "capture_depth",
-        ("histology", "histology"),
-        ("projection", "projection"),
         "plot_histology",
         "plot_scale",
         "plot_fit",
@@ -150,8 +144,6 @@ def test_desktop_presenter_coordinates_offset_rendering() -> None:
     assert queries.calls == ["query"]
     assert calls == [
         ("restore_lin_fit", True),
-        ("histology", "histology"),
-        ("projection", "projection"),
         "plot_histology",
         "plot_scale",
         "plot_fit",
@@ -175,8 +167,6 @@ def test_desktop_presenter_coordinates_previous_and_next_rendering() -> None:
         assert queries.calls == ["query"]
         assert calls == [
             ("restore_lin_fit", None),
-            ("histology", "histology"),
-            ("projection", "projection"),
             "reattach_lines",
             "plot_histology",
             "plot_scale",
@@ -200,8 +190,6 @@ def test_desktop_presenter_coordinates_reset_rendering() -> None:
     assert calls == [
         ("restore_lin_fit", False),
         "clear_reference_lines",
-        ("histology", "histology"),
-        ("projection", "projection"),
         "plot_histology",
         "plot_scale",
         "plot_fit",

@@ -1,11 +1,13 @@
-"""Per-probe session state container.
+"""Desktop view-session compatibility state.
 
-All attributes that are created/reset when loading a new probe live here.
-MainWindow delegates to ``self.session: ProbeSession | None``.
+This object owns the desktop-only state that is created/reset when loading a
+new probe view. It is intentionally not part of the Qt-free workspace: it still
+contains pyqtgraph item lifecycle, popup state, and compatibility projections
+for older plot code.
 
 Per-*shank* state does not live here directly. The session owns one
 :class:`~ephys_alignment_gui.shank_alignment.ShankAlignment` per shank (see
-:attr:`ProbeSession.shanks`) and exposes the *active* shank's fields through
+:attr:`DesktopViewSession.shanks`) and exposes the *active* shank's fields through
 :class:`_ShankAttr` descriptors, so switching shanks is just repointing
 :attr:`active_shank`. Existing view/plot code can keep reading e.g.
 ``session.features[session.idx]`` unchanged; the read is transparently routed
@@ -53,8 +55,8 @@ class _ShankAttr:
         setattr(obj.active_shank, self._name, value)
 
 
-class ProbeSession:
-    """Owns all state for a single probe alignment session.
+class DesktopViewSession:
+    """Owns desktop compatibility state for a single probe alignment view.
 
     Per-shank state is delegated to :attr:`active_shank`; the attributes below
     declared as :class:`_ShankAttr` live on the active :class:`ShankAlignment`,
@@ -78,8 +80,6 @@ class ProbeSession:
     chn_depths = _ShankAttr("chn_depths")
     track_annotations_ras = _ShankAttr("track_annotations_ras")
     track_annos_and_ends_ras = _ShankAttr("track_annos_and_ends_ras")
-    channel_locations_ras = _ShankAttr("channel_locations_ras")
-    tip_location_ras = _ShankAttr("tip_location_ras")
     # Selected starting alignment + engine + region overlays
     feature_prev = _ShankAttr("feature_prev")
     track_prev = _ShankAttr("track_prev")
@@ -123,13 +123,7 @@ class ProbeSession:
         self.hist_bound_status: bool = True
 
         # -- Plot item caches --
-        self.img_plots: list[Any] = []
-        self.line_plots: list[Any] = []
-        self.probe_plots: list[Any] = []
-        self.img_cbars: list[Any] = []
-        self.probe_cbars: list[Any] = []
         self.scale_regions: NDArray[Any] = np.empty((0, 1))
-        self.probe_bounds: list[Any] = []
         self.hist_label_items: list[Any] = []
         self.hist_ref_label_items: list[Any] = []
 
@@ -138,19 +132,6 @@ class ProbeSession:
         self.label_popup: list[Any] = []
         self.popup_status: bool = True
         self.subj_win: Any = None
-
-        # -- Histology dicts --
-        self.hist_data: dict[str, list[Any]] = {
-            "region": [],
-            "axis_label": [],
-            "colour": [],
-        }
-        self.hist_data_ref: dict[str, list[Any]] = {
-            "region": [],
-            "axis_label": [],
-            "colour": [],
-        }
-        self.scale_data: dict[str, list[Any]] = {"region": [], "scale": []}
 
         # NOTE: fit history (track/features/lin_fit_history + idx cursors),
         # track/channel-location arrays, chn_depths, ephysalign, the selected
@@ -271,20 +252,6 @@ class ProbeSession:
                 except TypeError:
                     pass
 
-        # -- Remove plot items from figures --
-        if "img" in figures:
-            for plot in self.img_plots:
-                figures["img"].removeItem(plot)
-            for cbar in self.img_cbars:
-                figures["img"].removeItem(cbar)
-        if "line" in figures:
-            for plot in self.line_plots:
-                figures["line"].removeItem(plot)
-        if "probe" in figures:
-            for plot in self.probe_plots:
-                figures["probe"].removeItem(plot)
-            for cbar in self.probe_cbars:
-                figures["probe"].removeItem(cbar)
         for key in ("slice", "hist", "hist_ref", "hist_perp", "scale"):
             fig = figures.get(key)
             if fig is not None:
