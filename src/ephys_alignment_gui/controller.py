@@ -15,6 +15,7 @@ from ephys_alignment_gui.alignment_repository import (
     AlignmentRepository,
     SavedAlignmentOutputs,
 )
+from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.alignment_state import (
     LEGACY_AUTO_ALIGNMENT_LABEL,
     AlignmentState,
@@ -152,6 +153,16 @@ class AlignmentEditNoop:
     """An editable alignment command completed without changing state."""
 
 
+@dataclass(frozen=True)
+class ShankAlignmentRuntimeInitialized:
+    """Runtime alignment engine was initialized for one shank."""
+
+    feature_init: Any
+    track_init: Any
+    track_annos_and_ends_ras: Any
+    seeded_document_alignment: bool
+
+
 class AlignmentController:
     """Coordinates workflow commands across document and Qt-free services.
 
@@ -167,6 +178,7 @@ class AlignmentController:
         workflow_policy: WorkflowPolicy | None = None,
         alignment_repository: AlignmentRepository | None = None,
         alignment_edit_service: AlignmentEditService | None = None,
+        alignment_runtime_service: AlignmentRuntimeService | None = None,
         output_builder: Any | None = None,
     ) -> None:
         self.document = document
@@ -175,6 +187,9 @@ class AlignmentController:
         self.workflow_policy = workflow_policy or WorkflowPolicy()
         self.alignment_repository = alignment_repository or AlignmentRepository()
         self.alignment_edit_service = alignment_edit_service or AlignmentEditService()
+        self.alignment_runtime_service = (
+            alignment_runtime_service or AlignmentRuntimeService()
+        )
         self.output_builder = output_builder
 
     def can_load_data(self) -> PolicyResult:
@@ -473,6 +488,45 @@ class AlignmentController:
         if isinstance(state_or_failed, Failed):
             return state_or_failed
         return state_or_failed.pending_reference_lines
+
+    def initialize_shank_alignment_runtime(
+        self,
+        shank_runtime: ShankRuntime,
+        *,
+        track_annotations_ras: Any,
+        brain_atlas: Any,
+    ) -> ShankAlignmentRuntimeInitialized | Failed:
+        """Initialize loaded runtime alignment state for the active document shank."""
+        state_or_failed = self._active_state_for_shank(shank_runtime.shank_idx)
+        if isinstance(state_or_failed, Failed):
+            return state_or_failed
+        state = state_or_failed
+
+        try:
+            initialized = self.alignment_runtime_service.initialize_shank_runtime(
+                shank_runtime,
+                track_annotations_ras=track_annotations_ras,
+                brain_atlas=brain_atlas,
+                feature_prev=state.feature_prev,
+                track_prev=state.track_prev,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to initialize alignment runtime: {exc}")
+
+        seeded_document_alignment = False
+        if state.active_alignment is None:
+            state.active_alignment = ActiveAlignment(
+                initialized.feature_init,
+                initialized.track_init,
+            )
+            seeded_document_alignment = True
+
+        return ShankAlignmentRuntimeInitialized(
+            feature_init=initialized.feature_init,
+            track_init=initialized.track_init,
+            track_annos_and_ends_ras=initialized.track_annos_and_ends_ras,
+            seeded_document_alignment=seeded_document_alignment,
+        )
 
     def offset_alignment_from_tip(
         self,

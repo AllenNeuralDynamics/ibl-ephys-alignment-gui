@@ -22,6 +22,7 @@ from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
+    ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
@@ -108,6 +109,19 @@ class FakeAlignmentRepository:
         if self.loaded_alignments is None:
             return None
         return LoadedAlignmentHistory(self.loaded_alignments)
+
+
+class FakeRuntimeInitializer:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def initialize_shank_runtime(self, shank_runtime, **kwargs):
+        self.calls.append((shank_runtime, kwargs))
+        return SimpleNamespace(
+            feature_init=np.array([1.0, 2.0]),
+            track_init=np.array([3.0, 4.0]),
+            track_annos_and_ends_ras=np.array([[1.0, 2.0, 3.0]]),
+        )
 
 
 class FakeDerivedDataService:
@@ -574,6 +588,24 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
 
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
+
+
+def test_commands_initialize_shank_alignment_runtime_delegates_to_controller() -> None:
+    runtime_initializer = FakeRuntimeInitializer()
+    workspace = AlignmentWorkspace(alignment_runtime_service=runtime_initializer)
+    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
+    shank_runtime = SimpleNamespace(shank_idx=0, chn_depths=np.array([10.0, 20.0]))
+
+    result = workspace.app.commands.initialize_shank_alignment_runtime(
+        shank_runtime,
+        track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
+        brain_atlas="atlas",
+    )
+
+    assert isinstance(result, ShankAlignmentRuntimeInitialized)
+    assert result.seeded_document_alignment
+    assert runtime_initializer.calls[0][0] is shank_runtime
+    assert runtime_initializer.calls[0][1]["brain_atlas"] == "atlas"
 
 
 def test_queries_return_default_unit_filter() -> None:

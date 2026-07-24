@@ -42,6 +42,7 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
+    ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
@@ -178,6 +179,20 @@ class AlignmentCommands:
         return self._controller.select_previous_alignment(
             idx,
             shank_idx=self._active_or_given_shank(shank_idx),
+        )
+
+    def initialize_shank_alignment_runtime(
+        self,
+        shank_runtime: Any,
+        *,
+        track_annotations_ras: Any,
+        brain_atlas: Any,
+    ) -> ShankAlignmentRuntimeInitialized | Failed:
+        """Initialize runtime alignment data for the active shank."""
+        return self._controller.initialize_shank_alignment_runtime(
+            shank_runtime,
+            track_annotations_ras=track_annotations_ras,
+            brain_atlas=brain_atlas,
         )
 
     def _active_or_given_shank(self, shank_idx: int | None) -> int:
