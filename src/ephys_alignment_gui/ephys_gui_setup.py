@@ -201,6 +201,17 @@ class Setup:
         neural_refine_units.triggered.connect(
             lambda: self.filter_unit_pressed("unitrefine_neural")
         )
+        self.unit_filter_actions_by_subset = {
+            "all": all_units,
+            "KS good": good_units,
+            "KS mua": mua_units,
+            "IBL good": ibl_units,
+            "aind_qc": aind_qc_units,
+            "unitrefine_sua": sua_refine_units,
+            "unitrefine_neural": neural_refine_units,
+        }
+        for subset, action in self.unit_filter_actions_by_subset.items():
+            action.setData(subset)
         # Initialise with all units being shown
         self.unit_init = all_units
 

@@ -55,6 +55,17 @@ class EphysStreamRuntime:
             runtime.plotdata = self.plot_data_factory.build(runtime.collection)
         return runtime.plotdata
 
+    def filtered_plot_data_for_shank(
+        self,
+        shank_idx: int,
+        *,
+        unit_filter: str,
+    ) -> PlotData:
+        """Return cached PlotData for one shank with unit filtering applied."""
+        plotdata = self.plot_data_for_shank(shank_idx)
+        plotdata.filter_units(unit_filter)
+        return plotdata
+
     def plot_payload_for_shank(self, shank_idx: int, spec: PlotSpec | str) -> Any:
         """Return a plot payload for one shank by declarative plot-spec key."""
         return resolve_plot_payload(self.plot_data_for_shank(shank_idx), spec)

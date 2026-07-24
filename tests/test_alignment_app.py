@@ -27,12 +27,17 @@ from ephys_alignment_gui.controller import (
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceRuntime
+from ephys_alignment_gui.workflow import Ok
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 
 class FakePlotData:
     def __init__(self, label: str = "plot") -> None:
         self.label = label
+        self.filtered_subsets: list[str] = []
+        self.in_brain_depths_um = np.array([20.0, 40.0])
+        self.t_autocorr = np.array([0.0, 1.0, 2.0])
+        self.t_template = np.array([0.0, 0.5])
         self.data = {
             "spikes": {"exists": True},
             "clusters": {"exists": False},
@@ -57,6 +62,17 @@ class FakePlotData:
             return {}, None
         return None
 
+    def filter_units(self, subset: str) -> None:
+        self.filtered_subsets.append(subset)
+
+    def get_autocorr(self, cluster_idx: int):
+        return np.array(
+            [cluster_idx, cluster_idx + 1, cluster_idx + 2]
+        ), cluster_idx + 10
+
+    def get_template_wf(self, cluster_idx: int):
+        return np.array([cluster_idx + 0.5, cluster_idx + 1.5])
+
 
 class FakeStreamRuntime:
     def __init__(self) -> None:
@@ -70,6 +86,16 @@ class FakeStreamRuntime:
     def plot_data_for_shank(self, shank_idx: int) -> FakePlotData:
         self.calls.append(shank_idx)
         return self.plotdata_by_shank[shank_idx]
+
+    def filtered_plot_data_for_shank(
+        self,
+        shank_idx: int,
+        *,
+        unit_filter: str,
+    ) -> FakePlotData:
+        plotdata = self.plot_data_for_shank(shank_idx)
+        plotdata.filter_units(unit_filter)
+        return plotdata
 
 
 class FakeAlignmentRepository:
@@ -179,9 +205,7 @@ def _queries_with_cached_slice(
     shank_runtime = SimpleNamespace(
         ephysalign=ephysalign,
         slice_runtime=slice_runtime,
-        track_annos_and_ends_ras=np.array(
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]]
-        ),
+        track_annos_and_ends_ras=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]]),
     )
     queries = AlignmentQueries(
         document=document,
@@ -528,6 +552,39 @@ def test_queries_resolve_plot_payload_from_active_runtime_shank() -> None:
     assert stream_runtime.calls == [1]
 
 
+def test_commands_set_unit_filter_updates_display_state() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.set_selected_shank(1)
+    stream_runtime = FakeStreamRuntime()
+    workspace.runtime.active_stream_runtime = stream_runtime
+
+    result = workspace.app.commands.set_unit_filter("KS good")
+
+    assert isinstance(result, Ok)
+    assert workspace.display_state.unit_filter == "KS good"
+    assert workspace.app.queries.active_unit_filter() == "KS good"
+    assert stream_runtime.plotdata_by_shank[1].filtered_subsets == ["KS good"]
+    assert stream_runtime.calls == [1]
+
+
+def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
+    workspace = AlignmentWorkspace()
+
+    result = workspace.app.commands.set_unit_filter("KS good")
+
+    assert isinstance(result, Ok)
+    assert workspace.display_state.unit_filter == "KS good"
+
+
+def test_queries_return_default_unit_filter() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(),
+        runtime=SimpleNamespace(active_stream_runtime=None),
+    )
+
+    assert queries.active_unit_filter() == "all"
+
+
 def test_queries_can_resolve_raw_payload_without_plotdata() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(),
@@ -559,6 +616,43 @@ def test_queries_fail_closed_without_plotdata_or_raw_payloads() -> None:
     assert queries.active_plot_payload("image.fr") is None
 
 
+def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(selected_shank=1),
+        runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
+    )
+
+    np.testing.assert_array_equal(
+        queries.active_in_brain_depths_um(),
+        [20.0, 40.0],
+    )
+
+
+def test_queries_build_cluster_detail_from_runtime_plotdata() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(selected_shank=1),
+        runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
+    )
+
+    detail = queries.active_cluster_detail(3)
+
+    assert detail is not None
+    assert detail.cluster_no == 13
+    np.testing.assert_array_equal(detail.autocorr, [3, 4, 5])
+    np.testing.assert_array_equal(detail.t_autocorr, [0.0, 1.0, 2.0])
+    np.testing.assert_array_equal(detail.template_waveform, [3.5, 4.5])
+    np.testing.assert_array_equal(detail.t_template, [0.0, 0.5])
+
+
+def test_queries_cluster_detail_fails_closed_without_active_runtime() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(),
+        runtime=SimpleNamespace(active_stream_runtime=None),
+    )
+
+    assert queries.active_cluster_detail(3) is None
+
+
 def test_queries_build_active_alignment_render_state_from_document_runtime() -> None:
     document = AlignmentDocument()
     key = AlignmentKey("rec", "stream", 1)
@@ -568,9 +662,7 @@ def test_queries_build_active_alignment_render_state_from_document_runtime() -> 
         np.array([2.0, 3.0]),
     )
     state.active_alignment = active_alignment
-    display_state = AlignmentDisplayState(
-        region_annotation_source="FranklinPaxinos"
-    )
+    display_state = AlignmentDisplayState(region_annotation_source="FranklinPaxinos")
     shank_runtime = SimpleNamespace(
         ephysalign="aligner",
         region_fp="region-fp",
@@ -606,10 +698,7 @@ def test_queries_build_active_alignment_render_state_from_document_runtime() -> 
     assert derived.histology_kwargs["ephysalign"] == "aligner"
     assert derived.histology_kwargs["feature"] is render_state.active_alignment.feature
     assert derived.histology_kwargs["track"] is render_state.active_alignment.track
-    assert (
-        derived.histology_kwargs["region_annotation_source"]
-        == "FranklinPaxinos"
-    )
+    assert derived.histology_kwargs["region_annotation_source"] == "FranklinPaxinos"
     assert derived.histology_kwargs["region_fp"] == "region-fp"
     assert derived.histology_kwargs["region_label_fp"] == "region-label-fp"
     assert derived.histology_kwargs["region_colour_fp"] == "region-colour-fp"
@@ -694,9 +783,7 @@ def test_queries_build_fit_plot_state() -> None:
         document=document,
         runtime=SimpleNamespace(
             active_stream_runtime=SimpleNamespace(
-                shank_runtime_by_idx={
-                    1: SimpleNamespace(ephysalign=ephysalign)
-                }
+                shank_runtime_by_idx={1: SimpleNamespace(ephysalign=ephysalign)}
             )
         ),
     )
@@ -891,9 +978,7 @@ def test_queries_build_active_perpendicular_slice_state_from_runtime_cache() -> 
         reference_histology=HistologyPlotData(region=[], axis_label=[], colour=[]),
         scale=ScaleFactorData(region=[], scale=[]),
     )
-    track_interpolation = np.array(
-        [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0], [2.0, 0.0, 4.0]]
-    )
+    track_interpolation = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 2.0], [2.0, 0.0, 4.0]])
     ephysalign = SimpleNamespace(
         track_interpolation_ras=track_interpolation,
         ephys_depths_along_track=np.array([0.0, 1.0, 2.0]),

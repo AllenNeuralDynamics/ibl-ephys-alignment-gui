@@ -87,8 +87,6 @@ class ProbeSession:
     region_fp = _ShankAttr("region_fp")
     region_label_fp = _ShankAttr("region_label_fp")
     region_colour_fp = _ShankAttr("region_colour_fp")
-    # PlotData built + cached per shank (see ShankAlignment.plotdata)
-    plotdata = _ShankAttr("plotdata")
     # Atlas/histology slice, cached per shank (see ShankAlignment.slice_data)
     slice_data = _ShankAttr("slice_data")
     fp_slice_data = _ShankAttr("fp_slice_data")
@@ -164,8 +162,8 @@ class ProbeSession:
 
         # NOTE: fit history (track/features/lin_fit_history + idx cursors),
         # track/channel-location arrays, chn_depths, ephysalign, the selected
-        # starting alignment (feature_prev/track_prev), region overlays,
-        # plotdata and slice_data/fp_slice_data are per-shank; they live on the
+        # starting alignment (feature_prev/track_prev), region overlays, and
+        # slice_data/fp_slice_data are per-shank; they live on the
         # active ShankAlignment and are reached via the _ShankAttr descriptors
         # declared at class scope.
 
@@ -176,7 +174,7 @@ class ProbeSession:
         self.probe_path: Path | None = None
         self.sess_notes: str = ""
 
-        # -- Large per-session objects (plotdata / slice_data are per-shank) --
+        # -- Large per-session objects (slice_data is per-shank) --
         self.ephys_stream: Any = None
         self.data: Any = None
 
@@ -326,10 +324,11 @@ class ProbeSession:
         """
         self.detach(figures)
 
-        # -- Null large references (plotdata/ephysalign/slice_data route to the
+        # -- Null large references (ephysalign/slice_data route to the
         # active shank via descriptors; this nulls the active shank's refs) --
         self.data = None
-        self.plotdata = None
+        if self.active_shank.runtime is not None:
+            self.active_shank.runtime.plotdata = None
         self.ephysalign = None
         self.slice_data = None
         self.fp_slice_data = None

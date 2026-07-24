@@ -151,12 +151,10 @@ def test_runtime_fields_project_to_attached_shank_runtime() -> None:
     sa.ephysalign = "alignment-engine"
     sa.track_annotations_ras = np.array([[1.0, 2.0, 3.0]])
     sa.channel_locations_ras = np.array([[4.0, 5.0, 6.0]])
-    sa.plotdata = "plot-data"
 
     assert runtime.ephysalign == "alignment-engine"
     np.testing.assert_array_equal(runtime.track_annotations_ras, [[1.0, 2.0, 3.0]])
     np.testing.assert_array_equal(runtime.channel_locations_ras, [[4.0, 5.0, 6.0]])
-    assert runtime.plotdata == "plot-data"
     np.testing.assert_array_equal(sa.chn_coords, [[5.0, 10.0], [6.0, 20.0]])
     np.testing.assert_array_equal(sa.chn_depths, [10.0, 20.0])
 

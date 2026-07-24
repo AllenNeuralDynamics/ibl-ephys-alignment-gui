@@ -75,6 +75,17 @@ class FitPlotRenderState:
 
 
 @dataclass(frozen=True)
+class ClusterDetailRenderState:
+    """Cluster autocorrelogram and template waveform data for frontend rendering."""
+
+    cluster_no: Any
+    autocorr: NDArray[Any]
+    t_autocorr: NDArray[Any]
+    template_waveform: NDArray[Any]
+    t_template: NDArray[Any]
+
+
+@dataclass(frozen=True)
 class NearbyBoundaryRenderState:
     """Nearby boundary curves ready for frontend rendering."""
 

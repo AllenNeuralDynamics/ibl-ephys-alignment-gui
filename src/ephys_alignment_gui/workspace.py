@@ -93,7 +93,12 @@ class AlignmentWorkspace:
             output_builder=self.alignment_output_service,
         )
         self.app = AlignmentApp(
-            commands=AlignmentCommands(self.controller, self.events),
+            commands=AlignmentCommands(
+                self.controller,
+                self.events,
+                self.display_state,
+                self.runtime,
+            ),
             queries=AlignmentQueries(
                 document=self.document,
                 runtime=self.runtime,

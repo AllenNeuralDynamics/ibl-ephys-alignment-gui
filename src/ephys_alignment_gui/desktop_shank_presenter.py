@@ -32,7 +32,7 @@ class DesktopShankRenderCallbacks:
     clear_reference_lines: Callable[[], None]
     prepare_runtime: Callable[[int], None]
     prepare_histology: Callable[[int], bool]
-    prepare_plot_data: Callable[[int], None]
+    prepare_plot_data: Callable[[int, bool], None]
     prepare_slice_data: Callable[[], bool]
     refresh_plot_menus: Callable[[bool, dict[str, str | None] | None], None]
     render_ephys_plots: Callable[[bool], None]
@@ -85,7 +85,7 @@ class DesktopShankPresenter:
         callbacks.prepare_runtime(shank_idx)
         if not callbacks.prepare_histology(shank_idx):
             return
-        callbacks.prepare_plot_data(shank_idx)
+        callbacks.prepare_plot_data(shank_idx, preserve)
         if not callbacks.prepare_slice_data():
             return
         callbacks.refresh_plot_menus(preserve, selections.previous_ephys_plot_keys)

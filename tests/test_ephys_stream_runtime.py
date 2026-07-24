@@ -32,6 +32,24 @@ class FakeRegistryPlotData:
         return None
 
 
+class FakeFilterPlotData:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+        self.filtered_subsets = []
+
+    def filter_units(self, subset: str) -> None:
+        self.filtered_subsets.append(subset)
+
+
+class FakeFilterPlotDataFactory:
+    def __init__(self) -> None:
+        self.plotdata = None
+
+    def build(self, collection):
+        self.plotdata = FakeFilterPlotData(collection.rows.copy())
+        return self.plotdata
+
+
 class FakeRegistryPlotDataFactory:
     def __init__(self) -> None:
         self.plotdata = None
@@ -100,6 +118,17 @@ def test_plot_payload_for_shank_resolves_registered_plot_spec() -> None:
 
     assert payload["rows"].tolist() == [2, 3]
     assert factory.plotdata.calls == [("get_fr_img", ())]
+
+
+def test_filtered_plot_data_for_shank_applies_unit_filter() -> None:
+    factory = FakeFilterPlotDataFactory()
+    runtime = EphysStreamRuntime(_stream(), factory)
+
+    plotdata = runtime.filtered_plot_data_for_shank(1, unit_filter="KS good")
+
+    assert plotdata is factory.plotdata
+    assert plotdata.rows.tolist() == [2, 3]
+    assert plotdata.filtered_subsets == ["KS good"]
 
 
 def test_invalidate_plot_data_clears_one_or_all_shanks() -> None:

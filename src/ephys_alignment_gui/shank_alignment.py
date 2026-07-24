@@ -106,7 +106,7 @@ class ShankAlignment:
     region_fp = _runtime_attr("region_fp")
     region_label_fp = _runtime_attr("region_label_fp")
     region_colour_fp = _runtime_attr("region_colour_fp")
-    plotdata = _runtime_attr("plotdata")
+
     @property
     def active_alignment(self) -> ActiveAlignment | None:
         """Current feature/track control points for this shank."""
@@ -176,7 +176,6 @@ class ShankAlignment:
         self._region_label_fp: Any = None
         self._region_colour_fp: Any = None
 
-        self._plotdata: Any = None
         self._slice_runtime = SliceRuntime()
 
         # -- Output dicts produced on save --

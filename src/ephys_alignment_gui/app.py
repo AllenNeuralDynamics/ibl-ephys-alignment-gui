@@ -26,6 +26,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveSliceDataState,
     ActiveSliceMenuState,
     ActiveSliceRenderState,
+    ClusterDetailRenderState,
     FitPlotRenderState,
     HistologyPanelRenderState,
     PerpendicularSliceRenderState,
@@ -90,6 +91,8 @@ class AlignmentCommands:
 
     _controller: AlignmentController
     _events: EventBus
+    _display_state: AlignmentDisplayState
+    _runtime: SessionRuntime
 
     def select_shank(
         self,
@@ -185,6 +188,17 @@ class AlignmentCommands:
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
         return self._controller.can_load_previous_alignments()
+
+    def set_unit_filter(self, unit_filter: str) -> Ok:
+        """Select the unit subset used when preparing ephys plot data."""
+        self._display_state.set_unit_filter(unit_filter)
+        stream_runtime = self._runtime.active_stream_runtime
+        if stream_runtime is not None:
+            stream_runtime.filtered_plot_data_for_shank(
+                self._active_or_given_shank(None),
+                unit_filter=unit_filter,
+            )
+        return Ok()
 
     def offset_alignment_from_tip(
         self,
@@ -301,9 +315,7 @@ class AlignmentQueries:
     )
     histology_context: Any | None = None
     slice_service: Any | None = None
-    slice_display_policy: SliceDisplayPolicy = field(
-        default_factory=SliceDisplayPolicy
-    )
+    slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
 
     def active_shank_selection(self) -> ShankSelectionState:
         """Return the current document-owned shank selection."""
@@ -331,6 +343,10 @@ class AlignmentQueries:
             and stream_runtime.current_shank_idx == shank_idx
             and self._active_shank_idx() == shank_idx
         )
+
+    def active_unit_filter(self) -> str:
+        """Return the selected unit subset for active ephys plot data."""
+        return self.display_state.unit_filter
 
     def active_plot_menu_state(
         self,
@@ -393,6 +409,31 @@ class AlignmentQueries:
         if spec is None:
             return None
         return resolve_plot_bounds(plotdata, spec)
+
+    def active_in_brain_depths_um(self) -> Any:
+        """Return active PlotData in-brain depths, if available."""
+        plotdata = self._active_plotdata()
+        if plotdata is None:
+            return None
+        return getattr(plotdata, "in_brain_depths_um", None)
+
+    def active_cluster_detail(
+        self,
+        cluster_idx: int,
+    ) -> ClusterDetailRenderState | None:
+        """Return autocorrelogram/template detail for one active cluster."""
+        plotdata = self._active_plotdata()
+        if plotdata is None:
+            return None
+        autocorr, cluster_no = plotdata.get_autocorr(cluster_idx)
+        template_waveform = plotdata.get_template_wf(cluster_idx)
+        return ClusterDetailRenderState(
+            cluster_no=cluster_no,
+            autocorr=np.asarray(autocorr),
+            t_autocorr=np.asarray(plotdata.t_autocorr),
+            template_waveform=np.asarray(template_waveform),
+            t_template=np.asarray(plotdata.t_template),
+        )
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         """Return derived render data for the active alignment, if available."""

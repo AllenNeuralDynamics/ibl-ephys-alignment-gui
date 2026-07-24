@@ -417,6 +417,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Initialise variables that need to be reset for each session."""
         self.runtime.new_session()
         self.display_state.reset_region_annotation_source()
+        self.display_state.reset_unit_filter()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -480,12 +481,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def default_feature_y_limits(self) -> tuple[float, float]:
         """Return the current default feature-depth display limits."""
-        plotdata = getattr(self.session, "plotdata", None)
-        in_brain_depths_um = (
-            getattr(plotdata, "in_brain_depths_um", None)
-            if plotdata is not None
-            else None
-        )
+        in_brain_depths_um = self.app.queries.active_in_brain_depths_um()
         return default_feature_y_limits(
             probe_tip_um=self.session.probe_tip,
             probe_top_um=self.session.probe_top,
@@ -2503,13 +2499,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.recreate_alignment_and_regions()
         return True
 
-    def _prepare_shank_plot_data_for_view(self, shank_idx: int) -> None:
-        """Ensure runtime PlotData and project it to legacy session consumers."""
+    def _prepare_shank_plot_data_for_view(
+        self,
+        shank_idx: int,
+        preserve_plot_selection: bool,
+    ) -> None:
+        """Ensure runtime PlotData is ready for the selected shank/view filter."""
+        if not preserve_plot_selection:
+            self.app.commands.set_unit_filter("all")
         stream_runtime = self.runtime.active_stream_runtime
         if stream_runtime is None:
             raise RuntimeError("No active stream runtime for shank plot data")
-        plotdata = stream_runtime.plot_data_for_shank(shank_idx)
-        self.session.plotdata = plotdata
+        plotdata = stream_runtime.filtered_plot_data_for_shank(
+            shank_idx,
+            unit_filter=self.app.queries.active_unit_filter(),
+        )
         self.set_lims(np.min([0, plotdata.chn_min]), plotdata.chn_max)
 
         plotdata.in_brain_depths_um = self.in_brain_channel_depths()
@@ -2542,9 +2546,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Render ephys plots for the selected shank."""
         logger.info("Rendering plots...")
         if preserve_plot_selection:
-            unit_action = self.unit_filter_options_group.checkedAction()
-            if unit_action is not None:
-                unit_action.trigger()
+            self._set_unit_filter_action_checked(self.app.queries.active_unit_filter())
             for action in (
                 self.current_img_action,
                 self.line_img_action,
@@ -2559,10 +2561,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.line_init.setChecked(True)
             if self.probe_init is not None:
                 self.probe_init.setChecked(True)
+            self.app.commands.set_unit_filter("all")
             self.unit_init.setChecked(True)
             self.plot_default_spec("image")
             self.plot_default_spec("probe")
             self.plot_default_spec("line")
+
+    def _set_unit_filter_action_checked(self, unit_filter: str) -> None:
+        """Reflect selected unit filter in the desktop menu without triggering it."""
+        action = getattr(self, "unit_filter_actions_by_subset", {}).get(unit_filter)
+        if action is not None:
+            action.setChecked(True)
 
     def _restore_shank_slice_selection(
         self,
@@ -2736,11 +2745,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # directly invoke the same slot as if the user clicked
             self.probe_img_action.trigger()
 
-    def filter_unit_pressed(self, type) -> None:
-        # filter_units clears the per-shank PlotData memo cache. Registered
-        # plot payloads recompute against the new subset on next access during
-        # update_plot.
-        self.session.plotdata.filter_units(type)
+    def filter_unit_pressed(self, unit_filter) -> None:
+        self.app.commands.set_unit_filter(unit_filter)
         if self.img_init is not None:
             self.img_init.setChecked(True)
         if self.line_init is not None:
@@ -3186,34 +3192,41 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         point_pos = point[0].pos()
         clust_idx = np.argwhere(self.session.data == point_pos.x())[0][0]
 
-        autocorr, clust_no = self.session.plotdata.get_autocorr(clust_idx)
+        detail = self.app.queries.active_cluster_detail(clust_idx)
+        if detail is None:
+            logger.error(
+                "Cannot show cluster detail: active ephys stream is not loaded"
+            )
+            return None
+
         autocorr_plot = pg.PlotItem()
         autocorr_plot.setXRange(
-            min=np.min(self.session.plotdata.t_autocorr),
-            max=np.max(self.session.plotdata.t_autocorr),
+            min=np.min(detail.t_autocorr),
+            max=np.max(detail.t_autocorr),
         )
-        autocorr_plot.setYRange(min=0, max=1.05 * np.max(autocorr))
+        autocorr_plot.setYRange(min=0, max=1.05 * np.max(detail.autocorr))
         self.set_axis(autocorr_plot, "bottom", label="T (ms)")
         self.set_axis(autocorr_plot, "left", label="Number of spikes")
         plot = pg.BarGraphItem(
-            x=self.session.plotdata.t_autocorr,
-            height=autocorr,
+            x=detail.t_autocorr,
+            height=detail.autocorr,
             width=0.24,
             brush=self.bar_colour,
         )
         autocorr_plot.addItem(plot)
 
-        template_wf = self.session.plotdata.get_template_wf(clust_idx)
         template_plot = pg.PlotItem()
         plot = pg.PlotCurveItem()
         template_plot.setXRange(
-            min=np.min(self.session.plotdata.t_template),
-            max=np.max(self.session.plotdata.t_template),
+            min=np.min(detail.t_template),
+            max=np.max(detail.t_template),
         )
         self.set_axis(template_plot, "bottom", label="T (ms)")
         self.set_axis(template_plot, "left", label="Amplitude (a.u.)")
         plot.setData(
-            x=self.session.plotdata.t_template, y=template_wf, pen=self.kpen_solid
+            x=detail.t_template,
+            y=detail.template_waveform,
+            pen=self.kpen_solid,
         )
         template_plot.addItem(plot)
 
@@ -3221,7 +3234,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         clust_layout.addItem(autocorr_plot, 0, 0)
         clust_layout.addItem(template_plot, 1, 0)
 
-        self.session.clust_win = ephys_gui.PopupWindow(title=f"Cluster {clust_no}")
+        self.session.clust_win = ephys_gui.PopupWindow(
+            title=f"Cluster {detail.cluster_no}"
+        )
         self.session.clust_win.closed.connect(self.popup_closed)
         self.session.clust_win.moved.connect(self.popup_moved)
         self.session.clust_win.popup_widget.addItem(autocorr_plot, 0, 0)
@@ -3229,7 +3244,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.cluster_popups.append(self.session.clust_win)
         self.activateWindow()
 
-        return clust_no
+        return detail.cluster_no
 
     def display_subject_scaling(self) -> None:
         self._show_one_unsupported("Subject scaling")

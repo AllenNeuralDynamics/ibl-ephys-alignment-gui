@@ -62,7 +62,9 @@ def _callbacks(
         prepare_histology=lambda idx: (
             calls.append(("histology", idx)) or histology_ready
         ),
-        prepare_plot_data=lambda idx: calls.append(("plot_data", idx)),
+        prepare_plot_data=lambda idx, preserve: calls.append(
+            ("plot_data", idx, preserve)
+        ),
         prepare_slice_data=lambda: calls.append("slice_data") or slice_ready,
         refresh_plot_menus=lambda preserve, keys: calls.append(
             ("menus", preserve, keys)
@@ -96,7 +98,7 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
         "clear_lines",
         ("runtime", 2),
         ("histology", 2),
-        ("plot_data", 2),
+        ("plot_data", 2, True),
         "slice_data",
         (
             "menus",
@@ -160,6 +162,6 @@ def test_shank_presenter_stops_when_slice_preparation_fails() -> None:
         "clear_lines",
         ("runtime", 1),
         ("histology", 1),
-        ("plot_data", 1),
+        ("plot_data", 1, True),
         "slice_data",
     ]
