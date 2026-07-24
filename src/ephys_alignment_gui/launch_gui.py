@@ -66,7 +66,9 @@ from ephys_alignment_gui.reference_line_layer import (
     ReferenceLinePlots,
 )
 from ephys_alignment_gui.settings import (
+    INPUT_ROOT_ENV_VAR,
     OUTPUT_ROOT_ENV_VAR,
+    input_root_from_environment,
     output_root_from_environment,
 )
 from ephys_alignment_gui.slice_display_policy import SliceSelection
@@ -1973,15 +1975,29 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_mouse_root_selected(self) -> bool:
         """Open a QFileDialog for the mouse-root directory."""
-        start_dir = None
-        if self.data_context.mouse_root is not None:
-            start_dir = str(self.data_context.mouse_root.root)
+        start_dir = self._mouse_root_dialog_start_dir()
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            None, "Select Mouse Root", directory=start_dir or ""
+            None, "Select Mouse Root", directory=start_dir
         )
         if not folder:
             return False
         return self.set_mouse_root(Path(folder))
+
+    def _mouse_root_dialog_start_dir(self) -> str:
+        """Return the directory the mouse-root dialog should open in."""
+        if self.data_context.mouse_root is not None:
+            return str(self.data_context.mouse_root.root)
+        input_root = input_root_from_environment()
+        if input_root is None:
+            return ""
+        if input_root.is_dir():
+            return str(input_root)
+        logger.warning(
+            "Ignoring %s because it is not a directory: %s",
+            INPUT_ROOT_ENV_VAR,
+            input_root,
+        )
+        return ""
 
     def on_mouse_root_edited(self) -> None:
         """Triggered when the user finishes editing the mouse-root text field."""
@@ -2152,6 +2168,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self, requirement: Requirement | None = None
     ) -> bool:
         """Require a save location before data workflows can autosave."""
+        if self._derive_output_directory_from_save_root():
+            return True
         if self.document.output_directory is not None:
             return True
 
@@ -2187,6 +2205,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 "Output folder selected but no probe output directory was derived."
             )
             return False
+        return True
+
+    def _derive_output_directory_from_save_root(self) -> bool:
+        """Derive and display the probe output directory if a save root exists."""
+        if self.document.output_root is None:
+            return False
+        result = self.controller.derive_output_directory()
+        if isinstance(result, Failed):
+            logger.error(result.message)
+            return False
+        if result.output_directory is None:
+            return False
+        self._display_output_directory(result.output_directory)
         return True
 
     def _ensure_output_directory_for_save(

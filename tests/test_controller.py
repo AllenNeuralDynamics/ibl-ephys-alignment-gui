@@ -330,6 +330,24 @@ def test_select_probe_loads_channel_info_and_derives_output(tmp_path):
     assert doc.active_alignment_state is not None
 
 
+def test_set_output_root_creates_missing_root_and_derives_output(tmp_path):
+    doc = AlignmentDocument()
+    controller, _, _ = make_controller(doc, ephys_data_service=FakeEphysDataService())
+    mouse_root = tmp_path / "mouse"
+    mouse_root.mkdir()
+    controller.set_mouse_root(mouse_root)
+
+    output_root = tmp_path / "new-results"
+    root_result = controller.set_output_root(output_root)
+    probe_result = controller.select_probe("rec1", "probeA")
+
+    assert isinstance(root_result, OutputRootSet)
+    assert output_root.is_dir()
+    assert isinstance(probe_result, ProbeSelected)
+    assert doc.output_directory == output_root / "rec1" / "probeA"
+    assert isinstance(controller.can_load_data(), Ok)
+
+
 def test_select_probe_can_restore_cached_stream_without_loading_channel_info(tmp_path):
     doc = AlignmentDocument()
     ephys_data_service = FakeEphysDataService()

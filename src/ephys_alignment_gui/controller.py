@@ -285,6 +285,10 @@ class AlignmentController:
         if not output_root or str(output_root).strip() == "":
             return Failed("Empty save-root path provided")
         output_root = Path(output_root)
+        try:
+            output_root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return Failed(f"Failed to create save-root directory {output_root}: {exc}")
         if not output_root.is_dir():
             return Failed(f"Save-root is not a directory: {output_root}")
 

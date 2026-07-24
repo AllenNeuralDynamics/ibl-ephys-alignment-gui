@@ -31,9 +31,11 @@ Once the package has been installed in your environment, you can run the GUI wit
 launch
 ```
 
-You can prefill the save-root directory by setting `EPHYS_ALIGNMENT_OUTPUT_ROOT`.
-For example, on Code Ocean set `EPHYS_ALIGNMENT_OUTPUT_ROOT=/results`. The GUI
-still lets users choose or edit a different output root after startup.
+You can prefill the save-root directory by setting `EPHYS_ALIGNMENT_OUTPUT_ROOT`,
+and the mouse-root file dialog start directory by setting
+`EPHYS_ALIGNMENT_INPUT_ROOT`. For example, on Code Ocean set
+`EPHYS_ALIGNMENT_INPUT_ROOT=/data` and `EPHYS_ALIGNMENT_OUTPUT_ROOT=/results`.
+The GUI still lets users choose or edit different paths after startup.
 
 
 ## Keyboard shortcuts
