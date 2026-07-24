@@ -88,7 +88,6 @@ class Setup:
         self.plot_menu_state = self.app.queries.active_plot_menu_state(
             previous_selected_keys=previous_selected_keys,
             raw_image_payloads=self.session.img_raw_data,
-            legacy_plotdata=self.session.plotdata,
         )
 
         self._rebuild_plot_menu_group(

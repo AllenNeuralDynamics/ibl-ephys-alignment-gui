@@ -337,10 +337,9 @@ class AlignmentQueries:
         previous_selected_keys: Mapping[PlotMenu, str | None] | None = None,
         *,
         raw_image_payloads: Mapping[Any, Any] | None = None,
-        legacy_plotdata: Any = None,
     ) -> PlotMenuState:
         """Return available plot menu entries for the active shank."""
-        plotdata = self._active_plotdata(legacy_plotdata=legacy_plotdata)
+        plotdata = self._active_plotdata()
         return self._plot_menu_state_for_plotdata(
             plotdata,
             previous_selected_keys=previous_selected_keys,
@@ -352,10 +351,9 @@ class AlignmentQueries:
         spec_key: str,
         *,
         raw_image_payloads: Mapping[Any, Any] | None = None,
-        legacy_plotdata: Any = None,
     ) -> PlotSpec | None:
         """Return an available plot spec for the active shank."""
-        plotdata = self._active_plotdata(legacy_plotdata=legacy_plotdata)
+        plotdata = self._active_plotdata()
         state = self._plot_menu_state_for_plotdata(
             plotdata,
             raw_image_payloads=raw_image_payloads,
@@ -367,10 +365,9 @@ class AlignmentQueries:
         spec_key: str,
         *,
         raw_image_payloads: Mapping[Any, Any] | None = None,
-        legacy_plotdata: Any = None,
     ) -> Any:
         """Resolve a plot payload for the active shank."""
-        plotdata = self._active_plotdata(legacy_plotdata=legacy_plotdata)
+        plotdata = self._active_plotdata()
         state = self._plot_menu_state_for_plotdata(
             plotdata,
             raw_image_payloads=raw_image_payloads,
@@ -385,10 +382,9 @@ class AlignmentQueries:
         spec_key: str,
         *,
         raw_image_payloads: Mapping[Any, Any] | None = None,
-        legacy_plotdata: Any = None,
     ) -> Any:
         """Resolve optional plot bounds for the active shank."""
-        plotdata = self._active_plotdata(legacy_plotdata=legacy_plotdata)
+        plotdata = self._active_plotdata()
         state = self._plot_menu_state_for_plotdata(
             plotdata,
             raw_image_payloads=raw_image_payloads,
@@ -747,10 +743,10 @@ class AlignmentQueries:
         logger.warning("Ignoring unavailable plot spec %s", spec_key)
         return None
 
-    def _active_plotdata(self, *, legacy_plotdata: Any = None) -> Any:
+    def _active_plotdata(self) -> Any:
         stream_runtime = self.runtime.active_stream_runtime
         if stream_runtime is None:
-            return legacy_plotdata
+            return None
         return stream_runtime.plot_data_for_shank(self._active_shank_idx())
 
     def _active_shank_runtime(self) -> ShankRuntime | None:

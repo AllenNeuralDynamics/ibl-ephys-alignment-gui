@@ -1246,7 +1246,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return self.app.queries.active_plot_payload(
             spec.key,
             raw_image_payloads=self.session.img_raw_data,
-            legacy_plotdata=self.session.plotdata,
         )
 
     def plot_bounds_for_spec(self, spec_key: str) -> Any:
@@ -1257,7 +1256,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return self.app.queries.active_plot_bounds(
             spec.key,
             raw_image_payloads=self.session.img_raw_data,
-            legacy_plotdata=self.session.plotdata,
         )
 
     def plot_from_spec(self, spec_key: str) -> None:
@@ -2506,22 +2504,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return True
 
     def _prepare_shank_plot_data_for_view(self, shank_idx: int) -> None:
-        """Build or reuse PlotData for the selected shank."""
+        """Ensure runtime PlotData and project it to legacy session consumers."""
         stream_runtime = self.runtime.active_stream_runtime
-        if self.session.plotdata is None:
-            if stream_runtime is not None:
-                self.session.plotdata = stream_runtime.plot_data_for_shank(shank_idx)
-            else:
-                self.session.plotdata = self.plot_data_factory.build_legacy(
-                    self.session.probe_path,
-                    self.session.data,
-                    shank_idx,
-                )
-        self.set_lims(
-            np.min([0, self.session.plotdata.chn_min]), self.session.plotdata.chn_max
-        )
+        if stream_runtime is None:
+            raise RuntimeError("No active stream runtime for shank plot data")
+        plotdata = stream_runtime.plot_data_for_shank(shank_idx)
+        self.session.plotdata = plotdata
+        self.set_lims(np.min([0, plotdata.chn_min]), plotdata.chn_max)
 
-        self.session.plotdata.in_brain_depths_um = self.in_brain_channel_depths()
+        plotdata.in_brain_depths_um = self.in_brain_channel_depths()
         self.session.img_raw_data = {}
 
     def _prepare_shank_slice_data_for_view(self) -> bool:
