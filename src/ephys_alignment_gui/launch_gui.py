@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import platform
@@ -36,12 +37,12 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
     DesktopShankSelectionState,
 )
-from ephys_alignment_gui.desktop_view_session import DesktopViewSession
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
@@ -272,8 +273,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_data_factory = self.workspace.plot_data_factory
 
         self._plot_specs_by_key: dict[str, PlotSpec] = {}
-        self._session: DesktopViewSession | None = None
         self.ephys_plot_items = EphysPlotItems()
+        self.popup_manager = DesktopPopupManager()
         self.init_variables()
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
@@ -375,15 +376,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 output_root,
             )
 
-    @property
-    def session(self) -> DesktopViewSession | None:
-        """Active desktop view session."""
-        return self._session
-
-    @session.setter
-    def session(self, session: DesktopViewSession | None) -> None:
-        self._session = session
-
     def init_variables(self) -> None:
         """
         Initialise variables
@@ -408,10 +400,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
-        self.session = DesktopViewSession()
+        self.popup_manager.close_all()
+        self.popup_manager = DesktopPopupManager()
+        self.raw_image_payloads: dict[str, Any] = {}
         self.runtime.clear_active_stream()
         self.display_state.reset_region_annotation_source()
         self.display_state.reset_unit_filter()
+        self.display_state.reset_visibility_toggles()
+        self.display_state.reset_depth_view()
+        self.display_state.reset_edit_settings()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -467,19 +464,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             axis.setHeight(height)
 
     def set_lims(self, min, max) -> None:
-        self.session.probe_tip = min
-        self.session.probe_top = max
+        self.display_state.depth_view.set_probe_limits(min, max)
 
-        [top_line.setY(self.session.probe_top) for top_line in self.probe_top_lines]
-        [tip_line.setY(self.session.probe_tip) for tip_line in self.probe_tip_lines]
+        [top_line.setY(max) for top_line in self.probe_top_lines]
+        [tip_line.setY(min) for tip_line in self.probe_tip_lines]
 
     def default_feature_y_limits(self) -> tuple[float, float]:
         """Return the current default feature-depth display limits."""
         in_brain_depths_um = self.app.queries.active_in_brain_depths_um()
+        depth_view = self.display_state.depth_view
         return default_feature_y_limits(
-            probe_tip_um=self.session.probe_tip,
-            probe_top_um=self.session.probe_top,
-            probe_extra_um=self.session.probe_extra,
+            probe_tip_um=depth_view.probe_tip_um,
+            probe_top_um=depth_view.probe_top_um,
+            probe_extra_um=depth_view.probe_extra_um,
             in_brain_depths_um=in_brain_depths_um,
         )
 
@@ -706,7 +703,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 return
             image_path_overview = Path(
                 self.document.output_directory
-                / f"Plots_Shank_{self.session.current_shank_idx + 1}"
+                / f"Plots_Shank_{self._active_shank_idx() + 1}"
             )
 
         image_path_overview.mkdir(exist_ok=True)
@@ -972,10 +969,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.histology_panel.render_nearby(state, fig, movable=movable)
 
     def _probe_extent_query_kwargs(self) -> dict[str, float]:
+        depth_view = self.display_state.depth_view
         return {
-            "probe_tip_um": float(self.session.probe_tip),
-            "probe_top_um": float(self.session.probe_top),
-            "probe_extra_um": float(self.session.probe_extra),
+            "probe_tip_um": depth_view.probe_tip_um,
+            "probe_top_um": depth_view.probe_top_um,
+            "probe_extra_um": depth_view.probe_extra_um,
         }
 
     def _active_histology_panel_state(self):
@@ -998,8 +996,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _active_fit_plot_state(self):
         state = self.app.queries.active_fit_plot_state(
-            depth_um=self.session.depth,
-            lin_fit=self.session.lin_fit,
+            depth_um=self.display_state.depth_view.fit_depth_um,
+            lin_fit=self.display_state.edit_settings.lin_fit,
         )
         if state is None:
             logger.error("Cannot render fit: active alignment data is not loaded")
@@ -1066,8 +1064,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         result = self.app.commands.offset_alignment_from_tip(
             tip_position_um=tip_position_um,
-            probe_tip_um=self.session.probe_tip,
-            lin_fit=self.session.lin_fit,
+            probe_tip_um=self.display_state.depth_view.probe_tip_um,
+            lin_fit=self.display_state.edit_settings.lin_fit,
             track_shift_m=track_shift_m,
         )
         if isinstance(result, Failed):
@@ -1091,7 +1089,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         else:
             # Feature comes from ephys plots; track comes from histology plots.
             line_feature, line_track = line_positions
-        shank_runtime = self.session.active_shank.runtime
+        shank_runtime = self._active_shank_runtime()
         if shank_runtime is None:
             logger.error("Cannot fit alignment: active shank runtime is not loaded")
             return False
@@ -1100,8 +1098,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             shank_runtime,
             line_features_um=line_feature,
             line_tracks_um=line_track,
-            lin_fit=self.session.lin_fit,
-            extend_feature=self.session.extend_feature,
+            lin_fit=self.display_state.edit_settings.lin_fit,
+            extend_feature=self.display_state.edit_settings.extend_feature,
         )
         if isinstance(result, Failed):
             logger.error(result.message)
@@ -1125,9 +1123,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
             reattach_reference_lines=self._reattach_reference_lines,
-            plot_histology=self.plot_histology,
-            plot_scale_factor=self.plot_scale_factor,
-            plot_fit=self.plot_fit,
+            probe_extent_query_kwargs=self._probe_extent_query_kwargs,
+            fit_depth_um=lambda: self.display_state.depth_view.fit_depth_um,
+            lin_fit_enabled=lambda: self.display_state.edit_settings.lin_fit,
+            scale_factor_y_range=self._scale_factor_y_range,
+            render_histology=self.histology_panel.render_aligned,
+            render_scale_factor=(
+                lambda state, y_range: self.histology_panel.render_scale_factor(
+                    state,
+                    y_range=y_range,
+                )
+            ),
+            render_fit=self.histology_panel.render_fit,
             plot_channels=self.slice_panel.plot_channels,
             refresh_perpendicular_histology=(
                 self.slice_panel.refresh_perpendicular_histology
@@ -1140,13 +1147,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             update_status=self.update_string,
         )
 
+    def _scale_factor_y_range(self) -> tuple[float, float]:
+        y_min, y_max = self.fig_img.viewRange()[1]
+        return float(y_min), float(y_max)
+
     def _create_reference_lines_for_previous_alignment(self) -> None:
-        if np.any(self.session.feature_prev):
-            self.create_lines(self.session.feature_prev[1:-1] * 1e6)
+        feature_prev = self._active_previous_feature()
+        if feature_prev is not None and np.any(feature_prev):
+            self.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
 
     def _desktop_shank_render_callbacks(self) -> DesktopShankRenderCallbacks:
         return DesktopShankRenderCallbacks(
-            apply_shank_selection=self._apply_shank_selection_to_legacy_session,
             resolve_preserve_plot_selection=(
                 self._resolve_preserve_shank_plot_selection
             ),
@@ -1163,13 +1174,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             configure_view=self._configure_shank_view_after_render,
         )
 
-    def _apply_shank_selection_to_legacy_session(self, shank_idx: int) -> None:
-        """Sync document-owned shank selection into transitional view session."""
-        if self.session is None:
-            return
-        self.session.current_shank_idx = shank_idx
-        self._sync_active_shank_alignment_state()
-
     def plot_scale_factor(self) -> None:
         """
         Plots the scale factor applied to brain regions along probe track, displayed
@@ -1183,8 +1187,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         state = self._active_scale_factor_state()
         if state is None:
             return
-        y_min, y_max = self.fig_img.viewRange()[1]
-        self.histology_panel.render_scale_factor(state, y_range=(y_min, y_max))
+        self.histology_panel.render_scale_factor(
+            state,
+            y_range=self._scale_factor_y_range(),
+        )
 
     def plot_fit(self) -> None:
         """
@@ -1222,7 +1228,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return None
         return self.app.queries.active_plot_payload(
             spec.key,
-            raw_image_payloads=self.session.img_raw_data,
+            raw_image_payloads=self.raw_image_payloads,
         )
 
     def plot_bounds_for_spec(self, spec_key: str) -> Any:
@@ -1232,7 +1238,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return None
         return self.app.queries.active_plot_bounds(
             spec.key,
-            raw_image_payloads=self.session.img_raw_data,
+            raw_image_payloads=self.raw_image_payloads,
         )
 
     def plot_from_spec(self, spec_key: str) -> None:
@@ -1292,14 +1298,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         (id 0 = outside the brain). Returns None when it can't be determined so
         callers fall back to using all channels.
         """
-        if not self.histology_exists or self.session.ephysalign is None:
+        shank_runtime = self._active_shank_runtime()
+        alignment = self._active_alignment()
+        if (
+            not self.histology_exists
+            or shank_runtime is None
+            or shank_runtime.ephysalign is None
+            or alignment is None
+        ):
             return None
         try:
             channel_locations_ras = (
                 self.alignment_derived_data_service.compute_channel_locations(
-                    ephysalign=self.session.ephysalign,
-                    feature=self.session.features[self.session.idx],
-                    track=self.session.track[self.session.idx],
+                    ephysalign=shank_runtime.ephysalign,
+                    feature=alignment.feature,
+                    track=alignment.track,
                 )
             )
             brain_atlas = self.histology_context.brain_atlas
@@ -1315,7 +1328,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         in_brain = np.asarray(region_ids) != 0
         if not in_brain.any():
             return None
-        return np.asarray(self.session.chn_depths)[in_brain]
+        return np.asarray(shank_runtime.chn_depths)[in_brain]
 
     def plot_channels(self, projection=None) -> None:
         """Compatibility wrapper for coronal slice channel overlays."""
@@ -1377,11 +1390,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 x_scale=1,
                 y_scale=1,
                 xrange=data["xrange"],
+                cluster_x_values=data["x"] if data["cluster"] else None,
             )
 
-            # TODO: is this right? Seems like it would clobber
             if data["cluster"]:
-                self.session.data = data["x"]
                 self.feature_plot.connect_clicked(self.cluster_clicked)
 
     def plot_line(self, data) -> None:
@@ -1577,10 +1589,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.setXRange(
                 min=data["xrange"][0], max=data["xrange"][1], padding=0
             )
-            # TODO need to make this work, at the moment messes things up!
-            # self.fig_img.setLimits(xMin=data['xrange'][0], xMax=data['xrange'][1])
-            #                        yMin=self.session.probe_tip - self.session.probe_extra - self.pad,
-            #                        yMax=self.session.probe_top + self.session.probe_extra + self.pad)
             self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
             self.feature_plot.set_data_plot(
                 image,
@@ -1591,33 +1599,28 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
-        """Break reference cycles from the previous probe session."""
+        """Break reference cycles from the previous active stream view."""
+        self._clear_active_stream_presentation()
+        self.runtime.clear_active_stream()
+        gc.collect()
+
+    def _clear_active_stream_presentation(self) -> None:
+        """Clear desktop-owned plot and popup items for the active stream."""
         self.reference_lines.clear()
         self.feature_plot.clear()
+        self.popup_manager.close_all()
         self.ephys_plot_items.detach(self._figures())
-        if self.session is not None:
-            self.session.teardown(self._figures())
-            self.session = None
-        self.runtime.clear_active_stream()
-
-        # Reset persistent widgets that aren't owned by the session
-        self.fit_plot.setData()
-        self.fit_scatter.setData()
+        self.slice_panel.clear()
+        self.histology_panel.clear()
 
     def _figures(self) -> dict[str, Any]:
-        """Return a map of figure names to widgets for session teardown."""
+        """Return a map of figure names to ephys-panel widgets."""
         return {
             "img": self.fig_img,
             "img_cb": self.fig_img_cb,
             "line": self.fig_line,
             "probe": self.fig_probe,
             "probe_cb": self.fig_probe_cb,
-            "slice": self.fig_slice,
-            "hist": self.fig_hist,
-            "hist_ref": self.fig_hist_ref,
-            "hist_perp": self.fig_hist_perp,
-            "scale": self.fig_scale,
-            "fit": self.fig_fit,
         }
 
     def _stream_key_for_selection(
@@ -1648,47 +1651,46 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             plot_data_factory=self.plot_data_factory,
         )
 
-    def _attach_stream_runtime_to_session(
-        self,
-        stream_runtime: EphysStreamRuntime,
-        shank_idx: int,
-    ):
-        """Project runtime stream state into the active view session."""
-        if self.session is None:
-            raise RuntimeError("No active desktop view session")
-        shank_runtime = stream_runtime.shank_runtime_for(shank_idx)
-        collection = shank_runtime.collection
-        stream = stream_runtime.stream
-        self.session.ephys_stream = stream
-        self.session.probe_path = stream.ephys_dir
-        self.session.sess_notes = stream.session_notes
-        self.session.data = stream.alf_data
-        self.session.active_shank.attach_runtime(shank_runtime)
-        return collection
+    def _active_shank_idx(self) -> int:
+        """Return the document-owned active shank index."""
+        return self.app.queries.active_shank_selection().shank_idx
 
-    def _sync_active_shank_alignment_state(self) -> None:
-        """Point the active view shank at document-owned editable state."""
-        if self.session is None:
-            return
-        state = self.document.active_alignment_state
-        if state is None:
-            return
-        self.session.active_shank.alignment_state = state
+    def _active_shank_runtime(self):
+        """Return runtime data for the active shank, if it has been built."""
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is None:
+            return None
+        return stream_runtime.shank_runtime_by_idx.get(self._active_shank_idx())
 
-    def _valid_session_shank_idx(self, shank_idx: int) -> int:
-        """Return a shank index valid for the initialized view session."""
-        if self.session is None or not self.session.has_shank(shank_idx):
+    def _active_alignment_state(self):
+        """Return document-owned editable state for the active alignment."""
+        return self.document.active_alignment_state
+
+    def _active_alignment(self):
+        """Return the document-owned active alignment, if present."""
+        state = self._active_alignment_state()
+        return None if state is None else state.active_alignment
+
+    def _active_previous_feature(self):
+        """Return the selected previous feature alignment, if any."""
+        state = self._active_alignment_state()
+        return None if state is None else state.feature_prev
+
+    def _valid_shank_idx(self, shank_idx: int) -> int:
+        """Return a shank index valid for the selected probe metadata."""
+        n_shanks = self.data_context.n_shanks
+        if n_shanks <= 0 or not 0 <= shank_idx < n_shanks:
             return 0
         return shank_idx
 
-    def _select_shank_for_view_session(
+    def _select_shank_for_view(
         self,
         shank_idx: int,
         *,
         source: str,
     ) -> int | None:
-        """Select a document shank and sync the transitional view session."""
-        target_shank = self._valid_session_shank_idx(shank_idx)
+        """Select a document shank for desktop presentation."""
+        target_shank = self._valid_shank_idx(shank_idx)
         result = self.app.commands.select_shank(target_shank, source=source)
         if isinstance(result, Failed):
             logger.error(result.message)
@@ -1731,17 +1733,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _stash_and_detach_current(self) -> None:
         """Tear down the displayed view session, keeping stream runtime cached."""
-        session = self.session
-        self.session = None
         self.runtime.clear_active_stream()
-        if session is None:
-            return
-        self.reference_lines.clear()
-        self.feature_plot.clear()
-        self.ephys_plot_items.detach(self._figures())
-        session.detach(self._figures())
-        self.fit_plot.setData()
-        self.fit_scatter.setData()
+        self._clear_active_stream_presentation()
 
     def _evict_stream_cache(self) -> None:
         """Tear down the active view session and clear cached stream runtimes.
@@ -1749,17 +1742,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Called when the recording session changes — the cache belongs to one
         recording session, so this bounds memory to a single session's streams.
         """
-        self.reference_lines.clear()
-        self.feature_plot.clear()
-        figures = self._figures()
-        self.ephys_plot_items.detach(figures)
-        session = self.session
-        self.session = None
+        self._clear_active_stream_presentation()
         self.runtime.clear_stream_cache()
-        if session is not None:
-            session.teardown(figures)
-        self.fit_plot.setData()
-        self.fit_scatter.setData()
+        gc.collect()
 
     def _activate_cached_stream(
         self,
@@ -1787,15 +1772,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         try:
             self.init_session_variables()
-            self.session.init_shanks(self.data_context.n_shanks)
             self.runtime.activate_cached_stream(stream_key)
-            target_shank = self._select_shank_for_view_session(
+            target_shank = self._select_shank_for_view(
                 cached_runtime.current_shank_idx,
                 source="cached-stream",
             )
             if target_shank is None:
                 return False
-            self._attach_stream_runtime_to_session(cached_runtime, target_shank)
+            cached_runtime.shank_runtime_for(target_shank)
         except Exception as exc:
             logger.error(f"Failed to restore cached stream runtime: {exc}")
             return False
@@ -1848,8 +1832,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.runtime.pop_cached_stream(stream_key)
             self._teardown_session()
             self.init_session_variables()
-            self.session.init_shanks(self.data_context.n_shanks)
-            selected_shank = self._select_shank_for_view_session(
+            selected_shank = self._select_shank_for_view(
                 target_shank,
                 source="load-data",
             )
@@ -1864,16 +1847,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             loaded = self.probe_data_workflow.load(target_shank)
             stream_runtime = self._new_stream_runtime(loaded.stream)
             self.runtime.cache_loaded_stream(stream_runtime)
-            self._attach_stream_runtime_to_session(
-                stream_runtime,
-                target_shank,
-            )
+            stream_runtime.shank_runtime_for(target_shank)
 
-            if not self.session.probe_path:
+            if not stream_runtime.stream.ephys_dir:
                 logger.error("Failed to load ephys data")
                 return
 
-            logger.info(f"Loaded ephys data from {self.session.probe_path}")
+            logger.info(f"Loaded ephys data from {stream_runtime.stream.ephys_dir}")
 
             # Load atlas and histology (subject-level, cached if same subject)
             if self.histology_context.brain_atlas is None:
@@ -2089,15 +2069,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
                 logger.info(f"Found {self.data_context.n_shanks} shanks in data.")
 
-            # Fresh session to hold the pre-Load shank selection; declare the
-            # probe's shank count, reset to shank 0.
+            # Fresh desktop session for pre-Load view cleanup; document owns
+            # the selected shank.
             self.init_session_variables()
-            self.session.init_shanks(self.data_context.n_shanks)
-            if self._select_shank_for_view_session(0, source="probe-selected") is None:
+            if self._select_shank_for_view(0, source="probe-selected") is None:
                 self.load_data_button.setEnabled(False)
                 return
-            self.session.feature_prev = None
-            self.session.track_prev = None
 
             self._display_output_directory(result.output_directory)
 
@@ -2119,19 +2096,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.document.data_loaded:
             return
-        if self.session is None:
-            return
         positions = self.reference_lines.positions()
+        shank_idx = self._active_shank_idx()
         if positions is None:
-            result = self.controller.clear_pending_reference_lines(
-                self.session.current_shank_idx
-            )
+            result = self.controller.clear_pending_reference_lines(shank_idx)
         else:
             line_feature, line_track = positions
             result = self.controller.set_pending_reference_lines(
                 feature_positions_um=line_feature,
                 track_positions_um=line_track,
-                shank_idx=self.session.current_shank_idx,
+                shank_idx=shank_idx,
             )
         if isinstance(result, Failed):
             logger.error(result.message)
@@ -2307,7 +2281,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if brain_atlas is None:
             logger.error("Cannot recreate alignment: brain atlas is not loaded")
             return False
-        shank_runtime = self.session.active_shank.runtime
+        shank_runtime = self._active_shank_runtime()
         if shank_runtime is None:
             logger.error(
                 "Cannot recreate alignment: active shank runtime is not loaded"
@@ -2328,7 +2302,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(result.message)
             return False
 
-        self._sync_active_shank_alignment_state()
         return True
 
     def render_histology_plots(self, *, shank_idx: int | None = None) -> None:
@@ -2354,8 +2327,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 pending_lines.feature_positions_um,
                 pending_lines.track_positions_um,
             )
-        elif np.any(self.session.feature_prev):
-            self.create_lines(self.session.feature_prev[1:-1] * 1e6)
+        else:
+            feature_prev = self._active_previous_feature()
+            if feature_prev is not None and np.any(feature_prev):
+                self.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
 
     def setup_session_view(
         self,
@@ -2420,13 +2395,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
 
     def _prepare_shank_runtime_for_view(self, shank_idx: int) -> None:
-        """Project the active stream runtime into the compatibility session."""
+        """Ensure runtime state exists for the selected shank."""
         stream_runtime = self.runtime.active_stream_runtime
         if stream_runtime is not None:
-            collection = self._attach_stream_runtime_to_session(
-                stream_runtime,
-                shank_idx,
-            )
+            collection = stream_runtime.shank_runtime_for(shank_idx).collection
             logger.debug(f"Selected {len(collection.depths)} channels for this shank")
 
     def _prepare_shank_histology_for_view(self, shank_idx: int) -> bool:
@@ -2456,9 +2428,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.align_list,
             self.align_combobox,
         )
-        if self.session.active_alignment is None and not self._select_alignment_choice(
-            0
-        ):
+        if self._active_alignment() is None and not self._select_alignment_choice(0):
             return False
         return self.recreate_alignment_and_regions(
             track_annotations_ras=track_annotations_ras,
@@ -2482,7 +2452,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.set_lims(np.min([0, plotdata.chn_min]), plotdata.chn_max)
 
         plotdata.in_brain_depths_um = self.in_brain_channel_depths()
-        self.session.img_raw_data = {}
+        self.raw_image_payloads = {}
 
     def _prepare_shank_slice_data_for_view(self) -> bool:
         """Ensure slice runtime data is available for the selected shank."""
@@ -2490,8 +2460,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             if self.app.queries.ensure_active_slice_data_state() is None:
                 raise RuntimeError("Could not build active slice data")
         else:
-            self.session.slice_data = {}
-            self.session.fp_slice_data = None
+            shank_runtime = self._active_shank_runtime()
+            if shank_runtime is not None:
+                shank_runtime.slice_data = {}
+                shank_runtime.fp_slice_data = None
         return True
 
     def _refresh_shank_plot_menus(
@@ -2628,14 +2600,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(result.message)
             return False
         assert isinstance(result, PreviousAlignmentSelected)
-        self.session.feature_prev = result.feature_prev
-        self.session.track_prev = result.track_prev
         return True
 
     def toggle_histology_button_pressed(self) -> None:
-        self.session.hist_bound_status = not self.session.hist_bound_status
-
-        if not self.session.hist_bound_status:
+        boundaries_visible = self.display_state.toggle_histology_boundaries_visible()
+        if not boundaries_visible:
             self.plot_histology_nearby()
         else:
             self.plot_histology_ref()
@@ -2721,9 +2690,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
+        alignment = self._active_alignment()
+        shank_runtime = self._active_shank_runtime()
         if (
-            self.session.track[self.session.idx][-1] - 50 / 1e6
-            >= np.max(self.session.chn_depths) / 1e6
+            alignment is not None
+            and shank_runtime is not None
+            and alignment.track[-1] - 50 / 1e6
+            >= np.max(shank_runtime.chn_depths) / 1e6
         ):
             self.offset_button_pressed(track_shift_m=-50 / 1e6)
 
@@ -2735,9 +2708,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
+        alignment = self._active_alignment()
+        shank_runtime = self._active_shank_runtime()
         if (
-            self.session.track[self.session.idx][0] + 50 / 1e6
-            <= np.min(self.session.chn_depths) / 1e6
+            alignment is not None
+            and shank_runtime is not None
+            and alignment.track[0] + 50 / 1e6
+            <= np.min(shank_runtime.chn_depths) / 1e6
         ):
             self.offset_button_pressed(track_shift_m=50 / 1e6)
 
@@ -2753,8 +2730,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+L key pressed. Shows/hides reference lines on ephys and histology
         plots
         """
-        self.session.line_status = not self.session.line_status
-        if not self.session.line_status:
+        lines_visible = self.display_state.toggle_reference_lines_visible()
+        if not lines_visible:
             self.remove_lines_points()
         else:
             self.add_lines_points()
@@ -2780,9 +2757,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         idx = self.histology_panel.selected_region_index()
-        if idx is not None:
+        shank_runtime = self._active_shank_runtime()
+        if (
+            idx is not None
+            and shank_runtime is not None
+            and shank_runtime.ephysalign is not None
+        ):
             description, lookup = self.region_lookup_service.get_region_description(
-                self.session.ephysalign.region_id[idx][0]
+                shank_runtime.ephysalign.region_id[idx][0]
             )
             item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
             model_item = self.struct_list.indexFromItem(item[0])
@@ -2791,26 +2773,27 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.struct_view.setCurrentIndex(model_item)
             self.struct_description.setText(description)
 
-            if not self.session.label_popup:
-                self.session.label_win = ephys_gui.PopupWindow(
+            if self.popup_manager.label_window is None:
+                label_window = ephys_gui.PopupWindow(
                     title="Structure Information",
                     size=(500, 700),
                     graphics=False,
                 )
-                self.session.label_win.layout.addWidget(self.struct_view)
-                self.session.label_win.layout.addWidget(self.struct_description)
-                self.session.label_win.layout.setRowStretch(0, 7)
-                self.session.label_win.layout.setRowStretch(1, 3)
-                self.session.label_popup.append(self.session.label_win)
-                self.session.label_win.closed.connect(self.label_closed)
-                self.session.label_win.moved.connect(self.label_moved)
+                label_window.layout.addWidget(self.struct_view)
+                label_window.layout.addWidget(self.struct_description)
+                label_window.layout.setRowStretch(0, 7)
+                label_window.layout.setRowStretch(1, 3)
+                label_window.closed.connect(self.label_closed)
+                label_window.moved.connect(self.label_moved)
+                self.popup_manager.label_window = label_window
                 self.activateWindow()
             else:
-                self.session.label_win.show()
+                self.popup_manager.label_window.show()
                 self.activateWindow()
 
     def label_closed(self, popup) -> None:
-        self.session.label_win.hide()
+        if self.popup_manager.label_window is not None:
+            self.popup_manager.label_window.hide()
 
     def label_moved(self) -> None:
         self.activateWindow()
@@ -2840,7 +2823,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def prev_button_pressed(self) -> None:
         """
         Triggered when left key pressed. Updates all plots and indices with previous move.
-        Ensures user cannot go back more than self.session.max_idx moves
+        Ensures user cannot go back past the active edit-history buffer.
         """
 
         # If no histology we can't plot histology
@@ -2861,14 +2844,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        shank_runtime = self.session.active_shank.runtime
+        shank_runtime = self._active_shank_runtime()
         if shank_runtime is None:
             logger.error("Cannot reset alignment: active shank runtime is not loaded")
             return
 
         result = self.app.commands.reset_alignment_to_initial(
             shank_runtime,
-            lin_fit=self.session.lin_fit,
+            lin_fit=self.display_state.edit_settings.lin_fit,
         )
         if isinstance(result, Failed):
             logger.error(result.message)
@@ -2879,9 +2862,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
         if lin_fit is None:
             return
-        self.session.lin_fit = lin_fit
+        self.display_state.edit_settings.set_lin_fit(lin_fit)
         self.lin_fit_option.blockSignals(True)
-        self.lin_fit_option.setChecked(self.session.lin_fit)
+        self.lin_fit_option.setChecked(self.display_state.edit_settings.lin_fit)
         self.lin_fit_option.blockSignals(False)
 
     def run_complete_button_in_thread(self) -> None:
@@ -2961,7 +2944,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                         )
 
             active_choices = self.controller.active_alignment_choices(
-                self.session.current_shank_idx
+                self._active_shank_idx()
             )
             if isinstance(active_choices, AlignmentChoicesUpdated):
                 self.populate_lists(
@@ -3060,43 +3043,35 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
     def display_session_notes(self) -> None:
-        self.session.notes_win = ephys_gui.PopupWindow(
+        notes_window = ephys_gui.PopupWindow(
             title="Session notes from Alyx", size=(200, 100), graphics=False
         )
         notes = QtWidgets.QTextEdit()
         notes.setReadOnly(True)
         notes.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
-        notes.setText(self.session.sess_notes)
-        self.session.notes_win.layout.addWidget(notes)
+        stream_runtime = self.runtime.active_stream_runtime
+        session_notes = (
+            stream_runtime.stream.session_notes if stream_runtime is not None else ""
+        )
+        notes.setText(session_notes)
+        notes_window.layout.addWidget(notes)
+        self.popup_manager.notes_window = notes_window
 
     def display_nearby_sessions(self) -> None:
         self._show_one_unsupported("Nearby sessions")
 
     def popup_closed(self, popup) -> None:
-        popup_idx = [
-            iP for iP, pop in enumerate(self.session.cluster_popups) if pop == popup
-        ][0]
-        self.session.cluster_popups.pop(popup_idx)
+        self.popup_manager.remove_cluster_popup(popup)
 
     def popup_moved(self) -> None:
         self.activateWindow()
 
     def close_popups(self) -> None:
-        for pop in self.session.cluster_popups:
-            pop.blockSignals(True)
-            pop.close()
-        self.session.cluster_popups = []
+        self.popup_manager.close_cluster_popups()
 
     def minimise_popups(self) -> None:
-        self.session.popup_status = not self.session.popup_status
-        if self.session.popup_status:
-            for pop in self.session.cluster_popups:
-                pop.showNormal()
-            self.activateWindow()
-        else:
-            for pop in self.session.cluster_popups:
-                pop.showMinimized()
-            self.activateWindow()
+        self.popup_manager.toggle_cluster_minimized()
+        self.activateWindow()
 
     def lin_fit_option_changed(self, state) -> None:
         """
@@ -3105,7 +3080,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fit_button_pressed.
         """
         # Update the flag
-        self.session.lin_fit = state != 0
+        self.display_state.edit_settings.set_lin_fit(state != 0)
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use
@@ -3117,7 +3092,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def cluster_clicked(self, item, point):
         point_pos = point[0].pos()
-        clust_idx = np.argwhere(self.session.data == point_pos.x())[0][0]
+        clust_idx = self.feature_plot.cluster_index_for_plot_x(point_pos.x())
+        if clust_idx is None:
+            logger.error("Cannot show cluster detail: clicked point is not a cluster")
+            return None
 
         detail = self.app.queries.active_cluster_detail(clust_idx)
         if detail is None:
@@ -3161,14 +3139,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         clust_layout.addItem(autocorr_plot, 0, 0)
         clust_layout.addItem(template_plot, 1, 0)
 
-        self.session.clust_win = ephys_gui.PopupWindow(
-            title=f"Cluster {detail.cluster_no}"
-        )
-        self.session.clust_win.closed.connect(self.popup_closed)
-        self.session.clust_win.moved.connect(self.popup_moved)
-        self.session.clust_win.popup_widget.addItem(autocorr_plot, 0, 0)
-        self.session.clust_win.popup_widget.addItem(template_plot, 1, 0)
-        self.session.cluster_popups.append(self.session.clust_win)
+        clust_win = ephys_gui.PopupWindow(title=f"Cluster {detail.cluster_no}")
+        clust_win.closed.connect(self.popup_closed)
+        clust_win.moved.connect(self.popup_moved)
+        clust_win.popup_widget.addItem(autocorr_plot, 0, 0)
+        clust_win.popup_widget.addItem(template_plot, 1, 0)
+        self.popup_manager.add_cluster_popup(clust_win)
         self.activateWindow()
 
         return detail.cluster_no
@@ -3295,8 +3271,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         Updates text boxes to indicate to user which move they are looking at
         """
-        self.idx_string.setText(f"Current Index = {self.session.current_idx}")
-        self.tot_idx_string.setText(f"Total Index = {self.session.total_idx}")
+        state = self._active_alignment_state()
+        current_idx = 0 if state is None else state.edit_history.current_idx
+        total_idx = 0 if state is None else state.edit_history.total_idx
+        self.idx_string.setText(f"Current Index = {current_idx}")
+        self.tot_idx_string.setText(f"Total Index = {total_idx}")
 
 
 def viewer(probe_id, one=None, histology=False, spike_collection=None, title=None):

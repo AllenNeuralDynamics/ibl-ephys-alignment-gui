@@ -430,6 +430,22 @@ def test_select_shank_returns_transition_metadata(tmp_path):
     assert doc.selected_shank == 1
 
 
+def test_select_shank_rejects_out_of_range_when_channel_info_is_loaded(tmp_path):
+    doc = AlignmentDocument()
+    context = FakeDataContext()
+    controller, _, _ = make_controller(doc, context=context)
+    controller.set_mouse_root(tmp_path)
+    controller.select_probe("rec1", "probeA")
+    previous_key = doc.selected_alignment_key
+
+    result = controller.select_shank(2)
+
+    assert isinstance(result, Failed)
+    assert "outside valid range" in result.message
+    assert doc.selected_alignment_key == previous_key
+    assert doc.selected_shank == 0
+
+
 def test_can_load_data_delegates_to_policy(tmp_path):
     doc = AlignmentDocument(channel_info_loaded=True)
     doc.select_probe("rec1", "probeA")

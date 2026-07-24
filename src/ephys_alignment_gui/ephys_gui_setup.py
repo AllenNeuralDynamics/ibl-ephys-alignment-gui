@@ -87,7 +87,7 @@ class Setup:
         self._plot_specs_by_key = {}
         self.plot_menu_state = self.app.queries.active_plot_menu_state(
             previous_selected_keys=previous_selected_keys,
-            raw_image_payloads=self.session.img_raw_data,
+            raw_image_payloads=self.raw_image_payloads,
         )
 
         self._rebuild_plot_menu_group(
@@ -735,6 +735,8 @@ class Setup:
         """
         Create all figures that will be added to the GUI
         """
+        depth_view = self.display_state.depth_view
+        y_min, y_max = depth_view.plot_y_range_um
         # Lists to store the position of probe top and tip
         self.probe_top_lines = []
         self.probe_tip_lines = []
@@ -742,17 +744,13 @@ class Setup:
         # Figures to show ephys data
         # 2D scatter/ image plot
         self.fig_img = pg.PlotItem()
-        self.fig_img.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_img.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.fig_img.setMouseEnabled(x=False, y=True)
         self.probe_tip_lines.append(
-            self.fig_img.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_img.addLine(y=depth_view.probe_tip_um, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_img.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_img.addLine(y=depth_view.probe_top_um, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_img, "bottom")
         self.fig_data_ax = self.set_axis(
@@ -769,16 +767,12 @@ class Setup:
         # 1D line plot
         self.fig_line = pg.PlotItem()
         self.fig_line.setMouseEnabled(x=False, y=True)
-        self.fig_line.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_line.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.probe_tip_lines.append(
-            self.fig_line.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_line.addLine(y=depth_view.probe_tip_um, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_line.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_line.addLine(y=depth_view.probe_top_um, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_line, "bottom")
         self.set_axis(self.fig_line, "left", show=False)
@@ -787,16 +781,12 @@ class Setup:
         self.fig_probe = pg.PlotItem()
         self.fig_probe.setMouseEnabled(x=False, y=False)
         self.fig_probe.setMaximumWidth(50)
-        self.fig_probe.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_probe.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.probe_tip_lines.append(
-            self.fig_probe.addLine(y=self.session.probe_tip, pen=self.kpen_dot, z=50)
+            self.fig_probe.addLine(y=depth_view.probe_tip_um, pen=self.kpen_dot, z=50)
         )
         self.probe_top_lines.append(
-            self.fig_probe.addLine(y=self.session.probe_top, pen=self.kpen_dot, z=50)
+            self.fig_probe.addLine(y=depth_view.probe_top_um, pen=self.kpen_dot, z=50)
         )
         self.set_axis(self.fig_probe, "bottom", pen="w")
         self.set_axis(self.fig_probe, "left", show=False)
@@ -833,11 +823,7 @@ class Setup:
         self.fig_hist = pg.PlotItem()
         self.fig_hist.setContentsMargins(0, 0, 0, 0)
         self.fig_hist.setMouseEnabled(x=False)
-        self.fig_hist.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_hist.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.set_axis(self.fig_hist, "bottom", pen="w")
 
         self.fig_img.setYLink(self.fig_line)
@@ -870,11 +856,7 @@ class Setup:
         # Histology figure that will remain at initial state for reference
         self.fig_hist_ref = pg.PlotItem()
         self.fig_hist_ref.setMouseEnabled(x=False)
-        self.fig_hist_ref.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_hist_ref.setYRange(min=y_min, max=y_max, padding=self.pad)
         # Y-link to fig_hist so scrolling/zooming the track-space view stays
         # synchronised with the feature-space plots.
         self.fig_hist_ref.setYLink(self.fig_hist)
@@ -889,11 +871,7 @@ class Setup:
         self.fig_hist_perp = pg.PlotItem()
         self.fig_hist_perp.setContentsMargins(0, 0, 0, 0)
         self.fig_hist_perp.setMouseEnabled(x=False)
-        self.fig_hist_perp.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_hist_perp.setYRange(min=y_min, max=y_max, padding=self.pad)
         self.set_axis(self.fig_hist_perp, "bottom", pen="w")
         self.set_axis(self.fig_hist_perp, "left", show=False)
         self.fig_hist_perp.setYLink(self.fig_hist)
@@ -906,11 +884,7 @@ class Setup:
         self.fig_hist_extra_yaxis = pg.PlotItem()
         self.fig_hist_extra_yaxis.setMouseEnabled(x=False, y=False)
         self.fig_hist_extra_yaxis.setMaximumWidth(2)
-        self.fig_hist_extra_yaxis.setYRange(
-            min=self.session.probe_tip - self.session.probe_extra,
-            max=self.session.probe_top + self.session.probe_extra,
-            padding=self.pad,
-        )
+        self.fig_hist_extra_yaxis.setYRange(min=y_min, max=y_max, padding=self.pad)
 
         self.set_axis(self.fig_hist_extra_yaxis, "bottom", pen="w")
         self.ax_hist2 = self.set_axis(self.fig_hist_extra_yaxis, "left", pen=None)
@@ -953,12 +927,9 @@ class Setup:
         self.fig_fit.setMouseEnabled(x=False, y=False)
         self.fig_fit_exporter = pg.exporters.ImageExporter(self.fig_fit.plotItem)
         self.fig_fit.sigDeviceRangeChanged.connect(self.on_fig_size_changed)
-        self.fig_fit.setXRange(
-            min=self.session.view_total[0], max=self.session.view_total[1]
-        )
-        self.fig_fit.setYRange(
-            min=self.session.view_total[0], max=self.session.view_total[1]
-        )
+        view_min, view_max = depth_view.view_range_um
+        self.fig_fit.setXRange(min=view_min, max=view_max)
+        self.fig_fit.setYRange(min=view_min, max=view_max)
         # Each point on the fit plot is one user-placed reference line (plus
         # the two implicit endpoints at probe tip / top). X = where the line
         # was placed on the ephys side, Y = where it was placed on the
@@ -967,7 +938,11 @@ class Setup:
         self.set_axis(self.fig_fit, "bottom", label="Ephys reference depth (μm)")
         self.set_axis(self.fig_fit, "left", label="Atlas reference depth (μm)")
         plot = pg.PlotCurveItem()
-        plot.setData(x=self.session.depth, y=self.session.depth, pen=self.kpen_dot)
+        plot.setData(
+            x=depth_view.fit_depth_um,
+            y=depth_view.fit_depth_um,
+            pen=self.kpen_dot,
+        )
         self.fit_plot = pg.PlotCurveItem(pen=self.bpen_solid)
         self.fit_scatter = pg.ScatterPlotItem(size=7, symbol="o", brush="w", pen="b")
         self.fit_plot_lin = pg.PlotCurveItem(pen=self.rpen_dot)
@@ -977,7 +952,7 @@ class Setup:
         self.fig_fit.addItem(self.fit_scatter)
 
         self.lin_fit_option = QtWidgets.QCheckBox("Linear fit", self.fig_fit)
-        self.lin_fit_option.setChecked(True)
+        self.lin_fit_option.setChecked(self.display_state.edit_settings.lin_fit)
         self.lin_fit_option.stateChanged.connect(self.lin_fit_option_changed)
         self.on_fig_size_changed()
 

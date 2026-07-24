@@ -50,7 +50,6 @@ def _callbacks(
         },
     )
     return DesktopShankRenderCallbacks(
-        apply_shank_selection=lambda idx: calls.append(("apply", idx)),
         resolve_preserve_plot_selection=lambda preserve: (
             calls.append(("resolve", preserve)) or resolved_preserve
         ),
@@ -93,7 +92,6 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
     assert all(subscription.active for subscription in subscriptions)
     assert calls == [
         ("resolve", None),
-        ("apply", 2),
         ("capture", True),
         "clear_lines",
         ("runtime", 2),
@@ -116,7 +114,7 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
     ]
 
 
-def test_shank_presenter_only_syncs_selection_before_data_is_loaded() -> None:
+def test_shank_presenter_does_not_render_before_data_is_loaded() -> None:
     events = EventBus()
     calls: list[Any] = []
     presenter = DesktopShankPresenter(events, callbacks=_callbacks(calls))
@@ -124,7 +122,7 @@ def test_shank_presenter_only_syncs_selection_before_data_is_loaded() -> None:
 
     events.emit(_event(shank_idx=3, data_loaded=False))
 
-    assert calls == [("apply", 3)]
+    assert calls == []
 
 
 def test_shank_presenter_stops_when_histology_preparation_fails() -> None:
@@ -138,7 +136,6 @@ def test_shank_presenter_stops_when_histology_preparation_fails() -> None:
 
     assert calls == [
         ("resolve", False),
-        ("apply", 1),
         ("capture", False),
         "clear_lines",
         ("runtime", 1),
@@ -157,7 +154,6 @@ def test_shank_presenter_stops_when_slice_preparation_fails() -> None:
 
     assert calls == [
         ("resolve", True),
-        ("apply", 1),
         ("capture", True),
         "clear_lines",
         ("runtime", 1),

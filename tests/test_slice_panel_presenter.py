@@ -59,6 +59,7 @@ class FakePlot:
         self.added: list[Any] = []
         self.removed: list[Any] = []
         self.x_ranges: list[dict[str, Any]] = []
+        self.clear_count = 0
 
     def addItem(self, item: Any) -> None:
         self.added.append(item)
@@ -68,6 +69,17 @@ class FakePlot:
 
     def setXRange(self, **kwargs: Any) -> None:
         self.x_ranges.append(kwargs)
+
+    def clear(self) -> None:
+        self.clear_count += 1
+
+
+class FakeLayout:
+    def __init__(self) -> None:
+        self.removed: list[Any] = []
+
+    def removeItem(self, item: Any) -> None:
+        self.removed.append(item)
 
 
 class FakePlotItem:
@@ -152,15 +164,21 @@ def _presenter(
     )
 
 
-def _presenter_with_plots() -> tuple[SlicePanelPresenter, FakePlot, FakePlot]:
+def _presenter_with_plots() -> tuple[
+    SlicePanelPresenter,
+    FakePlot,
+    FakePlot,
+    FakeLayout,
+]:
     coronal = FakePlot()
     perpendicular = FakePlot()
+    layout = FakeLayout()
     return (
         SlicePanelPresenter(
             app=SimpleNamespace(queries=FakeQueries()),
             plots=SlicePanelPlots(
                 coronal=coronal,
-                coronal_layout=SimpleNamespace(removeItem=lambda item: None),
+                coronal_layout=layout,
                 histogram_alt=None,
                 perpendicular=perpendicular,
             ),
@@ -175,6 +193,7 @@ def _presenter_with_plots() -> tuple[SlicePanelPresenter, FakePlot, FakePlot]:
         ),
         coronal,
         perpendicular,
+        layout,
     )
 
 
@@ -225,7 +244,7 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    presenter, coronal, perpendicular = _presenter_with_plots()
+    presenter, coronal, perpendicular, _layout = _presenter_with_plots()
     projection = _projection()
 
     presenter.plot_channels(projection)
@@ -261,7 +280,7 @@ def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    presenter, coronal, _perpendicular = _presenter_with_plots()
+    presenter, coronal, _perpendicular, _layout = _presenter_with_plots()
     presenter.view_state.channel_projection = _projection()
 
     presenter.render_export_trajectory_overlay("export-pen")
@@ -292,7 +311,7 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.ColorBar",
         FakeColorBar,
     )
-    presenter, _coronal, perpendicular = _presenter_with_plots()
+    presenter, _coronal, perpendicular, _layout = _presenter_with_plots()
     presenter.view_state.slice_hist_levels = (5.0, 95.0)
 
     presenter.render_perpendicular_histology(
@@ -321,3 +340,41 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
     assert state.perp_channel_dots in perpendicular.added
     assert state.perp_tip_marker in perpendicular.added
     assert perpendicular.x_ranges == [{"min": -100.0, "max": 100.0, "padding": 0}]
+
+
+def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
+    presenter, coronal, perpendicular, layout = _presenter_with_plots()
+    state = presenter.view_state
+    slice_item = object()
+    state.channel_projection = object()
+    state.slice_lines = [object()]
+    state.slice_chns = object()
+    state.slice_tip = object()
+    state.traj_line = object()
+    state.perp_image_item = object()
+    state.perp_probe_line = object()
+    state.perp_channel_dots = object()
+    state.perp_tip_marker = object()
+    state.slice_color_bar = object()
+    state.slice_hist_levels = (1.0, 2.0)
+    state.slice_item = slice_item
+    state.histogram_item = object()
+
+    presenter.clear()
+
+    assert coronal.clear_count == 1
+    assert perpendicular.clear_count == 1
+    assert layout.removed == [slice_item]
+    assert state.channel_projection is None
+    assert state.slice_lines == []
+    assert state.slice_chns is None
+    assert state.slice_tip is None
+    assert state.traj_line is None
+    assert state.perp_image_item is None
+    assert state.perp_probe_line is None
+    assert state.perp_channel_dots is None
+    assert state.perp_tip_marker is None
+    assert state.slice_color_bar is None
+    assert state.slice_hist_levels is None
+    assert state.slice_item is None
+    assert state.histogram_item is None

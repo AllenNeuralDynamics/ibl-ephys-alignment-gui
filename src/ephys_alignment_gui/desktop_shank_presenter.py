@@ -24,9 +24,8 @@ class DesktopShankSelectionState:
 
 @dataclass(frozen=True)
 class DesktopShankRenderCallbacks:
-    """Desktop callbacks used to apply a shank selection."""
+    """Desktop callbacks used to render a shank selection."""
 
-    apply_shank_selection: Callable[[int], None]
     resolve_preserve_plot_selection: Callable[[bool | None], bool]
     capture_plot_selection: Callable[[bool], DesktopShankSelectionState]
     clear_reference_lines: Callable[[], None]
@@ -59,8 +58,7 @@ class DesktopShankPresenter:
     def on_shank_changed(self, event: ShankChanged) -> None:
         """Present a semantic shank selection in the desktop shell."""
         if not event.data_loaded:
-            self._require_callbacks().apply_shank_selection(event.shank_idx)
-            logger.info("Data not loaded yet, shank index updated")
+            logger.info("Data not loaded yet; document shank selection updated")
             return
 
         self.render_loaded_shank(
@@ -79,7 +77,6 @@ class DesktopShankPresenter:
         preserve = callbacks.resolve_preserve_plot_selection(preserve_plot_selection)
 
         logger.info("Setting up view for shank index %s", shank_idx)
-        callbacks.apply_shank_selection(shank_idx)
         selections = callbacks.capture_plot_selection(preserve)
         callbacks.clear_reference_lines()
         callbacks.prepare_runtime(shank_idx)

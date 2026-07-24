@@ -103,6 +103,17 @@ class SlicePanelPresenter:
             return None
         return render_state.scalar_channel
 
+    def clear(self) -> None:
+        """Clear slice-panel plot items and forget desktop handles."""
+        self._remove_histogram_item()
+        self.plots.coronal.clear()
+        self.plots.perpendicular.clear()
+        self.view_state.reset_coronal_overlays()
+        self.view_state.reset_perpendicular_overlays()
+        self.view_state.slice_color_bar = None
+        self.view_state.slice_hist_levels = None
+        self.view_state.histogram_item = None
+
     def current_slice_render_state(self) -> ActiveSliceRenderState | None:
         """Return render state for the currently checked slice action."""
         selection = self.current_slice_selection()
@@ -506,6 +517,10 @@ class SlicePanelPresenter:
     def _remove_histogram_item(self) -> None:
         view_state = self.view_state
         if view_state.slice_item is None:
+            return
+        if self.plots.coronal_layout is None:
+            view_state.slice_item = None
+            view_state.histogram_item = None
             return
         self.plots.coronal_layout.removeItem(view_state.slice_item)
         view_state.slice_item = None

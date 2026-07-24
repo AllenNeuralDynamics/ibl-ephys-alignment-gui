@@ -85,6 +85,36 @@ class HistologyPanelPresenter:
     hist_ref_label_items: list[Any] = field(default_factory=list)
     _probe_extent: ProbeExtentRenderState | None = None
 
+    def clear(self) -> None:
+        """Clear histology-panel plot items and forget desktop handles."""
+        self._disconnect_tip_top()
+        self.plots.aligned.clear()
+        self.plots.reference.clear()
+        if self.plots.scale is not None:
+            self.plots.scale.clear()
+        if self.plots.scale_colorbar is not None:
+            self.plots.scale_colorbar.clear()
+
+        self.clear_fit()
+        self.tip_pos = None
+        self.top_pos = None
+        self.hist_regions = np.empty((0, 1), dtype=object)
+        self.hist_ref_regions = np.empty((0, 1), dtype=object)
+        self.scale_regions = np.empty((0, 1), dtype=object)
+        self.scale_factor = None
+        self.selected_region = None
+        self.hist_label_items = []
+        self.hist_ref_label_items = []
+        self._probe_extent = None
+
+    def clear_fit(self) -> None:
+        """Clear fit-panel data while preserving the persistent plot items."""
+        if self.fit_items is None:
+            return
+        self.fit_items.fit_curve.setData()
+        self.fit_items.fit_scatter.setData()
+        self.fit_items.linear_fit_curve.setData()
+
     def render_aligned(
         self,
         state: HistologyPanelRenderState,
@@ -437,7 +467,7 @@ class HistologyPanelPresenter:
                 continue
             try:
                 item.sigPositionChanged.disconnect()
-            except TypeError:
+            except (TypeError, RuntimeError):
                 pass
 
     @staticmethod

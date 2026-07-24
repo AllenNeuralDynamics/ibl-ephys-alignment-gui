@@ -337,6 +337,11 @@ class AlignmentController:
 
     def select_shank(self, shank_idx: int) -> ShankSelected | Failed:
         """Select a shank and return the before/after document keys."""
+        n_shanks = self.data_context.n_shanks
+        if n_shanks > 0 and not 0 <= shank_idx < n_shanks:
+            return Failed(
+                f"Shank index {shank_idx} is outside valid range 0..{n_shanks - 1}"
+            )
         previous_key = self.document.selected_alignment_key
         previous_shank_idx = self.document.selected_shank
         try:

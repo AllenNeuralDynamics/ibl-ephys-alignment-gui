@@ -497,6 +497,22 @@ class AlignmentQueries:
             probe_extent=probe_extent,
         )
 
+    def probe_extent_render_state(
+        self,
+        active_alignment: ActiveAlignment,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+    ) -> ProbeExtentRenderState | None:
+        """Return probe-extent render data for an alignment."""
+        return self._probe_extent_render_state(
+            active_alignment,
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+
     def active_scale_factor_state(
         self,
         *,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -21,11 +22,21 @@ from ephys_alignment_gui.event_bus import EventBus
 class FakeQueries:
     def __init__(self, render_state: ActiveAlignmentRenderState | None) -> None:
         self.render_state = render_state
-        self.calls: list[str] = []
+        self.probe_extent = "probe_extent"
+        self.fit_state = "fit_state"
+        self.calls: list[Any] = []
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
-        self.calls.append("query")
+        self.calls.append("query_alignment")
         return self.render_state
+
+    def probe_extent_render_state(self, active_alignment, **kwargs):
+        self.calls.append(("probe_extent", active_alignment, kwargs))
+        return self.probe_extent
+
+    def active_fit_plot_state(self, *, depth_um, lin_fit):
+        self.calls.append(("fit", depth_um, lin_fit))
+        return self.fit_state
 
 
 def _render_state() -> ActiveAlignmentRenderState:
@@ -36,7 +47,9 @@ def _render_state() -> ActiveAlignmentRenderState:
     return ActiveAlignmentRenderState(
         key=AlignmentKey("rec", "stream", 1),
         active_alignment=active_alignment,
-        histology="histology",
+        histology=SimpleNamespace(
+            scale=SimpleNamespace(region="region", scale="scale")
+        ),
         projection="projection",
     )
 
@@ -50,9 +63,21 @@ def _recording_callbacks(calls: list[Any]) -> DesktopAlignmentRenderCallbacks:
             ("restore_depth", ranges)
         ),
         reattach_reference_lines=lambda: calls.append("reattach_lines"),
-        plot_histology=lambda: calls.append("plot_histology"),
-        plot_scale_factor=lambda: calls.append("plot_scale"),
-        plot_fit=lambda: calls.append("plot_fit"),
+        probe_extent_query_kwargs=lambda: {
+            "probe_tip_um": 0.0,
+            "probe_top_um": 3840.0,
+            "probe_extra_um": 100.0,
+        },
+        fit_depth_um=lambda: "depth",
+        lin_fit_enabled=lambda: True,
+        scale_factor_y_range=lambda: (10.0, 20.0),
+        render_histology=lambda state: calls.append(
+            ("render_histology", state.histology, state.probe_extent)
+        ),
+        render_scale_factor=lambda state, y_range: calls.append(
+            ("render_scale", state.region, state.scale, y_range)
+        ),
+        render_fit=lambda state: calls.append(("render_fit", state)),
         plot_channels=lambda projection: calls.append(("plot_channels", projection)),
         refresh_perpendicular_histology=lambda: calls.append("refresh_perp"),
         update_reference_lines_to_alignment=lambda: calls.append("update_lines"),
@@ -117,13 +142,25 @@ def test_desktop_presenter_coordinates_alignment_edit_rendering() -> None:
 
     assert len(subscriptions) == 1
     assert all(subscription.active for subscription in subscriptions)
-    assert queries.calls == ["query"]
+    assert queries.calls == [
+        "query_alignment",
+        (
+            "probe_extent",
+            render_state.active_alignment,
+            {
+                "probe_tip_um": 0.0,
+                "probe_top_um": 3840.0,
+                "probe_extra_um": 100.0,
+            },
+        ),
+        ("fit", "depth", True),
+    ]
     assert calls == [
         ("restore_lin_fit", False),
         "capture_depth",
-        "plot_histology",
-        "plot_scale",
-        "plot_fit",
+        ("render_histology", render_state.histology, "probe_extent"),
+        ("render_scale", "region", "scale", (10.0, 20.0)),
+        ("render_fit", "fit_state"),
         ("plot_channels", "projection"),
         "refresh_perp",
         "reattach_lines",
@@ -141,12 +178,24 @@ def test_desktop_presenter_coordinates_offset_rendering() -> None:
 
     _emit_edit(events, render_state, "offset", lin_fit=True)
 
-    assert queries.calls == ["query"]
+    assert queries.calls == [
+        "query_alignment",
+        (
+            "probe_extent",
+            render_state.active_alignment,
+            {
+                "probe_tip_um": 0.0,
+                "probe_top_um": 3840.0,
+                "probe_extra_um": 100.0,
+            },
+        ),
+        ("fit", "depth", True),
+    ]
     assert calls == [
         ("restore_lin_fit", True),
-        "plot_histology",
-        "plot_scale",
-        "plot_fit",
+        ("render_histology", render_state.histology, "probe_extent"),
+        ("render_scale", "region", "scale", (10.0, 20.0)),
+        ("render_fit", "fit_state"),
         ("plot_channels", "projection"),
         "refresh_perp",
         "reattach_lines",
@@ -164,13 +213,25 @@ def test_desktop_presenter_coordinates_previous_and_next_rendering() -> None:
 
         _emit_edit(events, render_state, edit_kind)
 
-        assert queries.calls == ["query"]
+        assert queries.calls == [
+            "query_alignment",
+            (
+                "probe_extent",
+                render_state.active_alignment,
+                {
+                    "probe_tip_um": 0.0,
+                    "probe_top_um": 3840.0,
+                    "probe_extra_um": 100.0,
+                },
+            ),
+            ("fit", "depth", True),
+        ]
         assert calls == [
             ("restore_lin_fit", None),
             "reattach_lines",
-            "plot_histology",
-            "plot_scale",
-            "plot_fit",
+            ("render_histology", render_state.histology, "probe_extent"),
+            ("render_scale", "region", "scale", (10.0, 20.0)),
+            ("render_fit", "fit_state"),
             ("plot_channels", "projection"),
             "refresh_perp",
             "reattach_lines",
@@ -186,13 +247,25 @@ def test_desktop_presenter_coordinates_reset_rendering() -> None:
 
     _emit_edit(events, render_state, "reset", lin_fit=False)
 
-    assert queries.calls == ["query"]
+    assert queries.calls == [
+        "query_alignment",
+        (
+            "probe_extent",
+            render_state.active_alignment,
+            {
+                "probe_tip_um": 0.0,
+                "probe_top_um": 3840.0,
+                "probe_extra_um": 100.0,
+            },
+        ),
+        ("fit", "depth", True),
+    ]
     assert calls == [
         ("restore_lin_fit", False),
         "clear_reference_lines",
-        "plot_histology",
-        "plot_scale",
-        "plot_fit",
+        ("render_histology", render_state.histology, "probe_extent"),
+        ("render_scale", "region", "scale", (10.0, 20.0)),
+        ("render_fit", "fit_state"),
         ("plot_channels", "projection"),
         "refresh_perp",
         "create_previous_lines",
