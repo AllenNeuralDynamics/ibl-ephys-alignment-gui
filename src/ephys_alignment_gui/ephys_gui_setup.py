@@ -12,116 +12,6 @@ pg.setConfigOption("foreground", "k")
 
 
 class Setup:
-    def _add_plot_spec_action(self, menu, group, spec, checked=False):
-        self.register_plot_spec(spec)
-        action = QtWidgets.QAction(
-            spec.label,
-            self,
-            checkable=True,
-            checked=checked,
-        )
-        action.setData({"plot_spec": spec.key})
-        action.triggered.connect(
-            lambda _checked=False, key=spec.key: self.plot_from_spec(key)
-        )
-        menu.addAction(action)
-        group.addAction(action)
-        return action
-
-    def _plot_spec_key_from_action(self, action):
-        if action is None:
-            return None
-        data = action.data()
-        if not isinstance(data, dict):
-            return None
-        key = data.get("plot_spec")
-        return key if isinstance(key, str) else None
-
-    def current_ephys_plot_keys(self):
-        return {
-            "image": self._plot_spec_key_from_action(
-                getattr(self, "current_img_action", None)
-            ),
-            "line": self._plot_spec_key_from_action(
-                getattr(self, "line_img_action", None)
-            ),
-            "probe": self._plot_spec_key_from_action(
-                getattr(self, "probe_img_action", None)
-            ),
-        }
-
-    def _rebuild_plot_menu_group(
-        self,
-        *,
-        menu,
-        state,
-        action_group_attr,
-        selected_action_attr,
-        init_action_attr,
-        triggered_callback,
-    ):
-        menu.clear()
-        group = QtWidgets.QActionGroup(menu)
-        group.setExclusive(True)
-        group.triggered.connect(triggered_callback)
-        setattr(self, action_group_attr, group)
-
-        selected_action = None
-        for spec in state.specs:
-            action = self._add_plot_spec_action(
-                menu,
-                group,
-                spec,
-                checked=spec.key == state.selected_key,
-            )
-            if spec.key == state.selected_key:
-                selected_action = action
-
-        menu.setEnabled(state.enabled)
-        setattr(self, init_action_attr, selected_action)
-        setattr(self, selected_action_attr, selected_action)
-        if selected_action is not None:
-            selected_action.setChecked(True)
-
-    def rebuild_ephys_plot_menus(
-        self,
-        previous_selected_keys=None,
-        *,
-        plot_menu_state=None,
-    ) -> None:
-        self._plot_specs_by_key = {}
-        self.plot_menu_state = plot_menu_state
-        if self.plot_menu_state is None:
-            self.plot_menu_state = self.app.queries.active_plot_menu_state(
-                previous_selected_keys=previous_selected_keys,
-                raw_image_payloads=self.raw_image_payloads,
-            )
-
-        self._rebuild_plot_menu_group(
-            menu=self.img_options,
-            state=self.plot_menu_state.group("image"),
-            action_group_attr="img_options_group",
-            selected_action_attr="current_img_action",
-            init_action_attr="img_init",
-            triggered_callback=self._on_img_action_triggered,
-        )
-        self._rebuild_plot_menu_group(
-            menu=self.line_options,
-            state=self.plot_menu_state.group("line"),
-            action_group_attr="line_options_group",
-            selected_action_attr="line_img_action",
-            init_action_attr="line_init",
-            triggered_callback=self._on_line_action_triggered,
-        )
-        self._rebuild_plot_menu_group(
-            menu=self.probe_options,
-            state=self.plot_menu_state.group("probe"),
-            action_group_attr="probe_options_group",
-            selected_action_attr="probe_img_action",
-            init_action_attr="probe_init",
-            triggered_callback=self._on_probe_action_triggered,
-        )
-
     def init_layout(self, main_window, offline=False) -> None:
         self.resize(1600, 800)
         self.setWindowTitle("IBL Ephys Alignment GUI")
@@ -166,81 +56,12 @@ class Setup:
         menu_bar.setNativeMenuBar(False)
         self.setMenuBar(menu_bar)
 
-        # IMAGE PLOTS MENU BAR
-        # Add menu bar for 2D scatter/ image plot options
-        self.img_options = menu_bar.addMenu("Image Plots")
-
-        # LINE PLOTS MENU BAR
-        # Add menu bar for 1D line plot options
-        self.line_options = menu_bar.addMenu("Line Plots")
-
-        # PROBE PLOTS MENU BAR
-        # Add menu bar for 2D probe plot options
-        self.probe_options = menu_bar.addMenu("Probe Plots")
-        self.rebuild_ephys_plot_menus()
+        self.ephys_plot_presenter.attach_plot_menus(menu_bar)
 
         # SLICE PLOTS MENU BAR
         self.init_slice_menu()
 
-        # FILTER UNITS MENU BAR
-        # Define unit filtering options
-        all_units = QtWidgets.QAction("All", self, checkable=True, checked=True)
-        all_units.triggered.connect(lambda: self.filter_unit_pressed("all"))
-        good_units = QtWidgets.QAction("KS good", self, checkable=True, checked=False)
-        good_units.triggered.connect(lambda: self.filter_unit_pressed("KS good"))
-        mua_units = QtWidgets.QAction("KS mua", self, checkable=True, checked=False)
-        mua_units.triggered.connect(lambda: self.filter_unit_pressed("KS mua"))
-        ibl_units = QtWidgets.QAction("IBL good", self, checkable=True, checked=False)
-        ibl_units.triggered.connect(lambda: self.filter_unit_pressed("IBL good"))
-        aind_qc_units = QtWidgets.QAction(
-            "aind_qc", self, checkable=True, checked=False
-        )
-        aind_qc_units.triggered.connect(lambda: self.filter_unit_pressed("aind_qc"))
-        sua_refine_units = QtWidgets.QAction(
-            "unitrefine_sua", self, checkable=True, checked=False
-        )
-        sua_refine_units.triggered.connect(
-            lambda: self.filter_unit_pressed("unitrefine_sua")
-        )
-        neural_refine_units = QtWidgets.QAction(
-            "unitrefine_neural", self, checkable=True, checked=False
-        )
-        neural_refine_units.triggered.connect(
-            lambda: self.filter_unit_pressed("unitrefine_neural")
-        )
-        self.unit_filter_actions_by_subset = {
-            "all": all_units,
-            "KS good": good_units,
-            "KS mua": mua_units,
-            "IBL good": ibl_units,
-            "aind_qc": aind_qc_units,
-            "unitrefine_sua": sua_refine_units,
-            "unitrefine_neural": neural_refine_units,
-        }
-        for subset, action in self.unit_filter_actions_by_subset.items():
-            action.setData(subset)
-        # Initialise with all units being shown
-        self.unit_init = all_units
-
-        # Add menu bar for slice plot options
-        unit_filter_options = menu_bar.addMenu("Filter Units")
-        # Add action group so we can toggle through unit options
-        self.unit_filter_options_group = QtWidgets.QActionGroup(unit_filter_options)
-        self.unit_filter_options_group.setExclusive(True)
-        unit_filter_options.addAction(all_units)
-        self.unit_filter_options_group.addAction(all_units)
-        unit_filter_options.addAction(good_units)
-        self.unit_filter_options_group.addAction(good_units)
-        unit_filter_options.addAction(mua_units)
-        self.unit_filter_options_group.addAction(mua_units)
-        unit_filter_options.addAction(ibl_units)
-        self.unit_filter_options_group.addAction(ibl_units)
-        unit_filter_options.addAction(aind_qc_units)
-        self.unit_filter_options_group.addAction(aind_qc_units)
-        unit_filter_options.addAction(sua_refine_units)
-        self.unit_filter_options_group.addAction(sua_refine_units)
-        unit_filter_options.addAction(neural_refine_units)
-        self.unit_filter_options_group.addAction(neural_refine_units)
+        self.ephys_plot_presenter.attach_unit_filter_menu(menu_bar, self)
 
         # FIT OPTIONS MENU BAR
         # Define all possible keyboard shortcut interactions for GUI
@@ -305,17 +126,17 @@ class Setup:
         toggle1_option = QtWidgets.QAction("Toggle Image Plots", self)
         toggle1_option.setShortcut("Alt+1")
         toggle1_option.triggered.connect(
-            lambda: self.toggle_plots(self.img_options_group)
+            lambda: self.ephys_plot_presenter.toggle_plot("image")
         )
         toggle2_option = QtWidgets.QAction("Toggle Line Plots", self)
         toggle2_option.setShortcut("Alt+2")
         toggle2_option.triggered.connect(
-            lambda: self.toggle_plots(self.line_options_group)
+            lambda: self.ephys_plot_presenter.toggle_plot("line")
         )
         toggle3_option = QtWidgets.QAction("Toggle Probe Plots", self)
         toggle3_option.setShortcut("Alt+3")
         toggle3_option.triggered.connect(
-            lambda: self.toggle_plots(self.probe_options_group)
+            lambda: self.ephys_plot_presenter.toggle_plot("probe")
         )
         toggle4_option = QtWidgets.QAction("Toggle Slice Plots", self)
         toggle4_option.setShortcut("Alt+4")
@@ -326,17 +147,17 @@ class Setup:
         toggle5_option = QtWidgets.QAction("Toggle Previous Image Plots", self)
         toggle5_option.setShortcut("Alt+Ctrl+1")
         toggle5_option.triggered.connect(
-            lambda: self.toggle_plots(self.img_options_group, reverse=True)
+            lambda: self.ephys_plot_presenter.toggle_plot("image", reverse=True)
         )
         toggle6_option = QtWidgets.QAction("Toggle Previous Line Plots", self)
         toggle6_option.setShortcut("Alt+Ctrl+2")
         toggle6_option.triggered.connect(
-            lambda: self.toggle_plots(self.line_options_group, reverse=True)
+            lambda: self.ephys_plot_presenter.toggle_plot("line", reverse=True)
         )
         toggle7_option = QtWidgets.QAction("Toggle Previous Probe Plots", self)
         toggle7_option.setShortcut("Alt+Ctrl+3")
         toggle7_option.triggered.connect(
-            lambda: self.toggle_plots(self.probe_options_group, reverse=True)
+            lambda: self.ephys_plot_presenter.toggle_plot("probe", reverse=True)
         )
         toggle8_option = QtWidgets.QAction("Toggle Previous Slice Plots", self)
         toggle8_option.setShortcut("Alt+Ctrl+4")

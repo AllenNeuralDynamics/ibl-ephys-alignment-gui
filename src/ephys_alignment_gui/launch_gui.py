@@ -34,13 +34,21 @@ from ephys_alignment_gui.controller import (
 )
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
-    ActiveShankScreenState,
     ActiveSliceMenuState,
 )
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
+)
+from ephys_alignment_gui.desktop_ephys_plot_presenter import (
+    DesktopEphysPlotPresenter,
+    EphysPlotRenderCallbacks,
+)
+from ephys_alignment_gui.desktop_ephys_panel_view import (
+    DesktopEphysPanelView,
+    EphysPanelPlots,
+    EphysPanelStyle,
 )
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_shank_presenter import (
@@ -49,22 +57,14 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankSelectionState,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
-from ephys_alignment_gui.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
     HistologyPanelAxes,
     HistologyPanelPlots,
     HistologyPanelPresenter,
     HistologyPanelStyle,
-)
-from ephys_alignment_gui.plot_elements import ColorBar
-from ephys_alignment_gui.plot_registry import (
-    PlotMenu,
-    PlotSpec,
-    plot_spec,
 )
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
@@ -278,15 +278,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_alignment_presenter = DesktopAlignmentPresenter(self.app.events)
         self.desktop_shank_presenter = DesktopShankPresenter(self.app)
         self.plot_data_factory = self.workspace.plot_data_factory
-
-        self._plot_specs_by_key: dict[str, PlotSpec] = {}
-        self.ephys_plot_items = EphysPlotItems()
+        self.ephys_plot_presenter = DesktopEphysPlotPresenter(
+            app=self.app,
+            callbacks=EphysPlotRenderCallbacks(
+                raw_image_payloads=lambda: self.raw_image_payloads,
+                render_image=lambda data: self.ephys_panel.render_image(data),
+                render_scatter=lambda data: self.ephys_panel.render_scatter(data),
+                render_line=lambda data: self.ephys_panel.render_line(data),
+                render_probe=lambda data, bounds: self.ephys_panel.render_probe(
+                    data,
+                    bounds=bounds,
+                ),
+            ),
+        )
         self.popup_manager = DesktopPopupManager()
         self.init_variables()
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
-        self.feature_plot = FeaturePlotView()
+        self.ephys_panel = DesktopEphysPanelView(
+            plots=EphysPanelPlots(
+                image=self.fig_img,
+                image_colorbar=self.fig_img_cb,
+                line=self.fig_line,
+                probe=self.fig_probe,
+                probe_colorbar=self.fig_probe_cb,
+            ),
+            style=EphysPanelStyle(line_pen=self.kpen_solid),
+            set_axis=self.set_axis,
+            cluster_clicked=self.cluster_clicked,
+        )
         self.reference_lines = ReferenceLineLayer(
             plots=ReferenceLinePlots(
                 histology=self.fig_hist,
@@ -604,10 +625,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_img.update()
             # Manually force the axis to shift and then reset axis as axis not always correct
             # TO DO: find a better way!
-            if self.feature_plot.xrange is not None:
+            feature_xrange = self.ephys_panel.feature_xrange
+            if feature_xrange is not None:
                 self.fig_img.setXRange(
-                    min=self.feature_plot.xrange[0] - 10,
-                    max=self.feature_plot.xrange[1] + 10,
+                    min=feature_xrange[0] - 10,
+                    max=feature_xrange[1] + 10,
                     padding=0,
                 )
             self.reset_axis_button_pressed()
@@ -644,10 +666,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_data_layout.layout.setRowStretchFactor(1, 10)
 
             self.fig_img.update()
-            if self.feature_plot.xrange is not None:
+            feature_xrange = self.ephys_panel.feature_xrange
+            if feature_xrange is not None:
                 self.fig_img.setXRange(
-                    min=self.feature_plot.xrange[0] - 10,
-                    max=self.feature_plot.xrange[1] + 10,
+                    min=feature_xrange[0] - 10,
+                    max=feature_xrange[1] + 10,
                     padding=0,
                 )
             self.reset_axis_button_pressed()
@@ -684,10 +707,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.fig_line.setPreferredWidth(self.fig_line_width)
 
             self.fig_img.update()
-            if self.feature_plot.xrange is not None:
+            feature_xrange = self.ephys_panel.feature_xrange
+            if feature_xrange is not None:
                 self.fig_img.setXRange(
-                    min=self.feature_plot.xrange[0] - 10,
-                    max=self.feature_plot.xrange[1] + 10,
+                    min=feature_xrange[0] - 10,
+                    max=feature_xrange[1] + 10,
                     padding=0,
                 )
             self.reset_axis_button_pressed()
@@ -738,24 +762,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_data_area.resize(700, height1)
 
         plot = None
-        start_plot = self.img_options_group.checkedAction()
+        start_plot = self.ephys_plot_presenter.checked_action("image")
 
-        while plot != start_plot:
+        while start_plot is not None and plot != start_plot:
+            checked_action = self.ephys_plot_presenter.checked_action("image")
+            if checked_action is None:
+                break
             self.set_font(self.fig_img_cb, "top", ptsize=15, height=ax_height + 15)
             exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
             exporter.export(
                 str(
                     image_path_overview.joinpath(
-                        sess_info
-                        + "img_"
-                        + self.img_options_group.checkedAction().text()
-                        + ".png"
+                        sess_info + "img_" + checked_action.text() + ".png"
                     )
                 )
             )
             self.add_lines_points()  # Add reference lines
-            self.toggle_plots(self.img_options_group)
-            plot = self.img_options_group.checkedAction()
+            self.ephys_plot_presenter.toggle_plot("image")
+            plot = self.ephys_plot_presenter.checked_action("image")
 
         self.set_font(self.fig_img, "left", ptsize=8, width=ax_width)
         self.set_font(self.fig_img, "bottom", ptsize=8)
@@ -774,24 +798,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_data_area.resize(250, height1)
 
         plot = None
-        start_plot = self.probe_options_group.checkedAction()
+        start_plot = self.ephys_plot_presenter.checked_action("probe")
 
-        while plot != start_plot:
+        while start_plot is not None and plot != start_plot:
+            checked_action = self.ephys_plot_presenter.checked_action("probe")
+            if checked_action is None:
+                break
             self.set_font(self.fig_probe_cb, "top", ptsize=15, height=ax_height + 15)
             exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
             exporter.export(
                 str(
                     image_path_overview.joinpath(
-                        sess_info
-                        + "probe_"
-                        + self.probe_options_group.checkedAction().text()
-                        + ".png"
+                        sess_info + "probe_" + checked_action.text() + ".png"
                     )
                 )
             )
             self.add_lines_points()  # Add reference line
-            self.toggle_plots(self.probe_options_group)
-            plot = self.probe_options_group.checkedAction()
+            self.ephys_plot_presenter.toggle_plot("probe")
+            plot = self.ephys_plot_presenter.checked_action("probe")
 
         self.fig_probe.setFixedWidth(self.fig_probe_width + self.fig_ax_width)
         self.set_font(self.fig_probe, "left", ptsize=8, width=ax_width)
@@ -813,26 +837,26 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fig_data_area.resize(200, height1)
 
         plot = None
-        start_plot = self.line_options_group.checkedAction()
-        while plot != start_plot:
+        start_plot = self.ephys_plot_presenter.checked_action("line")
+        while start_plot is not None and plot != start_plot:
+            checked_action = self.ephys_plot_presenter.checked_action("line")
+            if checked_action is None:
+                break
             exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
             exporter.export(
                 str(
                     image_path_overview.joinpath(
-                        sess_info
-                        + "line_"
-                        + self.line_options_group.checkedAction().text()
-                        + ".png"
+                        sess_info + "line_" + checked_action.text() + ".png"
                     )
                 )
             )
             self.add_lines_points()  # Add reference line
-            self.toggle_plots(self.line_options_group)
-            plot = self.line_options_group.checkedAction()
+            self.ephys_plot_presenter.toggle_plot("line")
+            plot = self.ephys_plot_presenter.checked_action("line")
 
         [
             self.fig_probe_cb.addItem(cbar)
-            for cbar in self.ephys_plot_items.probe_colorbars
+            for cbar in self.ephys_panel.probe_colorbars
         ]
         self.set_axis(self.fig_probe_cb, "top", pen="k", label=text)
         self.set_font(self.fig_line, "left", ptsize=8, width=ax_width)
@@ -1172,7 +1196,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             apply_plot_data_state=self._apply_shank_plot_data_state,
             raw_image_payloads=lambda: self.raw_image_payloads,
             render_plot_menus=self._render_shank_plot_menus,
-            render_ephys_plots=self._render_shank_ephys_plots,
+            render_ephys_plots=self.ephys_plot_presenter.render_shank_ephys_plots,
             render_histology_plots=self.render_histology_plots,
             restore_slice_selection=self._restore_shank_slice_selection,
             configure_view=self._configure_shank_view_after_render,
@@ -1212,70 +1236,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if state is not None:
             self.histology_panel.render_fit(state)
 
-    def register_plot_spec(self, spec: PlotSpec) -> None:
-        """Register a menu-visible plot spec for later action dispatch."""
-        self._plot_specs_by_key[spec.key] = spec
-
-    def registered_plot_spec(self, spec_key: str) -> PlotSpec | None:
-        """Return a dynamic menu spec if present, otherwise a static registry spec."""
-        spec = self._plot_specs_by_key.get(spec_key)
-        if spec is not None:
-            return spec
-        try:
-            return plot_spec(spec_key)
-        except KeyError:
-            logger.warning("Ignoring unavailable plot spec %s", spec_key)
-            return None
-
-    def plot_payload_for_spec(self, spec_key: str) -> Any:
-        """Resolve a registered plot payload for the active shank."""
-        spec = self.registered_plot_spec(spec_key)
-        if spec is None:
-            return None
-        return self.app.queries.active_plot_payload(
-            spec.key,
-            raw_image_payloads=self.raw_image_payloads,
-        )
-
-    def plot_bounds_for_spec(self, spec_key: str) -> Any:
-        """Resolve optional plot bounds for the active shank."""
-        spec = self.registered_plot_spec(spec_key)
-        if spec is None:
-            return None
-        return self.app.queries.active_plot_bounds(
-            spec.key,
-            raw_image_payloads=self.raw_image_payloads,
-        )
-
-    def plot_from_spec(self, spec_key: str) -> None:
-        """Render a registered plot payload with the existing plot functions."""
-        spec = self.registered_plot_spec(spec_key)
-        if spec is None:
-            return
-        data = self.plot_payload_for_spec(spec.key)
-        if spec.renderer == "image":
-            self.plot_image(data)
-        elif spec.renderer == "scatter":
-            self.plot_scatter(data)
-        elif spec.renderer == "line":
-            self.plot_line(data)
-        elif spec.renderer == "probe":
-            self.plot_probe(data, bounds=self.plot_bounds_for_spec(spec.key))
-        else:
-            raise ValueError(f"Unsupported plot renderer: {spec.renderer!r}")
-
-    def plot_default_spec(self, menu: PlotMenu) -> None:
-        """Render the available default plot for a menu group, if present."""
-        specs = [spec for spec in self._plot_specs_by_key.values() if spec.menu == menu]
-        if not specs:
-            logger.warning("No available %s plot entries", menu)
-            return
-        for spec in specs:
-            if spec.default:
-                self.plot_from_spec(spec.key)
-                return
-        self.plot_from_spec(specs[0].key)
-
     def plot_slice(self, data, img_type) -> None:
         """Compatibility wrapper for legacy slice-data call sites."""
         self.slice_panel.plot_slice(data, img_type)
@@ -1300,269 +1260,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Compatibility wrapper for coronal slice channel overlays."""
         self.slice_panel.plot_channels(projection)
 
-    def plot_scatter(self, data) -> None:
-        """
-        Plots a 2D scatter plot with electrophysiology data
-        param data: dictionary of data to plot
-            {'x': x coordinate of data, np.array((npoints)), float
-             'y': y coordinate of data, np.array((npoints)), float
-             'size': size of data points, np.array((npoints)), float
-             'colour': colour of data points, np.array((npoints)), QtGui.QColor
-             'xrange': range to display of x axis, np.array([min range, max range]), float
-             'xaxis': label for xaxis, string
-            }
-        type data: dict
-        """
-        if not data:
-            logger.warning("data for this plot not available")
-            return
-        else:
-            self.ephys_plot_items.clear_image(self.fig_img, self.fig_img_cb)
-
-            size = data["size"].tolist()
-            symbol = data["symbol"].tolist()
-
-            color_bar = ColorBar(data["cmap"])
-            cbar = color_bar.makeColourBar(
-                20,
-                5,
-                self.fig_img_cb,
-                min=np.min(data["levels"][0]),
-                max=np.max(data["levels"][1]),
-                label=data["title"],
-            )
-            self.fig_img_cb.addItem(cbar)
-            self.ephys_plot_items.image_colorbars.append(cbar)
-
-            brush = data["colours"].tolist()
-            plot = pg.ScatterPlotItem()
-            plot.setData(
-                x=data["x"],
-                y=data["y"],
-                symbol=symbol,
-                size=size,
-                brush=brush,
-                pen=data["pen"],
-            )
-
-            self.fig_img.addItem(plot)
-            self.fig_img.setXRange(
-                min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
-            self.ephys_plot_items.image_plots.append(plot)
-            self.feature_plot.set_data_plot(
-                plot,
-                x_scale=1,
-                y_scale=1,
-                xrange=data["xrange"],
-                cluster_x_values=data["x"] if data["cluster"] else None,
-            )
-
-            if data["cluster"]:
-                self.feature_plot.connect_clicked(self.cluster_clicked)
-
-    def plot_line(self, data) -> None:
-        """
-        Plots a 1D line plot with electrophysiology data
-        param data: dictionary of data to plot
-            {'x': x coordinate of data, np.array((npoints)), float
-             'y': y coordinate of data, np.array((npoints)), float
-             'xrange': range to display of x axis, np.array([min range, max range]), float
-             'xaxis': label for xaxis, string
-            }
-        type data: dict
-        """
-        if not data:
-            logger.warning("data for this plot not available")
-            return
-        else:
-            self.ephys_plot_items.clear_line(self.fig_line)
-            line = pg.PlotCurveItem()
-            line.setData(x=data["x"], y=data["y"])
-            line.setPen(self.kpen_solid)
-            self.fig_line.addItem(line)
-            self.fig_line.setXRange(
-                min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.set_axis(self.fig_line, "bottom", label=data["xaxis"])
-            self.ephys_plot_items.line_plots.append(line)
-
-    def plot_probe(self, data, bounds=None) -> None:
-        """
-        Plots a 2D image with probe geometry
-        param data: dictionary of data to plot
-            {'img': image data for each channel bank, list of np.array((1,ny)), list
-             'scale': scaling to apply to each image, list of np.array([xscale,yscale]), list
-             'offset': offset to apply to each image, list of np.array([xoffset,yoffset]), list
-             'levels': colourbar extremes np.array([min val, max val]), float
-             'cmap': colourmap to use, string
-             'xrange': range to display of x axis, np.array([min range, max range]), float
-             'title': description to place on colorbar, string
-            }
-        type data: dict
-        """
-        if not data:
-            logger.warning("data for this plot not available")
-            return
-        else:
-            self.ephys_plot_items.clear_probe(self.fig_probe, self.fig_probe_cb)
-            self.set_axis(self.fig_probe_cb, "top", pen="w")
-            color_bar = ColorBar(data["cmap"])
-            lut = color_bar.getColourMap()
-            for img, scale, offset in zip(data["img"], data["scale"], data["offset"]):
-                image = pg.ImageItem()
-                image.setImage(img)
-                transform = [
-                    scale[0],
-                    0.0,
-                    0.0,
-                    0.0,
-                    scale[1],
-                    0.0,
-                    offset[0],
-                    offset[1],
-                    1.0,
-                ]
-                image.setTransform(QtGui.QTransform(*transform))
-                image.setLookupTable(lut)
-                image.setLevels((data["levels"][0], data["levels"][1]))
-                self.fig_probe.addItem(image)
-                self.ephys_plot_items.probe_plots.append(image)
-
-            cbar = color_bar.makeColourBar(
-                20,
-                5,
-                self.fig_probe_cb,
-                min=data["levels"][0],
-                max=data["levels"][1],
-                label=data["title"],
-                lim=True,
-            )
-            self.fig_probe_cb.addItem(cbar)
-            self.ephys_plot_items.probe_colorbars.append(cbar)
-
-            self.fig_probe.setXRange(
-                min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            # so stupid!!!!!
-            self.set_axis(self.fig_probe, "bottom", pen="w", label="blank")
-            if bounds is not None:
-                # add some infinite line stuff
-                for bound in bounds:
-                    line = pg.InfiniteLine(pos=bound, angle=0, pen="w")
-                    self.fig_probe.addItem(line)
-                    self.ephys_plot_items.probe_bounds.append(line)
-
-    def plot_image(self, data) -> None:
-        """
-        Plots a 2D image with with electrophysiology data
-        param data: dictionary of data to plot
-            {'img': image data, np.array((nx,ny)), float
-             'scale': scaling to apply to each axis, np.array([xscale,yscale]), float
-             'levels': colourbar extremes np.array([min val, max val]), float
-             'offset': offset to apply to each image, np.array([xoffset,yoffset]), float
-             'cmap': colourmap to use, string
-             'xrange': range to display of x axis, np.array([min range, max range]), float
-             'xaxis': label for xaxis, string
-             'title': description to place on colorbar, string
-            }
-        type data: dict
-        """
-        if not data:
-            logger.warning("data for this plot not available")
-            return
-        else:
-            self.ephys_plot_items.clear_image(self.fig_img, self.fig_img_cb)
-            self.set_axis(self.fig_img_cb, "top", pen="w")
-
-            image = pg.ImageItem()
-            img_data = data["img"]
-            if img_data.ndim == 3:
-                # Pre-rendered RGBA — disable auto-leveling
-                image.setImage(img_data, autoLevels=False)
-            else:
-                image.setImage(img_data)
-            transform = [
-                data["scale"][0],
-                0.0,
-                0.0,
-                0.0,
-                data["scale"][1],
-                0.0,
-                data["offset"][0],
-                data["offset"][1],
-                1.0,
-            ]
-            image.setTransform(QtGui.QTransform(*transform))
-            cmap = data.get("cmap")
-            if cmap:
-                color_bar = ColorBar(data["cmap"])
-                lut = color_bar.getColourMap()
-                image.setLookupTable(lut)
-                image.setLevels((data["levels"][0], data["levels"][1]))
-                cbar = color_bar.makeColourBar(
-                    20,
-                    5,
-                    self.fig_img_cb,
-                    min=data["levels"][0],
-                    max=data["levels"][1],
-                    label=data["title"],
-                )
-                self.fig_img_cb.addItem(cbar)
-                self.ephys_plot_items.image_colorbars.append(cbar)
-            elif img_data.ndim == 3:
-                # Phase legend: two horizontal bars
-                from matplotlib.colors import hsv_to_rgb
-
-                n = 256
-                bar_h = 10
-
-                # Top bar: phase hue gradient at full saturation
-                hsv_phase = np.zeros((bar_h, n, 3))
-                hsv_phase[:, :, 0] = np.linspace(0, 1, n)[None, :]
-                hsv_phase[:, :, 1] = 1.0
-                hsv_phase[:, :, 2] = 1.0
-                rgb_phase = (hsv_to_rgb(hsv_phase) * 255).astype(np.uint8)
-
-                # Bottom bar: saturation gradient (white → red)
-                hsv_sat = np.zeros((bar_h, n, 3))
-                hsv_sat[:, :, 0] = 0.0  # red hue
-                hsv_sat[:, :, 1] = np.linspace(0, 1, n)[None, :]
-                hsv_sat[:, :, 2] = 1.0
-                rgb_sat = (hsv_to_rgb(hsv_sat) * 255).astype(np.uint8)
-
-                # Stack: phase on top, saturation below
-                # Transpose to (width, height, 3) for pyqtgraph
-                combined = np.concatenate([rgb_phase, rgb_sat], axis=0).transpose(
-                    1, 0, 2
-                )
-                cbar_img = pg.ImageItem()
-                cbar_img.setImage(combined, autoLevels=False)
-                self.fig_img_cb.addItem(cbar_img)
-                self.ephys_plot_items.image_colorbars.append(cbar_img)
-                self.set_axis(
-                    self.fig_img_cb,
-                    "top",
-                    pen="w",
-                    label="phase ↑  coherence ↓",
-                )
-            else:
-                image.setLevels((1, 0))
-
-            self.fig_img.addItem(image)
-            self.ephys_plot_items.image_plots.append(image)
-            self.fig_img.setXRange(
-                min=data["xrange"][0], max=data["xrange"][1], padding=0
-            )
-            self.set_axis(self.fig_img, "bottom", label=data["xaxis"])
-            self.feature_plot.set_data_plot(
-                image,
-                x_scale=data["scale"][0],
-                y_scale=data["scale"][1],
-                xrange=data["xrange"],
-            )
-
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
         """Break reference cycles from the previous active stream view."""
@@ -1573,21 +1270,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _clear_active_stream_presentation(self) -> None:
         """Clear desktop-owned plot and popup items for the active stream."""
         self.reference_lines.clear()
-        self.feature_plot.clear()
         self.popup_manager.close_all()
-        self.ephys_plot_items.detach(self._figures())
+        self.ephys_panel.clear()
         self.slice_panel.clear()
         self.histology_panel.clear()
-
-    def _figures(self) -> dict[str, Any]:
-        """Return a map of figure names to ephys-panel widgets."""
-        return {
-            "img": self.fig_img,
-            "img_cb": self.fig_img_cb,
-            "line": self.fig_line,
-            "probe": self.fig_probe,
-            "probe_cb": self.fig_probe_cb,
-        }
 
     def _stream_key_for_selection(
         self,
@@ -2359,8 +2045,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             prev_slice_action.text() if prev_slice_action is not None else None
         )
         prev_ephys_plot_keys = (
-            self.current_ephys_plot_keys()
-            if preserve_plot_selection and hasattr(self, "img_options")
+            self.ephys_plot_presenter.current_plot_keys()
+            if preserve_plot_selection
+            and self.ephys_plot_presenter.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -2422,43 +2109,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         plot_menu_state: Any,
     ) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not hasattr(self, "img_options"):
+        if not self.ephys_plot_presenter.has_plot_menus():
             self.init_menubar()
-            return
-        self.rebuild_ephys_plot_menus(plot_menu_state=plot_menu_state)
-
-    def _render_shank_ephys_plots(
-        self,
-        state: ActiveShankScreenState,
-    ) -> None:
-        """Render ephys plots for the selected shank."""
-        logger.info("Rendering plots...")
-        if state.preserve_plot_selection:
-            self._set_unit_filter_action_checked(state.unit_filter)
-            for action in (
-                self.current_img_action,
-                self.line_img_action,
-                self.probe_img_action,
-            ):
-                if action is not None:
-                    action.setChecked(True)
-        else:
-            if self.img_init is not None:
-                self.img_init.setChecked(True)
-            if self.line_init is not None:
-                self.line_init.setChecked(True)
-            if self.probe_init is not None:
-                self.probe_init.setChecked(True)
-            self.unit_init.setChecked(True)
-            self.plot_default_spec("image")
-            self.plot_default_spec("probe")
-            self.plot_default_spec("line")
-
-    def _set_unit_filter_action_checked(self, unit_filter: str) -> None:
-        """Reflect selected unit filter in the desktop menu without triggering it."""
-        action = getattr(self, "unit_filter_actions_by_subset", {}).get(unit_filter)
-        if action is not None:
-            action.setChecked(True)
+        self.ephys_plot_presenter.render_menus(plot_menu_state)
 
     def _restore_shank_slice_selection(
         self,
@@ -2564,40 +2217,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_scale_factor()
         self.remove_lines_points()
         self.add_lines_points()
-
-    def _on_img_action_triggered(self, action) -> None:
-        self.current_img_action = action
-
-    def _on_line_action_triggered(self, action) -> None:
-        self.line_img_action = action
-
-    def _on_probe_action_triggered(self, action) -> None:
-        self.probe_img_action = action
-
-    def update_plot(self) -> None:
-        """Re-run the plotting function for the current menu selection."""
-        if self.current_img_action is not None:
-            # directly invoke the same slot as if the user clicked
-            self.current_img_action.trigger()
-
-        if self.line_img_action is not None:
-            # directly invoke the same slot as if the user clicked
-            self.line_img_action.trigger()
-
-        if self.probe_img_action is not None:
-            # directly invoke the same slot as if the user clicked
-            self.probe_img_action.trigger()
-
-    def filter_unit_pressed(self, unit_filter) -> None:
-        self.app.commands.set_unit_filter(unit_filter)
-        if self.img_init is not None:
-            self.img_init.setChecked(True)
-        if self.line_init is not None:
-            self.line_init.setChecked(True)
-        if self.probe_init is not None:
-            self.probe_init.setChecked(True)
-
-        self.update_plot()
 
     def fit_button_pressed(self) -> None:
         """
@@ -2982,10 +2601,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def reset_axis_button_pressed(self) -> None:
         self.set_default_feature_y_range()
-        if self.feature_plot.xrange is not None:
+        feature_xrange = self.ephys_panel.feature_xrange
+        if feature_xrange is not None:
             self.fig_img.setXRange(
-                min=self.feature_plot.xrange[0],
-                max=self.feature_plot.xrange[1],
+                min=feature_xrange[0],
+                max=feature_xrange[1],
                 padding=0,
             )
 
@@ -3039,7 +2659,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def cluster_clicked(self, item, point):
         point_pos = point[0].pos()
-        clust_idx = self.feature_plot.cluster_index_for_plot_x(point_pos.x())
+        clust_idx = self.ephys_panel.cluster_index_for_plot_x(point_pos.x())
         if clust_idx is None:
             logger.error("Cannot show cluster detail: clicked point is not a cluster")
             return None
@@ -3115,7 +2735,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
 
         if event.double():
-            feature_y_um = self.feature_plot.feature_y_from_scene(event.scenePos())
+            feature_y_um = self.ephys_panel.feature_y_from_scene(event.scenePos())
             if feature_y_um is None:
                 return
             self.reference_lines.create_lines([feature_y_um])
