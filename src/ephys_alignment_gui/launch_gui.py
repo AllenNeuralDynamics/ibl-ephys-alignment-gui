@@ -36,10 +36,15 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ActiveSliceMenuState,
 )
-from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
+)
+from ephys_alignment_gui.desktop_ephys_plot_exporter import (
+    DesktopEphysPlotExporter,
+    EphysExportCallbacks,
+    EphysExportLayout,
+    EphysExportSizes,
 )
 from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
@@ -49,6 +54,14 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     DesktopEphysPanelView,
     EphysPanelPlots,
     EphysPanelStyle,
+)
+from ephys_alignment_gui.desktop_plot_exporter import (
+    DesktopPlotExportCallbacks,
+    DesktopPlotExporter,
+    HistologyExportHandles,
+    SliceExportGeometry,
+    SliceExportHandles,
+    SliceExportStyle,
 )
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_shank_presenter import (
@@ -308,6 +321,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             set_axis=self.set_axis,
             cluster_clicked=self.cluster_clicked,
         )
+        self.ephys_plot_exporter = DesktopEphysPlotExporter(
+            presenter=self.ephys_plot_presenter,
+            panel=self.ephys_panel,
+            layout=EphysExportLayout(
+                graphics_layout=self.fig_data_layout,
+                data_area=self.fig_data_area,
+            ),
+            callbacks=EphysExportCallbacks(
+                reset_axis=self.reset_axis_button_pressed,
+                set_view=self.set_view,
+                set_axis=self.set_axis,
+                set_font=self.set_font,
+                add_lines_points=self.add_lines_points,
+                sizes=lambda: EphysExportSizes(
+                    probe_width=self.fig_probe_width,
+                    axis_width=self.fig_ax_width,
+                ),
+            ),
+        )
         self.reference_lines = ReferenceLineLayer(
             plots=ReferenceLinePlots(
                 histology=self.fig_hist,
@@ -357,6 +389,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 linear_fit_curve=self.fit_plot_lin,
             ),
         )
+        self._init_plot_exporter()
         self.desktop_alignment_presenter.configure(
             queries=self.app.queries,
             callbacks=self._desktop_alignment_render_callbacks(),
@@ -375,6 +408,34 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.allen = self.region_lookup_service.load_allen_csv()
         self.init_region_lookup(self.allen)
+
+    def _init_plot_exporter(self) -> None:
+        """Wire desktop plot export orchestration after panels are available."""
+        self.plot_exporter = DesktopPlotExporter(
+            ephys_exporter=self.ephys_plot_exporter,
+            slice_handles=SliceExportHandles(
+                action_group=self.slice_options_group,
+                slice_panel=self.slice_panel,
+                slice_plot=self.fig_slice,
+            ),
+            slice_style=SliceExportStyle(trajectory_pen=self.rpen_dot),
+            histology_handles=HistologyExportHandles(
+                layout=self.fig_hist_layout,
+                extra_y_axis=self.fig_hist_extra_yaxis,
+                aligned=self.fig_hist,
+                reference=self.fig_hist_ref,
+            ),
+            callbacks=DesktopPlotExportCallbacks(
+                set_axis=self.set_axis,
+                set_font=self.set_font,
+                add_lines_points=self.add_lines_points,
+                slice_geometry=lambda: SliceExportGeometry(
+                    width=self.slice_width,
+                    height=self.slice_height,
+                    rect=self.slice_rect,
+                ),
+            ),
+        )
 
     @staticmethod
     def _normalize_offline_flag(offline: Any) -> bool:
@@ -738,216 +799,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
         image_path_overview.mkdir(exist_ok=True)
-        # Reset all axis, put view back to 1 and remove any reference lines
-        self.reset_axis_button_pressed()
-        self.set_view(view=1, configure=False)
-
-        xlabel_img = self.fig_img.getAxis("bottom").label.toPlainText()
-        xlabel_line = self.fig_line.getAxis("bottom").label.toPlainText()
-
-        # First go through all the image plots
-        self.fig_data_layout.removeItem(self.fig_probe)
-        self.fig_data_layout.removeItem(self.fig_probe_cb)
-        self.fig_data_layout.removeItem(self.fig_line)
-
-        width1 = self.fig_data_area.width()
-        height1 = self.fig_data_area.height()
-        ax_width = self.fig_img.getAxis("left").width()
-        ax_height = self.fig_img_cb.getAxis("top").height()
-
-        self.set_font(self.fig_img, "left", ptsize=15, width=ax_width + 20)
-        self.set_font(self.fig_img, "bottom", ptsize=15)
-        self.set_font(self.fig_img_cb, "top", ptsize=15, height=ax_height + 15)
-
-        self.fig_data_area.resize(700, height1)
-
-        plot = None
-        start_plot = self.ephys_plot_presenter.checked_action("image")
-
-        while start_plot is not None and plot != start_plot:
-            checked_action = self.ephys_plot_presenter.checked_action("image")
-            if checked_action is None:
-                break
-            self.set_font(self.fig_img_cb, "top", ptsize=15, height=ax_height + 15)
-            exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
-            exporter.export(
-                str(
-                    image_path_overview.joinpath(
-                        sess_info + "img_" + checked_action.text() + ".png"
-                    )
-                )
-            )
-            self.add_lines_points()  # Add reference lines
-            self.ephys_plot_presenter.toggle_plot("image")
-            plot = self.ephys_plot_presenter.checked_action("image")
-
-        self.set_font(self.fig_img, "left", ptsize=8, width=ax_width)
-        self.set_font(self.fig_img, "bottom", ptsize=8)
-        self.set_font(self.fig_img_cb, "top", ptsize=8, height=ax_height)
-        self.set_axis(self.fig_img, "bottom", label=xlabel_img)
-        self.fig_data_layout.removeItem(self.fig_img)
-        self.fig_data_layout.removeItem(self.fig_img_cb)
-
-        # Next go over probe plots
-        self.fig_data_layout.addItem(self.fig_probe_cb, 0, 0, 1, 2)
-        self.fig_data_layout.addItem(self.fig_probe, 1, 0)
-        self.set_axis(self.fig_probe, "left", label="Distance from probe tip (uV)")
-        self.fig_probe.setFixedWidth(self.fig_probe_width + self.fig_ax_width + 20)
-        self.set_font(self.fig_probe, "left", ptsize=15, width=ax_width + 20)
-        self.set_font(self.fig_probe_cb, "top", ptsize=15, height=ax_height + 15)
-        self.fig_data_area.resize(250, height1)
-
-        plot = None
-        start_plot = self.ephys_plot_presenter.checked_action("probe")
-
-        while start_plot is not None and plot != start_plot:
-            checked_action = self.ephys_plot_presenter.checked_action("probe")
-            if checked_action is None:
-                break
-            self.set_font(self.fig_probe_cb, "top", ptsize=15, height=ax_height + 15)
-            exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
-            exporter.export(
-                str(
-                    image_path_overview.joinpath(
-                        sess_info + "probe_" + checked_action.text() + ".png"
-                    )
-                )
-            )
-            self.add_lines_points()  # Add reference line
-            self.ephys_plot_presenter.toggle_plot("probe")
-            plot = self.ephys_plot_presenter.checked_action("probe")
-
-        self.fig_probe.setFixedWidth(self.fig_probe_width + self.fig_ax_width)
-        self.set_font(self.fig_probe, "left", ptsize=8, width=ax_width)
-        self.set_font(self.fig_probe_cb, "top", ptsize=8, height=ax_height)
-        self.set_axis(self.fig_probe, "bottom", pen="w", label="blank")
-        self.fig_data_layout.removeItem(self.fig_probe)
-        self.fig_data_layout.removeItem(self.fig_probe_cb)
-
-        # Next go through the line plots
-        self.fig_data_layout.addItem(self.fig_probe_cb, 0, 0, 1, 2)
-        self.fig_probe_cb.clear()
-        text = self.fig_probe_cb.getAxis("top").label.toPlainText()
-        self.set_axis(self.fig_probe_cb, "top", pen="w")
-        self.fig_data_layout.addItem(self.fig_line, 1, 0)
-
-        self.set_axis(self.fig_line, "left", label="Distance from probe tip (um)")
-        self.set_font(self.fig_line, "left", ptsize=15, width=ax_width + 20)
-        self.set_font(self.fig_line, "bottom", ptsize=15)
-        self.fig_data_area.resize(200, height1)
-
-        plot = None
-        start_plot = self.ephys_plot_presenter.checked_action("line")
-        while start_plot is not None and plot != start_plot:
-            checked_action = self.ephys_plot_presenter.checked_action("line")
-            if checked_action is None:
-                break
-            exporter = pg.exporters.ImageExporter(self.fig_data_layout.scene())
-            exporter.export(
-                str(
-                    image_path_overview.joinpath(
-                        sess_info + "line_" + checked_action.text() + ".png"
-                    )
-                )
-            )
-            self.add_lines_points()  # Add reference line
-            self.ephys_plot_presenter.toggle_plot("line")
-            plot = self.ephys_plot_presenter.checked_action("line")
-
-        [
-            self.fig_probe_cb.addItem(cbar)
-            for cbar in self.ephys_panel.probe_colorbars
-        ]
-        self.set_axis(self.fig_probe_cb, "top", pen="k", label=text)
-        self.set_font(self.fig_line, "left", ptsize=8, width=ax_width)
-        self.set_font(self.fig_line, "bottom", ptsize=8)
-        self.set_axis(self.fig_line, "bottom", label=xlabel_line)
-        self.fig_data_layout.removeItem(self.fig_line)
-        self.fig_data_layout.removeItem(self.fig_probe_cb)
-        self.fig_data_area.resize(width1, height1)
-        self.fig_data_layout.addItem(self.fig_probe_cb, 0, 0, 1, 2)
-        self.fig_data_layout.addItem(self.fig_img_cb, 0, 2)
-        self.fig_data_layout.addItem(self.fig_probe, 1, 0)
-        self.fig_data_layout.addItem(self.fig_line, 1, 1)
-        self.fig_data_layout.addItem(self.fig_img, 1, 2)
-
-        self.set_view(view=1, configure=False)
-
-        # Save slice images
-        plot = None
-        start_plot = self.slice_options_group.checkedAction()
-        while plot != start_plot:
-            self.toggle_channel_button_pressed()
-            self.slice_panel.render_export_trajectory_overlay(self.rpen_dot)
-            self.plot_channels()
-
-            slice_name = self.slice_options_group.checkedAction().text()
-            exporter = pg.exporters.ImageExporter(self.fig_slice)
-            exporter.export(
-                str(
-                    image_path_overview.joinpath(
-                        sess_info + "slice_" + slice_name + ".png"
-                    )
-                )
-            )
-            self.toggle_plots(self.slice_options_group)
-            plot = self.slice_options_group.checkedAction()
-
-        plot = None
-        start_plot = self.slice_options_group.checkedAction()
-        while plot != start_plot:
-            self.toggle_channel_button_pressed()
-            self.slice_panel.render_export_trajectory_overlay(self.rpen_dot)
-            self.plot_channels()
-
-            slice_name = self.slice_options_group.checkedAction().text()
-            channel_locations_ras = self.slice_panel.current_channel_locations_ras()
-            if channel_locations_ras is None:
-                self.toggle_plots(self.slice_options_group)
-                plot = self.slice_options_group.checkedAction()
-                continue
-            self.fig_slice.setXRange(
-                min=np.min(channel_locations_ras[:, 0]) - 200 / 1e6,
-                max=np.max(channel_locations_ras[:, 0]) + 200 / 1e6,
-            )
-            self.fig_slice.setYRange(
-                min=np.min(channel_locations_ras[:, 2]) - 500 / 1e6,
-                max=np.max(channel_locations_ras[:, 2]) + 500 / 1e6,
-            )
-            self.fig_slice.resize(50, self.slice_height)
-            exporter = pg.exporters.ImageExporter(self.fig_slice)
-            exporter.export(
-                str(
-                    image_path_overview.joinpath(
-                        sess_info + "slice_zoom_" + slice_name + ".png"
-                    )
-                )
-            )
-            self.fig_slice.resize(self.slice_width, self.slice_height)
-            self.fig_slice.setRange(rect=self.slice_rect)
-            self.toggle_plots(self.slice_options_group)
-            plot = self.slice_options_group.checkedAction()
-
-        # Save the brain regions image
-        self.set_axis(self.fig_hist_extra_yaxis, "left")
-        # Add labels to show which ones are aligned
-        self.set_axis(self.fig_hist, "bottom", label="aligned")
-        self.set_font(self.fig_hist, "bottom", ptsize=12)
-        self.set_axis(self.fig_hist_ref, "bottom", label="original")
-        self.set_font(self.fig_hist_ref, "bottom", ptsize=12)
-        exporter = pg.exporters.ImageExporter(self.fig_hist_layout.scene())
-        exporter.export(str(image_path_overview.joinpath(sess_info + "hist.png")))
-        self.set_axis(self.fig_hist_extra_yaxis, "left", pen=None)
-        self.set_font(self.fig_hist, "bottom", ptsize=8)
-        self.set_axis(self.fig_hist, "bottom", pen="w", label="blank")
-        self.set_font(self.fig_hist_ref, "bottom", ptsize=8)
-        self.set_axis(self.fig_hist_ref, "bottom", pen="w", label="blank")
-
-        make_overview_plot(
-            image_path_overview, sess_info, save_folder=image_path_overview
-        )
-
-        self.add_lines_points()
+        self.plot_exporter.export(image_path_overview, sess_info=sess_info)
 
     def toggle_plots(self, options_group, reverse=False) -> None:
         """
