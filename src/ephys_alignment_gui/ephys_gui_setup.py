@@ -83,12 +83,19 @@ class Setup:
         if selected_action is not None:
             selected_action.setChecked(True)
 
-    def rebuild_ephys_plot_menus(self, previous_selected_keys=None) -> None:
+    def rebuild_ephys_plot_menus(
+        self,
+        previous_selected_keys=None,
+        *,
+        plot_menu_state=None,
+    ) -> None:
         self._plot_specs_by_key = {}
-        self.plot_menu_state = self.app.queries.active_plot_menu_state(
-            previous_selected_keys=previous_selected_keys,
-            raw_image_payloads=self.raw_image_payloads,
-        )
+        self.plot_menu_state = plot_menu_state
+        if self.plot_menu_state is None:
+            self.plot_menu_state = self.app.queries.active_plot_menu_state(
+                previous_selected_keys=previous_selected_keys,
+                raw_image_payloads=self.raw_image_payloads,
+            )
 
         self._rebuild_plot_menu_group(
             menu=self.img_options,

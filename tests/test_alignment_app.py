@@ -37,6 +37,8 @@ class FakePlotData:
         self.label = label
         self.filtered_subsets: list[str] = []
         self.in_brain_depths_um = np.array([20.0, 40.0])
+        self.chn_min = 5.0
+        self.chn_max = 200.0
         self.t_autocorr = np.array([0.0, 1.0, 2.0])
         self.t_template = np.array([0.0, 0.5])
         self.data = {
@@ -671,6 +673,53 @@ def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
         queries.active_in_brain_depths_um(),
         [20.0, 40.0],
     )
+
+
+def test_queries_prepare_shank_plot_data_state_filters_runtime_plotdata() -> None:
+    document = AlignmentDocument(selected_shank=1)
+    stream_runtime = FakeStreamRuntime()
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(active_stream_runtime=stream_runtime),
+        display_state=AlignmentDisplayState(unit_filter="KS good"),
+    )
+
+    state = queries.prepare_active_shank_plot_data_state()
+
+    assert state is not None
+    assert state.shank_idx == 1
+    assert state.unit_filter == "KS good"
+    assert state.channel_min_um == 5.0
+    assert state.channel_max_um == 200.0
+    assert stream_runtime.plotdata_by_shank[1].filtered_subsets == ["KS good"]
+    assert stream_runtime.plotdata_by_shank[1].in_brain_depths_um is None
+
+
+def test_queries_build_active_shank_screen_state_from_runtime_menus() -> None:
+    document = AlignmentDocument(data_loaded=True)
+    document.select_alignment_key(AlignmentKey("rec", "stream", 2))
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
+        display_state=AlignmentDisplayState(unit_filter="KS good"),
+    )
+
+    state = queries.active_shank_screen_state(
+        preserve_plot_selection=True,
+        previous_ephys_plot_keys={"image": "image.raw.raw_ap"},
+        raw_image_payloads={"raw_ap": "raw"},
+        previous_slice_selection=SliceSelection("slice_data", "missing"),
+        offline=True,
+    )
+
+    assert state.shank_idx == 2
+    assert state.shank_id == 3
+    assert state.alignment_key == AlignmentKey("rec", "stream", 2)
+    assert state.data_loaded
+    assert state.preserve_plot_selection
+    assert state.unit_filter == "KS good"
+    assert state.plot_menu.group("image").selected_key == "image.raw.raw_ap"
+    assert state.slice_menu is None
 
 
 def test_queries_build_cluster_detail_from_runtime_plotdata() -> None:

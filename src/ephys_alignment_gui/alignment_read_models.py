@@ -13,6 +13,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     ChannelProjectionData,
 )
 from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.plot_menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import (
     SliceMenuItem,
     SliceRenderDecision,
@@ -100,6 +101,18 @@ class NearbyBoundaryRenderState:
 
 
 @dataclass(frozen=True)
+class ActiveShankPlotDataState:
+    """Prepared ephys plot-data bounds for the active shank."""
+
+    key: AlignmentKey | None
+    shank_idx: int
+    unit_filter: str
+    channel_min_um: float
+    channel_max_um: float
+    in_brain_depths_um: Any
+
+
+@dataclass(frozen=True)
 class ActiveSliceDataState:
     """Runtime slice data available for the active alignment."""
 
@@ -172,3 +185,17 @@ class PerpendicularSliceRenderState:
         if self.n_depths <= 1:
             return 1.0
         return (self.feature_max_um - self.feature_min_um) / (self.n_depths - 1)
+
+
+@dataclass(frozen=True)
+class ActiveShankScreenState:
+    """Qt-free state needed to render the active shank screen."""
+
+    shank_idx: int
+    shank_id: int
+    alignment_key: AlignmentKey | None
+    data_loaded: bool
+    preserve_plot_selection: bool
+    unit_filter: str
+    plot_menu: PlotMenuState
+    slice_menu: ActiveSliceMenuState | None

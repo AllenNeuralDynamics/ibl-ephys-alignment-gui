@@ -23,6 +23,8 @@ from ephys_alignment_gui.alignment_events import (
 )
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
+    ActiveShankPlotDataState,
+    ActiveShankScreenState,
     ActiveSliceDataState,
     ActiveSliceMenuState,
     ActiveSliceRenderState,
@@ -364,6 +366,73 @@ class AlignmentQueries:
         """Return the selected unit subset for active ephys plot data."""
         return self.display_state.unit_filter
 
+    def resolve_shank_preserve_plot_selection(
+        self,
+        preserve_plot_selection: bool | None,
+    ) -> bool:
+        """Return whether shank redraw should preserve current plot selections."""
+        if preserve_plot_selection is None:
+            return self.document.data_loaded
+        return preserve_plot_selection
+
+    def prepare_active_shank_plot_data_state(
+        self,
+        *,
+        unit_filter: str | None = None,
+    ) -> ActiveShankPlotDataState | None:
+        """Materialize active shank PlotData and return frontend-safe bounds."""
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is None:
+            return None
+        shank_idx = self._active_shank_idx()
+        unit_filter = self.active_unit_filter() if unit_filter is None else unit_filter
+        plotdata = stream_runtime.filtered_plot_data_for_shank(
+            shank_idx,
+            unit_filter=unit_filter,
+        )
+        in_brain_depths_um = self.active_in_brain_depths_for_alignment()
+        plotdata.in_brain_depths_um = in_brain_depths_um
+        return ActiveShankPlotDataState(
+            key=self.document.selected_alignment_key,
+            shank_idx=shank_idx,
+            unit_filter=unit_filter,
+            channel_min_um=float(getattr(plotdata, "chn_min", 0.0)),
+            channel_max_um=float(getattr(plotdata, "chn_max", 0.0)),
+            in_brain_depths_um=in_brain_depths_um,
+        )
+
+    def active_shank_screen_state(
+        self,
+        *,
+        preserve_plot_selection: bool,
+        previous_ephys_plot_keys: Mapping[PlotMenu, str | None] | None = None,
+        raw_image_payloads: Mapping[Any, Any] | None = None,
+        previous_slice_selection: SliceSelection | None = None,
+        offline: bool,
+    ) -> ActiveShankScreenState:
+        """Return the Qt-free screen state for the active shank."""
+        selection = self.active_shank_selection()
+        return ActiveShankScreenState(
+            shank_idx=selection.shank_idx,
+            shank_id=selection.shank_id,
+            alignment_key=selection.alignment_key,
+            data_loaded=selection.data_loaded,
+            preserve_plot_selection=preserve_plot_selection,
+            unit_filter=self.active_unit_filter(),
+            plot_menu=self.active_plot_menu_state(
+                previous_selected_keys=(
+                    previous_ephys_plot_keys if preserve_plot_selection else None
+                ),
+                raw_image_payloads=raw_image_payloads,
+            ),
+            slice_menu=self.active_slice_menu_state(
+                offline=offline,
+                previous_selection=(
+                    previous_slice_selection if preserve_plot_selection else None
+                ),
+            ),
+        )
+
     def active_plot_menu_state(
         self,
         previous_selected_keys: Mapping[PlotMenu, str | None] | None = None,
@@ -432,6 +501,51 @@ class AlignmentQueries:
         if plotdata is None:
             return None
         return getattr(plotdata, "in_brain_depths_um", None)
+
+    def active_in_brain_depths_for_alignment(self) -> Any:
+        """Return active channel depths whose aligned CCF annotation is not root."""
+        context = self._active_alignment_context()
+        if (
+            context is None
+            or self.histology_context is None
+            or self.histology_context.brain_atlas is None
+        ):
+            return None
+        _key, active_alignment, shank_runtime = context
+        try:
+            channel_locations_ras = (
+                self.derived_data_service.compute_channel_locations(
+                    ephysalign=shank_runtime.ephysalign,
+                    feature=active_alignment.feature,
+                    track=active_alignment.track,
+                )
+            )
+            region_ids = self.histology_context.brain_atlas.get_labels(
+                channel_locations_ras
+            )
+        except Exception:
+            logger.warning(
+                "Could not determine in-brain channels for probe cmap",
+                exc_info=True,
+            )
+            return None
+        in_brain = np.asarray(region_ids) != 0
+        if not in_brain.any():
+            return None
+        return np.asarray(shank_runtime.chn_depths)[in_brain]
+
+    def prepare_active_slice_screen_data(self) -> ActiveSliceDataState | None:
+        """Materialize active slice data when histology runtime is available."""
+        if (
+            self.histology_context is None
+            or self.histology_context.brain_atlas is None
+        ):
+            shank_runtime = self._active_shank_runtime()
+            if shank_runtime is not None:
+                shank_runtime.slice_data = {}
+                shank_runtime.fp_slice_data = None
+            return None
+        return self.ensure_active_slice_data_state()
 
     def active_cluster_detail(
         self,

@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from ephys_alignment_gui.alignment_events import ShankChanged
-from ephys_alignment_gui.event_bus import EventBus, EventSubscription
+from ephys_alignment_gui.alignment_read_models import (
+    ActiveShankPlotDataState,
+    ActiveShankScreenState,
+    ActiveSliceMenuState,
+)
+from ephys_alignment_gui.event_bus import EventSubscription
+from ephys_alignment_gui.plot_menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import SliceSelection
 
 logger = logging.getLogger(__name__)
@@ -26,25 +33,29 @@ class DesktopShankSelectionState:
 class DesktopShankRenderCallbacks:
     """Desktop callbacks used to render a shank selection."""
 
-    resolve_preserve_plot_selection: Callable[[bool | None], bool]
     capture_plot_selection: Callable[[bool], DesktopShankSelectionState]
     clear_reference_lines: Callable[[], None]
     prepare_runtime: Callable[[int], None]
     prepare_histology: Callable[[int], bool]
-    prepare_plot_data: Callable[[int, bool], None]
-    prepare_slice_data: Callable[[], bool]
-    refresh_plot_menus: Callable[[bool, dict[str, str | None] | None], None]
-    render_ephys_plots: Callable[[bool], None]
+    apply_plot_data_state: Callable[[ActiveShankPlotDataState], None]
+    raw_image_payloads: Callable[[], Mapping[Any, Any]]
+    render_plot_menus: Callable[[PlotMenuState], None]
+    render_ephys_plots: Callable[[ActiveShankScreenState], None]
     render_histology_plots: Callable[[int], None]
-    restore_slice_selection: Callable[[SliceSelection | None, str | None], None]
+    restore_slice_selection: Callable[
+        [ActiveSliceMenuState | None, SliceSelection | None, str | None],
+        None,
+    ]
     configure_view: Callable[[bool], None]
+    histology_available: Callable[[], bool]
+    offline: Callable[[], bool]
 
 
 @dataclass
 class DesktopShankPresenter:
     """Coordinate desktop shank presentation from semantic shank events."""
 
-    events: EventBus
+    app: Any
     callbacks: DesktopShankRenderCallbacks | None = None
 
     def configure(self, *, callbacks: DesktopShankRenderCallbacks) -> None:
@@ -53,7 +64,7 @@ class DesktopShankPresenter:
 
     def connect_shank_events(self) -> list[EventSubscription]:
         """Subscribe presenter handlers for shank selection events."""
-        return [self.events.subscribe(ShankChanged, self.on_shank_changed)]
+        return [self.app.events.subscribe(ShankChanged, self.on_shank_changed)]
 
     def on_shank_changed(self, event: ShankChanged) -> None:
         """Present a semantic shank selection in the desktop shell."""
@@ -74,7 +85,9 @@ class DesktopShankPresenter:
     ) -> None:
         """Render the loaded desktop view for one active shank."""
         callbacks = self._require_callbacks()
-        preserve = callbacks.resolve_preserve_plot_selection(preserve_plot_selection)
+        preserve = self.app.queries.resolve_shank_preserve_plot_selection(
+            preserve_plot_selection
+        )
 
         logger.info("Setting up view for shank index %s", shank_idx)
         selections = callbacks.capture_plot_selection(preserve)
@@ -82,13 +95,30 @@ class DesktopShankPresenter:
         callbacks.prepare_runtime(shank_idx)
         if not callbacks.prepare_histology(shank_idx):
             return
-        callbacks.prepare_plot_data(shank_idx, preserve)
-        if not callbacks.prepare_slice_data():
-            return
-        callbacks.refresh_plot_menus(preserve, selections.previous_ephys_plot_keys)
-        callbacks.render_ephys_plots(preserve)
+
+        if not preserve:
+            self.app.commands.set_unit_filter("all")
+        plot_data_state = self.app.queries.prepare_active_shank_plot_data_state()
+        if plot_data_state is None:
+            raise RuntimeError("No active stream runtime for shank plot data")
+        callbacks.apply_plot_data_state(plot_data_state)
+
+        slice_data_state = self.app.queries.prepare_active_slice_screen_data()
+        if callbacks.histology_available() and slice_data_state is None:
+            raise RuntimeError("Could not build active slice data")
+
+        screen_state = self.app.queries.active_shank_screen_state(
+            preserve_plot_selection=preserve,
+            previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
+            raw_image_payloads=callbacks.raw_image_payloads(),
+            previous_slice_selection=selections.previous_slice_selection,
+            offline=callbacks.offline(),
+        )
+        callbacks.render_plot_menus(screen_state.plot_menu)
+        callbacks.render_ephys_plots(screen_state)
         callbacks.render_histology_plots(shank_idx)
         callbacks.restore_slice_selection(
+            screen_state.slice_menu,
             selections.previous_slice_selection,
             selections.previous_slice_label,
         )

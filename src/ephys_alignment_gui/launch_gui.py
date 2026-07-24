@@ -32,6 +32,11 @@ from ephys_alignment_gui.controller import (
     RecordingSelected,
     ShankSelected,
 )
+from ephys_alignment_gui.alignment_read_models import (
+    ActiveShankPlotDataState,
+    ActiveShankScreenState,
+    ActiveSliceMenuState,
+)
 from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
@@ -271,7 +276,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.workspace.alignment_derived_data_service
         )
         self.desktop_alignment_presenter = DesktopAlignmentPresenter(self.app.events)
-        self.desktop_shank_presenter = DesktopShankPresenter(self.app.events)
+        self.desktop_shank_presenter = DesktopShankPresenter(self.app)
         self.plot_data_factory = self.workspace.plot_data_factory
 
         self._plot_specs_by_key: dict[str, PlotSpec] = {}
@@ -1160,20 +1165,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _desktop_shank_render_callbacks(self) -> DesktopShankRenderCallbacks:
         return DesktopShankRenderCallbacks(
-            resolve_preserve_plot_selection=(
-                self._resolve_preserve_shank_plot_selection
-            ),
             capture_plot_selection=self._capture_shank_plot_selection,
             clear_reference_lines=self.reference_lines.clear,
             prepare_runtime=self._prepare_shank_runtime_for_view,
             prepare_histology=self._prepare_shank_histology_for_view,
-            prepare_plot_data=self._prepare_shank_plot_data_for_view,
-            prepare_slice_data=self._prepare_shank_slice_data_for_view,
-            refresh_plot_menus=self._refresh_shank_plot_menus,
+            apply_plot_data_state=self._apply_shank_plot_data_state,
+            raw_image_payloads=lambda: self.raw_image_payloads,
+            render_plot_menus=self._render_shank_plot_menus,
             render_ephys_plots=self._render_shank_ephys_plots,
             render_histology_plots=self.render_histology_plots,
             restore_slice_selection=self._restore_shank_slice_selection,
             configure_view=self._configure_shank_view_after_render,
+            histology_available=lambda: self.histology_exists,
+            offline=lambda: self.offline,
         )
 
     def plot_scale_factor(self) -> None:
@@ -1291,46 +1295,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def render_slice(self, render_state: Any) -> None:
         """Compatibility wrapper for coronal slice rendering."""
         self.slice_panel.render_slice(render_state)
-
-    def in_brain_channel_depths(self):
-        """Depths (um) of channels inside the brain for the current alignment.
-
-        Places each channel along the track with the active alignment, looks up
-        the aligned CCF annotation, and keeps channels whose region is not void
-        (id 0 = outside the brain). Returns None when it can't be determined so
-        callers fall back to using all channels.
-        """
-        shank_runtime = self._active_shank_runtime()
-        alignment = self._active_alignment()
-        if (
-            not self.histology_exists
-            or shank_runtime is None
-            or shank_runtime.ephysalign is None
-            or alignment is None
-        ):
-            return None
-        try:
-            channel_locations_ras = (
-                self.alignment_derived_data_service.compute_channel_locations(
-                    ephysalign=shank_runtime.ephysalign,
-                    feature=alignment.feature,
-                    track=alignment.track,
-                )
-            )
-            brain_atlas = self.histology_context.brain_atlas
-            if brain_atlas is None:
-                return None
-            region_ids = brain_atlas.get_labels(channel_locations_ras)
-        except Exception:
-            logger.warning(
-                "Could not determine in-brain channels for probe cmap",
-                exc_info=True,
-            )
-            return None
-        in_brain = np.asarray(region_ids) != 0
-        if not in_brain.any():
-            return None
-        return np.asarray(shank_runtime.chn_depths)[in_brain]
 
     def plot_channels(self, projection=None) -> None:
         """Compatibility wrapper for coronal slice channel overlays."""
@@ -2373,30 +2337,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         logger.info("Setting up session view")
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
-        self.setup_shank_view(
-            shank_idx=shank_idx,
-            preserve_plot_selection=preserve_plot_selection,
-        )
-
-    def setup_shank_view(
-        self,
-        *,
-        shank_idx: int,
-        preserve_plot_selection: bool | None = None,
-    ) -> None:
-        """Setup/refresh view for current shank. Used by both initial load and shank switching."""
         self.desktop_shank_presenter.render_loaded_shank(
             shank_idx=shank_idx,
             preserve_plot_selection=preserve_plot_selection,
         )
-
-    def _resolve_preserve_shank_plot_selection(
-        self,
-        preserve_plot_selection: bool | None,
-    ) -> bool:
-        if preserve_plot_selection is None:
-            return self.document.data_loaded
-        return preserve_plot_selection
 
     def _capture_shank_plot_selection(
         self,
@@ -2465,56 +2409,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             track_annotations_ras=track_annotations_ras,
         )
 
-    def _prepare_shank_plot_data_for_view(
+    def _apply_shank_plot_data_state(
         self,
-        shank_idx: int,
-        preserve_plot_selection: bool,
+        state: ActiveShankPlotDataState,
     ) -> None:
-        """Ensure runtime PlotData is ready for the selected shank/view filter."""
-        if not preserve_plot_selection:
-            self.app.commands.set_unit_filter("all")
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            raise RuntimeError("No active stream runtime for shank plot data")
-        plotdata = stream_runtime.filtered_plot_data_for_shank(
-            shank_idx,
-            unit_filter=self.app.queries.active_unit_filter(),
-        )
-        self.set_lims(np.min([0, plotdata.chn_min]), plotdata.chn_max)
-
-        plotdata.in_brain_depths_um = self.in_brain_channel_depths()
+        """Apply prepared shank plot-data bounds to desktop depth plots."""
+        self.set_lims(np.min([0, state.channel_min_um]), state.channel_max_um)
         self.raw_image_payloads = {}
 
-    def _prepare_shank_slice_data_for_view(self) -> bool:
-        """Ensure slice runtime data is available for the selected shank."""
-        if self.histology_exists:
-            if self.app.queries.ensure_active_slice_data_state() is None:
-                raise RuntimeError("Could not build active slice data")
-        else:
-            shank_runtime = self._active_shank_runtime()
-            if shank_runtime is not None:
-                shank_runtime.slice_data = {}
-                shank_runtime.fp_slice_data = None
-        return True
-
-    def _refresh_shank_plot_menus(
+    def _render_shank_plot_menus(
         self,
-        preserve_plot_selection: bool,
-        previous_selected_keys: dict[str, str | None] | None,
+        plot_menu_state: Any,
     ) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not preserve_plot_selection or not hasattr(self, "img_options"):
+        if not hasattr(self, "img_options"):
             self.init_menubar()
-        else:
-            self.rebuild_ephys_plot_menus(
-                previous_selected_keys=previous_selected_keys,
-            )
+            return
+        self.rebuild_ephys_plot_menus(plot_menu_state=plot_menu_state)
 
-    def _render_shank_ephys_plots(self, preserve_plot_selection: bool) -> None:
+    def _render_shank_ephys_plots(
+        self,
+        state: ActiveShankScreenState,
+    ) -> None:
         """Render ephys plots for the selected shank."""
         logger.info("Rendering plots...")
-        if preserve_plot_selection:
-            self._set_unit_filter_action_checked(self.app.queries.active_unit_filter())
+        if state.preserve_plot_selection:
+            self._set_unit_filter_action_checked(state.unit_filter)
             for action in (
                 self.current_img_action,
                 self.line_img_action,
@@ -2529,7 +2449,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.line_init.setChecked(True)
             if self.probe_init is not None:
                 self.probe_init.setChecked(True)
-            self.app.commands.set_unit_filter("all")
             self.unit_init.setChecked(True)
             self.plot_default_spec("image")
             self.plot_default_spec("probe")
@@ -2543,14 +2462,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _restore_shank_slice_selection(
         self,
+        slice_menu_state: ActiveSliceMenuState | None,
         previous_selection: SliceSelection | None,
         previous_label: str | None,
     ) -> None:
         """Restore or choose the active slice menu selection after shank redraw."""
-        slice_menu_state = self.app.queries.active_slice_menu_state(
-            offline=self.offline,
-            previous_selection=previous_selection,
-        )
         if slice_menu_state is None:
             logger.warning("No default slice selection is available")
         else:
