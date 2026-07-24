@@ -50,6 +50,11 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_ephys_panel_layout import (
+    DesktopEphysPanelLayout,
+    EphysPanelLayoutCallbacks,
+    EphysPanelLayoutSizes,
+)
 from ephys_alignment_gui.desktop_ephys_panel_view import (
     DesktopEphysPanelView,
     EphysPanelPlots,
@@ -320,6 +325,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             style=EphysPanelStyle(line_pen=self.kpen_solid),
             set_axis=self.set_axis,
             cluster_clicked=self.cluster_clicked,
+        )
+        self.ephys_panel_layout = DesktopEphysPanelLayout(
+            panel=self.ephys_panel,
+            graphics_layout=self.fig_data_layout,
+            callbacks=EphysPanelLayoutCallbacks(
+                set_axis=self.set_axis,
+                reset_axis=self.reset_axis_button_pressed,
+            ),
         )
         self.ephys_plot_exporter = DesktopEphysPlotExporter(
             presenter=self.ephys_plot_presenter,
@@ -655,129 +668,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.slice_height = self.fig_slice.height()
             self.slice_rect = self.fig_slice.viewRect()
 
-        if view == 1:
-            self.fig_data_layout.removeItem(self.fig_img_cb)
-            self.fig_data_layout.removeItem(self.fig_probe_cb)
-            self.fig_data_layout.removeItem(self.fig_img)
-            self.fig_data_layout.removeItem(self.fig_line)
-            self.fig_data_layout.removeItem(self.fig_probe)
-            self.fig_data_layout.addItem(self.fig_img_cb, 0, 0)
-            self.fig_data_layout.addItem(self.fig_probe_cb, 0, 1, 1, 2)
-            self.fig_data_layout.addItem(self.fig_img, 1, 0)
-            self.fig_data_layout.addItem(self.fig_line, 1, 1)
-            self.fig_data_layout.addItem(self.fig_probe, 1, 2)
-
-            self.set_axis(self.fig_img_cb, "left", pen="w")
-            self.set_axis(self.fig_probe_cb, "left", show=False)
-            self.set_axis(self.fig_img, "left", label="Distance from probe tip (um)")
-            self.set_axis(self.fig_probe, "left", show=False)
-            self.set_axis(self.fig_line, "left", show=False)
-
-            self.fig_img.setPreferredWidth(self.fig_img_width + self.fig_ax_width)
-            self.fig_line.setPreferredWidth(self.fig_line_width)
-            self.fig_probe.setFixedWidth(self.fig_probe_width)
-
-            self.fig_data_layout.layout.setColumnStretchFactor(0, 6)
-            self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(2, 1)
-            self.fig_data_layout.layout.setRowStretchFactor(0, 1)
-            self.fig_data_layout.layout.setRowStretchFactor(1, 10)
-
-            self.fig_img.update()
-            # Manually force the axis to shift and then reset axis as axis not always correct
-            # TO DO: find a better way!
-            feature_xrange = self.ephys_panel.feature_xrange
-            if feature_xrange is not None:
-                self.fig_img.setXRange(
-                    min=feature_xrange[0] - 10,
-                    max=feature_xrange[1] + 10,
-                    padding=0,
-                )
-            self.reset_axis_button_pressed()
-            self.fig_line.update()
-            self.fig_probe.update()
-
-        if view == 2:
-            self.fig_data_layout.removeItem(self.fig_img_cb)
-            self.fig_data_layout.removeItem(self.fig_probe_cb)
-            self.fig_data_layout.removeItem(self.fig_img)
-            self.fig_data_layout.removeItem(self.fig_line)
-            self.fig_data_layout.removeItem(self.fig_probe)
-            self.fig_data_layout.addItem(self.fig_img_cb, 0, 0)
-
-            self.fig_data_layout.addItem(self.fig_probe_cb, 0, 1, 1, 2)
-            self.fig_data_layout.addItem(self.fig_img, 1, 0)
-            self.fig_data_layout.addItem(self.fig_probe, 1, 1)
-            self.fig_data_layout.addItem(self.fig_line, 1, 2)
-
-            self.set_axis(self.fig_img_cb, "left", pen="w")
-            self.set_axis(self.fig_probe_cb, "left", show=False)
-            self.set_axis(self.fig_img, "left", label="Distance from probe tip (um)")
-            self.set_axis(self.fig_probe, "left", show=False)
-            self.set_axis(self.fig_line, "left", show=False)
-
-            self.fig_img.setPreferredWidth(self.fig_img_width + self.fig_ax_width)
-            self.fig_line.setPreferredWidth(self.fig_line_width)
-            self.fig_probe.setFixedWidth(self.fig_probe_width)
-
-            self.fig_data_layout.layout.setColumnStretchFactor(0, 6)
-            self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(2, 1)
-            self.fig_data_layout.layout.setRowStretchFactor(0, 1)
-            self.fig_data_layout.layout.setRowStretchFactor(1, 10)
-
-            self.fig_img.update()
-            feature_xrange = self.ephys_panel.feature_xrange
-            if feature_xrange is not None:
-                self.fig_img.setXRange(
-                    min=feature_xrange[0] - 10,
-                    max=feature_xrange[1] + 10,
-                    padding=0,
-                )
-            self.reset_axis_button_pressed()
-            self.fig_line.update()
-            self.fig_probe.update()
-
-        if view == 3:
-            self.fig_data_layout.removeItem(self.fig_img_cb)
-            self.fig_data_layout.removeItem(self.fig_probe_cb)
-            self.fig_data_layout.removeItem(self.fig_img)
-            self.fig_data_layout.removeItem(self.fig_line)
-            self.fig_data_layout.removeItem(self.fig_probe)
-            self.fig_data_layout.addItem(self.fig_probe_cb, 0, 0, 1, 2)
-            self.fig_data_layout.addItem(self.fig_img_cb, 0, 2)
-            self.fig_data_layout.addItem(self.fig_probe, 1, 0)
-            self.fig_data_layout.addItem(self.fig_line, 1, 1)
-            self.fig_data_layout.addItem(self.fig_img, 1, 2)
-
-            self.set_axis(self.fig_probe_cb, "left", pen="w")
-            self.set_axis(self.fig_img_cb, "left", show=False)
-            self.set_axis(self.fig_line, "left", show=False)
-            self.set_axis(self.fig_img, "left", pen="w")
-            self.set_axis(self.fig_img, "left", show=False)
-            self.set_axis(self.fig_probe, "left", label="Distance from probe tip (um)")
-
-            self.fig_data_layout.layout.setColumnStretchFactor(0, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(1, 1)
-            self.fig_data_layout.layout.setColumnStretchFactor(2, 6)
-            self.fig_data_layout.layout.setRowStretchFactor(0, 1)
-            self.fig_data_layout.layout.setRowStretchFactor(1, 10)
-
-            self.fig_probe.setFixedWidth(self.fig_probe_width + self.fig_ax_width)
-            self.fig_img.setPreferredWidth(self.fig_img_width)
-            self.fig_line.setPreferredWidth(self.fig_line_width)
-
-            self.fig_img.update()
-            feature_xrange = self.ephys_panel.feature_xrange
-            if feature_xrange is not None:
-                self.fig_img.setXRange(
-                    min=feature_xrange[0] - 10,
-                    max=feature_xrange[1] + 10,
-                    padding=0,
-                )
-            self.reset_axis_button_pressed()
-            self.fig_line.update()
-            self.fig_probe.update()
+        self.ephys_panel_layout.apply_view(
+            view,
+            EphysPanelLayoutSizes(
+                axis_width=self.fig_ax_width,
+                image_width=self.fig_img_width,
+                line_width=self.fig_line_width,
+                probe_width=self.fig_probe_width,
+            ),
+        )
 
     def save_plots(self, save_path=None) -> None:
         """
