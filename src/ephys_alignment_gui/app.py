@@ -29,6 +29,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ClusterDetailRenderState,
     FitPlotRenderState,
     HistologyPanelRenderState,
+    NearbyBoundaryRenderState,
     PerpendicularSliceRenderState,
     ProbeExtentRenderState,
     ScaleFactorRenderState,
@@ -516,6 +517,49 @@ class AlignmentQueries:
             region=histology_state.histology.scale.region,
             scale=histology_state.histology.scale.scale,
             probe_extent=histology_state.probe_extent,
+        )
+
+    def active_nearby_boundary_state(
+        self,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+        allen: Any,
+        brain_atlas: Any,
+        steps: int = 6,
+    ) -> NearbyBoundaryRenderState | None:
+        """Return nearby-boundary curves for the active alignment track."""
+        context = self._active_alignment_context()
+        if context is None:
+            return None
+        key, active_alignment, shank_runtime = context
+        probe_extent = self._probe_extent_render_state(
+            active_alignment,
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+        if probe_extent is None:
+            return None
+        nearby_boundaries = shank_runtime.nearby_boundaries
+        if nearby_boundaries is None:
+            nearby_boundaries = self.derived_data_service.compute_nearby_boundaries(
+                ephysalign=shank_runtime.ephysalign,
+                allen=allen,
+                brain_atlas=brain_atlas,
+                steps=steps,
+            )
+            shank_runtime.nearby_boundaries = nearby_boundaries
+        return NearbyBoundaryRenderState(
+            key=key,
+            x=nearby_boundaries.x,
+            y=nearby_boundaries.y,
+            colours=nearby_boundaries.colours,
+            parent_x=nearby_boundaries.parent_x,
+            parent_y=nearby_boundaries.parent_y,
+            parent_colours=nearby_boundaries.parent_colours,
+            probe_extent=probe_extent,
         )
 
     def active_fit_plot_state(

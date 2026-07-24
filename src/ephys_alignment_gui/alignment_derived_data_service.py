@@ -46,6 +46,18 @@ class ChannelProjectionData:
     perpendicular_vectors: Any
 
 
+@dataclass(frozen=True)
+class NearbyBoundaryData:
+    """Nearby-boundary curves derived from an alignment track."""
+
+    x: Any
+    y: Any
+    colours: Any
+    parent_x: Any
+    parent_y: Any
+    parent_colours: Any
+
+
 class AlignmentDerivedDataService:
     """Computes non-Qt data derived from the active feature/track alignment."""
 
@@ -131,3 +143,39 @@ class AlignmentDerivedDataService:
     ) -> NDArray[Any]:
         """Compute only channel locations when plotting artifacts are not needed."""
         return np.asarray(ephysalign.get_channel_locations(feature, track))
+
+    def compute_nearby_boundaries(
+        self,
+        *,
+        ephysalign: Any,
+        allen: Any,
+        brain_atlas: Any,
+        steps: int = 6,
+    ) -> NearbyBoundaryData:
+        """Compute nearby Allen region-boundary curves along an alignment track."""
+        nearby_bounds = ephysalign.get_nearest_boundary(
+            ephysalign.track_interpolation_ras,
+            allen,
+            steps=steps,
+            brain_atlas=brain_atlas,
+        )
+        x, y, colours = ephysalign.arrange_into_regions(
+            ephysalign.ephys_depths_along_track,
+            nearby_bounds["id"],
+            nearby_bounds["dist"],
+            nearby_bounds["col"],
+        )
+        parent_x, parent_y, parent_colours = ephysalign.arrange_into_regions(
+            ephysalign.ephys_depths_along_track,
+            nearby_bounds["parent_id"],
+            nearby_bounds["parent_dist"],
+            nearby_bounds["parent_col"],
+        )
+        return NearbyBoundaryData(
+            x=x,
+            y=y,
+            colours=colours,
+            parent_x=parent_x,
+            parent_y=parent_y,
+            parent_colours=parent_colours,
+        )

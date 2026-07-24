@@ -38,6 +38,7 @@ class ShankRuntime:
     region_fp: Any = None
     region_label_fp: Any = None
     region_colour_fp: Any = None
+    nearby_boundaries: Any = None
 
     # -- Cached PlotData and atlas/histology slices for this shank --
     plotdata: Any = None

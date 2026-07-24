@@ -19,7 +19,6 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.alignment_read_models import NearbyBoundaryRenderState
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -1003,19 +1002,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return state
 
     def _active_nearby_boundary_state(self):
-        histology_state = self._active_histology_panel_state()
-        if histology_state is None:
+        if not self.histology_exists:
             return None
-        return NearbyBoundaryRenderState(
-            key=histology_state.key,
-            x=self.session.hist_nearby_x,
-            y=self.session.hist_nearby_y,
-            colours=self.session.hist_nearby_col,
-            parent_x=self.session.hist_nearby_parent_x,
-            parent_y=self.session.hist_nearby_parent_y,
-            parent_colours=self.session.hist_nearby_parent_col,
-            probe_extent=histology_state.probe_extent,
+        brain_atlas = self.histology_context.brain_atlas
+        if brain_atlas is None:
+            logger.error("Cannot render nearby boundaries: brain atlas is not loaded")
+            return None
+        state = self.app.queries.active_nearby_boundary_state(
+            **self._probe_extent_query_kwargs(),
+            allen=self.allen,
+            brain_atlas=brain_atlas,
         )
+        if state is None:
+            logger.error(
+                "Cannot render nearby boundaries: active alignment data is not loaded"
+            )
+        return state
 
     def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
         """Compatibility wrapper for perpendicular slice rendering."""
@@ -2653,49 +2655,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.session.track_prev = result.track_prev
         return True
 
-    def compute_nearby_boundaries(self) -> None:
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            return
-
-        nearby_bounds = self.session.ephysalign.get_nearest_boundary(
-            self.session.ephysalign.track_interpolation_ras,
-            self.allen,
-            steps=6,
-            brain_atlas=brain_atlas,
-        )
-        [
-            self.session.hist_nearby_x,
-            self.session.hist_nearby_y,
-            self.session.hist_nearby_col,
-        ] = self.session.ephysalign.arrange_into_regions(
-            self.session.ephysalign.ephys_depths_along_track,
-            nearby_bounds["id"],
-            nearby_bounds["dist"],
-            nearby_bounds["col"],
-        )
-
-        [
-            self.session.hist_nearby_parent_x,
-            self.session.hist_nearby_parent_y,
-            self.session.hist_nearby_parent_col,
-        ] = self.session.ephysalign.arrange_into_regions(
-            self.session.ephysalign.ephys_depths_along_track,
-            nearby_bounds["parent_id"],
-            nearby_bounds["parent_dist"],
-            nearby_bounds["parent_col"],
-        )
-
     def toggle_histology_button_pressed(self) -> None:
         self.session.hist_bound_status = not self.session.hist_bound_status
 
         if not self.session.hist_bound_status:
-            if self.session.hist_nearby_x is None:
-                self.compute_nearby_boundaries()
-
             self.plot_histology_nearby()
         else:
             self.plot_histology_ref()

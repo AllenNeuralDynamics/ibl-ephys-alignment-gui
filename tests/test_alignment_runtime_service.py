@@ -41,7 +41,10 @@ class FakeEphysAlignment:
 def test_alignment_runtime_service_initializes_and_attaches_shank_runtime() -> None:
     FakeEphysAlignment.calls = []
     service = AlignmentRuntimeService(alignment_cls=FakeEphysAlignment)
-    shank_runtime = SimpleNamespace(chn_depths=np.array([10.0, 20.0]))
+    shank_runtime = SimpleNamespace(
+        chn_depths=np.array([10.0, 20.0]),
+        nearby_boundaries="cached",
+    )
     track_annotations_ras = np.array([[0.0, 0.0, 0.0]])
 
     result = service.initialize_shank_runtime(
@@ -66,6 +69,7 @@ def test_alignment_runtime_service_initializes_and_attaches_shank_runtime() -> N
     assert shank_runtime.region_fp == "region"
     assert shank_runtime.region_label_fp == "label"
     assert shank_runtime.region_colour_fp == "colour"
+    assert shank_runtime.nearby_boundaries is None
     np.testing.assert_array_equal(
         shank_runtime.track_annotations_ras, [[0.0, 0.0, 0.0]]
     )

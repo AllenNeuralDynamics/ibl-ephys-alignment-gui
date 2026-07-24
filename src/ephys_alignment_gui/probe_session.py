@@ -152,14 +152,6 @@ class ProbeSession:
         }
         self.scale_data: dict[str, list[Any]] = {"region": [], "scale": []}
 
-        # -- Nearby boundary state --
-        self.hist_nearby_x: Any = None
-        self.hist_nearby_y: Any = None
-        self.hist_nearby_col: Any = None
-        self.hist_nearby_parent_x: Any = None
-        self.hist_nearby_parent_y: Any = None
-        self.hist_nearby_parent_col: Any = None
-
         # NOTE: fit history (track/features/lin_fit_history + idx cursors),
         # track/channel-location arrays, chn_depths, ephysalign, the selected
         # starting alignment (feature_prev/track_prev), region overlays, and

@@ -92,6 +92,7 @@ class AlignmentRuntimeService:
         shank_runtime.region_label_fp = initialized.region_label_fp
         shank_runtime.region_colour_fp = initialized.region_colour_fp
         shank_runtime.track_annos_and_ends_ras = initialized.track_annos_and_ends_ras
+        shank_runtime.nearby_boundaries = None
 
     @staticmethod
     def _has_previous_alignment(feature_prev: Any, track_prev: Any) -> bool:

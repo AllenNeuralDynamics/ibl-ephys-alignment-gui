@@ -17,6 +17,10 @@ class FakeEphysAlignment:
         self.region_colour = None
         self.scale_histology_calls = []
         self.scale_factor_calls = []
+        self.nearby_boundary_calls = []
+        self.arrange_calls = []
+        self.track_interpolation_ras = np.array([[1.0, 2.0, 3.0]])
+        self.ephys_depths_along_track = np.array([0.0, 1.0])
 
     def scale_histology_regions(self, feature, track, region=None, region_label=None):
         self.scale_histology_calls.append((feature, track, region, region_label))
@@ -40,6 +44,21 @@ class FakeEphysAlignment:
     @staticmethod
     def get_perp_vector(feature, track):
         return [np.array([[feature[0], 0.0, track[0]], [feature[-1], 0.0, track[-1]]])]
+
+    def get_nearest_boundary(self, track_interpolation_ras, allen, **kwargs):
+        self.nearby_boundary_calls.append((track_interpolation_ras, allen, kwargs))
+        return {
+            "id": np.array([1.0, 2.0]),
+            "dist": np.array([10.0, 20.0]),
+            "col": ["red", "blue"],
+            "parent_id": np.array([3.0, 4.0]),
+            "parent_dist": np.array([30.0, 40.0]),
+            "parent_col": ["pink", "cyan"],
+        }
+
+    def arrange_into_regions(self, depths, ids, distances, colours):
+        self.arrange_calls.append((depths, ids, distances, colours))
+        return ids, distances, colours
 
 
 def test_compute_histology_for_allen_annotation_source() -> None:
@@ -126,3 +145,26 @@ def test_compute_channel_locations_only() -> None:
         locations,
         [[0.0, 0.0, 10.0], [4.0, 0.0, 14.0]],
     )
+
+
+def test_compute_nearby_boundaries() -> None:
+    ephysalign = FakeEphysAlignment()
+
+    nearby = AlignmentDerivedDataService().compute_nearby_boundaries(
+        ephysalign=ephysalign,
+        allen="allen-table",
+        brain_atlas="atlas",
+        steps=7,
+    )
+
+    assert ephysalign.nearby_boundary_calls[0][1] == "allen-table"
+    assert ephysalign.nearby_boundary_calls[0][2] == {
+        "steps": 7,
+        "brain_atlas": "atlas",
+    }
+    np.testing.assert_array_equal(nearby.x, [1.0, 2.0])
+    np.testing.assert_array_equal(nearby.y, [10.0, 20.0])
+    assert nearby.colours == ["red", "blue"]
+    np.testing.assert_array_equal(nearby.parent_x, [3.0, 4.0])
+    np.testing.assert_array_equal(nearby.parent_y, [30.0, 40.0])
+    assert nearby.parent_colours == ["pink", "cyan"]

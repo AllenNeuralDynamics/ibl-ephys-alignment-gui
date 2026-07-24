@@ -133,8 +133,17 @@ class FakeDerivedDataService:
     ) -> None:
         self.histology = histology
         self.projection = projection
+        self.nearby_boundaries = SimpleNamespace(
+            x=np.array([1.0, 2.0]),
+            y=np.array([3.0, 4.0]),
+            colours=["red", "blue"],
+            parent_x=np.array([5.0, 6.0]),
+            parent_y=np.array([7.0, 8.0]),
+            parent_colours=["pink", "cyan"],
+        )
         self.histology_kwargs = None
         self.projection_kwargs = None
+        self.nearby_kwargs: list[dict[str, Any]] = []
 
     def compute_histology(self, **kwargs):
         self.histology_kwargs = kwargs
@@ -143,6 +152,10 @@ class FakeDerivedDataService:
     def compute_channel_projection(self, **kwargs):
         self.projection_kwargs = kwargs
         return self.projection
+
+    def compute_nearby_boundaries(self, **kwargs):
+        self.nearby_kwargs.append(kwargs)
+        return self.nearby_boundaries
 
 
 class FakeSliceService:
@@ -800,6 +813,60 @@ def test_queries_build_histology_and_scale_panel_states() -> None:
     assert scale_state.key == key
     assert scale_state.region is histology.scale.region
     assert scale_state.scale is histology.scale.scale
+
+
+def test_queries_build_nearby_boundary_state_from_runtime_cache() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.005]),
+        np.array([0.0, 0.004]),
+    )
+    derived = FakeDerivedDataService()
+    shank_runtime = SimpleNamespace(
+        ephysalign="aligner",
+        nearby_boundaries=None,
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        derived_data_service=derived,
+    )
+
+    first_state = queries.active_nearby_boundary_state(
+        probe_tip_um=0.0,
+        probe_top_um=3840.0,
+        probe_extra_um=100.0,
+        allen="allen-table",
+        brain_atlas="atlas",
+    )
+    second_state = queries.active_nearby_boundary_state(
+        probe_tip_um=0.0,
+        probe_top_um=3840.0,
+        probe_extra_um=100.0,
+        allen="allen-table",
+        brain_atlas="atlas",
+    )
+
+    assert first_state is not None
+    assert first_state.key == key
+    np.testing.assert_array_equal(first_state.x, [1.0, 2.0])
+    np.testing.assert_array_equal(first_state.y, [3.0, 4.0])
+    assert first_state.colours == ["red", "blue"]
+    np.testing.assert_array_equal(first_state.parent_x, [5.0, 6.0])
+    np.testing.assert_array_equal(first_state.parent_y, [7.0, 8.0])
+    assert first_state.parent_colours == ["pink", "cyan"]
+    assert second_state is not None
+    assert shank_runtime.nearby_boundaries is derived.nearby_boundaries
+    assert len(derived.nearby_kwargs) == 1
+    assert derived.nearby_kwargs[0]["ephysalign"] == "aligner"
+    assert derived.nearby_kwargs[0]["allen"] == "allen-table"
+    assert derived.nearby_kwargs[0]["brain_atlas"] == "atlas"
 
 
 def test_queries_build_fit_plot_state() -> None:
