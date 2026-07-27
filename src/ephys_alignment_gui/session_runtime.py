@@ -116,9 +116,15 @@ class SessionRuntime:
         self.clear_active_stream()
         return stale_runtime
 
-    def activate_cached_stream(self, stream_key: StreamKey) -> EphysStreamRuntime:
-        """Make a cached stream runtime active."""
+    def activate_cached_stream_for_shank(
+        self,
+        stream_key: StreamKey,
+        *,
+        shank_idx: int,
+    ) -> EphysStreamRuntime:
+        """Activate a cached stream after initializing the requested shank."""
         runtime = self.stream_cache[stream_key]
+        runtime.shank_runtime_for(shank_idx)
         self.active_stream_runtime = runtime
         self.current_stream_key = stream_key
         return runtime

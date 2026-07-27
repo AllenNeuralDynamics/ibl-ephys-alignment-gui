@@ -20,6 +20,7 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+from ephys_alignment_gui.app import CachedEphysDataActivated
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -1193,6 +1194,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         session_name: str,
         probe_name: str,
         stream_key: StreamKey,
+        shank_idx: int,
     ) -> bool:
         """Display an already-loaded stream from the cache — no heavy reload.
 
@@ -1200,39 +1202,29 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         is created as a view adapter; document-owned edit state is projected
         onto the active shank compatibility object.
         """
-        cached_runtime = self.runtime.cached_stream(stream_key)
-        if cached_runtime is None:
-            return False
-        result = self.controller.select_probe(
-            session_name,
-            probe_name,
-            ephys_stream=cached_runtime.stream,
+        self.init_session_variables()
+        result = self.app.commands.activate_cached_ephys_data(
+            recording_id=session_name,
+            probe_name=probe_name,
+            stream_key=stream_key,
+            shank_idx=shank_idx,
         )
         if isinstance(result, Failed):
             logger.error(result.message)
             return False
-
-        try:
-            self.init_session_variables()
-            self.runtime.activate_cached_stream(stream_key)
-            target_shank = self._select_shank_for_view(
-                cached_runtime.current_shank_idx,
-                source="cached-stream",
-            )
-            if target_shank is None:
-                return False
-            cached_runtime.shank_runtime_for(target_shank)
-        except Exception as exc:
-            logger.error(f"Failed to restore cached stream runtime: {exc}")
-            return False
+        assert isinstance(result, CachedEphysDataActivated)
+        target_shank = result.shank_idx
 
         self._clear_empty_state()
 
-        if result.shanks:
-            self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
+        if result.probe.shanks:
+            self.populate_lists(
+                result.probe.shanks,
+                self.shank_list,
+                self.shank_combobox,
+            )
             self.shank_combobox.setCurrentIndex(target_shank)
-        self._display_output_directory(result.output_directory)
-        self.controller.finish_load_data(target_shank)
+        self._display_output_directory(result.probe.output_directory)
 
         self.setup_session_view(preserve_plot_selection=True, shank_idx=target_shank)
         logger.info(f"Activated cached stream {stream_key}")
@@ -1264,6 +1256,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.session_combobox.currentText(),
                 probe_name,
                 cached_stream_key,
+                load_plan.target.shank_idx,
             ):
                 self.load_data_button.setEnabled(True)
             return
@@ -1472,6 +1465,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 session,
                 probe_name,
                 cached_stream_key,
+                load_plan.cached_shank_idx,
             ):
                 self.load_data_button.setEnabled(True)
             return

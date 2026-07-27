@@ -46,6 +46,7 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
+    ProbeSelected,
     ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
@@ -102,6 +103,15 @@ class FreshEphysDataLoaded:
 
     stream_runtime: Any
     shank_idx: int
+
+
+@dataclass(frozen=True)
+class CachedEphysDataActivated:
+    """Cached ephys stream runtime was activated."""
+
+    stream_runtime: Any
+    shank_idx: int
+    probe: ProbeSelected
 
 
 @dataclass
@@ -250,6 +260,42 @@ class AlignmentCommands:
         return FreshEphysDataLoaded(
             stream_runtime=stream_runtime,
             shank_idx=shank_idx,
+        )
+
+    def activate_cached_ephys_data(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        stream_key: StreamKey,
+        shank_idx: int,
+    ) -> CachedEphysDataActivated | Failed:
+        """Activate cached ephys runtime data for one explicit shank."""
+        cached_runtime = self._runtime.cached_stream(stream_key)
+        if cached_runtime is None:
+            return Failed(f"Cached stream not found: {stream_key}")
+
+        probe = self._controller.select_probe(
+            recording_id,
+            probe_name,
+            ephys_stream=cached_runtime.stream,
+        )
+        if isinstance(probe, Failed):
+            return probe
+
+        try:
+            stream_runtime = self._runtime.activate_cached_stream_for_shank(
+                stream_key,
+                shank_idx=shank_idx,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to restore cached stream runtime: {exc}")
+
+        self._controller.finish_load_data(shank_idx)
+        return CachedEphysDataActivated(
+            stream_runtime=stream_runtime,
+            shank_idx=shank_idx,
+            probe=probe,
         )
 
     def load_histology_data(self) -> HistologyLoadResult:

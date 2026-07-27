@@ -37,11 +37,11 @@ class EphysStreamRuntime:
 
     def shank_runtime_for(self, shank_idx: int) -> ShankRuntime:
         """Return runtime state for a shank, creating it on first use."""
-        self.current_shank_idx = shank_idx
         if shank_idx not in self.shank_runtime_by_idx:
             self.shank_runtime_by_idx[shank_idx] = ShankRuntime(
                 self.stream.channel_collection(shank_idx)
             )
+        self.current_shank_idx = shank_idx
         return self.shank_runtime_by_idx[shank_idx]
 
     def visited_shank_runtimes(self) -> dict[int, ShankRuntime]:

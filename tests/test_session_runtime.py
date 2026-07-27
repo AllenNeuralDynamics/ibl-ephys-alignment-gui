@@ -63,16 +63,37 @@ def test_clear_stream_cache_removes_cached_streams_and_active_selection() -> Non
     assert runtime.current_stream_key is None
 
 
-def test_activate_cached_stream_sets_active_runtime_and_current_key() -> None:
+def test_activate_cached_stream_for_shank_initializes_requested_shank() -> None:
     runtime = SessionRuntime()
     stream_runtime = _stream_runtime()
     runtime.stream_cache[stream_runtime.stream_key] = stream_runtime
 
-    active = runtime.activate_cached_stream(stream_runtime.stream_key)
+    active = runtime.activate_cached_stream_for_shank(
+        stream_runtime.stream_key,
+        shank_idx=1,
+    )
 
     assert active is stream_runtime
     assert runtime.active_stream_runtime is stream_runtime
     assert runtime.current_stream_key == ("rec1", "streamA")
+    assert stream_runtime.current_shank_idx == 1
+    assert 1 in stream_runtime.shank_runtime_by_idx
+
+
+def test_activate_cached_stream_for_shank_leaves_active_clear_on_failure() -> None:
+    runtime = SessionRuntime()
+    stream_runtime = _stream_runtime()
+    runtime.stream_cache[stream_runtime.stream_key] = stream_runtime
+
+    with pytest.raises(IndexError):
+        runtime.activate_cached_stream_for_shank(
+            stream_runtime.stream_key,
+            shank_idx=3,
+        )
+
+    assert runtime.active_stream_runtime is None
+    assert runtime.current_stream_key is None
+    assert stream_runtime.current_shank_idx == 0
 
 
 def test_cache_loaded_stream_stores_runtime_by_stream_key() -> None:

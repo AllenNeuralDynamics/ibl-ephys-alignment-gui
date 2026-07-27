@@ -17,7 +17,11 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
 from ephys_alignment_gui.alignment_repository import LoadedAlignmentHistory
-from ephys_alignment_gui.app import AlignmentQueries, FreshEphysDataLoaded
+from ephys_alignment_gui.app import (
+    AlignmentQueries,
+    CachedEphysDataActivated,
+    FreshEphysDataLoaded,
+)
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -27,7 +31,7 @@ from ephys_alignment_gui.controller import (
     ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
-from ephys_alignment_gui.datapackage_loader import ProbeInfo
+from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.histology_data_workflow import HistologyDataLoaded
@@ -240,6 +244,18 @@ def _probe_info() -> ProbeInfo:
     )
 
 
+def _mouse_root_with_probe(probe: ProbeInfo | None = None) -> MouseRoot:
+    probe = probe or _probe_info()
+    return MouseRoot(
+        root=Path("/tmp/mouse"),
+        schema_version="3.1.0",
+        mouse_id="mouse",
+        transforms=None,
+        histology=None,
+        probes={probe.recording_id: {probe.probe_name: probe}},
+    )
+
+
 def _ephys_stream() -> EphysStreamData:
     return EphysStreamData(
         recording_id="rec",
@@ -442,6 +458,76 @@ def test_commands_load_fresh_ephys_data_missing_ephys_dir_does_not_cache() -> No
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.stream_cache == {}
+
+
+def test_commands_activate_cached_ephys_data_uses_explicit_shank() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
+    )
+    workspace.runtime.clear_active_stream()
+
+    result = workspace.app.commands.activate_cached_ephys_data(
+        recording_id="rec",
+        probe_name="probeA",
+        stream_key=("rec", "stream"),
+        shank_idx=0,
+    )
+
+    assert isinstance(result, CachedEphysDataActivated)
+    assert result.stream_runtime is stream_runtime
+    assert result.shank_idx == 0
+    assert result.probe.shanks == ["1/2", "2/2"]
+    assert workspace.runtime.active_stream_runtime is stream_runtime
+    assert workspace.runtime.current_stream_key == ("rec", "stream")
+    assert stream_runtime.current_shank_idx == 0
+    assert workspace.document.data_loaded
+    assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
+
+
+def test_commands_activate_cached_ephys_data_reports_missing_cache() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+
+    result = workspace.app.commands.activate_cached_ephys_data(
+        recording_id="rec",
+        probe_name="probeA",
+        stream_key=("rec", "missing"),
+        shank_idx=0,
+    )
+
+    assert isinstance(result, Failed)
+    assert "Cached stream not found" in result.message
+    assert not workspace.document.data_loaded
+    assert workspace.runtime.active_stream_runtime is None
+
+
+def test_commands_activate_cached_ephys_data_failure_does_not_mark_loaded() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
+    )
+    workspace.runtime.clear_active_stream()
+
+    result = workspace.app.commands.activate_cached_ephys_data(
+        recording_id="rec",
+        probe_name="probeA",
+        stream_key=("rec", "stream"),
+        shank_idx=3,
+    )
+
+    assert isinstance(result, Failed)
+    assert "Failed to restore cached stream runtime" in result.message
+    assert not workspace.document.data_loaded
+    assert workspace.runtime.active_stream_runtime is None
+    assert workspace.runtime.current_stream_key is None
+    assert stream_runtime.current_shank_idx == 1
 
 
 def test_commands_load_histology_data_delegates_to_workflow() -> None:
