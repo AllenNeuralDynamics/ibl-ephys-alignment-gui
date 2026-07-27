@@ -25,7 +25,6 @@ from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     AlignmentOutputsSaved,
     MouseRootLoaded,
-    NoPreviousAlignments,
     OutputRootSet,
     PreviousAlignmentSelected,
     ProbeSelected,
@@ -64,6 +63,10 @@ from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopLoadWorkflowPresenter,
     DesktopOutputFolderPrompt,
     OutputFolderPromptCallbacks,
+)
+from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
+    DesktopPreviousAlignmentLoadPresenter,
+    PreviousAlignmentLoadCallbacks,
 )
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExportCallbacks,
@@ -417,6 +420,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
         self._init_load_workflow_presenter()
+        self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
 
         self.configure: bool = True
@@ -443,6 +447,32 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             can_load_data=self.controller.can_load_data,
             load_heavy_data=self.load_heavy_data,
             output_folder_prompt=self.output_folder_prompt,
+        )
+
+    def _init_previous_alignment_load_presenter(self) -> None:
+        """Wire desktop workflow for loading previous alignments."""
+        self.previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
+            commands=self.app.commands,
+            callbacks=PreviousAlignmentLoadCallbacks(
+                select_folder=lambda: QtWidgets.QFileDialog.getExistingDirectory(
+                    None,
+                    "Load Existing Alignments",
+                ),
+                use_docdb=lambda: self.use_docdb,
+                set_reload_folder_text=self.reload_folder_line.setText,
+                render_alignment_choices=lambda choices: self.populate_lists(
+                    choices,
+                    self.align_list,
+                    self.align_combobox,
+                ),
+                select_alignment=self.on_alignment_selected,
+                busy_context=lambda *args, **kwargs: BusyContext(
+                    self,
+                    *args,
+                    **kwargs,
+                ),
+                reload_button=lambda: self.reload_folder_button,
+            ),
         )
 
     def _init_plot_exporter(self) -> None:
@@ -1308,51 +1338,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info("=== Heavy data load complete ===")
 
     def load_existing_alignments(self) -> bool:
-        ready = self.app.commands.can_load_previous_alignments()
-        if isinstance(ready, Failed):
-            logger.error(ready.message)
-            return False
-
-        selected = QtWidgets.QFileDialog.getExistingDirectory(
-            None, "Load Existing Alignments"
-        )
-        # Cancel returns "". Test the raw string, not Path(""), since
-        # Path("") is PosixPath(".") which is truthy — the old guard never
-        # fired on cancel and loaded alignments from the current directory.
-        if not selected and not self.use_docdb:
-            return False
-        folder_path = Path(selected) if selected else None
-        if folder_path is not None:
-            self.reload_folder_line.setText(str(folder_path))
-
-        with BusyContext(
-            self,
-            "Loading alignments...",
-            "Alignments loaded",
-            disable_widgets=self.reload_folder_button,
-        ):
-            logger.info(
-                f"Loading alignments from {folder_path}, use_docdb={self.use_docdb}"
-            )
-            result = self.app.commands.load_previous_alignments(
-                folder=folder_path,
-                use_docdb=self.use_docdb,
-            )
-            if isinstance(result, Failed):
-                logger.error(result.message)
-                return False
-            if isinstance(result, AlignmentChoicesUpdated):
-                self.populate_lists(
-                    result.choices,
-                    self.align_list,
-                    self.align_combobox,
-                )
-                self.on_alignment_selected(0)
-                logger.info(f"Loaded {len(result.choices)} previous alignments")
-            elif isinstance(result, NoPreviousAlignments):
-                logger.info("No previous alignments found")
-
-        return True
+        return self.previous_alignment_load_presenter.load_existing_alignments()
 
     def set_mouse_root(self, mouse_root: Path) -> bool:
         """Point the GUI at a preprocessed mouse-root directory.
