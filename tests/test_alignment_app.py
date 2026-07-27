@@ -29,6 +29,7 @@ from ephys_alignment_gui.controller import (
     LoadDataPrepared,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
+    ProbeSelected,
     ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
@@ -219,6 +220,18 @@ class FakeProbeDataWorkflow:
 class FailingProbeDataWorkflow:
     def load(self, _shank_idx: int):
         raise RuntimeError("boom")
+
+
+class FakeEphysDataService:
+    def __init__(self) -> None:
+        self.loaded_probe: ProbeInfo | None = None
+
+    def load_channel_table(self, probe: ProbeInfo) -> ChannelTable:
+        self.loaded_probe = probe
+        return ChannelTable(
+            local_coordinates=np.array([[0.0, 0.0], [250.0, 0.0]]),
+            shank_indices=np.array([0, 1]),
+        )
 
 
 class FakeHistologyDataWorkflow:
@@ -479,6 +492,21 @@ def test_commands_load_fresh_ephys_data_missing_ephys_dir_does_not_cache() -> No
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.stream_cache == {}
+
+
+def test_commands_select_probe_metadata_delegates_to_controller() -> None:
+    ephys_data_service = FakeEphysDataService()
+    workspace = AlignmentWorkspace(ephys_data_service=ephys_data_service)
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+
+    result = workspace.app.commands.select_probe_metadata("rec", "probeA")
+
+    assert isinstance(result, ProbeSelected)
+    assert ephys_data_service.loaded_probe is not None
+    assert ephys_data_service.loaded_probe.probe_name == "probeA"
+    assert result.shanks == ["1/2", "2/2"]
+    assert workspace.document.channel_info_loaded
+    assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
 
 
 def test_commands_activate_cached_ephys_data_uses_explicit_shank() -> None:

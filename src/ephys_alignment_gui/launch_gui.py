@@ -27,7 +27,6 @@ from ephys_alignment_gui.controller import (
     MouseRootLoaded,
     OutputRootSet,
     PreviousAlignmentSelected,
-    ProbeSelected,
     RecordingSelected,
     ShankSelected,
 )
@@ -71,6 +70,10 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
+)
+from ephys_alignment_gui.desktop_probe_selection_presenter import (
+    DesktopProbeSelectionCallbacks,
+    DesktopProbeSelectionPresenter,
 )
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExportCallbacks,
@@ -421,6 +424,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
         self._init_load_data_presenter()
+        self._init_probe_selection_presenter()
         self._init_load_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -480,6 +484,44 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     **kwargs,
                 ),
                 load_data_button=lambda: self.load_data_button,
+            ),
+        )
+
+    def _init_probe_selection_presenter(self) -> None:
+        """Wire desktop behavior for probe selection."""
+        self.probe_selection_presenter = DesktopProbeSelectionPresenter(
+            commands=self.app.commands,
+            callbacks=DesktopProbeSelectionCallbacks(
+                mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
+                session_name=self.session_combobox.currentText,
+                probe_name=self.probe_combobox.currentText,
+                active_shank_idx=self._active_shank_idx,
+                capture_pending_reference_lines=self._capture_pending_reference_lines,
+                stash_and_detach_current=self._stash_and_detach_current,
+                present_cached_probe_selection=lambda session, probe, shank: (
+                    self.load_data_presenter.present_cached_probe_selection(
+                        session_name=session,
+                        probe_name=probe,
+                        target_shank=shank,
+                    )
+                ),
+                show_empty_state=self._show_empty_state,
+                busy_context=lambda *args, **kwargs: BusyContext(
+                    self,
+                    *args,
+                    **kwargs,
+                ),
+                selection_widgets=lambda: [
+                    self.probe_combobox,
+                    self.session_combobox,
+                ],
+                populate_shanks=self._populate_probe_shanks,
+                init_session_variables=self.init_session_variables,
+                select_shank_for_view=lambda shank_idx, source: (
+                    self._select_shank_for_view(shank_idx, source=source)
+                ),
+                display_output_directory=self._display_output_directory,
+                set_load_data_enabled=self.load_data_button.setEnabled,
             ),
         )
 
@@ -1328,59 +1370,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_probe_combobox_activated(self, _idx: int) -> None:
         """Select a probe: load channel info, populate shank list, derive output dir."""
-        if self.data_context.mouse_root is None:
-            return
-        session = self.session_combobox.currentText()
-        probe_name = self.probe_combobox.currentText()
-        if not session or not probe_name:
-            return
-
-        # Capture outgoing reference-line coordinates before their pyqtgraph
-        # handles are torn down. Applied alignment history already lives on
-        # the document state.
-        self._capture_pending_reference_lines()
-        # Free the figures from the outgoing view session. Loaded stream data
-        # stays in the stream-runtime cache.
-        self._stash_and_detach_current()
-
-        # Cache HIT: show the already-loaded stream instantly (no heavy reload).
-        if self.load_data_presenter.present_cached_probe_selection(
-            session_name=session,
-            probe_name=probe_name,
-            target_shank=self._active_shank_idx(),
-        ):
-            return
-
-        # Cache MISS: clear the display and prepare the loader + a fresh session
-        # for an explicit Load. Nothing is shown until the user loads.
-        self._show_empty_state()
-        with BusyContext(
-            self,
-            "Loading channel info...",
-            "Ready",
-            disable_widgets=[self.probe_combobox, self.session_combobox],
-        ):
-            result = self.controller.select_probe(session, probe_name)
-            if isinstance(result, Failed):
-                logger.error(result.message)
-                self.load_data_button.setEnabled(False)
-                return
-            assert isinstance(result, ProbeSelected)
-
-            if result.shanks:
-                self.populate_lists(result.shanks, self.shank_list, self.shank_combobox)
-                logger.info(f"Found {self.data_context.n_shanks} shanks in data.")
-
-            # Fresh desktop session for pre-Load view cleanup; document owns
-            # the selected shank.
-            self.init_session_variables()
-            if self._select_shank_for_view(0, source="probe-selected") is None:
-                self.load_data_button.setEnabled(False)
-                return
-
-            self._display_output_directory(result.output_directory)
-
-        self.load_data_button.setEnabled(True)
+        self.probe_selection_presenter.probe_selected()
 
     def _display_output_directory(self, output_directory: Path | None) -> None:
         """Reflect a derived per-probe output directory in the UI."""
@@ -1393,6 +1383,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Render shank labels for a loaded/cached stream."""
         self.populate_lists(shanks, self.shank_list, self.shank_combobox)
         self.shank_combobox.setCurrentIndex(target_shank)
+
+    def _populate_probe_shanks(self, shanks: list[str]) -> None:
+        """Render shank labels for a selected but not-yet-loaded probe."""
+        self.populate_lists(shanks, self.shank_list, self.shank_combobox)
 
     def _set_histology_available(self, available: bool) -> None:
         """Set the desktop histology availability flag."""

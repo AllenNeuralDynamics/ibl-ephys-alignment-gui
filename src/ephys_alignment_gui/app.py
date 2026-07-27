@@ -205,6 +205,14 @@ class AlignmentCommands:
             shank_idx=target_shank,
         )
 
+    def select_probe_metadata(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> ProbeSelected | Failed:
+        """Select a probe and load lightweight channel metadata."""
+        return self._controller.select_probe(recording_id, probe_name)
+
     def select_previous_alignment(
         self,
         idx: int,
