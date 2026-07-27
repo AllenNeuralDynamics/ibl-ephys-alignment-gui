@@ -60,6 +60,11 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelPlots,
     EphysPanelStyle,
 )
+from ephys_alignment_gui.desktop_load_workflow_presenter import (
+    DesktopLoadWorkflowPresenter,
+    DesktopOutputFolderPrompt,
+    OutputFolderPromptCallbacks,
+)
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExportCallbacks,
     DesktopPlotExporter,
@@ -103,7 +108,6 @@ from ephys_alignment_gui.slice_panel_presenter import (
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
 from ephys_alignment_gui.workflow import (
-    CHOOSE_OUTPUT_FOLDER,
     Blocked,
     Failed,
     Ok,
@@ -412,6 +416,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
+        self._init_load_workflow_presenter()
         self._set_default_output_root_from_environment()
 
         self.configure: bool = True
@@ -421,6 +426,24 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.allen = self.region_lookup_service.load_allen_csv()
         self.init_region_lookup(self.allen)
+
+    def _init_load_workflow_presenter(self) -> None:
+        """Wire desktop load workflow prompts and command gating."""
+        self.output_folder_prompt = DesktopOutputFolderPrompt(
+            parent=self,
+            callbacks=OutputFolderPromptCallbacks(
+                derive_output_directory_from_save_root=(
+                    self._derive_output_directory_from_save_root
+                ),
+                has_output_directory=lambda: self.document.output_directory is not None,
+                select_output_folder=self.on_output_folder_selected,
+            ),
+        )
+        self.load_workflow_presenter = DesktopLoadWorkflowPresenter(
+            can_load_data=self.controller.can_load_data,
+            load_heavy_data=self.load_heavy_data,
+            output_folder_prompt=self.output_folder_prompt,
+        )
 
     def _init_plot_exporter(self) -> None:
         """Wire desktop plot export orchestration after panels are available."""
@@ -1539,74 +1562,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
-        result = self.controller.can_load_data()
-        if isinstance(result, Blocked):
-            if not self._handle_load_data_blocked(result):
-                return
-            result = self.controller.can_load_data()
-
-        if not isinstance(result, Ok):
-            if isinstance(result, Blocked):
-                self._log_requirement(result.first)
-            return
-
-        logger.info("Load Data button pressed")
-        self.load_heavy_data()
-
-    def _handle_load_data_blocked(self, result: Blocked) -> bool:
-        """Render the first load-data requirement and return whether to retry."""
-        requirement = result.first
-        if requirement.action == CHOOSE_OUTPUT_FOLDER:
-            return self._ensure_output_directory_for_load(requirement)
-        self._log_requirement(requirement)
-        return False
-
-    @staticmethod
-    def _log_requirement(requirement: Requirement) -> None:
-        logger.error(requirement.message)
-
-    def _ensure_output_directory_for_load(
-        self, requirement: Requirement | None = None
-    ) -> bool:
-        """Require a save location before data workflows can autosave."""
-        if self._derive_output_directory_from_save_root():
-            return True
-        if self.document.output_directory is not None:
-            return True
-
-        requirement = requirement or Requirement(
-            code="output_required",
-            message="Choose an output folder before loading data.",
-            action=CHOOSE_OUTPUT_FOLDER,
-        )
-        msg = QtWidgets.QMessageBox(self)
-        msg.setIcon(QtWidgets.QMessageBox.Warning)
-        msg.setWindowTitle("Output Folder Required")
-        msg.setText(requirement.message)
-        msg.setInformativeText(
-            "The GUI saves in-progress alignments when switching probes or sessions."
-        )
-        set_button = msg.addButton(
-            "Set Output Folder...", QtWidgets.QMessageBox.AcceptRole
-        )
-        msg.addButton(QtWidgets.QMessageBox.Cancel)
-        msg.setDefaultButton(set_button)
-        msg.exec_()
-
-        if msg.clickedButton() != set_button:
-            logger.info("Load data cancelled: output directory is not set.")
-            return False
-
-        if not self.on_output_folder_selected():
-            logger.info("Load data cancelled: no output folder selected.")
-            return False
-
-        if self.document.output_directory is None:
-            logger.error(
-                "Output folder selected but no probe output directory was derived."
-            )
-            return False
-        return True
+        self.load_workflow_presenter.load_data_button_pressed()
 
     def _derive_output_directory_from_save_root(self) -> bool:
         """Derive and display the probe output directory if a save root exists."""
@@ -1625,42 +1581,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self, requirement: Requirement | None = None
     ) -> bool:
         """Require a save location before writing alignment outputs."""
-        if self.document.output_directory is not None:
-            return True
-
-        requirement = requirement or Requirement(
-            code="output_required",
-            message="Choose an output folder before saving.",
-            action=CHOOSE_OUTPUT_FOLDER,
-        )
-        msg = QtWidgets.QMessageBox(self)
-        msg.setIcon(QtWidgets.QMessageBox.Warning)
-        msg.setWindowTitle("Output Folder Required")
-        msg.setText(requirement.message)
-        msg.setInformativeText(
-            "The GUI writes channel locations and alignment history to the output folder."
-        )
-        set_button = msg.addButton(
-            "Set Output Folder...", QtWidgets.QMessageBox.AcceptRole
-        )
-        msg.addButton(QtWidgets.QMessageBox.Cancel)
-        msg.setDefaultButton(set_button)
-        msg.exec_()
-
-        if msg.clickedButton() != set_button:
-            logger.info("Save cancelled: output directory is not set.")
-            return False
-
-        if not self.on_output_folder_selected():
-            logger.info("Save cancelled: no output folder selected.")
-            return False
-
-        if self.document.output_directory is None:
-            logger.error(
-                "Output folder selected but no probe output directory was derived."
-            )
-            return False
-        return True
+        return self.output_folder_prompt.ensure_for_save(requirement)
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
@@ -2207,7 +2128,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not isinstance(save_ready, Ok):
             if isinstance(save_ready, Blocked):
-                self._log_requirement(save_ready.first)
+                self.load_workflow_presenter.log_requirement(save_ready.first)
             return
 
         with BusyContext(
