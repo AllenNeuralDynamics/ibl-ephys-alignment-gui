@@ -5,10 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime
-from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.session_runtime import (
+    LoadDataAlreadyActive,
+    LoadDataCachedStreamAvailable,
+    LoadDataFreshRequired,
+    LoadDataTarget,
+    SessionRuntime,
+)
 
 
 class FakePlotDataFactory:
@@ -19,7 +26,7 @@ class FakePlotDataFactory:
 def _stream_runtime(collection: str = "streamA") -> EphysStreamRuntime:
     table = ChannelTable(
         local_coordinates=np.array([[0.0, 0.0], [0.0, 20.0]]),
-        shank_indices=np.array([0, 0]),
+        shank_indices=np.array([0, 1]),
     )
     stream = EphysStreamData(
         recording_id="rec1",
@@ -77,3 +84,111 @@ def test_cache_loaded_stream_stores_runtime_by_stream_key() -> None:
     assert runtime.stream_cache[("rec1", "streamA")] is stream_runtime
     assert runtime.active_stream_runtime is stream_runtime
     assert runtime.current_stream_key == ("rec1", "streamA")
+
+
+def test_cache_loaded_stream_data_builds_runtime_and_initializes_shank() -> None:
+    runtime = SessionRuntime()
+    stream = _stream_runtime().stream
+
+    stream_runtime = runtime.cache_loaded_stream_data(
+        stream,
+        FakePlotDataFactory(),
+        shank_idx=1,
+    )
+
+    assert stream_runtime.stream is stream
+    assert runtime.stream_cache[("rec1", "streamA")] is stream_runtime
+    assert runtime.active_stream_runtime is stream_runtime
+    assert runtime.current_stream_key == ("rec1", "streamA")
+    assert stream_runtime.current_shank_idx == 1
+    assert 1 in stream_runtime.shank_runtime_by_idx
+
+
+def test_cache_loaded_stream_data_skips_cache_on_shank_init_failure() -> None:
+    runtime = SessionRuntime()
+    stream = _stream_runtime().stream
+
+    with pytest.raises(IndexError):
+        runtime.cache_loaded_stream_data(
+            stream,
+            FakePlotDataFactory(),
+            shank_idx=3,
+        )
+
+    assert runtime.stream_cache == {}
+    assert runtime.active_stream_runtime is None
+    assert runtime.current_stream_key is None
+
+
+def test_plan_load_data_returns_already_active_for_loaded_active_stream_shank() -> None:
+    runtime = SessionRuntime()
+    stream_runtime = _stream_runtime()
+    stream_runtime.shank_runtime_for(1)
+    runtime.cache_loaded_stream(stream_runtime)
+
+    plan = runtime.plan_load_data(
+        LoadDataTarget(stream_key=("rec1", "streamA"), shank_idx=1),
+        data_loaded=True,
+    )
+
+    assert isinstance(plan, LoadDataAlreadyActive)
+    assert plan.target.stream_key == ("rec1", "streamA")
+    assert plan.target.shank_idx == 1
+
+
+def test_plan_load_data_returns_cached_when_stream_is_cached_but_not_active() -> None:
+    runtime = SessionRuntime()
+    stream_runtime = _stream_runtime()
+    stream_runtime.shank_runtime_for(1)
+    runtime.stream_cache[stream_runtime.stream_key] = stream_runtime
+
+    plan = runtime.plan_load_data(
+        LoadDataTarget(stream_key=("rec1", "streamA"), shank_idx=0),
+        data_loaded=True,
+    )
+
+    assert isinstance(plan, LoadDataCachedStreamAvailable)
+    assert plan.target.stream_key == ("rec1", "streamA")
+    assert plan.target.shank_idx == 0
+    assert plan.cached_shank_idx == 1
+
+
+def test_plan_load_data_returns_fresh_when_stream_is_not_cached() -> None:
+    runtime = SessionRuntime()
+
+    plan = runtime.plan_load_data(
+        LoadDataTarget(stream_key=("rec1", "streamA"), shank_idx=0),
+        data_loaded=True,
+    )
+
+    assert isinstance(plan, LoadDataFreshRequired)
+    assert plan.target.stream_key == ("rec1", "streamA")
+    assert plan.target.shank_idx == 0
+
+
+def test_plan_load_data_treats_missing_stream_key_as_fresh_load() -> None:
+    runtime = SessionRuntime()
+
+    plan = runtime.plan_load_data(
+        LoadDataTarget(stream_key=None, shank_idx=0),
+        data_loaded=True,
+    )
+
+    assert isinstance(plan, LoadDataFreshRequired)
+    assert plan.target.stream_key is None
+
+
+def test_prepare_fresh_load_discards_stale_cache_entry_and_active_stream() -> None:
+    runtime = SessionRuntime()
+    stream_runtime = _stream_runtime()
+    other_runtime = _stream_runtime("streamB")
+    runtime.cache_loaded_stream(stream_runtime)
+    runtime.stream_cache[other_runtime.stream_key] = other_runtime
+
+    stale = runtime.prepare_fresh_load(("rec1", "streamA"))
+
+    assert stale is stream_runtime
+    assert ("rec1", "streamA") not in runtime.stream_cache
+    assert runtime.stream_cache[("rec1", "streamB")] is other_runtime
+    assert runtime.active_stream_runtime is None
+    assert runtime.current_stream_key is None

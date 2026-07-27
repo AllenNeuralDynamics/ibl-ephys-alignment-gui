@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
+from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
     AlignmentHistologyData,
@@ -51,6 +52,11 @@ from ephys_alignment_gui.controller import (
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
+from ephys_alignment_gui.histology_data_workflow import (
+    HistologyDataWorkflow,
+    HistologyLoadResult,
+)
+from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plot_registry import (
     PlotMenu,
@@ -58,7 +64,12 @@ from ephys_alignment_gui.plot_registry import (
     resolve_plot_bounds,
     resolve_plot_payload,
 )
-from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
+from ephys_alignment_gui.session_runtime import (
+    LoadDataPlan,
+    LoadDataTarget,
+    SessionRuntime,
+)
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceCacheEntry
@@ -85,6 +96,14 @@ class ShankSelectionState:
     data_loaded: bool
 
 
+@dataclass(frozen=True)
+class FreshEphysDataLoaded:
+    """Fresh ephys stream data was loaded and cached."""
+
+    stream_runtime: Any
+    shank_idx: int
+
+
 @dataclass
 class AlignmentCommands:
     """Command-side app port.
@@ -97,6 +116,9 @@ class AlignmentCommands:
     _events: EventBus
     _display_state: AlignmentDisplayState
     _runtime: SessionRuntime
+    _probe_data_workflow: ProbeDataWorkflow
+    _histology_data_workflow: HistologyDataWorkflow
+    _plot_data_factory: PlotDataFactory
 
     def select_shank(
         self,
@@ -206,6 +228,33 @@ class AlignmentCommands:
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
         return self._controller.can_load_previous_alignments()
+
+    def load_fresh_ephys_data(
+        self,
+        shank_idx: int,
+    ) -> FreshEphysDataLoaded | Failed:
+        """Load selected-probe ephys data, cache runtime, and mark data loaded."""
+        try:
+            loaded = self._probe_data_workflow.load(shank_idx)
+            if not loaded.stream.ephys_dir:
+                return Failed("Failed to load ephys data")
+            stream_runtime = self._runtime.cache_loaded_stream_data(
+                loaded.stream,
+                self._plot_data_factory,
+                shank_idx=shank_idx,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to load ephys data: {exc}")
+
+        self._controller.finish_load_data(shank_idx)
+        return FreshEphysDataLoaded(
+            stream_runtime=stream_runtime,
+            shank_idx=shank_idx,
+        )
+
+    def load_histology_data(self) -> HistologyLoadResult:
+        """Load subject-level histology runtime data if it is available."""
+        return self._histology_data_workflow.load_if_needed()
 
     def set_unit_filter(self, unit_filter: str) -> Ok:
         """Select the unit subset used when preparing ephys plot data."""
@@ -327,6 +376,7 @@ class AlignmentQueries:
 
     document: AlignmentDocument
     runtime: SessionRuntime
+    data_context: AlignmentDataContext | None = None
     display_state: AlignmentDisplayState = field(default_factory=AlignmentDisplayState)
     derived_data_service: AlignmentDerivedDataService = field(
         default_factory=AlignmentDerivedDataService
@@ -353,13 +403,46 @@ class AlignmentQueries:
         """Return whether the requested stream/shank is already active."""
         if stream_key is None or not self.document.data_loaded:
             return False
-        stream_runtime = self.runtime.active_stream_runtime
         return (
-            stream_runtime is not None
-            and self.runtime.current_stream_key == stream_key
-            and stream_runtime.stream_key == stream_key
-            and stream_runtime.current_shank_idx == shank_idx
+            self.runtime.is_active_stream_shank(stream_key, shank_idx)
             and self._active_shank_idx() == shank_idx
+        )
+
+    def plan_load_data(
+        self,
+        stream_key: StreamKey | None,
+        shank_idx: int,
+    ) -> LoadDataPlan:
+        """Return the stream-cache plan for one load-data request."""
+        return self.runtime.plan_load_data(
+            LoadDataTarget(stream_key=stream_key, shank_idx=shank_idx),
+            data_loaded=self.document.data_loaded,
+        )
+
+    def stream_key_for_selection(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> StreamKey | None:
+        """Resolve the ephys stream key for a recording/probe selection."""
+        if self.data_context is None:
+            return None
+        try:
+            return self.data_context.stream_key_for_selection(recording_id, probe_name)
+        except Exception:
+            logger.warning(
+                "Could not resolve stream key for %s/%s",
+                recording_id,
+                probe_name,
+                exc_info=True,
+            )
+            return None
+
+    def histology_data_loaded(self) -> bool:
+        """Whether subject-level histology runtime data is already loaded."""
+        return (
+            self.histology_context is not None
+            and self.histology_context.brain_atlas is not None
         )
 
     def active_unit_filter(self) -> str:

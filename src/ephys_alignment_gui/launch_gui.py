@@ -83,7 +83,7 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankSelectionState,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
+from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
@@ -92,9 +92,17 @@ from ephys_alignment_gui.histology_panel_presenter import (
     HistologyPanelPresenter,
     HistologyPanelStyle,
 )
+from ephys_alignment_gui.histology_data_workflow import (
+    HistologyDataLoaded,
+    HistologyDataUnavailable,
+)
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
     ReferenceLinePlots,
+)
+from ephys_alignment_gui.session_runtime import (
+    LoadDataAlreadyActive,
+    LoadDataCachedStreamAvailable,
 )
 from ephys_alignment_gui.settings import (
     INPUT_ROOT_ENV_VAR,
@@ -290,8 +298,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.document = self.workspace.document
         self.display_state = self.workspace.display_state
         self.data_context = self.workspace.data_context
-        self.probe_data_workflow = self.workspace.probe_data_workflow
-        self.histology_data_service = self.workspace.histology_data_service
         self.histology_context = self.workspace.histology_context
         self.slice_service = self.workspace.slice_service
         self.probe_track_service = self.workspace.probe_track_service
@@ -1085,27 +1091,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe_name: str,
     ) -> StreamKey | None:
         """Return the ephys stream key for a recording/probe selection."""
-        mouse_root = self.data_context.mouse_root
-        if mouse_root is None:
-            return None
-        try:
-            probe = mouse_root.get_probe(recording_id, probe_name)
-        except Exception:
-            logger.warning(
-                "Could not resolve stream key for %s/%s",
-                recording_id,
-                probe_name,
-                exc_info=True,
-            )
-            return None
-        return probe.recording_id, probe.ephys_collection
-
-    def _new_stream_runtime(self, stream) -> EphysStreamRuntime:
-        """Build runtime ownership for a loaded ephys stream."""
-        return EphysStreamRuntime(
-            stream=stream,
-            plot_data_factory=self.plot_data_factory,
-        )
+        return self.app.queries.stream_key_for_selection(recording_id, probe_name)
 
     def _active_shank_idx(self) -> int:
         """Return the document-owned active shank index."""
@@ -1261,12 +1247,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.session_combobox.currentText(),
             probe_name,
         )
-        if self.app.queries.is_loaded_stream_shank(stream_key, target_shank):
+        load_plan = self.app.queries.plan_load_data(stream_key, target_shank)
+        if isinstance(load_plan, LoadDataAlreadyActive):
             logger.info(
                 "Data already loaded for stream %s shank %s; skipping load",
                 stream_key,
                 target_shank,
             )
+            return
+        if isinstance(load_plan, LoadDataCachedStreamAvailable):
+            self._capture_pending_reference_lines()
+            self._stash_and_detach_current()
+            cached_stream_key = load_plan.target.stream_key
+            assert cached_stream_key is not None
+            if self._activate_cached_stream(
+                self.session_combobox.currentText(),
+                probe_name,
+                cached_stream_key,
+            ):
+                self.load_data_button.setEnabled(True)
             return
 
         with BusyContext(
@@ -1284,8 +1283,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # dropdown <-> displayed-shank drift on load.
             # Drop any stale cache entry for this stream before rebuilding it,
             # so we never leave a torn-down session in the cache.
-            if stream_key is not None:
-                self.runtime.pop_cached_stream(stream_key)
+            self.runtime.prepare_fresh_load(stream_key)
             self._teardown_session()
             self.init_session_variables()
             selected_shank = self._select_shank_for_view(
@@ -1300,31 +1298,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             # Load ephys data (session-specific, always reload)
             ctx.update_message("Loading ephys data...")
             logger.info("Loading ephys data...")
-            loaded = self.probe_data_workflow.load(target_shank)
-            stream_runtime = self._new_stream_runtime(loaded.stream)
-            self.runtime.cache_loaded_stream(stream_runtime)
-            stream_runtime.shank_runtime_for(target_shank)
-
-            if not stream_runtime.stream.ephys_dir:
-                logger.error("Failed to load ephys data")
+            load_result = self.app.commands.load_fresh_ephys_data(target_shank)
+            if isinstance(load_result, Failed):
+                logger.error(load_result.message)
                 return
+            stream_runtime = load_result.stream_runtime
+            target_shank = load_result.shank_idx
 
             logger.info(f"Loaded ephys data from {stream_runtime.stream.ephys_dir}")
 
             # Load atlas and histology (subject-level, cached if same subject)
-            if self.histology_context.brain_atlas is None:
-                try:
-                    ctx.update_message("Loading atlas and histology...")
-                    logger.info("Loading atlas and histology...")
-                    mouse_root = self.data_context.mouse_root
-                    if mouse_root is None:
-                        raise RuntimeError("No mouse root loaded")
-                    histology_data = self.histology_data_service.load(mouse_root)
-                    self.histology_context.set(histology_data)
-                    logger.info("Atlas and histology loaded successfully")
-                except Exception as e:
-                    logger.error(f"Failed to load atlas/histology: {e}")
-                    self.histology_exists = False
+            if not self.app.queries.histology_data_loaded():
+                ctx.update_message("Loading atlas and histology...")
+                logger.info("Loading atlas and histology...")
+            histology_result = self.app.commands.load_histology_data()
+            if isinstance(histology_result, HistologyDataLoaded):
+                logger.info("Atlas and histology loaded successfully")
+            elif isinstance(histology_result, HistologyDataUnavailable):
+                logger.error(histology_result.message)
+                self.histology_exists = False
 
             # Setup view for current shank (common with switch_shank_view)
             ctx.update_message("Setting up visualization...")
@@ -1333,7 +1325,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 shank_idx=target_shank,
             )
 
-            self.controller.finish_load_data(target_shank)
             self._clear_empty_state()
             logger.info("=== Heavy data load complete ===")
 
@@ -1470,8 +1461,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
         stream_key = self._stream_key_for_selection(session, probe_name)
-        if stream_key is not None and self.runtime.has_cached_stream(stream_key):
-            if self._activate_cached_stream(session, probe_name, stream_key):
+        load_plan = self.app.queries.plan_load_data(
+            stream_key,
+            self._active_shank_idx(),
+        )
+        if isinstance(load_plan, LoadDataCachedStreamAvailable):
+            cached_stream_key = load_plan.target.stream_key
+            assert cached_stream_key is not None
+            if self._activate_cached_stream(
+                session,
+                probe_name,
+                cached_stream_key,
+            ):
                 self.load_data_button.setEnabled(True)
             return
 

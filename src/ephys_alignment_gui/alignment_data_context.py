@@ -59,6 +59,17 @@ class AlignmentDataContext:
         self.channel_table = None
         return probe
 
+    def stream_key_for_selection(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> tuple[str, str] | None:
+        """Return the ephys stream key for a recording/probe selection."""
+        if self.mouse_root is None or not recording_id or not probe_name:
+            return None
+        probe = self.mouse_root.get_probe(recording_id, probe_name)
+        return probe.recording_id, probe.ephys_collection
+
     def attach_channel_table(self, channel_table: ChannelTable) -> None:
         """Attach stream-level channel metadata for the selected probe."""
         if self.probe_info is None:

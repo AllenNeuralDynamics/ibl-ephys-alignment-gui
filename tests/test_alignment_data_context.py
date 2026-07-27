@@ -77,6 +77,19 @@ def test_select_probe_clears_previous_channel_table(tmp_path) -> None:
     assert context.n_shanks == 0
 
 
+def test_stream_key_for_selection_resolves_probe_collection(tmp_path) -> None:
+    probe = _probe(recording_id="rec1", probe_name="probeA", ephys_collection="ap")
+    context = AlignmentDataContext(mouse_root=_mouse_root(tmp_path, probe))
+
+    assert context.stream_key_for_selection("rec1", "probeA") == ("rec1", "ap")
+
+
+def test_stream_key_for_selection_returns_none_without_mouse_root() -> None:
+    context = AlignmentDataContext()
+
+    assert context.stream_key_for_selection("rec1", "probeA") is None
+
+
 def test_set_mouse_root_clears_selected_probe_and_channel_table(
     monkeypatch, tmp_path
 ) -> None:
