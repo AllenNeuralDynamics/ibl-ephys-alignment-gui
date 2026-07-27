@@ -48,6 +48,34 @@ class FakeCommands:
         return self.result
 
 
+class FakeSelectionView:
+    def __init__(
+        self,
+        calls: list[tuple],
+        *,
+        session_name: str = "rec",
+        probe_name: str = "probeA",
+    ) -> None:
+        self.calls = calls
+        self.session_name = session_name
+        self.probe_name = probe_name
+
+    def current_session(self) -> str:
+        return self.session_name
+
+    def current_probe(self) -> str:
+        return self.probe_name
+
+    def selection_widgets(self) -> list[str]:
+        return ["probe", "session"]
+
+    def populate_probe_shanks(self, shanks: list[str]) -> None:
+        self.calls.append(("populate", shanks))
+
+    def set_load_data_enabled(self, enabled: bool) -> None:
+        self.calls.append(("enable", enabled))
+
+
 def _presenter(
     *,
     commands: FakeCommands | None = None,
@@ -61,12 +89,16 @@ def _presenter(
 ) -> tuple[DesktopProbeSelectionPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
+    selection_view = FakeSelectionView(
+        calls,
+        session_name=session_name,
+        probe_name=probe_name,
+    )
     presenter = DesktopProbeSelectionPresenter(
         commands=commands,
+        selection_view=selection_view,
         callbacks=DesktopProbeSelectionCallbacks(
             mouse_root_loaded=lambda: mouse_root_loaded,
-            session_name=lambda: session_name,
-            probe_name=lambda: probe_name,
             active_shank_idx=lambda: active_shank_idx,
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
             stash_and_detach_current=lambda: calls.append(("stash",)),
@@ -79,14 +111,11 @@ def _presenter(
                 *args,
                 **kwargs,
             ),
-            selection_widgets=lambda: ["probe", "session"],
-            populate_shanks=lambda shanks: calls.append(("populate", shanks)),
             init_session_variables=lambda: calls.append(("init",)),
             select_shank_for_view=lambda shank_idx, source: (
                 calls.append(("select-shank", shank_idx, source)) or selected_shank
             ),
             display_output_directory=lambda path: calls.append(("output", path)),
-            set_load_data_enabled=lambda enabled: calls.append(("enable", enabled)),
         ),
     )
     return presenter, commands, calls

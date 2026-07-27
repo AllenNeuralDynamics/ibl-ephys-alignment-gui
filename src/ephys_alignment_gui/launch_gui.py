@@ -27,7 +27,6 @@ from ephys_alignment_gui.controller import (
     MouseRootLoaded,
     OutputRootSet,
     PreviousAlignmentSelected,
-    RecordingSelected,
     ShankSelected,
 )
 from ephys_alignment_gui.alignment_read_models import (
@@ -74,6 +73,11 @@ from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
+)
+from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
+from ephys_alignment_gui.desktop_session_selection_presenter import (
+    DesktopSessionSelectionCallbacks,
+    DesktopSessionSelectionPresenter,
 )
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExportCallbacks,
@@ -325,6 +329,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
+        self.selection_view = DesktopSelectionView(
+            session_model=self.session_list,
+            session_combobox=self.session_combobox,
+            probe_model=self.probe_list,
+            probe_combobox=self.probe_combobox,
+            shank_model=self.shank_list,
+            shank_combobox=self.shank_combobox,
+            load_data_button=self.load_data_button,
+        )
         self.ephys_panel = DesktopEphysPanelView(
             plots=EphysPanelPlots(
                 image=self.fig_img,
@@ -425,6 +438,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._connect_shank_changed_handlers()
         self._init_load_data_presenter()
         self._init_probe_selection_presenter()
+        self._init_session_selection_presenter()
         self._init_load_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -459,9 +473,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Wire desktop behavior for cached/fresh data loading."""
         self.load_data_presenter = DesktopLoadDataPresenter(
             app=self.app,
+            selection_view=self.selection_view,
             callbacks=DesktopLoadDataCallbacks(
-                session_name=self.session_combobox.currentText,
-                probe_name=self.probe_combobox.currentText,
                 capture_pending_reference_lines=self._capture_pending_reference_lines,
                 stash_and_detach_current=self._stash_and_detach_current,
                 teardown_session=self._teardown_session,
@@ -469,21 +482,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 select_shank_for_view=lambda shank_idx, source: (
                     self._select_shank_for_view(shank_idx, source=source)
                 ),
-                populate_shanks=self._populate_loaded_shanks,
                 display_output_directory=self._display_output_directory,
                 setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
                     preserve_plot_selection=preserve,
                     shank_idx=shank_idx,
                 ),
                 clear_empty_state=self._clear_empty_state,
-                set_load_data_enabled=self.load_data_button.setEnabled,
                 set_histology_available=self._set_histology_available,
                 busy_context=lambda *args, **kwargs: BusyContext(
                     self,
                     *args,
                     **kwargs,
                 ),
-                load_data_button=lambda: self.load_data_button,
             ),
         )
 
@@ -491,10 +501,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Wire desktop behavior for probe selection."""
         self.probe_selection_presenter = DesktopProbeSelectionPresenter(
             commands=self.app.commands,
+            selection_view=self.selection_view,
             callbacks=DesktopProbeSelectionCallbacks(
                 mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
-                session_name=self.session_combobox.currentText,
-                probe_name=self.probe_combobox.currentText,
                 active_shank_idx=self._active_shank_idx,
                 capture_pending_reference_lines=self._capture_pending_reference_lines,
                 stash_and_detach_current=self._stash_and_detach_current,
@@ -511,17 +520,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     *args,
                     **kwargs,
                 ),
-                selection_widgets=lambda: [
-                    self.probe_combobox,
-                    self.session_combobox,
-                ],
-                populate_shanks=self._populate_probe_shanks,
                 init_session_variables=self.init_session_variables,
                 select_shank_for_view=lambda shank_idx, source: (
                     self._select_shank_for_view(shank_idx, source=source)
                 ),
                 display_output_directory=self._display_output_directory,
-                set_load_data_enabled=self.load_data_button.setEnabled,
+            ),
+        )
+
+    def _init_session_selection_presenter(self) -> None:
+        """Wire desktop behavior for session selection."""
+        self.session_selection_presenter = DesktopSessionSelectionPresenter(
+            commands=self.app.commands,
+            selection_view=self.selection_view,
+            callbacks=DesktopSessionSelectionCallbacks(
+                mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
+                capture_pending_reference_lines=self._capture_pending_reference_lines,
+                evict_stream_cache=self._evict_stream_cache,
+                show_empty_state=self._show_empty_state,
+                select_first_probe=lambda: self.on_probe_combobox_activated(0),
             ),
         )
 
@@ -1285,10 +1302,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.mouse_root_line.setText(str(mouse_root))
 
             sessions = mr.sessions
-            self.populate_lists(sessions, self.session_list, self.session_combobox)
-            self.probe_list.clear()
-            self.shank_list.clear()
-            self.load_data_button.setEnabled(False)
+            self.selection_view.populate_sessions(sessions)
+            self.selection_view.clear_probes()
+            self.selection_view.clear_shanks()
+            self.selection_view.set_load_data_enabled(False)
             n_probes = sum(len(rec_probes) for rec_probes in mr.probes.values())
             logger.info(
                 f"Loaded mouse {mr.mouse_id!r} with "
@@ -1296,7 +1313,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
             # Auto-select the first session + probe, if any.
             if sessions:
-                self.session_combobox.setCurrentIndex(0)
+                self.selection_view.select_session_index(0)
                 self.on_session_combobox_activated(0)
         return True
 
@@ -1330,43 +1347,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when the user finishes editing the mouse-root text field."""
         text = self.mouse_root_line.text().strip()
         if not text:
-            self.load_data_button.setEnabled(False)
+            self.selection_view.set_load_data_enabled(False)
             return
         try:
             path = Path(text)
             ok = self.set_mouse_root(path)
         except Exception as e:
             logger.error(f"Invalid mouse-root path: {e}")
-            self.load_data_button.setEnabled(False)
+            self.selection_view.set_load_data_enabled(False)
             return
         if not ok:
-            self.load_data_button.setEnabled(False)
+            self.selection_view.set_load_data_enabled(False)
 
     def on_session_combobox_activated(self, _idx: int) -> None:
         """Populate the probe dropdown for the selected session."""
-        if self.data_context.mouse_root is None:
-            return
-        session = self.session_combobox.currentText()
-        if not session:
-            return
-        # The stream cache belongs to one recording session. Capture the
-        # current probe's WIP (survives stream eviction), then
-        # evict every cached stream so memory is bounded to one session.
-        self._capture_pending_reference_lines()
-        self._evict_stream_cache()
-        result = self.controller.select_recording(session)
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
-        assert isinstance(result, RecordingSelected)
-        self._show_empty_state()
-        probes = result.probes
-        self.populate_lists(probes, self.probe_list, self.probe_combobox)
-        self.shank_list.clear()
-        self.load_data_button.setEnabled(False)
-        if probes:
-            self.probe_combobox.setCurrentIndex(0)
-            self.on_probe_combobox_activated(0)
+        self.session_selection_presenter.session_selected()
 
     def on_probe_combobox_activated(self, _idx: int) -> None:
         """Select a probe: load channel info, populate shank list, derive output dir."""
@@ -1378,15 +1373,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         self.output_folder_line.setText(str(output_directory))
         logger.info(f"Output dir: {output_directory}")
-
-    def _populate_loaded_shanks(self, shanks: list[str], target_shank: int) -> None:
-        """Render shank labels for a loaded/cached stream."""
-        self.populate_lists(shanks, self.shank_list, self.shank_combobox)
-        self.shank_combobox.setCurrentIndex(target_shank)
-
-    def _populate_probe_shanks(self, shanks: list[str]) -> None:
-        """Render shank labels for a selected but not-yet-loaded probe."""
-        self.populate_lists(shanks, self.shank_list, self.shank_combobox)
 
     def _set_histology_available(self, available: bool) -> None:
         """Set the desktop histology availability flag."""

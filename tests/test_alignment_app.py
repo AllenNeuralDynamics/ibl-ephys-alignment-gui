@@ -30,6 +30,7 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     ProbeSelected,
+    RecordingSelected,
     ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
@@ -507,6 +508,17 @@ def test_commands_select_probe_metadata_delegates_to_controller() -> None:
     assert result.shanks == ["1/2", "2/2"]
     assert workspace.document.channel_info_loaded
     assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
+
+
+def test_commands_select_recording_metadata_delegates_to_controller() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+
+    result = workspace.app.commands.select_recording_metadata("rec")
+
+    assert isinstance(result, RecordingSelected)
+    assert result.probes == ["probeA"]
+    assert workspace.document.selected_probe is None
 
 
 def test_commands_activate_cached_ephys_data_uses_explicit_shank() -> None:

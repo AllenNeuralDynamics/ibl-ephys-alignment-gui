@@ -48,6 +48,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
     ProbeSelected,
+    RecordingSelected,
     ShankAlignmentRuntimeInitialized,
     ShankSelected,
 )
@@ -204,6 +205,13 @@ class AlignmentCommands:
             loaded.alignments,
             shank_idx=target_shank,
         )
+
+    def select_recording_metadata(
+        self,
+        recording_id: str,
+    ) -> RecordingSelected | Failed:
+        """Select a recording and return its probe choices."""
+        return self._controller.select_recording(recording_id)
 
     def select_probe_metadata(
         self,

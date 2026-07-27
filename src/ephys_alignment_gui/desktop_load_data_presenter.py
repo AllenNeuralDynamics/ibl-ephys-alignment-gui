@@ -27,21 +27,16 @@ logger = logging.getLogger(__name__)
 class DesktopLoadDataCallbacks:
     """Desktop callbacks used by the load-data presenter."""
 
-    session_name: Callable[[], str]
-    probe_name: Callable[[], str]
     capture_pending_reference_lines: Callable[[], None]
     stash_and_detach_current: Callable[[], None]
     teardown_session: Callable[[], None]
     init_session_variables: Callable[[], None]
     select_shank_for_view: Callable[[int, str], int | None]
-    populate_shanks: Callable[[list[str], int], None]
     display_output_directory: Callable[[Path | None], None]
     setup_session_view: Callable[[bool | None, int], None]
     clear_empty_state: Callable[[], None]
-    set_load_data_enabled: Callable[[bool], None]
     set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
-    load_data_button: Callable[[], Any]
 
 
 @dataclass
@@ -49,14 +44,15 @@ class DesktopLoadDataPresenter:
     """Coordinate desktop behavior for cached and fresh data loads."""
 
     app: Any
+    selection_view: Any
     callbacks: DesktopLoadDataCallbacks
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
         callbacks = self.callbacks
         target_shank = self.app.queries.active_shank_selection().shank_idx
-        session_name = callbacks.session_name()
-        probe_name = callbacks.probe_name()
+        session_name = self.selection_view.current_session()
+        probe_name = self.selection_view.current_probe()
         stream_key = self.app.queries.stream_key_for_selection(
             session_name,
             probe_name,
@@ -82,14 +78,14 @@ class DesktopLoadDataPresenter:
                 stream_key=cached_stream_key,
                 shank_idx=load_plan.target.shank_idx,
             ):
-                callbacks.set_load_data_enabled(True)
+                self.selection_view.set_load_data_enabled(True)
                 return True
             return False
 
         with callbacks.busy_context(
             "Loading heavy data...",
             "Data loaded successfully",
-            disable_widgets=callbacks.load_data_button(),
+            disable_widgets=self.selection_view.load_data_widget(),
         ) as ctx:
             logger.info("=== Starting heavy data load ===")
             callbacks.capture_pending_reference_lines()
@@ -158,7 +154,7 @@ class DesktopLoadDataPresenter:
             stream_key=cached_stream_key,
             shank_idx=load_plan.cached_shank_idx,
         ):
-            self.callbacks.set_load_data_enabled(True)
+            self.selection_view.set_load_data_enabled(True)
             return True
         return False
 
@@ -188,7 +184,10 @@ class DesktopLoadDataPresenter:
         callbacks.clear_empty_state()
 
         if result.probe.shanks:
-            callbacks.populate_shanks(result.probe.shanks, target_shank)
+            self.selection_view.populate_loaded_shanks(
+                result.probe.shanks,
+                target_shank,
+            )
         callbacks.display_output_directory(result.probe.output_directory)
 
         callbacks.setup_session_view(True, target_shank)

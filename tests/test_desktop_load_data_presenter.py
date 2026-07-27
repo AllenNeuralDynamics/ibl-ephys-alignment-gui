@@ -111,6 +111,34 @@ class FakeCommands:
         return self.histology_result
 
 
+class FakeSelectionView:
+    def __init__(
+        self,
+        calls: list[tuple],
+        *,
+        session_name: str = "rec",
+        probe_name: str = "probeA",
+    ) -> None:
+        self.calls = calls
+        self.session_name = session_name
+        self.probe_name = probe_name
+
+    def current_session(self) -> str:
+        return self.session_name
+
+    def current_probe(self) -> str:
+        return self.probe_name
+
+    def populate_loaded_shanks(self, shanks: list[str], shank_idx: int) -> None:
+        self.calls.append(("populate", shanks, shank_idx))
+
+    def set_load_data_enabled(self, enabled: bool) -> None:
+        self.calls.append(("enable-load", enabled))
+
+    def load_data_widget(self) -> str:
+        return "load-button"
+
+
 def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
     return CachedEphysDataActivated(
         stream_runtime=object(),
@@ -127,8 +155,6 @@ def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
 
 def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     return DesktopLoadDataCallbacks(
-        session_name=lambda: "rec",
-        probe_name=lambda: "probeA",
         capture_pending_reference_lines=lambda: calls.append(("capture",)),
         stash_and_detach_current=lambda: calls.append(("stash",)),
         teardown_session=lambda: calls.append(("teardown",)),
@@ -136,20 +162,15 @@ def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
         select_shank_for_view=lambda shank_idx, source: (
             calls.append(("select-shank", shank_idx, source)) or shank_idx
         ),
-        populate_shanks=lambda shanks, shank_idx: calls.append(
-            ("populate", shanks, shank_idx)
-        ),
         display_output_directory=lambda path: calls.append(("output", path)),
         setup_session_view=lambda preserve, shank_idx: calls.append(
             ("setup", preserve, shank_idx)
         ),
         clear_empty_state=lambda: calls.append(("clear-empty",)),
-        set_load_data_enabled=lambda enabled: calls.append(("enable-load", enabled)),
         set_histology_available=lambda available: calls.append(
             ("histology", available)
         ),
         busy_context=lambda *args, **kwargs: FakeBusyContext(calls, *args, **kwargs),
-        load_data_button=lambda: "load-button",
     )
 
 
@@ -164,7 +185,13 @@ def _presenter(
     queries = FakeQueries(plan=plan, histology_loaded=histology_loaded)
     commands = commands or FakeCommands()
     app = SimpleNamespace(queries=queries, commands=commands)
-    return DesktopLoadDataPresenter(app, _callbacks(calls)), commands, queries, calls
+    selection_view = FakeSelectionView(calls)
+    return (
+        DesktopLoadDataPresenter(app, selection_view, _callbacks(calls)),
+        commands,
+        queries,
+        calls,
+    )
 
 
 def test_load_heavy_data_skips_already_active_stream_shank() -> None:
