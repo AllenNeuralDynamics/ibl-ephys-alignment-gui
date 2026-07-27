@@ -43,6 +43,7 @@ from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     AlignmentEditNoop,
     Failed,
+    LoadDataPrepared,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
@@ -238,6 +239,15 @@ class AlignmentCommands:
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
         return self._controller.can_load_previous_alignments()
+
+    def prepare_fresh_ephys_load(
+        self,
+        stream_key: StreamKey | None,
+    ) -> LoadDataPrepared:
+        """Mark data unloaded and discard stale active/cache state."""
+        prepared = self._controller.prepare_load_data()
+        self._runtime.prepare_fresh_load(stream_key)
+        return prepared
 
     def load_fresh_ephys_data(
         self,

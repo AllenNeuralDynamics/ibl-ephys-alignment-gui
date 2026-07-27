@@ -20,7 +20,6 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.app import CachedEphysDataActivated
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -65,6 +64,10 @@ from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopOutputFolderPrompt,
     OutputFolderPromptCallbacks,
 )
+from ephys_alignment_gui.desktop_load_data_presenter import (
+    DesktopLoadDataCallbacks,
+    DesktopLoadDataPresenter,
+)
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
@@ -84,7 +87,6 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankSelectionState,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
@@ -93,17 +95,9 @@ from ephys_alignment_gui.histology_panel_presenter import (
     HistologyPanelPresenter,
     HistologyPanelStyle,
 )
-from ephys_alignment_gui.histology_data_workflow import (
-    HistologyDataLoaded,
-    HistologyDataUnavailable,
-)
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
     ReferenceLinePlots,
-)
-from ephys_alignment_gui.session_runtime import (
-    LoadDataAlreadyActive,
-    LoadDataCachedStreamAvailable,
 )
 from ephys_alignment_gui.settings import (
     INPUT_ROOT_ENV_VAR,
@@ -426,6 +420,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
+        self._init_load_data_presenter()
         self._init_load_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -452,8 +447,40 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.load_workflow_presenter = DesktopLoadWorkflowPresenter(
             can_load_data=self.controller.can_load_data,
-            load_heavy_data=self.load_heavy_data,
+            load_heavy_data=self.load_data_presenter.load_heavy_data,
             output_folder_prompt=self.output_folder_prompt,
+        )
+
+    def _init_load_data_presenter(self) -> None:
+        """Wire desktop behavior for cached/fresh data loading."""
+        self.load_data_presenter = DesktopLoadDataPresenter(
+            app=self.app,
+            callbacks=DesktopLoadDataCallbacks(
+                session_name=self.session_combobox.currentText,
+                probe_name=self.probe_combobox.currentText,
+                capture_pending_reference_lines=self._capture_pending_reference_lines,
+                stash_and_detach_current=self._stash_and_detach_current,
+                teardown_session=self._teardown_session,
+                init_session_variables=self.init_session_variables,
+                select_shank_for_view=lambda shank_idx, source: (
+                    self._select_shank_for_view(shank_idx, source=source)
+                ),
+                populate_shanks=self._populate_loaded_shanks,
+                display_output_directory=self._display_output_directory,
+                setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
+                    preserve_plot_selection=preserve,
+                    shank_idx=shank_idx,
+                ),
+                clear_empty_state=self._clear_empty_state,
+                set_load_data_enabled=self.load_data_button.setEnabled,
+                set_histology_available=self._set_histology_available,
+                busy_context=lambda *args, **kwargs: BusyContext(
+                    self,
+                    *args,
+                    **kwargs,
+                ),
+                load_data_button=lambda: self.load_data_button,
+            ),
         )
 
     def _init_previous_alignment_load_presenter(self) -> None:
@@ -1086,14 +1113,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.slice_panel.clear()
         self.histology_panel.clear()
 
-    def _stream_key_for_selection(
-        self,
-        recording_id: str,
-        probe_name: str,
-    ) -> StreamKey | None:
-        """Return the ephys stream key for a recording/probe selection."""
-        return self.app.queries.stream_key_for_selection(recording_id, probe_name)
-
     def _active_shank_idx(self) -> int:
         """Return the document-owned active shank index."""
         return self.app.queries.active_shank_selection().shank_idx
@@ -1189,137 +1208,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.runtime.clear_stream_cache()
         gc.collect()
 
-    def _activate_cached_stream(
-        self,
-        session_name: str,
-        probe_name: str,
-        stream_key: StreamKey,
-        shank_idx: int,
-    ) -> bool:
-        """Display an already-loaded stream from the cache — no heavy reload.
-
-        Reuses cached stream data and per-shank PlotData. A fresh view session
-        is created as a view adapter; document-owned edit state is projected
-        onto the active shank compatibility object.
-        """
-        self.init_session_variables()
-        result = self.app.commands.activate_cached_ephys_data(
-            recording_id=session_name,
-            probe_name=probe_name,
-            stream_key=stream_key,
-            shank_idx=shank_idx,
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        assert isinstance(result, CachedEphysDataActivated)
-        target_shank = result.shank_idx
-
-        self._clear_empty_state()
-
-        if result.probe.shanks:
-            self.populate_lists(
-                result.probe.shanks,
-                self.shank_list,
-                self.shank_combobox,
-            )
-            self.shank_combobox.setCurrentIndex(target_shank)
-        self._display_output_directory(result.probe.output_directory)
-
-        self.setup_session_view(preserve_plot_selection=True, shank_idx=target_shank)
-        logger.info(f"Activated cached stream {stream_key}")
-        return True
-
-    def load_heavy_data(self) -> None:
+    def load_heavy_data(self) -> bool:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
-
-        target_shank = self.app.queries.active_shank_selection().shank_idx
-        probe_name = self.probe_combobox.currentText()
-        stream_key = self._stream_key_for_selection(
-            self.session_combobox.currentText(),
-            probe_name,
-        )
-        load_plan = self.app.queries.plan_load_data(stream_key, target_shank)
-        if isinstance(load_plan, LoadDataAlreadyActive):
-            logger.info(
-                "Data already loaded for stream %s shank %s; skipping load",
-                stream_key,
-                target_shank,
-            )
-            return
-        if isinstance(load_plan, LoadDataCachedStreamAvailable):
-            self._capture_pending_reference_lines()
-            self._stash_and_detach_current()
-            cached_stream_key = load_plan.target.stream_key
-            assert cached_stream_key is not None
-            if self._activate_cached_stream(
-                self.session_combobox.currentText(),
-                probe_name,
-                cached_stream_key,
-                load_plan.target.shank_idx,
-            ):
-                self.load_data_button.setEnabled(True)
-            return
-
-        with BusyContext(
-            self,
-            "Loading heavy data...",
-            "Data loaded successfully",
-            disable_widgets=self.load_data_button,
-        ) as ctx:
-            logger.info("=== Starting heavy data load ===")
-            self._capture_pending_reference_lines()
-            prepared = self.controller.prepare_load_data()
-            # Preserve the shank the user has selected so a (re)load lands on
-            # that shank rather than snapping back to shank 0. Load Probe is a
-            # per-probe op; shank switching is done via the dropdown. Fixes the
-            # dropdown <-> displayed-shank drift on load.
-            # Drop any stale cache entry for this stream before rebuilding it,
-            # so we never leave a torn-down session in the cache.
-            self.runtime.prepare_fresh_load(stream_key)
-            self._teardown_session()
-            self.init_session_variables()
-            selected_shank = self._select_shank_for_view(
-                target_shank,
-                source="load-data",
-            )
-            if selected_shank is None:
-                return
-            target_shank = selected_shank
-            logger.info(f"Loading probe data, active shank index {target_shank}")
-
-            # Load ephys data (session-specific, always reload)
-            ctx.update_message("Loading ephys data...")
-            logger.info("Loading ephys data...")
-            load_result = self.app.commands.load_fresh_ephys_data(target_shank)
-            if isinstance(load_result, Failed):
-                logger.error(load_result.message)
-                return
-            stream_runtime = load_result.stream_runtime
-            target_shank = load_result.shank_idx
-
-            logger.info(f"Loaded ephys data from {stream_runtime.stream.ephys_dir}")
-
-            # Load atlas and histology (subject-level, cached if same subject)
-            if not self.app.queries.histology_data_loaded():
-                ctx.update_message("Loading atlas and histology...")
-                logger.info("Loading atlas and histology...")
-            histology_result = self.app.commands.load_histology_data()
-            if isinstance(histology_result, HistologyDataLoaded):
-                logger.info("Atlas and histology loaded successfully")
-            elif isinstance(histology_result, HistologyDataUnavailable):
-                logger.error(histology_result.message)
-                self.histology_exists = False
-
-            # Setup view for current shank (common with switch_shank_view)
-            ctx.update_message("Setting up visualization...")
-            self.setup_session_view(
-                preserve_plot_selection=prepared.preserve_plot_selection,
-                shank_idx=target_shank,
-            )
-
-            self._clear_empty_state()
-            logger.info("=== Heavy data load complete ===")
+        return self.load_data_presenter.load_heavy_data()
 
     def load_existing_alignments(self) -> bool:
         return self.previous_alignment_load_presenter.load_existing_alignments()
@@ -1453,21 +1344,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._stash_and_detach_current()
 
         # Cache HIT: show the already-loaded stream instantly (no heavy reload).
-        stream_key = self._stream_key_for_selection(session, probe_name)
-        load_plan = self.app.queries.plan_load_data(
-            stream_key,
-            self._active_shank_idx(),
-        )
-        if isinstance(load_plan, LoadDataCachedStreamAvailable):
-            cached_stream_key = load_plan.target.stream_key
-            assert cached_stream_key is not None
-            if self._activate_cached_stream(
-                session,
-                probe_name,
-                cached_stream_key,
-                load_plan.cached_shank_idx,
-            ):
-                self.load_data_button.setEnabled(True)
+        if self.load_data_presenter.present_cached_probe_selection(
+            session_name=session,
+            probe_name=probe_name,
+            target_shank=self._active_shank_idx(),
+        ):
             return
 
         # Cache MISS: clear the display and prepare the loader + a fresh session
@@ -1507,6 +1388,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return
         self.output_folder_line.setText(str(output_directory))
         logger.info(f"Output dir: {output_directory}")
+
+    def _populate_loaded_shanks(self, shanks: list[str], target_shank: int) -> None:
+        """Render shank labels for a loaded/cached stream."""
+        self.populate_lists(shanks, self.shank_list, self.shank_combobox)
+        self.shank_combobox.setCurrentIndex(target_shank)
+
+    def _set_histology_available(self, available: bool) -> None:
+        """Set the desktop histology availability flag."""
+        self.histology_exists = available
 
     def _capture_pending_reference_lines(self) -> None:
         """Capture active reference-line coordinates as document state.

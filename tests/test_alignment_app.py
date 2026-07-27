@@ -26,6 +26,7 @@ from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
     Failed,
+    LoadDataPrepared,
     NoPreviousAlignments,
     PreviousAlignmentSelected,
     ShankAlignmentRuntimeInitialized,
@@ -429,6 +430,26 @@ def test_commands_load_fresh_ephys_data_caches_runtime_and_marks_loaded() -> Non
     assert workspace.runtime.current_stream_key == ("rec", "stream")
     assert workspace.document.data_loaded
     assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 1)
+
+
+def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.mark_data_loaded(True)
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
+    )
+
+    result = workspace.app.commands.prepare_fresh_ephys_load(("rec", "stream"))
+
+    assert isinstance(result, LoadDataPrepared)
+    assert result.preserve_plot_selection
+    assert not workspace.document.data_loaded
+    assert workspace.runtime.active_stream_runtime is None
+    assert workspace.runtime.current_stream_key is None
+    assert ("rec", "stream") not in workspace.runtime.stream_cache
+    assert stream_runtime.stream_key == ("rec", "stream")
 
 
 def test_commands_load_fresh_ephys_data_failure_does_not_mark_loaded() -> None:
