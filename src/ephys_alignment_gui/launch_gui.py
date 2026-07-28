@@ -24,8 +24,6 @@ from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
     AlignmentOutputsSaved,
-    MouseRootLoaded,
-    OutputRootSet,
     PreviousAlignmentSelected,
     ShankSelected,
 )
@@ -66,6 +64,12 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
+from ephys_alignment_gui.desktop_mouse_root_presenter import (
+    DesktopMouseRootCallbacks,
+    DesktopMouseRootPresenter,
+)
+from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathPresenter
+from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
@@ -338,6 +342,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             shank_combobox=self.shank_combobox,
             load_data_button=self.load_data_button,
         )
+        self.path_view = DesktopPathView(
+            mouse_root_button=self.mouse_root_button,
+            mouse_root_line=self.mouse_root_line,
+            output_folder_line=self.output_folder_line,
+        )
         self.ephys_panel = DesktopEphysPanelView(
             plots=EphysPanelPlots(
                 image=self.fig_img,
@@ -436,9 +445,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self._connect_alignment_changed_handlers()
         self._connect_shank_changed_handlers()
+        self._init_output_path_presenter()
         self._init_load_data_presenter()
         self._init_probe_selection_presenter()
         self._init_session_selection_presenter()
+        self._init_mouse_root_presenter()
         self._init_load_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -457,7 +468,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             parent=self,
             callbacks=OutputFolderPromptCallbacks(
                 derive_output_directory_from_save_root=(
-                    self._derive_output_directory_from_save_root
+                    self.output_path_presenter.derive_output_directory_from_save_root
                 ),
                 has_output_directory=lambda: self.document.output_directory is not None,
                 select_output_folder=self.on_output_folder_selected,
@@ -467,6 +478,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             can_load_data=self.controller.can_load_data,
             load_heavy_data=self.load_data_presenter.load_heavy_data,
             output_folder_prompt=self.output_folder_prompt,
+        )
+
+    def _init_output_path_presenter(self) -> None:
+        """Wire desktop behavior for output path rendering."""
+        self.output_path_presenter = DesktopOutputPathPresenter(
+            commands=self.app.commands,
+            path_view=self.path_view,
         )
 
     def _init_load_data_presenter(self) -> None:
@@ -482,7 +500,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 select_shank_for_view=lambda shank_idx, source: (
                     self._select_shank_for_view(shank_idx, source=source)
                 ),
-                display_output_directory=self._display_output_directory,
+                display_output_directory=(
+                    self.output_path_presenter.display_output_directory
+                ),
                 setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
                     preserve_plot_selection=preserve,
                     shank_idx=shank_idx,
@@ -524,7 +544,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 select_shank_for_view=lambda shank_idx, source: (
                     self._select_shank_for_view(shank_idx, source=source)
                 ),
-                display_output_directory=self._display_output_directory,
+                display_output_directory=(
+                    self.output_path_presenter.display_output_directory
+                ),
             ),
         )
 
@@ -539,6 +561,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 evict_stream_cache=self._evict_stream_cache,
                 show_empty_state=self._show_empty_state,
                 select_first_probe=lambda: self.on_probe_combobox_activated(0),
+            ),
+        )
+
+    def _init_mouse_root_presenter(self) -> None:
+        """Wire desktop behavior for mouse-root loading."""
+        self.mouse_root_presenter = DesktopMouseRootPresenter(
+            commands=self.app.commands,
+            path_view=self.path_view,
+            selection_view=self.selection_view,
+            callbacks=DesktopMouseRootCallbacks(
+                clear_histology_context=self.histology_context.clear,
+                busy_context=lambda *args, **kwargs: BusyContext(
+                    self,
+                    *args,
+                    **kwargs,
+                ),
+                select_first_session=lambda: self.on_session_combobox_activated(0),
             ),
         )
 
@@ -1284,38 +1323,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :param mouse_root: Directory containing ``datapackage.json``.
         :return: ``True`` on success.
         """
-        with BusyContext(
-            self,
-            "Loading datapackage...",
-            "Mouse root loaded",
-            disable_widgets=[self.mouse_root_button, self.mouse_root_line],
-        ):
-            result = self.controller.set_mouse_root(mouse_root)
-            if isinstance(result, Failed):
-                logger.error(result.message)
-                return False
-            assert isinstance(result, MouseRootLoaded)
-            if result.root_changed:
-                self.histology_context.clear()
-            mr = result.mouse_root
-
-            self.mouse_root_line.setText(str(mouse_root))
-
-            sessions = mr.sessions
-            self.selection_view.populate_sessions(sessions)
-            self.selection_view.clear_probes()
-            self.selection_view.clear_shanks()
-            self.selection_view.set_load_data_enabled(False)
-            n_probes = sum(len(rec_probes) for rec_probes in mr.probes.values())
-            logger.info(
-                f"Loaded mouse {mr.mouse_id!r} with "
-                f"{len(sessions)} session(s), {n_probes} probe(s)"
-            )
-            # Auto-select the first session + probe, if any.
-            if sessions:
-                self.selection_view.select_session_index(0)
-                self.on_session_combobox_activated(0)
-        return True
+        return self.mouse_root_presenter.set_mouse_root(mouse_root)
 
     def on_mouse_root_selected(self) -> bool:
         """Open a QFileDialog for the mouse-root directory."""
@@ -1345,19 +1353,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_mouse_root_edited(self) -> None:
         """Triggered when the user finishes editing the mouse-root text field."""
-        text = self.mouse_root_line.text().strip()
-        if not text:
-            self.selection_view.set_load_data_enabled(False)
-            return
-        try:
-            path = Path(text)
-            ok = self.set_mouse_root(path)
-        except Exception as e:
-            logger.error(f"Invalid mouse-root path: {e}")
-            self.selection_view.set_load_data_enabled(False)
-            return
-        if not ok:
-            self.selection_view.set_load_data_enabled(False)
+        self.mouse_root_presenter.mouse_root_edited()
 
     def on_session_combobox_activated(self, _idx: int) -> None:
         """Populate the probe dropdown for the selected session."""
@@ -1366,13 +1362,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def on_probe_combobox_activated(self, _idx: int) -> None:
         """Select a probe: load channel info, populate shank list, derive output dir."""
         self.probe_selection_presenter.probe_selected()
-
-    def _display_output_directory(self, output_directory: Path | None) -> None:
-        """Reflect a derived per-probe output directory in the UI."""
-        if output_directory is None:
-            return
-        self.output_folder_line.setText(str(output_directory))
-        logger.info(f"Output dir: {output_directory}")
 
     def _set_histology_available(self, available: bool) -> None:
         """Set the desktop histology availability flag."""
@@ -1415,19 +1404,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when user clicks 'Load Data' button"""
         self.load_workflow_presenter.load_data_button_pressed()
 
-    def _derive_output_directory_from_save_root(self) -> bool:
-        """Derive and display the probe output directory if a save root exists."""
-        if self.document.output_root is None:
-            return False
-        result = self.controller.derive_output_directory()
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        if result.output_directory is None:
-            return False
-        self._display_output_directory(result.output_directory)
-        return True
-
     def _ensure_output_directory_for_save(
         self, requirement: Requirement | None = None
     ) -> bool:
@@ -1436,19 +1412,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
-        result = self.controller.set_output_root(save_root)
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        assert isinstance(result, OutputRootSet)
-        save_root = result.output_root
-        logger.info(f"Save root set to: {save_root}")
-        if result.output_directory is not None:
-            self._display_output_directory(result.output_directory)
-        else:
-            # No probe yet — show the save-root itself until a probe is picked.
-            self.output_folder_line.setText(str(save_root))
-        return True
+        return self.output_path_presenter.set_save_root(save_root)
 
     def on_output_folder_selected(self) -> bool:
         """Prompt the user for a save-root directory."""
@@ -1463,16 +1427,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_output_folder_edited(self) -> None:
         """Triggered when user finishes editing output_folder_line text field."""
-        text = self.output_folder_line.text().strip()
-        if not text:
-            return
-        try:
-            path = Path(text)
-        except Exception as e:
-            logger.error(f"Invalid output path: {e}")
-            return
-        # Editing this field is taken as setting a new save-root.
-        self.set_save_root(path)
+        self.output_path_presenter.output_folder_edited()
 
     def recreate_alignment_and_regions(
         self,

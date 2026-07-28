@@ -44,7 +44,10 @@ from ephys_alignment_gui.controller import (
     AlignmentEditNoop,
     Failed,
     LoadDataPrepared,
+    MouseRootLoaded,
     NoPreviousAlignments,
+    OutputDirectoryDerived,
+    OutputRootSet,
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
     ProbeSelected,
@@ -183,6 +186,18 @@ class AlignmentCommands:
             track_positions_um=track_positions_um,
             shank_idx=outgoing_shank_idx,
         )
+
+    def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
+        """Load a mouse root and update document metadata."""
+        return self._controller.set_mouse_root(mouse_root)
+
+    def set_output_root(self, output_root: Path) -> OutputRootSet | Failed:
+        """Set the output root and derive the active probe output directory."""
+        return self._controller.set_output_root(output_root)
+
+    def derive_output_directory(self) -> OutputDirectoryDerived | Failed:
+        """Derive the active per-probe output directory from document state."""
+        return self._controller.derive_output_directory()
 
     def load_previous_alignments(
         self,

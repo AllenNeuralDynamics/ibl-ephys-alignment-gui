@@ -27,7 +27,10 @@ from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     Failed,
     LoadDataPrepared,
+    MouseRootLoaded,
     NoPreviousAlignments,
+    OutputDirectoryDerived,
+    OutputRootSet,
     PreviousAlignmentSelected,
     ProbeSelected,
     RecordingSelected,
@@ -129,6 +132,28 @@ class FakeAlignmentRepository:
         if self.loaded_alignments is None:
             return None
         return LoadedAlignmentHistory(self.loaded_alignments)
+
+
+class FakePathController:
+    def __init__(self) -> None:
+        self.mouse_root_calls: list[Path] = []
+        self.output_root_calls: list[Path] = []
+        self.derive_calls = 0
+
+    def set_mouse_root(self, mouse_root: Path):
+        self.mouse_root_calls.append(mouse_root)
+        return MouseRootLoaded(
+            SimpleNamespace(root=mouse_root, mouse_id="mouse"),
+            root_changed=False,
+        )
+
+    def set_output_root(self, output_root: Path):
+        self.output_root_calls.append(output_root)
+        return OutputRootSet(output_root, output_root / "rec" / "probe")
+
+    def derive_output_directory(self):
+        self.derive_calls += 1
+        return OutputDirectoryDerived(Path("/results/rec/probe"))
 
 
 class FakeRuntimeInitializer:
@@ -493,6 +518,26 @@ def test_commands_load_fresh_ephys_data_missing_ephys_dir_does_not_cache() -> No
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.stream_cache == {}
+
+
+def test_commands_path_operations_delegate_to_controller() -> None:
+    workspace = AlignmentWorkspace()
+    controller = FakePathController()
+    workspace.app.commands._controller = controller
+
+    mouse_result = workspace.app.commands.set_mouse_root(Path("/data/mouse"))
+    root_result = workspace.app.commands.set_output_root(Path("/results"))
+    derived_result = workspace.app.commands.derive_output_directory()
+
+    assert isinstance(mouse_result, MouseRootLoaded)
+    assert mouse_result.mouse_root.root == Path("/data/mouse")
+    assert isinstance(root_result, OutputRootSet)
+    assert root_result.output_directory == Path("/results/rec/probe")
+    assert isinstance(derived_result, OutputDirectoryDerived)
+    assert derived_result.output_directory == Path("/results/rec/probe")
+    assert controller.mouse_root_calls == [Path("/data/mouse")]
+    assert controller.output_root_calls == [Path("/results")]
+    assert controller.derive_calls == 1
 
 
 def test_commands_select_probe_metadata_delegates_to_controller() -> None:
