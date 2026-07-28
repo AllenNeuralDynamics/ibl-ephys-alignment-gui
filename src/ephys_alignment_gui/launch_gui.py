@@ -20,28 +20,17 @@ from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+from ephys_alignment_gui.alignment_read_models import (
+    ActiveShankPlotDataState,
+    ActiveSliceMenuState,
+)
 from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     PreviousAlignmentSelected,
     ShankSelected,
 )
-from ephys_alignment_gui.alignment_read_models import (
-    ActiveShankPlotDataState,
-    ActiveSliceMenuState,
-)
 from ephys_alignment_gui.desktop_alignment_presenter import (
-    DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
-)
-from ephys_alignment_gui.desktop_ephys_plot_exporter import (
-    DesktopEphysPlotExporter,
-    EphysExportCallbacks,
-    EphysExportLayout,
-    EphysExportSizes,
-)
-from ephys_alignment_gui.desktop_ephys_plot_presenter import (
-    DesktopEphysPlotPresenter,
-    EphysPlotRenderCallbacks,
 )
 from ephys_alignment_gui.desktop_ephys_panel_layout import (
     DesktopEphysPanelLayout,
@@ -53,6 +42,16 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelPlots,
     EphysPanelStyle,
 )
+from ephys_alignment_gui.desktop_ephys_plot_exporter import (
+    DesktopEphysPlotExporter,
+    EphysExportCallbacks,
+    EphysExportLayout,
+    EphysExportSizes,
+)
+from ephys_alignment_gui.desktop_ephys_plot_presenter import (
+    DesktopEphysPlotPresenter,
+    EphysPlotRenderCallbacks,
+)
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_histology_presenter import (
     DesktopHistologyPresenter,
@@ -63,14 +62,14 @@ from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionPresenter,
     DesktopInteractionWidgets,
 )
+from ephys_alignment_gui.desktop_load_data_presenter import (
+    DesktopLoadDataCallbacks,
+    DesktopLoadDataPresenter,
+)
 from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopLoadWorkflowPresenter,
     DesktopOutputFolderPrompt,
     OutputFolderPromptCallbacks,
-)
-from ephys_alignment_gui.desktop_load_data_presenter import (
-    DesktopLoadDataCallbacks,
-    DesktopLoadDataPresenter,
 )
 from ephys_alignment_gui.desktop_mouse_root_presenter import (
     DesktopMouseRootCallbacks,
@@ -82,23 +81,6 @@ from ephys_alignment_gui.desktop_path_dialog_presenter import (
     DesktopPathDialogPresenter,
 )
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
-from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
-    DesktopPreviousAlignmentLoadPresenter,
-    PreviousAlignmentLoadCallbacks,
-)
-from ephys_alignment_gui.desktop_probe_selection_presenter import (
-    DesktopProbeSelectionCallbacks,
-    DesktopProbeSelectionPresenter,
-)
-from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
-from ephys_alignment_gui.desktop_save_workflow_presenter import (
-    DesktopSaveWorkflowCallbacks,
-    DesktopSaveWorkflowPresenter,
-)
-from ephys_alignment_gui.desktop_session_selection_presenter import (
-    DesktopSessionSelectionCallbacks,
-    DesktopSessionSelectionPresenter,
-)
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExportCallbacks,
     DesktopPlotExporter,
@@ -108,12 +90,28 @@ from ephys_alignment_gui.desktop_plot_exporter import (
     SliceExportStyle,
 )
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
+from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
+    DesktopPreviousAlignmentLoadPresenter,
+    PreviousAlignmentLoadCallbacks,
+)
+from ephys_alignment_gui.desktop_probe_selection_presenter import (
+    DesktopProbeSelectionCallbacks,
+    DesktopProbeSelectionPresenter,
+)
+from ephys_alignment_gui.desktop_save_workflow_presenter import (
+    DesktopSaveWorkflowCallbacks,
+    DesktopSaveWorkflowPresenter,
+)
+from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
+from ephys_alignment_gui.desktop_session_selection_presenter import (
+    DesktopSessionSelectionCallbacks,
+    DesktopSessionSelectionPresenter,
+)
 from ephys_alignment_gui.desktop_shank_presenter import (
-    DesktopShankPresenter,
     DesktopShankRenderCallbacks,
     DesktopShankSelectionState,
 )
-from ephys_alignment_gui.event_bus import EventSubscription
+from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
     HistologyPanelAxes,
@@ -323,8 +321,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.alignment_derived_data_service = (
             self.workspace.alignment_derived_data_service
         )
-        self.desktop_alignment_presenter = DesktopAlignmentPresenter(self.app.events)
-        self.desktop_shank_presenter = DesktopShankPresenter(self.app)
         self.plot_data_factory = self.workspace.plot_data_factory
         self.ephys_plot_presenter = DesktopEphysPlotPresenter(
             app=self.app,
@@ -341,7 +337,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.popup_manager = DesktopPopupManager()
         self.init_variables()
-        self._event_subscriptions: list[EventSubscription] = []
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
         self.selection_view = DesktopSelectionView(
@@ -448,22 +443,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 linear_fit_curve=self.fit_plot_lin,
             ),
         )
-        self.desktop_histology_presenter = DesktopHistologyPresenter(
-            app=self.app,
-            panel=self.histology_panel,
-            callbacks=self._desktop_histology_render_callbacks(),
-        )
         self._init_interaction_presenter()
         self._init_plot_exporter()
-        self.desktop_alignment_presenter.configure(
-            queries=self.app.queries,
-            callbacks=self._desktop_alignment_render_callbacks(),
+        self.desktop_workbench = DesktopWorkbench.create(
+            app=self.app,
+            histology_panel=self.histology_panel,
+            histology_callbacks=self._desktop_histology_render_callbacks(),
+            alignment_callbacks_factory=self._desktop_alignment_render_callbacks,
+            shank_callbacks=self._desktop_shank_render_callbacks(),
         )
-        self.desktop_shank_presenter.configure(
-            callbacks=self._desktop_shank_render_callbacks(),
-        )
-        self._connect_alignment_changed_handlers()
-        self._connect_shank_changed_handlers()
+        self.desktop_workbench.connect_events()
         self._init_output_path_presenter()
         self._init_load_data_presenter()
         self._init_probe_selection_presenter()
@@ -482,6 +471,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         self.allen = self.region_lookup_service.load_allen_csv()
         self.init_region_lookup(self.allen)
+
+    def closeEvent(self, event) -> None:
+        """Disconnect desktop event subscriptions before the Qt window closes."""
+        workbench = getattr(self, "desktop_workbench", None)
+        if workbench is not None:
+            workbench.disconnect_events()
+        super().closeEvent(event)
 
     def _init_load_workflow_presenter(self) -> None:
         """Wire desktop load workflow prompts and command gating."""
@@ -1019,13 +1015,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Compatibility wrapper for aligned histology rendering."""
         if not self.histology_exists:
             return
-        self.desktop_histology_presenter.render_active_aligned(fig, movable=movable)
+        self.desktop_workbench.render_active_aligned_histology(fig, movable=movable)
 
     def plot_histology_ref(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for reference histology rendering."""
         if not self.histology_exists:
             return
-        self.desktop_histology_presenter.render_active_reference(
+        self.desktop_workbench.render_active_reference_histology(
             fig,
             movable=movable,
         )
@@ -1119,26 +1115,17 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
         return isinstance(result, AlignmentEditApplied)
 
-    def _connect_alignment_changed_handlers(self) -> None:
-        self._event_subscriptions.extend(
-            self.desktop_alignment_presenter.connect_alignment_events()
-        )
-
-    def _connect_shank_changed_handlers(self) -> None:
-        self._event_subscriptions.extend(
-            self.desktop_shank_presenter.connect_shank_events()
-        )
-
-    def _desktop_alignment_render_callbacks(self) -> DesktopAlignmentRenderCallbacks:
+    def _desktop_alignment_render_callbacks(
+        self,
+        histology_presenter: DesktopHistologyPresenter,
+    ) -> DesktopAlignmentRenderCallbacks:
         return DesktopAlignmentRenderCallbacks(
             restore_lin_fit=self._restore_lin_fit_from_edit,
             clear_reference_lines=self.reference_lines.clear,
             capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
             reattach_reference_lines=self._reattach_reference_lines,
-            render_histology_alignment=(
-                self.desktop_histology_presenter.render_alignment_edit
-            ),
+            render_histology_alignment=histology_presenter.render_alignment_edit,
             plot_channels=self.slice_panel.plot_channels,
             refresh_perpendicular_histology=(
                 self.slice_panel.refresh_perpendicular_histology
@@ -1195,7 +1182,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        self.desktop_histology_presenter.render_active_scale_factor()
+        self.desktop_workbench.render_active_scale_factor()
 
     def plot_fit(self) -> None:
         """
@@ -1207,7 +1194,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        self.desktop_histology_presenter.render_active_fit()
+        self.desktop_workbench.render_active_fit()
 
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
@@ -1454,7 +1441,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
 
-        if not self.desktop_histology_presenter.render_active_panels():
+        if not self.desktop_workbench.render_active_histology_panels():
             return
         self.slice_panel.refresh_perpendicular_histology()
 
@@ -1482,7 +1469,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         logger.info("Setting up session view")
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
-        self.desktop_shank_presenter.render_loaded_shank(
+        self.desktop_workbench.render_loaded_shank(
             shank_idx=shank_idx,
             preserve_plot_selection=preserve_plot_selection,
         )
