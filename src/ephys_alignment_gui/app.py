@@ -78,8 +78,8 @@ from ephys_alignment_gui.session_runtime import (
     SessionRuntime,
 )
 from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
-from ephys_alignment_gui.slice_runtime import SliceCacheEntry
 from ephys_alignment_gui.workflow import Blocked, Ok
 
 logger = logging.getLogger(__name__)
@@ -581,6 +581,9 @@ class AlignmentQueries:
     derived_data_service: AlignmentDerivedDataService = field(
         default_factory=AlignmentDerivedDataService
     )
+    slice_data_runtime_service: SliceDataRuntimeService = field(
+        default_factory=SliceDataRuntimeService
+    )
     histology_context: Any | None = None
     slice_service: Any | None = None
     slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
@@ -796,12 +799,10 @@ class AlignmentQueries:
             return None
         _key, active_alignment, shank_runtime = context
         try:
-            channel_locations_ras = (
-                self.derived_data_service.compute_channel_locations(
-                    ephysalign=shank_runtime.ephysalign,
-                    feature=active_alignment.feature,
-                    track=active_alignment.track,
-                )
+            channel_locations_ras = self.derived_data_service.compute_channel_locations(
+                ephysalign=shank_runtime.ephysalign,
+                feature=active_alignment.feature,
+                track=active_alignment.track,
             )
             region_ids = self.histology_context.brain_atlas.get_labels(
                 channel_locations_ras
@@ -819,14 +820,7 @@ class AlignmentQueries:
 
     def prepare_active_slice_screen_data(self) -> ActiveSliceDataState | None:
         """Materialize active slice data when histology runtime is available."""
-        if (
-            self.histology_context is None
-            or self.histology_context.brain_atlas is None
-        ):
-            shank_runtime = self._active_shank_runtime()
-            if shank_runtime is not None:
-                shank_runtime.slice_data = {}
-                shank_runtime.fp_slice_data = None
+        if not self._histology_slices_available():
             return None
         return self.ensure_active_slice_data_state()
 
@@ -1030,54 +1024,25 @@ class AlignmentQueries:
     def ensure_active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Build/cache and return coronal slice data for the active alignment."""
         context = self._active_alignment_context()
-        if context is None:
+        if context is None or not self._histology_slices_available():
             return None
         key, _active_alignment, shank_runtime = context
-        if self.histology_context is None or self.slice_service is None:
-            return None
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            return None
-        track = shank_runtime.ephysalign.track_interpolation_ras
-
-        def build_slice() -> SliceCacheEntry:
-            return SliceCacheEntry(
-                slice_data=self.slice_service.build_slice_set(
-                    brain_atlas=brain_atlas,
-                    histology_images=self.histology_context.histology_images,
-                    lazy_channel_paths=self.histology_context.lazy_channel_paths,
-                    track_interpolation_ras=track,
-                ),
-                fp_slice_data=None,
-            )
-
-        entry = shank_runtime.slice_runtime.get_or_build_coronal_slice(
-            alignment_key=key,
-            track_interpolation_ras=track,
-            builder=build_slice,
-        )
-        return ActiveSliceDataState(
+        return self.slice_data_runtime_service.ensure_coronal_slice_state(
             key=key,
-            slice_data=entry.slice_data,
-            fp_slice_data=entry.fp_slice_data,
+            shank_runtime=shank_runtime,
+            histology_context=self.histology_context,
+            slice_service=self.slice_service,
         )
 
     def active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Return currently active coronal slice data without building it."""
         context = self._active_alignment_context()
-        if context is None:
+        if context is None or not self._histology_slices_available():
             return None
         key, _active_alignment, shank_runtime = context
-        entry = shank_runtime.slice_runtime.cached_coronal_slice(
-            alignment_key=key,
-            track_interpolation_ras=shank_runtime.ephysalign.track_interpolation_ras,
-        )
-        if entry is None:
-            return None
-        return ActiveSliceDataState(
+        return self.slice_data_runtime_service.cached_coronal_slice_state(
             key=key,
-            slice_data=entry.slice_data,
-            fp_slice_data=entry.fp_slice_data,
+            shank_runtime=shank_runtime,
         )
 
     def active_slice_data_by_attr(self) -> dict[str, Any]:
@@ -1175,78 +1140,27 @@ class AlignmentQueries:
     ) -> PerpendicularSliceRenderState | None:
         """Build/cache and return a perpendicular slice render payload."""
         context = self._active_alignment_context()
-        if context is None:
+        if context is None or not self._histology_slices_available():
             return None
         key, active_alignment, shank_runtime = context
-        if self.histology_context is None or self.slice_service is None:
-            return None
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            return None
-
         histology = self._compute_active_histology(active_alignment, shank_runtime)
-        grid = self._perpendicular_feature_grid_um(
+        return self.slice_data_runtime_service.perpendicular_slice_state(
+            key=key,
+            active_alignment=active_alignment,
             shank_runtime=shank_runtime,
             histology=histology,
-            brain_atlas=brain_atlas,
+            histology_context=self.histology_context,
+            slice_service=self.slice_service,
+            channel_name=channel_name,
             extent_m=extent_m,
             probe_margin_um=probe_margin_um,
         )
-        if grid is None:
-            return None
-        feature_grid_um, feature_grid_m, n_perp_samples = grid
 
-        cache_key = shank_runtime.slice_runtime.perpendicular_key(
-            alignment_key=key,
-            channel_name=channel_name,
-            track_interpolation_ras=shank_runtime.ephysalign.track_interpolation_ras,
-            ephys_depths_along_track=(
-                shank_runtime.ephysalign.ephys_depths_along_track
-            ),
-            feature_ref=active_alignment.feature,
-            track_ref=active_alignment.track,
-            feature_grid_m=feature_grid_m,
-            extent_m=extent_m,
-            n_perp_samples=n_perp_samples,
-        )
-
-        def build_perpendicular_image() -> Any:
-            return self.slice_service.build_perpendicular_slice_image(
-                brain_atlas=brain_atlas,
-                histology_images=self.histology_context.histology_images,
-                lazy_channel_paths=self.histology_context.lazy_channel_paths,
-                ephysalign=shank_runtime.ephysalign,
-                feature_ref=active_alignment.feature,
-                track_ref=active_alignment.track,
-                feature_grid_m=feature_grid_m,
-                channel_name=channel_name,
-                extent_m=extent_m,
-                n_perp_samples=n_perp_samples,
-            )
-
-        try:
-            image = shank_runtime.slice_runtime.get_or_build_perpendicular_slice(
-                key=cache_key,
-                builder=build_perpendicular_image,
-            )
-        except Exception:
-            logger.warning(
-                "Could not build perpendicular slice for channel '%s'",
-                channel_name,
-                exc_info=True,
-            )
-            return None
-
-        return PerpendicularSliceRenderState(
-            key=key,
-            channel_name=channel_name,
-            image=image,
-            extent_um=float(extent_m) * 1e6,
-            feature_min_um=float(feature_grid_um[0]),
-            feature_max_um=float(feature_grid_um[-1]),
-            n_perp_samples=n_perp_samples,
-            n_depths=len(feature_grid_um),
-            channel_depths_um=np.asarray(shank_runtime.chn_depths, dtype=float),
+    def _histology_slices_available(self) -> bool:
+        return (
+            self.histology_context is not None
+            and getattr(self.histology_context, "brain_atlas", None) is not None
+            and self.slice_service is not None
         )
 
     def _plot_menu_state_for_plotdata(
@@ -1357,57 +1271,6 @@ class AlignmentQueries:
             tip_bounds_um=tip_bounds_um,
             top_bounds_um=top_bounds_um,
         )
-
-    def _perpendicular_feature_grid_um(
-        self,
-        *,
-        shank_runtime: ShankRuntime,
-        histology: AlignmentHistologyData,
-        brain_atlas: Any,
-        extent_m: float,
-        probe_margin_um: float,
-    ) -> tuple[Any, Any, int] | None:
-        depths = shank_runtime.chn_depths
-        if depths is None:
-            return None
-        channel_depths_um = np.asarray(depths, dtype=float)
-        if channel_depths_um.size == 0:
-            return None
-        finite_depths_um = channel_depths_um[np.isfinite(channel_depths_um)]
-        if finite_depths_um.size == 0:
-            return None
-
-        dv_voxel_m = abs(float(brain_atlas.bc.dxyz[2]))
-        if dv_voxel_m <= 0:
-            return None
-
-        feat_min_um = min(0.0, float(finite_depths_um.min())) - probe_margin_um
-        feat_max_um = float(finite_depths_um.max()) + probe_margin_um
-        regions = histology.histology.region
-        try:
-            has_regions = regions is not None and len(regions) > 0
-        except TypeError:
-            has_regions = regions is not None
-        if has_regions:
-            try:
-                reg = np.asarray(regions, dtype=float)
-            except (TypeError, ValueError):
-                logger.debug("Could not coerce histology regions for slice bounds")
-            else:
-                reg = reg[np.isfinite(reg)]
-                if reg.size:
-                    feat_min_um = min(feat_min_um, float(reg.min()))
-                    feat_max_um = max(feat_max_um, float(reg.max()))
-
-        n_depths = int(round((feat_max_um - feat_min_um) * 1e-6 / dv_voxel_m)) + 1
-        if n_depths <= 1:
-            n_depths = 2
-        feature_grid_um = np.linspace(feat_min_um, feat_max_um, n_depths)
-        feature_grid_m = feature_grid_um * 1e-6
-        n_perp_samples = int(round(2 * float(extent_m) / dv_voxel_m)) + 1
-        if n_perp_samples <= 1:
-            n_perp_samples = 2
-        return feature_grid_um, feature_grid_m, n_perp_samples
 
     def _active_shank_idx(self) -> int:
         key = self.document.selected_alignment_key

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Hashable
 from dataclasses import dataclass, field
 from typing import Any
 
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
-from ephys_alignment_gui.slice_runtime import SliceCacheEntry, SliceRuntime
+from ephys_alignment_gui.slice_runtime import SliceRuntime
 
 
 @dataclass
@@ -54,59 +53,3 @@ class ShankRuntime:
     def shank_idx(self) -> int:
         """Zero-based shank index within the stream."""
         return self.collection.shank_idx
-
-    @property
-    def slice_data(self) -> Any:
-        """Active coronal slice data, projected for legacy callers."""
-        return self.slice_runtime.active_slice_data
-
-    @slice_data.setter
-    def slice_data(self, value: Any) -> None:
-        self.slice_runtime.set_active_slice_data(value, self.fp_slice_data)
-
-    @property
-    def fp_slice_data(self) -> Any:
-        """Active feature-space slice data, projected for legacy callers."""
-        return self.slice_runtime.active_fp_slice_data
-
-    @fp_slice_data.setter
-    def fp_slice_data(self, value: Any) -> None:
-        self.slice_runtime.set_active_slice_data(self.slice_data, value)
-
-    def cached_slice(
-        self,
-        track: NDArray,
-        alignment_key: Hashable | None = None,
-    ) -> tuple[Any, Any] | None:
-        """Return cached ``(slice_data, fp_slice_data)`` for ``track``."""
-        entry = self.slice_runtime.cached_coronal_slice(
-            alignment_key=self._slice_alignment_key(alignment_key),
-            track_interpolation_ras=track,
-        )
-        if entry is None:
-            return None
-        return entry.slice_data, entry.fp_slice_data
-
-    def set_slice(
-        self,
-        slice_data: Any,
-        fp_slice_data: Any,
-        track: NDArray,
-        alignment_key: Hashable | None = None,
-    ) -> SliceCacheEntry:
-        """Cache slice data built for ``track``."""
-        return self.slice_runtime.set_coronal_slice(
-            alignment_key=self._slice_alignment_key(alignment_key),
-            track_interpolation_ras=track,
-            slice_data=slice_data,
-            fp_slice_data=fp_slice_data,
-        )
-
-    def clear_slice_cache(self) -> None:
-        """Clear cached anatomical slice data for this shank."""
-        self.slice_runtime.clear()
-
-    def _slice_alignment_key(self, alignment_key: Hashable | None) -> Hashable:
-        if alignment_key is not None:
-            return alignment_key
-        return ("legacy", self.shank_idx)

@@ -402,6 +402,12 @@ def _queries_with_cached_slice(
             )
         ),
         derived_data_service=derived or FakeDerivedDataService(),
+        histology_context=SimpleNamespace(
+            brain_atlas=FakeBrainAtlas(),
+            histology_images={},
+            lazy_channel_paths={},
+        ),
+        slice_service=FakeSliceService(),
     )
     return queries, key, ephysalign
 

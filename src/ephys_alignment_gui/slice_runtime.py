@@ -66,25 +66,6 @@ class SliceRuntime:
     def __init__(self) -> None:
         self._coronal_slices: dict[CoronalSliceKey, SliceCacheEntry] = {}
         self._perpendicular_slices: dict[PerpendicularSliceKey, NDArray] = {}
-        self._active_coronal_entry: SliceCacheEntry = SliceCacheEntry(None, None)
-        self._active_coronal_key: CoronalSliceKey | None = None
-
-    @property
-    def active_slice_data(self) -> Any:
-        """Slice data projected for legacy view/session call sites."""
-        return self._active_coronal_entry.slice_data
-
-    @property
-    def active_fp_slice_data(self) -> Any:
-        """Feature-space slice data projected for legacy call sites."""
-        return self._active_coronal_entry.fp_slice_data
-
-    def set_active_slice_data(self, slice_data: Any, fp_slice_data: Any) -> None:
-        """Set the active legacy slice projection without adding a cache key."""
-        self._active_coronal_entry = SliceCacheEntry(slice_data, fp_slice_data)
-        self._active_coronal_key = None
-        if slice_data is None and fp_slice_data is None:
-            self.clear()
 
     def coronal_key(
         self,
@@ -110,9 +91,6 @@ class SliceRuntime:
             track_interpolation_ras=track_interpolation_ras,
         )
         entry = self._coronal_slices.get(key)
-        if entry is not None:
-            self._active_coronal_key = key
-            self._active_coronal_entry = entry
         return entry
 
     def set_coronal_slice(
@@ -130,8 +108,6 @@ class SliceRuntime:
         )
         entry = SliceCacheEntry(slice_data, fp_slice_data)
         self._coronal_slices[key] = entry
-        self._active_coronal_key = key
-        self._active_coronal_entry = entry
         return entry
 
     def get_or_build_coronal_slice(
@@ -210,16 +186,8 @@ class SliceRuntime:
             for key, value in self._perpendicular_slices.items()
             if key.alignment_key != alignment_key
         }
-        if (
-            self._active_coronal_key is not None
-            and self._active_coronal_key.alignment_key == alignment_key
-        ):
-            self._active_coronal_key = None
-            self._active_coronal_entry = SliceCacheEntry(None, None)
 
     def clear(self) -> None:
         """Clear all cached slice data."""
         self._coronal_slices.clear()
         self._perpendicular_slices.clear()
-        self._active_coronal_key = None
-        self._active_coronal_entry = SliceCacheEntry(None, None)

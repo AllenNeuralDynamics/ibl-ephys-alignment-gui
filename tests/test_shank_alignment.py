@@ -126,18 +126,6 @@ def test_ordered_keys_newest_first():
     ]
 
 
-def test_cached_slice_hit_and_miss():
-    sa = ShankAlignment(0)
-    track = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
-    assert sa.cached_slice(track) is None  # nothing cached yet
-    sa.set_slice({"ccf": "img"}, None, track)
-    hit = sa.cached_slice(track)
-    assert hit == ({"ccf": "img"}, None)
-    # A different track (re-aligned) misses.
-    other = track + 1.0
-    assert sa.cached_slice(other) is None
-
-
 def test_runtime_fields_project_to_attached_shank_runtime() -> None:
     collection = SimpleNamespace(
         shank_idx=0,

@@ -28,6 +28,7 @@ from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
 from ephys_alignment_gui.workflow import WorkflowPolicy
@@ -53,6 +54,9 @@ class AlignmentWorkspace:
         default_factory=HistologyDataContext
     )
     slice_service: SliceService = field(default_factory=SliceService)
+    slice_data_runtime_service: SliceDataRuntimeService = field(
+        default_factory=SliceDataRuntimeService
+    )
     probe_track_service: ProbeTrackService = field(default_factory=ProbeTrackService)
     region_lookup_service: RegionLookupService = field(
         default_factory=RegionLookupService
@@ -121,6 +125,7 @@ class AlignmentWorkspace:
                 data_context=self.data_context,
                 display_state=self.display_state,
                 derived_data_service=self.alignment_derived_data_service,
+                slice_data_runtime_service=self.slice_data_runtime_service,
                 histology_context=self.histology_context,
                 slice_service=self.slice_service,
                 slice_display_policy=self.slice_display_policy,

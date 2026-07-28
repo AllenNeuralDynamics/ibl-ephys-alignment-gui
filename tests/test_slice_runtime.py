@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import numpy as np
 
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.shank_runtime import ShankRuntime
-from ephys_alignment_gui.slice_runtime import SliceCacheEntry, SliceRuntime
+from ephys_alignment_gui.slice_runtime import SliceRuntime
 
 
 def test_coronal_slice_cache_hits_by_alignment_key_and_track() -> None:
@@ -30,7 +27,6 @@ def test_coronal_slice_cache_hits_by_alignment_key_and_track() -> None:
 
     assert hit is not None
     assert hit.slice_data is slice_data
-    assert runtime.active_slice_data is slice_data
 
 
 def test_coronal_slice_cache_misses_when_track_changes() -> None:
@@ -140,29 +136,3 @@ def test_invalidate_alignment_removes_only_matching_cached_slices() -> None:
         )
         is not None
     )
-
-
-def test_shank_runtime_projects_slice_data_from_slice_runtime() -> None:
-    collection = SimpleNamespace(
-        shank_idx=0,
-        local_coordinates=np.array([[0.0, 0.0]]),
-        depths=np.array([0.0]),
-    )
-    runtime = ShankRuntime(collection)
-    key = AlignmentKey("rec1", "streamA", 0)
-    track = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-
-    entry = runtime.set_slice(
-        {"ccf": np.array([[1.0]])},
-        None,
-        track,
-        alignment_key=key,
-    )
-
-    assert isinstance(entry, SliceCacheEntry)
-    hit = runtime.cached_slice(track, alignment_key=key)
-    assert hit is not None
-    assert hit[0] is runtime.slice_data
-    assert hit[1] is runtime.fp_slice_data
-    runtime.clear_slice_cache()
-    assert runtime.slice_data is None

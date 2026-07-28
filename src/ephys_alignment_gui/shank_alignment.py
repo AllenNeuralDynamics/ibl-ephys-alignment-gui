@@ -19,7 +19,6 @@ construction:
 from __future__ import annotations
 
 import logging
-from collections.abc import Hashable
 from typing import Any
 
 import numpy as np
@@ -29,7 +28,6 @@ from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
 from ephys_alignment_gui.alignment_state import AlignmentState
 from ephys_alignment_gui.shank_runtime import ShankRuntime
-from ephys_alignment_gui.slice_runtime import SliceCacheEntry, SliceRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +174,6 @@ class ShankAlignment:
         self._region_label_fp: Any = None
         self._region_colour_fp: Any = None
 
-        self._slice_runtime = SliceRuntime()
-
         # -- Output dicts produced on save --
         self.channel_dict: dict[str, dict[str, Any]] = {}
         self.ccf_channel_dict: dict[str, dict[str, Any]] = {}
@@ -190,34 +186,6 @@ class ShankAlignment:
                 f"to shank {self.shank_idx}"
             )
         self.runtime = runtime
-
-    @property
-    def slice_data(self) -> Any:
-        """Active coronal slice data projected from runtime ownership."""
-        if self.runtime is not None:
-            return self.runtime.slice_data
-        return self._slice_runtime.active_slice_data
-
-    @slice_data.setter
-    def slice_data(self, value: Any) -> None:
-        if self.runtime is not None:
-            self.runtime.slice_data = value
-            return
-        self._slice_runtime.set_active_slice_data(value, self.fp_slice_data)
-
-    @property
-    def fp_slice_data(self) -> Any:
-        """Active feature-space slice data projected from runtime ownership."""
-        if self.runtime is not None:
-            return self.runtime.fp_slice_data
-        return self._slice_runtime.active_fp_slice_data
-
-    @fp_slice_data.setter
-    def fp_slice_data(self, value: Any) -> None:
-        if self.runtime is not None:
-            self.runtime.fp_slice_data = value
-            return
-        self._slice_runtime.set_active_slice_data(self.slice_data, value)
 
     # -- Alignment history helpers --
 
@@ -241,59 +209,3 @@ class ShankAlignment:
         ``("original")`` and out-of-range indices yield ``(None, None)``.
         """
         return self.alignment_state.get_alignment_idx(idx)
-
-    # -- Cached atlas/histology slice --
-
-    def cached_slice(
-        self,
-        track: NDArray,
-        alignment_key: Hashable | None = None,
-    ) -> tuple[Any, Any] | None:
-        """Return this shank's cached ``(slice_data, fp_slice_data)``.
-
-        Returns ``None`` if nothing is cached yet, or if ``track`` differs from
-        the track the cache was built for (i.e. the shank was re-aligned).
-        """
-        if self.runtime is not None:
-            return self.runtime.cached_slice(track, alignment_key=alignment_key)
-        entry = self._slice_runtime.cached_coronal_slice(
-            alignment_key=self._slice_alignment_key(alignment_key),
-            track_interpolation_ras=track,
-        )
-        if entry is None:
-            return None
-        return entry.slice_data, entry.fp_slice_data
-
-    def set_slice(
-        self,
-        slice_data: Any,
-        fp_slice_data: Any,
-        track: NDArray,
-        alignment_key: Hashable | None = None,
-    ) -> SliceCacheEntry:
-        """Cache the slice built for ``track`` on this shank."""
-        if self.runtime is not None:
-            return self.runtime.set_slice(
-                slice_data,
-                fp_slice_data,
-                track,
-                alignment_key=alignment_key,
-            )
-        return self._slice_runtime.set_coronal_slice(
-            alignment_key=self._slice_alignment_key(alignment_key),
-            track_interpolation_ras=track,
-            slice_data=slice_data,
-            fp_slice_data=fp_slice_data,
-        )
-
-    def clear_slice_cache(self) -> None:
-        """Clear cached anatomical slice data for this shank."""
-        if self.runtime is not None:
-            self.runtime.clear_slice_cache()
-            return
-        self._slice_runtime.clear()
-
-    def _slice_alignment_key(self, alignment_key: Hashable | None) -> Hashable:
-        if alignment_key is not None:
-            return alignment_key
-        return ("legacy", self.shank_idx)
