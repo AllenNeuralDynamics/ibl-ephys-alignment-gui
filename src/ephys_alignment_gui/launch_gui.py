@@ -55,6 +55,7 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelPlots,
     EphysPanelStyle,
 )
+from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopLoadWorkflowPresenter,
     DesktopOutputFolderPrompt,
@@ -69,6 +70,10 @@ from ephys_alignment_gui.desktop_mouse_root_presenter import (
     DesktopMouseRootPresenter,
 )
 from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathPresenter
+from ephys_alignment_gui.desktop_path_dialog_presenter import (
+    DesktopPathDialogCallbacks,
+    DesktopPathDialogPresenter,
+)
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
@@ -111,9 +116,7 @@ from ephys_alignment_gui.reference_line_layer import (
     ReferenceLinePlots,
 )
 from ephys_alignment_gui.settings import (
-    INPUT_ROOT_ENV_VAR,
     OUTPUT_ROOT_ENV_VAR,
-    input_root_from_environment,
     output_root_from_environment,
 )
 from ephys_alignment_gui.slice_display_policy import SliceSelection
@@ -450,6 +453,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._init_probe_selection_presenter()
         self._init_session_selection_presenter()
         self._init_mouse_root_presenter()
+        self._init_path_dialog_presenter()
         self._init_load_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -581,13 +585,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
         )
 
+    def _init_path_dialog_presenter(self) -> None:
+        """Wire desktop behavior for path-selection folder dialogs."""
+        self.folder_dialog = DesktopFolderDialog(parent=None)
+        self.path_dialog_presenter = DesktopPathDialogPresenter(
+            folder_dialog=self.folder_dialog,
+            callbacks=DesktopPathDialogCallbacks(
+                active_mouse_root=self._active_mouse_root_path,
+                set_mouse_root=self.mouse_root_presenter.set_mouse_root,
+                active_output_root=lambda: self.document.output_root,
+                set_save_root=self.output_path_presenter.set_save_root,
+            ),
+        )
+
     def _init_previous_alignment_load_presenter(self) -> None:
         """Wire desktop workflow for loading previous alignments."""
         self.previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
             commands=self.app.commands,
             callbacks=PreviousAlignmentLoadCallbacks(
-                select_folder=lambda: QtWidgets.QFileDialog.getExistingDirectory(
-                    None,
+                select_folder=lambda: self.folder_dialog.select_existing_directory_text(
                     "Load Existing Alignments",
                 ),
                 use_docdb=lambda: self.use_docdb,
@@ -662,6 +678,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 OUTPUT_ROOT_ENV_VAR,
                 output_root,
             )
+
+    def _active_mouse_root_path(self) -> Path | None:
+        """Return the currently loaded mouse-root path for dialog defaults."""
+        mouse_root = self.data_context.mouse_root
+        if mouse_root is None:
+            return None
+        return mouse_root.root
 
     def init_variables(self) -> None:
         """
@@ -1326,30 +1349,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return self.mouse_root_presenter.set_mouse_root(mouse_root)
 
     def on_mouse_root_selected(self) -> bool:
-        """Open a QFileDialog for the mouse-root directory."""
-        start_dir = self._mouse_root_dialog_start_dir()
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            None, "Select Mouse Root", directory=start_dir
-        )
-        if not folder:
-            return False
-        return self.set_mouse_root(Path(folder))
-
-    def _mouse_root_dialog_start_dir(self) -> str:
-        """Return the directory the mouse-root dialog should open in."""
-        if self.data_context.mouse_root is not None:
-            return str(self.data_context.mouse_root.root)
-        input_root = input_root_from_environment()
-        if input_root is None:
-            return ""
-        if input_root.is_dir():
-            return str(input_root)
-        logger.warning(
-            "Ignoring %s because it is not a directory: %s",
-            INPUT_ROOT_ENV_VAR,
-            input_root,
-        )
-        return ""
+        """Prompt for the mouse-root directory."""
+        return self.path_dialog_presenter.select_mouse_root()
 
     def on_mouse_root_edited(self) -> None:
         """Triggered when the user finishes editing the mouse-root text field."""
@@ -1416,14 +1417,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_output_folder_selected(self) -> bool:
         """Prompt the user for a save-root directory."""
-        output_root = self.document.output_root
-        start_dir = str(output_root) if output_root is not None else ""
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            None, "Select Save Root", directory=start_dir
-        )
-        if not folder:
-            return False
-        return self.set_save_root(Path(folder))
+        return self.path_dialog_presenter.select_output_root()
 
     def on_output_folder_edited(self) -> None:
         """Triggered when user finishes editing output_folder_line text field."""
