@@ -16,11 +16,15 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
-from ephys_alignment_gui.alignment_repository import LoadedAlignmentHistory
+from ephys_alignment_gui.alignment_repository import (
+    LoadedAlignmentHistory,
+    SavedAlignmentOutputs,
+)
 from ephys_alignment_gui.app import (
     AlignmentQueries,
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
+    VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
@@ -121,17 +125,46 @@ class FakeStreamRuntime:
         plotdata.filter_units(unit_filter)
         return plotdata
 
+    def visited_shank_runtimes(self):
+        return self.shank_runtime_by_idx
+
 
 class FakeAlignmentRepository:
     def __init__(self) -> None:
         self.loaded_alignments = None
         self.loaded_kwargs = None
+        self.saved_kwargs: list[dict[str, Any]] = []
 
     def load_previous_alignments(self, **kwargs):
         self.loaded_kwargs = kwargs
         if self.loaded_alignments is None:
             return None
         return LoadedAlignmentHistory(self.loaded_alignments)
+
+    def save_alignment_outputs(self, **kwargs):
+        self.saved_kwargs.append(kwargs)
+        return SavedAlignmentOutputs(
+            channel_results_path=kwargs["output_directory"] / "channels.json",
+            previous_alignments_path=kwargs["output_directory"] / "alignments.json",
+            ccf_channel_results_path=kwargs["output_directory"] / "ccf.json",
+            docdb_probe_name="probeA_0" if kwargs["use_docdb"] else None,
+        )
+
+
+class FakeBatchOutputBuilder:
+    def __init__(self) -> None:
+        self.batched_alignments = None
+
+    def get_alignment_results_batch(self, alignments):
+        self.batched_alignments = alignments
+        return {
+            key: (
+                {"channel": key.shank_idx},
+                {"ccf": key.shank_idx},
+                True,
+            )
+            for key in alignments
+        }
 
 
 class FakePathController:
@@ -189,6 +222,7 @@ class FakeDerivedDataService:
         self.histology_kwargs = None
         self.projection_kwargs = None
         self.nearby_kwargs: list[dict[str, Any]] = []
+        self.channel_location_calls: list[dict[str, Any]] = []
 
     def compute_histology(self, **kwargs):
         self.histology_kwargs = kwargs
@@ -201,6 +235,10 @@ class FakeDerivedDataService:
     def compute_nearby_boundaries(self, **kwargs):
         self.nearby_kwargs.append(kwargs)
         return self.nearby_boundaries
+
+    def compute_channel_locations(self, **kwargs):
+        self.channel_location_calls.append(kwargs)
+        return np.array([[1.0, 2.0, 3.0]])
 
 
 class FakeSliceService:
@@ -645,6 +683,67 @@ def test_commands_load_histology_data_delegates_to_workflow() -> None:
 
     assert isinstance(result, HistologyDataLoaded)
     assert workflow.calls == 1
+
+
+def test_commands_save_visited_alignment_outputs_batches_active_shanks(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.controller.alignment_repository = repo
+    workspace.controller.output_builder = output_builder
+    workspace.app.commands._derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    active_key = AlignmentKey("rec", "stream", 1)
+    active_state = workspace.document.select_alignment_key(active_key)
+    active_state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
+    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
+        1: SimpleNamespace(
+            ephysalign="aligner",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+
+    result = workspace.app.commands.save_visited_alignment_outputs(use_docdb=True)
+
+    assert isinstance(result, VisitedAlignmentOutputsSaved)
+    assert result.saved_count == 1
+    assert result.active_choices == active_state.prev_align
+    assert list(result.saved_outputs) == [active_key]
+    assert list(output_builder.batched_alignments) == [active_key]
+    np.testing.assert_allclose(
+        output_builder.batched_alignments[active_key][0],
+        [[1.0, 2.0, 3.0]],
+    )
+    np.testing.assert_allclose(
+        output_builder.batched_alignments[active_key][1],
+        [[10.0, 20.0]],
+    )
+    assert len(derived.channel_location_calls) == 1
+    assert derived.channel_location_calls[0]["ephysalign"] == "aligner"
+    np.testing.assert_allclose(
+        derived.channel_location_calls[0]["feature"],
+        active_state.active_alignment.feature,
+    )
+    np.testing.assert_allclose(
+        derived.channel_location_calls[0]["track"],
+        active_state.active_alignment.track,
+    )
+    assert len(active_state.alignments) == 1
+    assert repo.saved_kwargs[0]["use_docdb"]
+    assert repo.saved_kwargs[0]["shank_idx"] == 1
+    assert repo.saved_kwargs[0]["previous_alignments"] == active_state.alignments
 
 
 def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) -> None:

@@ -21,9 +21,7 @@ from PyQt5.QtWidgets import QApplication
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.controller import (
-    AlignmentChoicesUpdated,
     AlignmentEditApplied,
-    AlignmentOutputsSaved,
     PreviousAlignmentSelected,
     ShankSelected,
 )
@@ -84,6 +82,10 @@ from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionPresenter,
 )
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
+from ephys_alignment_gui.desktop_save_workflow_presenter import (
+    DesktopSaveWorkflowCallbacks,
+    DesktopSaveWorkflowPresenter,
+)
 from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
     DesktopSessionSelectionPresenter,
@@ -102,7 +104,6 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankRenderCallbacks,
     DesktopShankSelectionState,
 )
-from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
@@ -128,9 +129,7 @@ from ephys_alignment_gui.slice_panel_presenter import (
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
 from ephys_alignment_gui.workflow import (
-    Blocked,
     Failed,
-    Ok,
     Requirement,
 )
 from ephys_alignment_gui.workspace import AlignmentWorkspace
@@ -455,6 +454,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self._init_mouse_root_presenter()
         self._init_path_dialog_presenter()
         self._init_load_workflow_presenter()
+        self._init_save_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
 
@@ -482,6 +482,37 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             can_load_data=self.controller.can_load_data,
             load_heavy_data=self.load_data_presenter.load_heavy_data,
             output_folder_prompt=self.output_folder_prompt,
+        )
+
+    def _init_save_workflow_presenter(self) -> None:
+        """Wire desktop behavior for save and QC workflows."""
+        self.save_workflow_presenter = DesktopSaveWorkflowPresenter(
+            commands=self.app.commands,
+            callbacks=DesktopSaveWorkflowCallbacks(
+                ensure_output_directory=self.output_folder_prompt.ensure_for_save,
+                log_requirement=self.load_workflow_presenter.log_requirement,
+                use_docdb=lambda: self.use_docdb,
+                render_alignment_choices=lambda choices: self.populate_lists(
+                    choices,
+                    self.align_list,
+                    self.align_combobox,
+                ),
+                busy_context=lambda *args, **kwargs: BusyContext(
+                    self,
+                    *args,
+                    **kwargs,
+                ),
+                complete_button=lambda: self.complete_button,
+                histology_available=lambda: self.histology_exists,
+                open_qc_dialog=self.qc_dialog.open,
+                ephys_qc=self.ephys_qc.currentText,
+                selected_qc_descriptions=self._selected_qc_descriptions,
+                warning=lambda title, message: QtWidgets.QMessageBox.warning(
+                    self,
+                    title,
+                    message,
+                ),
+            ),
         )
 
     def _init_output_path_presenter(self) -> None:
@@ -1920,156 +1951,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed.
         Saves final channel locations for all visited shanks to JSON files.
         """
-        save_ready = self.controller.can_save_alignment_output()
-        if isinstance(save_ready, Blocked):
-            if not self._ensure_output_directory_for_save(save_ready.first):
-                return
-            save_ready = self.controller.can_save_alignment_output()
-
-        if not isinstance(save_ready, Ok):
-            if isinstance(save_ready, Blocked):
-                self.load_workflow_presenter.log_requirement(save_ready.first)
-            return
-
-        with BusyContext(
-            self,
-            "Saving...",
-            "Saved successfully",
-            disable_widgets=self.complete_button,
-        ):
-            output_inputs, states_by_key = self._visited_alignment_output_inputs()
-            if not output_inputs:
-                logger.error("No visited alignments are ready to save")
-                return
-
-            outputs = self.controller.build_alignment_outputs(output_inputs)
-            if isinstance(outputs, Failed):
-                logger.error(outputs.message)
-                return
-
-            for key, state in states_by_key.items():
-                alignment = state.active_alignment
-                if alignment is None:
-                    continue
-                state.add_alignment(alignment.feature, alignment.track)
-
-            logger.info("Saving output files to results folder...")
-            saved_count = 0
-            for key, output in outputs.items():
-                state = states_by_key[key]
-                saved = self.controller.save_alignment_output(
-                    output,
-                    state.alignments,
-                    key.shank_idx,
-                    self.use_docdb,
-                )
-                if isinstance(saved, Failed):
-                    logger.error(saved.message)
-                    return
-                assert isinstance(saved, AlignmentOutputsSaved)
-                saved_count += 1
-
-                if saved.saved.docdb_probe_name is not None:
-                    if saved.saved.docdb_error is not None:
-                        logger.error(
-                            "Failed to write to DocDB with error %s. Output saved to results folder",
-                            saved.saved.docdb_error,
-                        )
-                    else:
-                        logger.info(
-                            "Channels locations saved, and ccf coordinates saved for %s",
-                            saved.saved.docdb_probe_name,
-                        )
-
-            active_choices = self.controller.active_alignment_choices(
-                self._active_shank_idx()
-            )
-            if isinstance(active_choices, AlignmentChoicesUpdated):
-                self.populate_lists(
-                    active_choices.choices,
-                    self.align_list,
-                    self.align_combobox,
-                )
-            logger.info(
-                "Channel locations saved to results folder for %d visited alignment(s)",
-                saved_count,
-            )
-
-    def _visited_alignment_output_inputs(
-        self,
-    ) -> tuple[
-        dict[AlignmentKey, tuple[Any, Any]],
-        dict[AlignmentKey, Any],
-    ]:
-        """Collect channel-location save inputs for visited shanks."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return {}, {}
-        probe = self.data_context.probe_info
-        if probe is None:
-            return {}, {}
-
-        states_for_probe = self.document.alignment_states_for_current_probe()
-        output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
-        states_by_key: dict[AlignmentKey, Any] = {}
-        for shank_idx, shank_runtime in stream_runtime.visited_shank_runtimes().items():
-            key = AlignmentKey(
-                recording_id=probe.recording_id,
-                ephys_collection=probe.ephys_collection,
-                shank_idx=shank_idx,
-            )
-            state = states_for_probe.get(key)
-            if state is None or state.active_alignment is None:
-                continue
-            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
-                logger.info(
-                    "Skipping shank %d during save because it has not been rendered",
-                    shank_idx + 1,
-                )
-                continue
-            alignment = state.active_alignment
-            channel_locations_ras = (
-                self.alignment_derived_data_service.compute_channel_locations(
-                    ephysalign=shank_runtime.ephysalign,
-                    feature=alignment.feature,
-                    track=alignment.track,
-                )
-            )
-            output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
-            states_by_key[key] = state
-        return output_inputs, states_by_key
+        self.save_workflow_presenter.save_alignment_outputs()
 
     def display_qc_options(self) -> None:
-        # If not histology don't show
-        if not self.histology_exists:
-            return
-
-        self.qc_dialog.open()
+        self.save_workflow_presenter.display_qc_options()
 
     def qc_button_clicked(self) -> None:
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
+        self.save_workflow_presenter.qc_button_clicked()
 
-        align_qc = self.align_qc.currentText()
-        ephys_qc = self.ephys_qc.currentText()
+    def _selected_qc_descriptions(self) -> list[str]:
+        """Return selected QC description labels."""
         ephys_desc = []
         for button in self.desc_buttons.buttons():
             if button.isChecked():
                 ephys_desc.append(button.text())
-
-        if ephys_qc != "Pass" and len(ephys_desc) == 0:
-            QtWidgets.QMessageBox.warning(
-                self, "Status", "You must select a reason for qc choice"
-            )
-            self.display_qc_options()
-            return
-
-        logger.warning(
-            "Alyx QC upload is unavailable without ONE; saving local/DocDB "
-            "alignment output instead."
-        )
-        self.complete_button_pressed_offline()
+        return ephys_desc
 
     def reset_axis_button_pressed(self) -> None:
         self.set_default_feature_y_range()

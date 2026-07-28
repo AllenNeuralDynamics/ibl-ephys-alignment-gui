@@ -113,6 +113,7 @@ class AlignmentWorkspace:
                 self.probe_data_workflow,
                 self.histology_data_workflow,
                 self.plot_data_factory,
+                self.alignment_derived_data_service,
             ),
             queries=AlignmentQueries(
                 document=self.document,

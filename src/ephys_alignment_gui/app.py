@@ -42,6 +42,7 @@ from ephys_alignment_gui.controller import (
     AlignmentController,
     AlignmentEditApplied,
     AlignmentEditNoop,
+    AlignmentOutputsSaved,
     Failed,
     LoadDataPrepared,
     MouseRootLoaded,
@@ -79,7 +80,7 @@ from ephys_alignment_gui.session_runtime import (
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceCacheEntry
-from ephys_alignment_gui.workflow import Ok
+from ephys_alignment_gui.workflow import Blocked, Ok
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,15 @@ class CachedEphysDataActivated:
     probe: ProbeSelected
 
 
+@dataclass(frozen=True)
+class VisitedAlignmentOutputsSaved:
+    """Visited alignment outputs were persisted."""
+
+    saved_count: int
+    saved_outputs: Mapping[AlignmentKey, AlignmentOutputsSaved]
+    active_choices: list[str] | None
+
+
 @dataclass
 class AlignmentCommands:
     """Command-side app port.
@@ -134,6 +144,7 @@ class AlignmentCommands:
     _probe_data_workflow: ProbeDataWorkflow
     _histology_data_workflow: HistologyDataWorkflow
     _plot_data_factory: PlotDataFactory
+    _derived_data_service: AlignmentDerivedDataService
 
     def select_shank(
         self,
@@ -342,6 +353,108 @@ class AlignmentCommands:
     def load_histology_data(self) -> HistologyLoadResult:
         """Load subject-level histology runtime data if it is available."""
         return self._histology_data_workflow.load_if_needed()
+
+    def can_save_alignment_output(self) -> Ok | Blocked:
+        """Return whether visited alignment outputs can be saved."""
+        return self._controller.can_save_alignment_output()
+
+    def save_visited_alignment_outputs(
+        self,
+        *,
+        use_docdb: bool,
+    ) -> VisitedAlignmentOutputsSaved | Blocked | Failed:
+        """Persist outputs for every visited alignment in the active stream."""
+        ready = self._controller.can_save_alignment_output()
+        if isinstance(ready, Blocked):
+            return ready
+
+        output_inputs, states_by_key = self._visited_alignment_output_inputs()
+        if not output_inputs:
+            return Failed("No visited alignments are ready to save")
+
+        outputs = self._controller.build_alignment_outputs(output_inputs)
+        if isinstance(outputs, Failed):
+            return outputs
+
+        for key, state in states_by_key.items():
+            alignment = state.active_alignment
+            if alignment is not None:
+                state.add_alignment(alignment.feature, alignment.track)
+
+        logger.info("Saving output files to results folder...")
+        saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
+        for key, output in outputs.items():
+            state = states_by_key[key]
+            saved = self._controller.save_alignment_output(
+                output,
+                state.alignments,
+                key.shank_idx,
+                use_docdb,
+            )
+            if isinstance(saved, Failed):
+                return saved
+            saved_outputs[key] = saved
+
+        active_choices: list[str] | None = None
+        choices = self._controller.active_alignment_choices(
+            self._active_or_given_shank(None)
+        )
+        if isinstance(choices, AlignmentChoicesUpdated):
+            active_choices = choices.choices
+        elif isinstance(choices, Failed):
+            logger.error(choices.message)
+
+        return VisitedAlignmentOutputsSaved(
+            saved_count=len(saved_outputs),
+            saved_outputs=saved_outputs,
+            active_choices=active_choices,
+        )
+
+    def _visited_alignment_output_inputs(
+        self,
+    ) -> tuple[
+        dict[AlignmentKey, tuple[Any, Any]],
+        dict[AlignmentKey, Any],
+    ]:
+        """Collect channel-location save inputs for visited shanks."""
+        stream_runtime = self._runtime.active_stream_runtime
+        if stream_runtime is None:
+            return {}, {}
+        probe = self._controller.data_context.probe_info
+        if probe is None:
+            return {}, {}
+
+        states_for_probe = (
+            self._controller.document.alignment_states_for_current_probe()
+        )
+        output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
+        states_by_key: dict[AlignmentKey, Any] = {}
+        for shank_idx, shank_runtime in stream_runtime.visited_shank_runtimes().items():
+            key = AlignmentKey(
+                recording_id=probe.recording_id,
+                ephys_collection=probe.ephys_collection,
+                shank_idx=shank_idx,
+            )
+            state = states_for_probe.get(key)
+            if state is None or state.active_alignment is None:
+                continue
+            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
+                logger.info(
+                    "Skipping shank %d during save because it has not been rendered",
+                    shank_idx + 1,
+                )
+                continue
+            alignment = state.active_alignment
+            channel_locations_ras = (
+                self._derived_data_service.compute_channel_locations(
+                    ephysalign=shank_runtime.ephysalign,
+                    feature=alignment.feature,
+                    track=alignment.track,
+                )
+            )
+            output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
+            states_by_key[key] = state
+        return output_inputs, states_by_key
 
     def set_unit_filter(self, unit_filter: str) -> Ok:
         """Select the unit subset used when preparing ephys plot data."""
