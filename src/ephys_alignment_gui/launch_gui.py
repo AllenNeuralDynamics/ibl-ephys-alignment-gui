@@ -64,7 +64,6 @@ from ephys_alignment_gui.desktop_interaction_presenter import (
 )
 from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
-    DesktopLoadDataPresenter,
 )
 from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopLoadWorkflowPresenter,
@@ -73,7 +72,6 @@ from ephys_alignment_gui.desktop_load_workflow_presenter import (
 )
 from ephys_alignment_gui.desktop_mouse_root_presenter import (
     DesktopMouseRootCallbacks,
-    DesktopMouseRootPresenter,
 )
 from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathPresenter
 from ephys_alignment_gui.desktop_path_dialog_presenter import (
@@ -96,7 +94,6 @@ from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
 )
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
-    DesktopProbeSelectionPresenter,
 )
 from ephys_alignment_gui.desktop_save_workflow_presenter import (
     DesktopSaveWorkflowCallbacks,
@@ -105,7 +102,6 @@ from ephys_alignment_gui.desktop_save_workflow_presenter import (
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
-    DesktopSessionSelectionPresenter,
 )
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankRenderCallbacks,
@@ -445,19 +441,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self._init_interaction_presenter()
         self._init_plot_exporter()
+        self._init_output_path_presenter()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
+            selection_view=self.selection_view,
+            path_view=self.path_view,
             histology_panel=self.histology_panel,
             histology_callbacks=self._desktop_histology_render_callbacks(),
             alignment_callbacks_factory=self._desktop_alignment_render_callbacks,
             shank_callbacks=self._desktop_shank_render_callbacks(),
+            load_data_callbacks=self._desktop_load_data_callbacks(),
+            probe_selection_callbacks_factory=(
+                self._desktop_probe_selection_callbacks
+            ),
+            session_selection_callbacks=self._desktop_session_selection_callbacks(),
+            mouse_root_callbacks=self._desktop_mouse_root_callbacks(),
         )
         self.desktop_workbench.connect_events()
-        self._init_output_path_presenter()
-        self._init_load_data_presenter()
-        self._init_probe_selection_presenter()
-        self._init_session_selection_presenter()
-        self._init_mouse_root_presenter()
         self._init_path_dialog_presenter()
         self._init_load_workflow_presenter()
         self._init_save_workflow_presenter()
@@ -493,7 +493,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self.load_workflow_presenter = DesktopLoadWorkflowPresenter(
             can_load_data=self.controller.can_load_data,
-            load_heavy_data=self.load_data_presenter.load_heavy_data,
+            load_heavy_data=self.desktop_workbench.load_heavy_data,
             output_folder_prompt=self.output_folder_prompt,
         )
 
@@ -563,98 +563,86 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             path_view=self.path_view,
         )
 
-    def _init_load_data_presenter(self) -> None:
-        """Wire desktop behavior for cached/fresh data loading."""
-        self.load_data_presenter = DesktopLoadDataPresenter(
-            app=self.app,
-            selection_view=self.selection_view,
-            callbacks=DesktopLoadDataCallbacks(
-                capture_pending_reference_lines=self._capture_pending_reference_lines,
-                stash_and_detach_current=self._stash_and_detach_current,
-                teardown_session=self._teardown_session,
-                init_session_variables=self.init_session_variables,
-                select_shank_for_view=lambda shank_idx, source: (
-                    self._select_shank_for_view(shank_idx, source=source)
-                ),
-                display_output_directory=(
-                    self.output_path_presenter.display_output_directory
-                ),
-                setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
-                    preserve_plot_selection=preserve,
-                    shank_idx=shank_idx,
-                ),
-                clear_empty_state=self._clear_empty_state,
-                set_histology_available=self._set_histology_available,
-                busy_context=lambda *args, **kwargs: BusyContext(
-                    self,
-                    *args,
-                    **kwargs,
-                ),
+    def _desktop_load_data_callbacks(self) -> DesktopLoadDataCallbacks:
+        """Build desktop callbacks for cached/fresh data loading."""
+        return DesktopLoadDataCallbacks(
+            capture_pending_reference_lines=self._capture_pending_reference_lines,
+            stash_and_detach_current=self._stash_and_detach_current,
+            teardown_session=self._teardown_session,
+            init_session_variables=self.init_session_variables,
+            select_shank_for_view=lambda shank_idx, source: (
+                self._select_shank_for_view(shank_idx, source=source)
+            ),
+            display_output_directory=(
+                self.output_path_presenter.display_output_directory
+            ),
+            setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
+                preserve_plot_selection=preserve,
+                shank_idx=shank_idx,
+            ),
+            clear_empty_state=self._clear_empty_state,
+            set_histology_available=self._set_histology_available,
+            busy_context=lambda *args, **kwargs: BusyContext(
+                self,
+                *args,
+                **kwargs,
             ),
         )
 
-    def _init_probe_selection_presenter(self) -> None:
-        """Wire desktop behavior for probe selection."""
-        self.probe_selection_presenter = DesktopProbeSelectionPresenter(
-            commands=self.app.commands,
-            selection_view=self.selection_view,
-            callbacks=DesktopProbeSelectionCallbacks(
-                mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
-                active_shank_idx=self._active_shank_idx,
-                capture_pending_reference_lines=self._capture_pending_reference_lines,
-                stash_and_detach_current=self._stash_and_detach_current,
-                present_cached_probe_selection=lambda session, probe, shank: (
-                    self.load_data_presenter.present_cached_probe_selection(
-                        session_name=session,
-                        probe_name=probe,
-                        target_shank=shank,
-                    )
-                ),
-                show_empty_state=self._show_empty_state,
-                busy_context=lambda *args, **kwargs: BusyContext(
-                    self,
-                    *args,
-                    **kwargs,
-                ),
-                init_session_variables=self.init_session_variables,
-                select_shank_for_view=lambda shank_idx, source: (
-                    self._select_shank_for_view(shank_idx, source=source)
-                ),
-                display_output_directory=(
-                    self.output_path_presenter.display_output_directory
-                ),
+    def _desktop_probe_selection_callbacks(
+        self,
+        load_data_presenter,
+    ) -> DesktopProbeSelectionCallbacks:
+        """Build desktop callbacks for probe selection."""
+        return DesktopProbeSelectionCallbacks(
+            mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
+            active_shank_idx=self._active_shank_idx,
+            capture_pending_reference_lines=self._capture_pending_reference_lines,
+            stash_and_detach_current=self._stash_and_detach_current,
+            present_cached_probe_selection=lambda session, probe, shank: (
+                load_data_presenter.present_cached_probe_selection(
+                    session_name=session,
+                    probe_name=probe,
+                    target_shank=shank,
+                )
+            ),
+            show_empty_state=self._show_empty_state,
+            busy_context=lambda *args, **kwargs: BusyContext(
+                self,
+                *args,
+                **kwargs,
+            ),
+            init_session_variables=self.init_session_variables,
+            select_shank_for_view=lambda shank_idx, source: (
+                self._select_shank_for_view(shank_idx, source=source)
+            ),
+            display_output_directory=(
+                self.output_path_presenter.display_output_directory
             ),
         )
 
-    def _init_session_selection_presenter(self) -> None:
-        """Wire desktop behavior for session selection."""
-        self.session_selection_presenter = DesktopSessionSelectionPresenter(
-            commands=self.app.commands,
-            selection_view=self.selection_view,
-            callbacks=DesktopSessionSelectionCallbacks(
-                mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
-                capture_pending_reference_lines=self._capture_pending_reference_lines,
-                evict_stream_cache=self._evict_stream_cache,
-                show_empty_state=self._show_empty_state,
-                select_first_probe=lambda: self.on_probe_combobox_activated(0),
-            ),
+    def _desktop_session_selection_callbacks(
+        self,
+    ) -> DesktopSessionSelectionCallbacks:
+        """Build desktop callbacks for session selection."""
+        return DesktopSessionSelectionCallbacks(
+            mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
+            capture_pending_reference_lines=self._capture_pending_reference_lines,
+            evict_stream_cache=self._evict_stream_cache,
+            show_empty_state=self._show_empty_state,
+            select_first_probe=lambda: self.on_probe_combobox_activated(0),
         )
 
-    def _init_mouse_root_presenter(self) -> None:
-        """Wire desktop behavior for mouse-root loading."""
-        self.mouse_root_presenter = DesktopMouseRootPresenter(
-            commands=self.app.commands,
-            path_view=self.path_view,
-            selection_view=self.selection_view,
-            callbacks=DesktopMouseRootCallbacks(
-                clear_histology_context=self.histology_context.clear,
-                busy_context=lambda *args, **kwargs: BusyContext(
-                    self,
-                    *args,
-                    **kwargs,
-                ),
-                select_first_session=lambda: self.on_session_combobox_activated(0),
+    def _desktop_mouse_root_callbacks(self) -> DesktopMouseRootCallbacks:
+        """Build desktop callbacks for mouse-root loading."""
+        return DesktopMouseRootCallbacks(
+            clear_histology_context=self.histology_context.clear,
+            busy_context=lambda *args, **kwargs: BusyContext(
+                self,
+                *args,
+                **kwargs,
             ),
+            select_first_session=lambda: self.on_session_combobox_activated(0),
         )
 
     def _init_path_dialog_presenter(self) -> None:
@@ -664,7 +652,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             folder_dialog=self.folder_dialog,
             callbacks=DesktopPathDialogCallbacks(
                 active_mouse_root=self._active_mouse_root_path,
-                set_mouse_root=self.mouse_root_presenter.set_mouse_root,
+                set_mouse_root=self.desktop_workbench.set_mouse_root,
                 active_output_root=lambda: self.document.output_root,
                 set_save_root=self.output_path_presenter.set_save_root,
             ),
@@ -1308,7 +1296,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def load_heavy_data(self) -> bool:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
-        return self.load_data_presenter.load_heavy_data()
+        return self.desktop_workbench.load_heavy_data()
 
     def load_existing_alignments(self) -> bool:
         return self.previous_alignment_load_presenter.load_existing_alignments()
@@ -1323,7 +1311,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :param mouse_root: Directory containing ``datapackage.json``.
         :return: ``True`` on success.
         """
-        return self.mouse_root_presenter.set_mouse_root(mouse_root)
+        return self.desktop_workbench.set_mouse_root(mouse_root)
 
     def on_mouse_root_selected(self) -> bool:
         """Prompt for the mouse-root directory."""
@@ -1331,15 +1319,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_mouse_root_edited(self) -> None:
         """Triggered when the user finishes editing the mouse-root text field."""
-        self.mouse_root_presenter.mouse_root_edited()
+        self.desktop_workbench.mouse_root_edited()
 
     def on_session_combobox_activated(self, _idx: int) -> None:
         """Populate the probe dropdown for the selected session."""
-        self.session_selection_presenter.session_selected()
+        self.desktop_workbench.session_selected()
 
     def on_probe_combobox_activated(self, _idx: int) -> None:
         """Select a probe: load channel info, populate shank list, derive output dir."""
-        self.probe_selection_presenter.probe_selected()
+        self.desktop_workbench.probe_selected()
 
     def _set_histology_available(self, available: bool) -> None:
         """Set the desktop histology availability flag."""
