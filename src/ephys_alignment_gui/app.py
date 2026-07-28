@@ -848,6 +848,23 @@ class AlignmentQueries:
             t_template=np.asarray(plotdata.t_template),
         )
 
+    def active_session_notes(self) -> str:
+        """Return notes for the active ephys stream, if any."""
+        stream_runtime = self.runtime.active_stream_runtime
+        if stream_runtime is None:
+            return ""
+        return stream_runtime.stream.session_notes
+
+    def active_histology_region_id(self, region_idx: int) -> int | None:
+        """Return an active histology region id by plotted region index."""
+        shank_runtime = self._active_shank_runtime()
+        if shank_runtime is None or shank_runtime.ephysalign is None:
+            return None
+        try:
+            return int(shank_runtime.ephysalign.region_id[region_idx][0])
+        except (IndexError, TypeError, ValueError):
+            return None
+
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         """Return derived render data for the active alignment, if available."""
         context = self._active_alignment_context()

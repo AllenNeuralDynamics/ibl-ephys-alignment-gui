@@ -54,6 +54,11 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelStyle,
 )
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
+from ephys_alignment_gui.desktop_interaction_presenter import (
+    DesktopInteractionCallbacks,
+    DesktopInteractionPresenter,
+    DesktopInteractionWidgets,
+)
 from ephys_alignment_gui.desktop_load_workflow_presenter import (
     DesktopLoadWorkflowPresenter,
     DesktopOutputFolderPrompt,
@@ -359,7 +364,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
             style=EphysPanelStyle(line_pen=self.kpen_solid),
             set_axis=self.set_axis,
-            cluster_clicked=self.cluster_clicked,
+            cluster_clicked=lambda *args: self.interaction_presenter.cluster_clicked(
+                *args
+            ),
         )
         self.ephys_panel_layout = DesktopEphysPanelLayout(
             panel=self.ephys_panel,
@@ -437,6 +444,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 linear_fit_curve=self.fit_plot_lin,
             ),
         )
+        self._init_interaction_presenter()
         self._init_plot_exporter()
         self.desktop_alignment_presenter.configure(
             queries=self.app.queries,
@@ -511,6 +519,36 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                     self,
                     title,
                     message,
+                ),
+            ),
+        )
+
+    def _init_interaction_presenter(self) -> None:
+        """Wire desktop popup and mouse interaction behavior."""
+        self.interaction_presenter = DesktopInteractionPresenter(
+            app=self.app,
+            popup_manager=self.popup_manager,
+            ephys_panel=self.ephys_panel,
+            histology_panel=self.histology_panel,
+            reference_lines=self.reference_lines,
+            region_lookup_service=self.region_lookup_service,
+            widgets=DesktopInteractionWidgets(
+                struct_list=self.struct_list,
+                struct_view=self.struct_view,
+                struct_description=self.struct_description,
+                scale_plot=self.fig_scale,
+                histology_plot=self.fig_hist,
+                histology_reference_plot=self.fig_hist_ref,
+                scale_axis=self.fig_scale_ax,
+                bar_colour=self.bar_colour,
+                line_pen=self.kpen_solid,
+            ),
+            callbacks=DesktopInteractionCallbacks(
+                histology_available=lambda: self.histology_exists,
+                activate_window=self.activateWindow,
+                set_axis=self.set_axis,
+                capture_pending_reference_lines=(
+                    self._capture_pending_reference_lines
                 ),
             ),
         )
@@ -742,7 +780,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def init_session_variables(self) -> None:
         """Initialise variables that need to be reset for each session."""
         self.popup_manager.close_all()
-        self.popup_manager = DesktopPopupManager()
         self.raw_image_payloads: dict[str, Any] = {}
         self.runtime.clear_active_stream()
         self.display_state.reset_region_annotation_source()
@@ -1821,59 +1858,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.reference_lines.delete_selected()
 
     def describe_labels_pressed(self) -> None:
-        # if no histology don't show
-        if not self.histology_exists:
-            return
-
-        idx = self.histology_panel.selected_region_index()
-        shank_runtime = self._active_shank_runtime()
-        if (
-            idx is not None
-            and shank_runtime is not None
-            and shank_runtime.ephysalign is not None
-        ):
-            description, lookup = self.region_lookup_service.get_region_description(
-                shank_runtime.ephysalign.region_id[idx][0]
-            )
-            item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
-            model_item = self.struct_list.indexFromItem(item[0])
-            self.struct_view.collapseAll()
-            self.struct_view.scrollTo(model_item)
-            self.struct_view.setCurrentIndex(model_item)
-            self.struct_description.setText(description)
-
-            if self.popup_manager.label_window is None:
-                label_window = ephys_gui.PopupWindow(
-                    title="Structure Information",
-                    size=(500, 700),
-                    graphics=False,
-                )
-                label_window.layout.addWidget(self.struct_view)
-                label_window.layout.addWidget(self.struct_description)
-                label_window.layout.setRowStretch(0, 7)
-                label_window.layout.setRowStretch(1, 3)
-                label_window.closed.connect(self.label_closed)
-                label_window.moved.connect(self.label_moved)
-                self.popup_manager.label_window = label_window
-                self.activateWindow()
-            else:
-                self.popup_manager.label_window.show()
-                self.activateWindow()
+        self.interaction_presenter.describe_labels_pressed()
 
     def label_closed(self, popup) -> None:
-        if self.popup_manager.label_window is not None:
-            self.popup_manager.label_window.hide()
+        self.interaction_presenter.label_closed(popup)
 
     def label_moved(self) -> None:
-        self.activateWindow()
+        self.interaction_presenter.label_moved()
 
     def label_pressed(self, item) -> None:
-        idx = int(item.model().itemFromIndex(item).accessibleText())
-        description, lookup = self.region_lookup_service.get_region_description(idx)
-        item = self.struct_list.findItems(lookup, flags=QtCore.Qt.MatchRecursive)
-        model_item = self.struct_list.indexFromItem(item[0])
-        self.struct_view.setCurrentIndex(model_item)
-        self.struct_description.setText(description)
+        self.interaction_presenter.label_pressed(item)
 
     def next_button_pressed(self) -> None:
         """
@@ -1978,35 +1972,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
     def display_session_notes(self) -> None:
-        notes_window = ephys_gui.PopupWindow(
-            title="Session notes from Alyx", size=(200, 100), graphics=False
-        )
-        notes = QtWidgets.QTextEdit()
-        notes.setReadOnly(True)
-        notes.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
-        stream_runtime = self.runtime.active_stream_runtime
-        session_notes = (
-            stream_runtime.stream.session_notes if stream_runtime is not None else ""
-        )
-        notes.setText(session_notes)
-        notes_window.layout.addWidget(notes)
-        self.popup_manager.notes_window = notes_window
+        self.interaction_presenter.display_session_notes()
 
     def display_nearby_sessions(self) -> None:
         self._show_one_unsupported("Nearby sessions")
 
     def popup_closed(self, popup) -> None:
-        self.popup_manager.remove_cluster_popup(popup)
+        self.interaction_presenter.popup_closed(popup)
 
     def popup_moved(self) -> None:
-        self.activateWindow()
+        self.interaction_presenter.popup_moved()
 
     def close_popups(self) -> None:
-        self.popup_manager.close_cluster_popups()
+        self.interaction_presenter.close_popups()
 
     def minimise_popups(self) -> None:
-        self.popup_manager.toggle_cluster_minimized()
-        self.activateWindow()
+        self.interaction_presenter.minimise_popups()
 
     def lin_fit_option_changed(self, state) -> None:
         """
@@ -2026,63 +2007,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fit_button_pressed()
 
     def cluster_clicked(self, item, point):
-        point_pos = point[0].pos()
-        clust_idx = self.ephys_panel.cluster_index_for_plot_x(point_pos.x())
-        if clust_idx is None:
-            logger.error("Cannot show cluster detail: clicked point is not a cluster")
-            return None
-
-        detail = self.app.queries.active_cluster_detail(clust_idx)
-        if detail is None:
-            logger.error(
-                "Cannot show cluster detail: active ephys stream is not loaded"
-            )
-            return None
-
-        autocorr_plot = pg.PlotItem()
-        autocorr_plot.setXRange(
-            min=np.min(detail.t_autocorr),
-            max=np.max(detail.t_autocorr),
-        )
-        autocorr_plot.setYRange(min=0, max=1.05 * np.max(detail.autocorr))
-        self.set_axis(autocorr_plot, "bottom", label="T (ms)")
-        self.set_axis(autocorr_plot, "left", label="Number of spikes")
-        plot = pg.BarGraphItem(
-            x=detail.t_autocorr,
-            height=detail.autocorr,
-            width=0.24,
-            brush=self.bar_colour,
-        )
-        autocorr_plot.addItem(plot)
-
-        template_plot = pg.PlotItem()
-        plot = pg.PlotCurveItem()
-        template_plot.setXRange(
-            min=np.min(detail.t_template),
-            max=np.max(detail.t_template),
-        )
-        self.set_axis(template_plot, "bottom", label="T (ms)")
-        self.set_axis(template_plot, "left", label="Amplitude (a.u.)")
-        plot.setData(
-            x=detail.t_template,
-            y=detail.template_waveform,
-            pen=self.kpen_solid,
-        )
-        template_plot.addItem(plot)
-
-        clust_layout = pg.GraphicsLayout()
-        clust_layout.addItem(autocorr_plot, 0, 0)
-        clust_layout.addItem(template_plot, 1, 0)
-
-        clust_win = ephys_gui.PopupWindow(title=f"Cluster {detail.cluster_no}")
-        clust_win.closed.connect(self.popup_closed)
-        clust_win.moved.connect(self.popup_moved)
-        clust_win.popup_widget.addItem(autocorr_plot, 0, 0)
-        clust_win.popup_widget.addItem(template_plot, 1, 0)
-        self.popup_manager.add_cluster_popup(clust_win)
-        self.activateWindow()
-
-        return detail.cluster_no
+        return self.interaction_presenter.cluster_clicked(item, point)
 
     def display_subject_scaling(self) -> None:
         self._show_one_unsupported("Subject scaling")
@@ -2098,40 +2023,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :param event: double click event signals
         :type event: pyqtgraph mouseEvents
         """
-        # If no histology no point adding lines
-        if not self.histology_exists:
-            return
-
-        if event.double():
-            feature_y_um = self.ephys_panel.feature_y_from_scene(event.scenePos())
-            if feature_y_um is None:
-                return
-            self.reference_lines.create_lines([feature_y_um])
-            self._capture_pending_reference_lines()
+        self.interaction_presenter.on_mouse_double_clicked(event)
 
     def on_mouse_hover(self, items) -> None:
         """
         Returns the pyqtgraph items that the mouse is hovering over. Used to identify reference
         lines so that they can be deleted
         """
-        if len(items) > 1:
-            self.reference_lines.clear_selection()
-            if type(items[0]) == pg.InfiniteLine:
-                self.reference_lines.select_line(items[0])
-            elif (items[0] == self.fig_scale) & (type(items[1]) == pg.LinearRegionItem):
-                scale_factor = self.histology_panel.scale_factor_for_region_item(
-                    items[1]
-                )
-                if scale_factor is not None:
-                    self.fig_scale_ax.setLabel(
-                        "Scale Factor = " + str(np.around(scale_factor, 2))
-                    )
-            elif (items[0] == self.fig_hist) & (type(items[1]) == pg.LinearRegionItem):
-                self.histology_panel.select_region(items[1])
-            elif (items[0] == self.fig_hist_ref) & (
-                type(items[1]) == pg.LinearRegionItem
-            ):
-                self.histology_panel.select_region(items[1])
+        self.interaction_presenter.on_mouse_hover(items)
 
     def tip_line_moved(self) -> None:
         """

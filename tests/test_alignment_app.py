@@ -1229,6 +1229,50 @@ def test_queries_cluster_detail_fails_closed_without_active_runtime() -> None:
     assert queries.active_cluster_detail(3) is None
 
 
+def test_queries_active_session_notes_returns_loaded_stream_notes() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(),
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                stream=SimpleNamespace(session_notes="session notes")
+            )
+        ),
+    )
+
+    assert queries.active_session_notes() == "session notes"
+
+
+def test_queries_active_session_notes_fails_closed_without_runtime() -> None:
+    queries = AlignmentQueries(
+        document=AlignmentDocument(),
+        runtime=SimpleNamespace(active_stream_runtime=None),
+    )
+
+    assert queries.active_session_notes() == ""
+
+
+def test_queries_active_histology_region_id_reads_active_shank_runtime() -> None:
+    document = AlignmentDocument()
+    document.select_alignment_key(AlignmentKey("rec", "stream", 1))
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={
+                    1: SimpleNamespace(
+                        ephysalign=SimpleNamespace(
+                            region_id=np.array([[10], [42], [84]])
+                        )
+                    )
+                }
+            )
+        ),
+    )
+
+    assert queries.active_histology_region_id(1) == 42
+    assert queries.active_histology_region_id(9) is None
+
+
 def test_queries_build_active_alignment_render_state_from_document_runtime() -> None:
     document = AlignmentDocument()
     key = AlignmentKey("rec", "stream", 1)
