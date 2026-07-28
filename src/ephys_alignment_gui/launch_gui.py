@@ -54,6 +54,10 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelStyle,
 )
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
+from ephys_alignment_gui.desktop_histology_presenter import (
+    DesktopHistologyPresenter,
+    DesktopHistologyRenderCallbacks,
+)
 from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
@@ -443,6 +447,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 fit_scatter=self.fit_scatter,
                 linear_fit_curve=self.fit_plot_lin,
             ),
+        )
+        self.desktop_histology_presenter = DesktopHistologyPresenter(
+            app=self.app,
+            panel=self.histology_panel,
+            callbacks=self._desktop_histology_render_callbacks(),
         )
         self._init_interaction_presenter()
         self._init_plot_exporter()
@@ -1008,15 +1017,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_histology(self, fig=None, ax="left", movable=True) -> None:
         """Compatibility wrapper for aligned histology rendering."""
-        state = self._active_histology_panel_state()
-        if state is not None:
-            self.histology_panel.render_aligned(state, fig, movable=movable)
+        if not self.histology_exists:
+            return
+        self.desktop_histology_presenter.render_active_aligned(fig, movable=movable)
 
     def plot_histology_ref(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for reference histology rendering."""
-        state = self._active_histology_panel_state()
-        if state is not None:
-            self.histology_panel.render_reference(state, fig, movable=movable)
+        if not self.histology_exists:
+            return
+        self.desktop_histology_presenter.render_active_reference(
+            fig,
+            movable=movable,
+        )
 
     def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for nearby histology boundary rendering."""
@@ -1031,33 +1043,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "probe_top_um": depth_view.probe_top_um,
             "probe_extra_um": depth_view.probe_extra_um,
         }
-
-    def _active_histology_panel_state(self):
-        state = self.app.queries.active_histology_panel_state(
-            **self._probe_extent_query_kwargs()
-        )
-        if state is None:
-            logger.error("Cannot render histology: active alignment data is not loaded")
-        return state
-
-    def _active_scale_factor_state(self):
-        state = self.app.queries.active_scale_factor_state(
-            **self._probe_extent_query_kwargs()
-        )
-        if state is None:
-            logger.error(
-                "Cannot render scale factor: active alignment data is not loaded"
-            )
-        return state
-
-    def _active_fit_plot_state(self):
-        state = self.app.queries.active_fit_plot_state(
-            depth_um=self.display_state.depth_view.fit_depth_um,
-            lin_fit=self.display_state.edit_settings.lin_fit,
-        )
-        if state is None:
-            logger.error("Cannot render fit: active alignment data is not loaded")
-        return state
 
     def _active_nearby_boundary_state(self):
         if not self.histology_exists:
@@ -1151,18 +1136,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
             reattach_reference_lines=self._reattach_reference_lines,
-            probe_extent_query_kwargs=self._probe_extent_query_kwargs,
-            fit_depth_um=lambda: self.display_state.depth_view.fit_depth_um,
-            lin_fit_enabled=lambda: self.display_state.edit_settings.lin_fit,
-            scale_factor_y_range=self._scale_factor_y_range,
-            render_histology=self.histology_panel.render_aligned,
-            render_scale_factor=(
-                lambda state, y_range: self.histology_panel.render_scale_factor(
-                    state,
-                    y_range=y_range,
-                )
+            render_histology_alignment=(
+                self.desktop_histology_presenter.render_alignment_edit
             ),
-            render_fit=self.histology_panel.render_fit,
             plot_channels=self.slice_panel.plot_channels,
             refresh_perpendicular_histology=(
                 self.slice_panel.refresh_perpendicular_histology
@@ -1173,6 +1149,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
             set_default_feature_y_range=self.set_default_feature_y_range,
             update_status=self.update_string,
+        )
+
+    def _desktop_histology_render_callbacks(self) -> DesktopHistologyRenderCallbacks:
+        return DesktopHistologyRenderCallbacks(
+            probe_extent_query_kwargs=self._probe_extent_query_kwargs,
+            fit_depth_um=lambda: self.display_state.depth_view.fit_depth_um,
+            lin_fit_enabled=lambda: self.display_state.edit_settings.lin_fit,
+            scale_factor_y_range=self._scale_factor_y_range,
         )
 
     def _scale_factor_y_range(self) -> tuple[float, float]:
@@ -1211,13 +1195,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        state = self._active_scale_factor_state()
-        if state is None:
-            return
-        self.histology_panel.render_scale_factor(
-            state,
-            y_range=self._scale_factor_y_range(),
-        )
+        self.desktop_histology_presenter.render_active_scale_factor()
 
     def plot_fit(self) -> None:
         """
@@ -1229,9 +1207,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return
 
-        state = self._active_fit_plot_state()
-        if state is not None:
-            self.histology_panel.render_fit(state)
+        self.desktop_histology_presenter.render_active_fit()
 
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
@@ -1478,12 +1454,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if shank_idx is None:
             shank_idx = self.app.queries.active_shank_selection().shank_idx
 
-        self.plot_histology_ref()
-        self.plot_histology()
+        if not self.desktop_histology_presenter.render_active_panels():
+            return
         self.slice_panel.refresh_perpendicular_histology()
-        self.histology_panel.set_labels_visible(True)
-        self.plot_scale_factor()
-        self.plot_fit()
 
         pending_lines = self.controller.active_pending_reference_lines(shank_idx)
         if isinstance(pending_lines, Failed):
