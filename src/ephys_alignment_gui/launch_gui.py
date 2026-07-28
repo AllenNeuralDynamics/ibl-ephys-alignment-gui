@@ -52,7 +52,6 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
-from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_histology_presenter import (
     DesktopHistologyPresenter,
     DesktopHistologyRenderCallbacks,
@@ -61,22 +60,6 @@ from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
     DesktopInteractionWidgets,
-)
-from ephys_alignment_gui.desktop_load_data_presenter import (
-    DesktopLoadDataCallbacks,
-)
-from ephys_alignment_gui.desktop_load_workflow_presenter import (
-    DesktopLoadWorkflowPresenter,
-    DesktopOutputFolderPrompt,
-    OutputFolderPromptCallbacks,
-)
-from ephys_alignment_gui.desktop_mouse_root_presenter import (
-    DesktopMouseRootCallbacks,
-)
-from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathPresenter
-from ephys_alignment_gui.desktop_path_dialog_presenter import (
-    DesktopPathDialogCallbacks,
-    DesktopPathDialogPresenter,
 )
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_plot_exporter import (
@@ -92,22 +75,19 @@ from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
 )
-from ephys_alignment_gui.desktop_probe_selection_presenter import (
-    DesktopProbeSelectionCallbacks,
-)
 from ephys_alignment_gui.desktop_save_workflow_presenter import (
     DesktopSaveWorkflowCallbacks,
     DesktopSaveWorkflowPresenter,
 )
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
-from ephys_alignment_gui.desktop_session_selection_presenter import (
-    DesktopSessionSelectionCallbacks,
-)
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankRenderCallbacks,
     DesktopShankSelectionState,
 )
-from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
+from ephys_alignment_gui.desktop_workbench import (
+    DesktopSelectionWorkflowCallbacks,
+    DesktopWorkbench,
+)
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
     HistologyPanelAxes,
@@ -441,25 +421,18 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         self._init_interaction_presenter()
         self._init_plot_exporter()
-        self._init_output_path_presenter()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             selection_view=self.selection_view,
             path_view=self.path_view,
+            parent=self,
             histology_panel=self.histology_panel,
             histology_callbacks=self._desktop_histology_render_callbacks(),
             alignment_callbacks_factory=self._desktop_alignment_render_callbacks,
             shank_callbacks=self._desktop_shank_render_callbacks(),
-            load_data_callbacks=self._desktop_load_data_callbacks(),
-            probe_selection_callbacks_factory=(
-                self._desktop_probe_selection_callbacks
-            ),
-            session_selection_callbacks=self._desktop_session_selection_callbacks(),
-            mouse_root_callbacks=self._desktop_mouse_root_callbacks(),
+            selection_callbacks=self._desktop_selection_workflow_callbacks(),
         )
         self.desktop_workbench.connect_events()
-        self._init_path_dialog_presenter()
-        self._init_load_workflow_presenter()
         self._init_save_workflow_presenter()
         self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
@@ -479,31 +452,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             workbench.disconnect_events()
         super().closeEvent(event)
 
-    def _init_load_workflow_presenter(self) -> None:
-        """Wire desktop load workflow prompts and command gating."""
-        self.output_folder_prompt = DesktopOutputFolderPrompt(
-            parent=self,
-            callbacks=OutputFolderPromptCallbacks(
-                derive_output_directory_from_save_root=(
-                    self.output_path_presenter.derive_output_directory_from_save_root
-                ),
-                has_output_directory=lambda: self.document.output_directory is not None,
-                select_output_folder=self.on_output_folder_selected,
-            ),
-        )
-        self.load_workflow_presenter = DesktopLoadWorkflowPresenter(
-            can_load_data=self.controller.can_load_data,
-            load_heavy_data=self.desktop_workbench.load_heavy_data,
-            output_folder_prompt=self.output_folder_prompt,
-        )
-
     def _init_save_workflow_presenter(self) -> None:
         """Wire desktop behavior for save and QC workflows."""
         self.save_workflow_presenter = DesktopSaveWorkflowPresenter(
             commands=self.app.commands,
             callbacks=DesktopSaveWorkflowCallbacks(
-                ensure_output_directory=self.output_folder_prompt.ensure_for_save,
-                log_requirement=self.load_workflow_presenter.log_requirement,
+                ensure_output_directory=(
+                    self.desktop_workbench.ensure_output_directory_for_save
+                ),
+                log_requirement=self.desktop_workbench.log_load_requirement,
                 use_docdb=lambda: self.use_docdb,
                 render_alignment_choices=lambda choices: self.populate_lists(
                     choices,
@@ -556,16 +513,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
         )
 
-    def _init_output_path_presenter(self) -> None:
-        """Wire desktop behavior for output path rendering."""
-        self.output_path_presenter = DesktopOutputPathPresenter(
-            commands=self.app.commands,
-            path_view=self.path_view,
-        )
-
-    def _desktop_load_data_callbacks(self) -> DesktopLoadDataCallbacks:
-        """Build desktop callbacks for cached/fresh data loading."""
-        return DesktopLoadDataCallbacks(
+    def _desktop_selection_workflow_callbacks(
+        self,
+    ) -> DesktopSelectionWorkflowCallbacks:
+        """Build the MainWindow bridge for selection/load presenters."""
+        return DesktopSelectionWorkflowCallbacks(
             capture_pending_reference_lines=self._capture_pending_reference_lines,
             stash_and_detach_current=self._stash_and_detach_current,
             teardown_session=self._teardown_session,
@@ -573,88 +525,23 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             select_shank_for_view=lambda shank_idx, source: (
                 self._select_shank_for_view(shank_idx, source=source)
             ),
-            display_output_directory=(
-                self.output_path_presenter.display_output_directory
-            ),
             setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
                 preserve_plot_selection=preserve,
                 shank_idx=shank_idx,
             ),
             clear_empty_state=self._clear_empty_state,
             set_histology_available=self._set_histology_available,
-            busy_context=lambda *args, **kwargs: BusyContext(
-                self,
-                *args,
-                **kwargs,
-            ),
-        )
-
-    def _desktop_probe_selection_callbacks(
-        self,
-        load_data_presenter,
-    ) -> DesktopProbeSelectionCallbacks:
-        """Build desktop callbacks for probe selection."""
-        return DesktopProbeSelectionCallbacks(
             mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
             active_shank_idx=self._active_shank_idx,
-            capture_pending_reference_lines=self._capture_pending_reference_lines,
-            stash_and_detach_current=self._stash_and_detach_current,
-            present_cached_probe_selection=lambda session, probe, shank: (
-                load_data_presenter.present_cached_probe_selection(
-                    session_name=session,
-                    probe_name=probe,
-                    target_shank=shank,
-                )
-            ),
             show_empty_state=self._show_empty_state,
-            busy_context=lambda *args, **kwargs: BusyContext(
-                self,
-                *args,
-                **kwargs,
-            ),
-            init_session_variables=self.init_session_variables,
-            select_shank_for_view=lambda shank_idx, source: (
-                self._select_shank_for_view(shank_idx, source=source)
-            ),
-            display_output_directory=(
-                self.output_path_presenter.display_output_directory
-            ),
-        )
-
-    def _desktop_session_selection_callbacks(
-        self,
-    ) -> DesktopSessionSelectionCallbacks:
-        """Build desktop callbacks for session selection."""
-        return DesktopSessionSelectionCallbacks(
-            mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
-            capture_pending_reference_lines=self._capture_pending_reference_lines,
             evict_stream_cache=self._evict_stream_cache,
-            show_empty_state=self._show_empty_state,
-            select_first_probe=lambda: self.on_probe_combobox_activated(0),
-        )
-
-    def _desktop_mouse_root_callbacks(self) -> DesktopMouseRootCallbacks:
-        """Build desktop callbacks for mouse-root loading."""
-        return DesktopMouseRootCallbacks(
             clear_histology_context=self.histology_context.clear,
+            select_first_session=lambda: self.on_session_combobox_activated(0),
+            select_first_probe=lambda: self.on_probe_combobox_activated(0),
             busy_context=lambda *args, **kwargs: BusyContext(
                 self,
                 *args,
                 **kwargs,
-            ),
-            select_first_session=lambda: self.on_session_combobox_activated(0),
-        )
-
-    def _init_path_dialog_presenter(self) -> None:
-        """Wire desktop behavior for path-selection folder dialogs."""
-        self.folder_dialog = DesktopFolderDialog(parent=None)
-        self.path_dialog_presenter = DesktopPathDialogPresenter(
-            folder_dialog=self.folder_dialog,
-            callbacks=DesktopPathDialogCallbacks(
-                active_mouse_root=self._active_mouse_root_path,
-                set_mouse_root=self.desktop_workbench.set_mouse_root,
-                active_output_root=lambda: self.document.output_root,
-                set_save_root=self.output_path_presenter.set_save_root,
             ),
         )
 
@@ -663,8 +550,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
             commands=self.app.commands,
             callbacks=PreviousAlignmentLoadCallbacks(
-                select_folder=lambda: self.folder_dialog.select_existing_directory_text(
-                    "Load Existing Alignments",
+                select_folder=lambda: (
+                    self.desktop_workbench.select_existing_directory_text(
+                        "Load Existing Alignments",
+                    )
                 ),
                 use_docdb=lambda: self.use_docdb,
                 set_reload_folder_text=self.reload_folder_line.setText,
@@ -738,13 +627,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 OUTPUT_ROOT_ENV_VAR,
                 output_root,
             )
-
-    def _active_mouse_root_path(self) -> Path | None:
-        """Return the currently loaded mouse-root path for dialog defaults."""
-        mouse_root = self.data_context.mouse_root
-        if mouse_root is None:
-            return None
-        return mouse_root.root
 
     def init_variables(self) -> None:
         """
@@ -1315,7 +1197,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_mouse_root_selected(self) -> bool:
         """Prompt for the mouse-root directory."""
-        return self.path_dialog_presenter.select_mouse_root()
+        return self.desktop_workbench.select_mouse_root()
 
     def on_mouse_root_edited(self) -> None:
         """Triggered when the user finishes editing the mouse-root text field."""
@@ -1368,25 +1250,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
-        self.load_workflow_presenter.load_data_button_pressed()
+        self.desktop_workbench.load_data_button_pressed()
 
     def _ensure_output_directory_for_save(
         self, requirement: Requirement | None = None
     ) -> bool:
         """Require a save location before writing alignment outputs."""
-        return self.output_folder_prompt.ensure_for_save(requirement)
+        return self.desktop_workbench.ensure_output_directory_for_save(requirement)
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
-        return self.output_path_presenter.set_save_root(save_root)
+        return self.desktop_workbench.set_save_root(save_root)
 
     def on_output_folder_selected(self) -> bool:
         """Prompt the user for a save-root directory."""
-        return self.path_dialog_presenter.select_output_root()
+        return self.desktop_workbench.select_output_root()
 
     def on_output_folder_edited(self) -> None:
         """Triggered when user finishes editing output_folder_line text field."""
-        self.output_path_presenter.output_folder_edited()
+        self.desktop_workbench.output_folder_edited()
 
     def recreate_alignment_and_regions(
         self,

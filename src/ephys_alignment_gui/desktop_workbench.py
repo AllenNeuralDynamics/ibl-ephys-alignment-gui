@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_histology_presenter import (
     DesktopHistologyPresenter,
     DesktopHistologyRenderCallbacks,
@@ -18,9 +21,19 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
+from ephys_alignment_gui.desktop_load_workflow_presenter import (
+    DesktopLoadWorkflowPresenter,
+    DesktopOutputFolderPrompt,
+    OutputFolderPromptCallbacks,
+)
 from ephys_alignment_gui.desktop_mouse_root_presenter import (
     DesktopMouseRootCallbacks,
     DesktopMouseRootPresenter,
+)
+from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathPresenter
+from ephys_alignment_gui.desktop_path_dialog_presenter import (
+    DesktopPathDialogCallbacks,
+    DesktopPathDialogPresenter,
 )
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
@@ -40,10 +53,28 @@ AlignmentCallbacksFactory = Callable[
     [DesktopHistologyPresenter],
     DesktopAlignmentRenderCallbacks,
 ]
-ProbeSelectionCallbacksFactory = Callable[
-    [DesktopLoadDataPresenter],
-    DesktopProbeSelectionCallbacks,
-]
+
+
+@dataclass(frozen=True)
+class DesktopSelectionWorkflowCallbacks:
+    """MainWindow bridge callbacks for selection and load presenters."""
+
+    capture_pending_reference_lines: Callable[[], None]
+    stash_and_detach_current: Callable[[], None]
+    teardown_session: Callable[[], None]
+    init_session_variables: Callable[[], None]
+    select_shank_for_view: Callable[[int, str], int | None]
+    setup_session_view: Callable[[bool | None, int], None]
+    clear_empty_state: Callable[[], None]
+    set_histology_available: Callable[[bool], None]
+    busy_context: Callable[..., AbstractContextManager[Any]]
+    mouse_root_loaded: Callable[[], bool]
+    active_shank_idx: Callable[[], int]
+    show_empty_state: Callable[[], None]
+    evict_stream_cache: Callable[[], None]
+    clear_histology_context: Callable[[], None]
+    select_first_session: Callable[[], None]
+    select_first_probe: Callable[[], None]
 
 
 @dataclass
@@ -58,6 +89,11 @@ class DesktopWorkbench:
     probe_selection_presenter: DesktopProbeSelectionPresenter
     session_selection_presenter: DesktopSessionSelectionPresenter
     mouse_root_presenter: DesktopMouseRootPresenter
+    output_path_presenter: DesktopOutputPathPresenter
+    path_dialog_presenter: DesktopPathDialogPresenter
+    load_workflow_presenter: DesktopLoadWorkflowPresenter
+    output_folder_prompt: DesktopOutputFolderPrompt
+    folder_dialog: DesktopFolderDialog
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -67,20 +103,22 @@ class DesktopWorkbench:
         app: Any,
         selection_view: Any,
         path_view: Any,
+        parent: Any,
         histology_panel: Any,
         histology_callbacks: DesktopHistologyRenderCallbacks,
         alignment_callbacks_factory: AlignmentCallbacksFactory,
         shank_callbacks: DesktopShankRenderCallbacks,
-        load_data_callbacks: DesktopLoadDataCallbacks,
-        probe_selection_callbacks_factory: ProbeSelectionCallbacksFactory,
-        session_selection_callbacks: DesktopSessionSelectionCallbacks,
-        mouse_root_callbacks: DesktopMouseRootCallbacks,
+        selection_callbacks: DesktopSelectionWorkflowCallbacks,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
         histology_presenter = DesktopHistologyPresenter(
             app=app,
             panel=histology_panel,
             callbacks=histology_callbacks,
+        )
+        output_path_presenter = DesktopOutputPathPresenter(
+            commands=app.commands,
+            path_view=path_view,
         )
         alignment_presenter = DesktopAlignmentPresenter(app.events)
         alignment_presenter.configure(
@@ -92,23 +130,55 @@ class DesktopWorkbench:
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
             selection_view=selection_view,
-            callbacks=load_data_callbacks,
+            callbacks=cls._load_data_callbacks(
+                selection_callbacks,
+                output_path_presenter,
+            ),
         )
         probe_selection_presenter = DesktopProbeSelectionPresenter(
             commands=app.commands,
             selection_view=selection_view,
-            callbacks=probe_selection_callbacks_factory(load_data_presenter),
+            callbacks=cls._probe_selection_callbacks(
+                selection_callbacks,
+                output_path_presenter,
+                load_data_presenter,
+            ),
         )
         session_selection_presenter = DesktopSessionSelectionPresenter(
             commands=app.commands,
             selection_view=selection_view,
-            callbacks=session_selection_callbacks,
+            callbacks=cls._session_selection_callbacks(selection_callbacks),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
             commands=app.commands,
             path_view=path_view,
             selection_view=selection_view,
-            callbacks=mouse_root_callbacks,
+            callbacks=cls._mouse_root_callbacks(selection_callbacks),
+        )
+        folder_dialog = DesktopFolderDialog(parent=None)
+        path_dialog_presenter = DesktopPathDialogPresenter(
+            folder_dialog=folder_dialog,
+            callbacks=DesktopPathDialogCallbacks(
+                active_mouse_root=app.queries.active_mouse_root_path,
+                set_mouse_root=mouse_root_presenter.set_mouse_root,
+                active_output_root=app.queries.active_output_root,
+                set_save_root=output_path_presenter.set_save_root,
+            ),
+        )
+        output_folder_prompt = DesktopOutputFolderPrompt(
+            parent=parent,
+            callbacks=OutputFolderPromptCallbacks(
+                derive_output_directory_from_save_root=(
+                    output_path_presenter.derive_output_directory_from_save_root
+                ),
+                has_output_directory=app.queries.has_output_directory,
+                select_output_folder=path_dialog_presenter.select_output_root,
+            ),
+        )
+        load_workflow_presenter = DesktopLoadWorkflowPresenter(
+            can_load_data=app.commands.can_load_data,
+            load_heavy_data=load_data_presenter.load_heavy_data,
+            output_folder_prompt=output_folder_prompt,
         )
         return cls(
             app=app,
@@ -119,6 +189,82 @@ class DesktopWorkbench:
             probe_selection_presenter=probe_selection_presenter,
             session_selection_presenter=session_selection_presenter,
             mouse_root_presenter=mouse_root_presenter,
+            output_path_presenter=output_path_presenter,
+            path_dialog_presenter=path_dialog_presenter,
+            load_workflow_presenter=load_workflow_presenter,
+            output_folder_prompt=output_folder_prompt,
+            folder_dialog=folder_dialog,
+        )
+
+    @staticmethod
+    def _load_data_callbacks(
+        callbacks: DesktopSelectionWorkflowCallbacks,
+        output_path_presenter: DesktopOutputPathPresenter,
+    ) -> DesktopLoadDataCallbacks:
+        """Build callbacks for cached/fresh data loading."""
+        return DesktopLoadDataCallbacks(
+            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            stash_and_detach_current=callbacks.stash_and_detach_current,
+            teardown_session=callbacks.teardown_session,
+            init_session_variables=callbacks.init_session_variables,
+            select_shank_for_view=callbacks.select_shank_for_view,
+            display_output_directory=output_path_presenter.display_output_directory,
+            setup_session_view=callbacks.setup_session_view,
+            clear_empty_state=callbacks.clear_empty_state,
+            set_histology_available=callbacks.set_histology_available,
+            busy_context=callbacks.busy_context,
+        )
+
+    @staticmethod
+    def _probe_selection_callbacks(
+        callbacks: DesktopSelectionWorkflowCallbacks,
+        output_path_presenter: DesktopOutputPathPresenter,
+        load_data_presenter: DesktopLoadDataPresenter,
+    ) -> DesktopProbeSelectionCallbacks:
+        """Build callbacks for probe selection."""
+        return DesktopProbeSelectionCallbacks(
+            mouse_root_loaded=callbacks.mouse_root_loaded,
+            active_shank_idx=callbacks.active_shank_idx,
+            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            stash_and_detach_current=callbacks.stash_and_detach_current,
+            present_cached_probe_selection=(
+                lambda session, probe, shank: (
+                    load_data_presenter.present_cached_probe_selection(
+                        session_name=session,
+                        probe_name=probe,
+                        target_shank=shank,
+                    )
+                )
+            ),
+            show_empty_state=callbacks.show_empty_state,
+            busy_context=callbacks.busy_context,
+            init_session_variables=callbacks.init_session_variables,
+            select_shank_for_view=callbacks.select_shank_for_view,
+            display_output_directory=output_path_presenter.display_output_directory,
+        )
+
+    @staticmethod
+    def _session_selection_callbacks(
+        callbacks: DesktopSelectionWorkflowCallbacks,
+    ) -> DesktopSessionSelectionCallbacks:
+        """Build callbacks for session selection."""
+        return DesktopSessionSelectionCallbacks(
+            mouse_root_loaded=callbacks.mouse_root_loaded,
+            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            evict_stream_cache=callbacks.evict_stream_cache,
+            show_empty_state=callbacks.show_empty_state,
+            select_first_probe=callbacks.select_first_probe,
+        )
+
+    @staticmethod
+    def _mouse_root_callbacks(
+        callbacks: DesktopSelectionWorkflowCallbacks,
+    ) -> DesktopMouseRootCallbacks:
+        """Build callbacks for mouse-root loading."""
+        return DesktopMouseRootCallbacks(
+            clear_histology_context=callbacks.clear_histology_context,
+            busy_context=callbacks.busy_context,
+            select_first_session=callbacks.select_first_session,
         )
 
     def connect_events(self) -> list[EventSubscription]:
@@ -198,3 +344,35 @@ class DesktopWorkbench:
     def probe_selected(self) -> bool:
         """Select the current probe from the desktop widgets."""
         return self.probe_selection_presenter.probe_selected()
+
+    def load_data_button_pressed(self) -> bool:
+        """Run desktop load workflow policy and load data when allowed."""
+        return self.load_workflow_presenter.load_data_button_pressed()
+
+    def ensure_output_directory_for_save(self, requirement: Any | None = None) -> bool:
+        """Require a save location before writing alignment outputs."""
+        return self.output_folder_prompt.ensure_for_save(requirement)
+
+    def set_save_root(self, save_root: Path) -> bool:
+        """Set the save-root directory. Per-probe output lands under it."""
+        return self.output_path_presenter.set_save_root(save_root)
+
+    def select_mouse_root(self) -> bool:
+        """Prompt for a mouse-root directory."""
+        return self.path_dialog_presenter.select_mouse_root()
+
+    def select_output_root(self) -> bool:
+        """Prompt for a save-root directory."""
+        return self.path_dialog_presenter.select_output_root()
+
+    def output_folder_edited(self) -> bool:
+        """Handle direct edits to the output-folder text field."""
+        return self.output_path_presenter.output_folder_edited()
+
+    def log_load_requirement(self, requirement: Any) -> None:
+        """Log a load workflow requirement that has no desktop prompt action."""
+        self.load_workflow_presenter.log_requirement(requirement)
+
+    def select_existing_directory_text(self, title: str) -> str:
+        """Prompt for an existing directory and return Qt-style text."""
+        return self.folder_dialog.select_existing_directory_text(title)

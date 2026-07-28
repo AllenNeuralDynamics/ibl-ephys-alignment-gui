@@ -80,7 +80,7 @@ from ephys_alignment_gui.session_runtime import (
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
-from ephys_alignment_gui.workflow import Blocked, Ok
+from ephys_alignment_gui.workflow import Blocked, Ok, PolicyResult
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +353,10 @@ class AlignmentCommands:
     def load_histology_data(self) -> HistologyLoadResult:
         """Load subject-level histology runtime data if it is available."""
         return self._histology_data_workflow.load_if_needed()
+
+    def can_load_data(self) -> PolicyResult:
+        """Return whether the selected stream can be loaded."""
+        return self._controller.can_load_data()
 
     def can_save_alignment_output(self) -> Ok | Blocked:
         """Return whether visited alignment outputs can be saved."""
@@ -647,6 +651,20 @@ class AlignmentQueries:
             self.histology_context is not None
             and self.histology_context.brain_atlas is not None
         )
+
+    def active_mouse_root_path(self) -> Path | None:
+        """Return the active mouse-root path, if one is loaded."""
+        if self.data_context is None or self.data_context.mouse_root is None:
+            return None
+        return self.data_context.mouse_root.root
+
+    def active_output_root(self) -> Path | None:
+        """Return the active output root, if one has been set."""
+        return self.document.output_root
+
+    def has_output_directory(self) -> bool:
+        """Return whether the active probe output directory is available."""
+        return self.document.output_directory is not None
 
     def active_unit_filter(self) -> str:
         """Return the selected unit subset for active ephys plot data."""

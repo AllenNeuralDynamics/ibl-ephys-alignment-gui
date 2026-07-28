@@ -53,7 +53,7 @@ from ephys_alignment_gui.session_runtime import (
 )
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceRuntime
-from ephys_alignment_gui.workflow import Ok
+from ephys_alignment_gui.workflow import Blocked, Ok
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 
@@ -582,6 +582,35 @@ def test_commands_path_operations_delegate_to_controller() -> None:
     assert controller.mouse_root_calls == [Path("/data/mouse")]
     assert controller.output_root_calls == [Path("/results")]
     assert controller.derive_calls == 1
+
+
+def test_commands_can_load_data_delegates_to_workflow_policy() -> None:
+    workspace = AlignmentWorkspace()
+
+    result = workspace.app.commands.can_load_data()
+
+    assert isinstance(result, Blocked)
+    assert result.first.code == "probe_required"
+
+
+def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
+    workspace = AlignmentWorkspace()
+    queries = workspace.app.queries
+
+    assert queries.active_mouse_root_path() is None
+    assert queries.active_output_root() is None
+    assert not queries.has_output_directory()
+
+    mouse_root = _mouse_root_with_probe()
+    output_root = tmp_path / "results"
+    output_directory = output_root / "rec" / "probe"
+    workspace.data_context.mouse_root = mouse_root
+    workspace.document.set_output_root(output_root)
+    workspace.document.set_output_directory(output_directory)
+
+    assert queries.active_mouse_root_path() == mouse_root.root
+    assert queries.active_output_root() == output_root
+    assert queries.has_output_directory()
 
 
 def test_commands_select_probe_metadata_delegates_to_controller() -> None:
