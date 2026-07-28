@@ -154,7 +154,7 @@ class AlignmentEditNoop:
 
 
 @dataclass(frozen=True)
-class ShankAlignmentRuntimeInitialized:
+class ShankRuntimeInitialized:
     """Runtime alignment engine was initialized for one shank."""
 
     feature_init: Any
@@ -498,13 +498,13 @@ class AlignmentController:
             return state_or_failed
         return state_or_failed.pending_reference_lines
 
-    def initialize_shank_alignment_runtime(
+    def initialize_shank_runtime(
         self,
         shank_runtime: ShankRuntime,
         *,
         track_annotations_ras: Any,
         brain_atlas: Any,
-    ) -> ShankAlignmentRuntimeInitialized | Failed:
+    ) -> ShankRuntimeInitialized | Failed:
         """Initialize loaded runtime alignment state for the active document shank."""
         state_or_failed = self._active_state_for_shank(shank_runtime.shank_idx)
         if isinstance(state_or_failed, Failed):
@@ -530,7 +530,7 @@ class AlignmentController:
             )
             seeded_document_alignment = True
 
-        return ShankAlignmentRuntimeInitialized(
+        return ShankRuntimeInitialized(
             feature_init=initialized.feature_init,
             track_init=initialized.track_init,
             track_annos_and_ends_ras=initialized.track_annos_and_ends_ras,

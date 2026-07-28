@@ -13,7 +13,7 @@ from ephys_alignment_gui.shank_runtime import ShankRuntime
 
 
 @dataclass(frozen=True)
-class InitializedShankAlignmentRuntime:
+class ShankRuntimeInitialized:
     """Derived runtime state produced when a shank alignment engine is built."""
 
     ephysalign: Any
@@ -39,7 +39,7 @@ class AlignmentRuntimeService:
         brain_atlas: Any,
         feature_prev: Any = None,
         track_prev: Any = None,
-    ) -> InitializedShankAlignmentRuntime:
+    ) -> ShankRuntimeInitialized:
         """Build an alignment engine and attach derived state to shank runtime."""
         alignment_kwargs = {
             "track_annotations_ras": track_annotations_ras,
@@ -62,7 +62,7 @@ class AlignmentRuntimeService:
             ephysalign.get_track_and_feature()
         )
 
-        initialized = InitializedShankAlignmentRuntime(
+        initialized = ShankRuntimeInitialized(
             ephysalign=ephysalign,
             feature_init=np.asarray(feature_init, dtype=float),
             track_init=np.asarray(track_init, dtype=float),
@@ -81,7 +81,7 @@ class AlignmentRuntimeService:
     def _attach(
         shank_runtime: ShankRuntime,
         track_annotations_ras: Any,
-        initialized: InitializedShankAlignmentRuntime,
+        initialized: ShankRuntimeInitialized,
     ) -> None:
         shank_runtime.track_annotations_ras = np.asarray(
             track_annotations_ras,

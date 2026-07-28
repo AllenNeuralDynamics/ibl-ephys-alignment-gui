@@ -388,7 +388,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 set_view=self.set_view,
                 set_axis=self.set_axis,
                 set_font=self.set_font,
-                add_lines_points=self.add_lines_points,
+                add_lines_points=self.reference_lines.add_to_plots,
                 sizes=lambda: EphysExportSizes(
                     probe_width=self.fig_probe_width,
                     axis_width=self.fig_ax_width,
@@ -547,9 +547,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 histology_available=lambda: self.histology_exists,
                 activate_window=self.activateWindow,
                 set_axis=self.set_axis,
-                capture_pending_reference_lines=(
-                    self._capture_pending_reference_lines
-                ),
+                capture_pending_reference_lines=self._capture_pending_reference_lines,
             ),
         )
 
@@ -711,7 +709,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             callbacks=DesktopPlotExportCallbacks(
                 set_axis=self.set_axis,
                 set_font=self.set_font,
-                add_lines_points=self.add_lines_points,
+                add_lines_points=self.reference_lines.add_to_plots,
                 slice_geometry=lambda: SliceExportGeometry(
                     width=self.slice_width,
                     height=self.slice_height,
@@ -1079,34 +1077,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
         return state
 
-    def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
-        """Compatibility wrapper for perpendicular slice rendering."""
-        self.slice_panel.plot_perpendicular_histology(channel_name)
-
-    def update_perpendicular_levels(self) -> None:
-        """Compatibility wrapper for slice/perpendicular lookup synchronization."""
-        self.slice_panel.update_perpendicular_levels()
-
-    def refresh_perpendicular_histology(self) -> None:
-        """Compatibility wrapper for refreshing the perpendicular slice."""
-        self.slice_panel.refresh_perpendicular_histology()
-
-    def _current_scalar_slice_channel(self) -> str | None:
-        """Compatibility wrapper for current scalar slice selection."""
-        return self.slice_panel.current_scalar_slice_channel()
-
-    def _current_slice_render_state(self) -> Any:
-        """Compatibility wrapper for current slice render state."""
-        return self.slice_panel.current_slice_render_state()
-
-    def _current_slice_selection(self) -> SliceSelection | None:
-        """Compatibility wrapper for current slice selection."""
-        return self.slice_panel.current_slice_selection()
-
-    def _slice_action_for_selection(self, selection: SliceSelection) -> Any:
-        """Compatibility wrapper for slice QAction lookup."""
-        return self.slice_panel.action_for_selection(selection)
-
     def offset_hist_data(self, track_shift_m: float = 0.0) -> bool:
         """
         Offset location of probe tip along probe track
@@ -1212,7 +1182,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _create_reference_lines_for_previous_alignment(self) -> None:
         feature_prev = self._active_previous_feature()
         if feature_prev is not None and np.any(feature_prev):
-            self.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
+            self.reference_lines.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
 
     def _desktop_shank_render_callbacks(self) -> DesktopShankRenderCallbacks:
         return DesktopShankRenderCallbacks(
@@ -1262,30 +1232,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         state = self._active_fit_plot_state()
         if state is not None:
             self.histology_panel.render_fit(state)
-
-    def plot_slice(self, data, img_type) -> None:
-        """Compatibility wrapper for legacy slice-data call sites."""
-        self.slice_panel.plot_slice(data, img_type)
-
-    def _selection_for_slice_payload(
-        self,
-        data: Any,
-        img_type: str,
-    ) -> SliceSelection | None:
-        """Compatibility wrapper for legacy slice-data selection lookup."""
-        return self.slice_panel.selection_for_slice_payload(data, img_type)
-
-    def plot_slice_selection(self, selection: SliceSelection) -> None:
-        """Compatibility wrapper for coronal slice selection rendering."""
-        self.slice_panel.plot_slice_selection(selection)
-
-    def render_slice(self, render_state: Any) -> None:
-        """Compatibility wrapper for coronal slice rendering."""
-        self.slice_panel.render_slice(render_state)
-
-    def plot_channels(self, projection=None) -> None:
-        """Compatibility wrapper for coronal slice channel overlays."""
-        self.slice_panel.plot_channels(projection)
 
     ### --------- interaction functions --------- ###
     def _teardown_session(self) -> None:
@@ -1514,7 +1460,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error("Cannot recreate alignment: track annotations are not loaded")
             return False
 
-        result = self.app.commands.initialize_shank_alignment_runtime(
+        result = self.app.commands.initialize_shank_runtime(
             shank_runtime,
             track_annotations_ras=track_annotations_ras,
             brain_atlas=brain_atlas,
@@ -1544,14 +1490,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(pending_lines.message)
             pending_lines = None
         if pending_lines is not None:
-            self.create_lines(
+            self.reference_lines.create_lines(
                 pending_lines.feature_positions_um,
                 pending_lines.track_positions_um,
             )
         else:
             feature_prev = self._active_previous_feature()
             if feature_prev is not None and np.any(feature_prev):
-                self.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
+                self.reference_lines.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
 
     def setup_session_view(
         self,
@@ -1586,8 +1532,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         )
         prev_ephys_plot_keys = (
             self.ephys_plot_presenter.current_plot_keys()
-            if preserve_plot_selection
-            and self.ephys_plot_presenter.has_plot_menus()
+            if preserve_plot_selection and self.ephys_plot_presenter.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -1755,8 +1700,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_histology()
         self.plot_histology_ref()
         self.plot_scale_factor()
-        self.remove_lines_points()
-        self.add_lines_points()
+        self._reattach_reference_lines()
 
     def fit_button_pressed(self) -> None:
         """
@@ -1838,9 +1782,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         lines_visible = self.display_state.toggle_reference_lines_visible()
         if not lines_visible:
-            self.remove_lines_points()
+            self.reference_lines.remove_from_plots()
         else:
-            self.add_lines_points()
+            self.reference_lines.add_to_plots()
 
     def toggle_channel_button_pressed(self) -> None:
         """
@@ -2046,21 +1990,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         self.histology_panel.sync_tip_to_top()
 
-    def remove_lines_points(self) -> None:
-        """
-        Removes all reference lines and scatter points from the ephys, histology and fit plots
-        """
-        self.reference_lines.remove_from_plots()
-
-    def add_lines_points(self) -> None:
-        """
-        Adds all reference lines and scatter points from the ephys, histology and fit plots
-        """
-        self.reference_lines.add_to_plots()
-
     def _reattach_reference_lines(self) -> None:
-        self.remove_lines_points()
-        self.add_lines_points()
+        self.reference_lines.remove_from_plots()
+        self.reference_lines.add_to_plots()
 
     def update_lines_points(self) -> None:
         """
@@ -2068,9 +2000,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         updates location of scatter point
         """
         self.reference_lines.sync_track_to_feature()
-
-    def create_lines(self, positions, track_positions=None) -> None:
-        self.reference_lines.create_lines(positions, track_positions)
 
     def create_line_style(self):
         """

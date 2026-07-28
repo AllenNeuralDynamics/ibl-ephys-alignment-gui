@@ -16,8 +16,7 @@ class ShankRuntime:
     """Heavy/derived runtime state for one shank of a loaded ephys stream.
 
     This object owns loaded-data-derived state, not editable alignment history
-    or Qt/pyqtgraph items. ``ShankAlignment`` may project these fields for
-    compatibility while older plotting code is hollowed out.
+    or Qt/pyqtgraph items.
     """
 
     collection: ChannelCollectionView

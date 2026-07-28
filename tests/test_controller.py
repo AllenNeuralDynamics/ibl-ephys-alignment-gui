@@ -27,7 +27,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
-    ShankAlignmentRuntimeInitialized,
+    ShankRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
@@ -586,7 +586,7 @@ def test_select_previous_alignment_rebases_working_state_and_clears_lines() -> N
     assert state.pending_reference_lines is None
 
 
-def test_initialize_shank_alignment_runtime_seeds_empty_document_state() -> None:
+def test_initialize_shank_runtime_seeds_empty_document_state() -> None:
     doc = AlignmentDocument()
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
     runtime_service = FakeAlignmentRuntimeService()
@@ -596,13 +596,13 @@ def test_initialize_shank_alignment_runtime_seeds_empty_document_state() -> None
     )
     shank_runtime = SimpleNamespace(shank_idx=0, chn_depths=np.array([10.0, 20.0]))
 
-    result = controller.initialize_shank_alignment_runtime(
+    result = controller.initialize_shank_runtime(
         shank_runtime,
         track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
         brain_atlas="atlas",
     )
 
-    assert isinstance(result, ShankAlignmentRuntimeInitialized)
+    assert isinstance(result, ShankRuntimeInitialized)
     assert result.seeded_document_alignment
     state = doc.active_alignment_state
     assert state is not None
@@ -613,7 +613,7 @@ def test_initialize_shank_alignment_runtime_seeds_empty_document_state() -> None
     assert runtime_service.calls[0][1]["brain_atlas"] == "atlas"
 
 
-def test_initialize_shank_alignment_runtime_preserves_existing_alignment() -> None:
+def test_initialize_shank_runtime_preserves_existing_alignment() -> None:
     doc = AlignmentDocument()
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
     state = doc.active_alignment_state
@@ -630,13 +630,13 @@ def test_initialize_shank_alignment_runtime_preserves_existing_alignment() -> No
         alignment_runtime_service=runtime_service,
     )
 
-    result = controller.initialize_shank_alignment_runtime(
+    result = controller.initialize_shank_runtime(
         SimpleNamespace(shank_idx=0, chn_depths=np.array([10.0, 20.0])),
         track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
         brain_atlas="atlas",
     )
 
-    assert isinstance(result, ShankAlignmentRuntimeInitialized)
+    assert isinstance(result, ShankRuntimeInitialized)
     assert not result.seeded_document_alignment
     assert state.active_alignment is not None
     np.testing.assert_array_equal(state.active_alignment.feature, [9.0, 10.0])
@@ -651,7 +651,7 @@ def test_initialize_shank_alignment_runtime_preserves_existing_alignment() -> No
     )
 
 
-def test_initialize_shank_alignment_runtime_rejects_shank_mismatch() -> None:
+def test_initialize_shank_runtime_rejects_shank_mismatch() -> None:
     doc = AlignmentDocument()
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
     controller, _, _ = make_controller(
@@ -659,7 +659,7 @@ def test_initialize_shank_alignment_runtime_rejects_shank_mismatch() -> None:
         alignment_runtime_service=FakeAlignmentRuntimeService(),
     )
 
-    result = controller.initialize_shank_alignment_runtime(
+    result = controller.initialize_shank_runtime(
         SimpleNamespace(shank_idx=1, chn_depths=np.array([10.0, 20.0])),
         track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
         brain_atlas="atlas",

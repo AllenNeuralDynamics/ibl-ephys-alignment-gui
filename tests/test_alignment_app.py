@@ -38,7 +38,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     ProbeSelected,
     RecordingSelected,
-    ShankAlignmentRuntimeInitialized,
+    ShankRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
@@ -1093,19 +1093,19 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
     assert workspace.display_state.unit_filter == "KS good"
 
 
-def test_commands_initialize_shank_alignment_runtime_delegates_to_controller() -> None:
+def test_commands_initialize_shank_runtime_delegates_to_controller() -> None:
     runtime_initializer = FakeRuntimeInitializer()
     workspace = AlignmentWorkspace(alignment_runtime_service=runtime_initializer)
     workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
     shank_runtime = SimpleNamespace(shank_idx=0, chn_depths=np.array([10.0, 20.0]))
 
-    result = workspace.app.commands.initialize_shank_alignment_runtime(
+    result = workspace.app.commands.initialize_shank_runtime(
         shank_runtime,
         track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
         brain_atlas="atlas",
     )
 
-    assert isinstance(result, ShankAlignmentRuntimeInitialized)
+    assert isinstance(result, ShankRuntimeInitialized)
     assert result.seeded_document_alignment
     assert runtime_initializer.calls[0][0] is shank_runtime
     assert runtime_initializer.calls[0][1]["brain_atlas"] == "atlas"
