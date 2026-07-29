@@ -12,6 +12,7 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
 from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     DesktopEphysPlotExporter,
     EphysExportCallbacks,
@@ -115,7 +116,6 @@ class DesktopShankRenderPorts:
     apply_plot_data_state: Callable[[Any], None]
     raw_image_payloads: Callable[[], Any]
     render_plot_menus: Callable[[Any], None]
-    render_ephys_plots: Callable[[Any], None]
     render_histology_plots: Callable[[int], None]
     restore_slice_selection: Callable[[Any, Any, Any], None]
     configure_view: Callable[[bool], None]
@@ -258,6 +258,7 @@ class DesktopWorkbench:
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
+    ephys_display: DesktopEphysDisplay
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -268,8 +269,7 @@ class DesktopWorkbench:
         selection_view: Any,
         path_view: Any,
         parent: Any,
-        ephys_plot_presenter: Any,
-        ephys_panel: Any,
+        ephys_display: DesktopEphysDisplay,
         slice_panel: Any,
         histology_panel: Any,
         ports: DesktopWorkbenchPorts,
@@ -294,7 +294,10 @@ class DesktopWorkbench:
         )
         shank_presenter = DesktopShankPresenter(app)
         shank_presenter.configure(
-            callbacks=cls._shank_render_callbacks(ports.render.shank)
+            callbacks=cls._shank_render_callbacks(
+                ports.render.shank,
+                ephys_display,
+            )
         )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
@@ -367,13 +370,12 @@ class DesktopWorkbench:
         interaction_presenter = cls._interaction_presenter(
             ports.interaction,
             app=app,
-            ephys_panel=ephys_panel,
+            ephys_panel=ephys_display.panel,
             histology_panel=histology_panel,
         )
         plot_exporter = cls._plot_exporter(
             ports.export,
-            ephys_plot_presenter=ephys_plot_presenter,
-            ephys_panel=ephys_panel,
+            ephys_display=ephys_display,
             slice_panel=slice_panel,
         )
         return cls(
@@ -394,6 +396,7 @@ class DesktopWorkbench:
             previous_alignment_load_presenter=previous_alignment_load_presenter,
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
+            ephys_display=ephys_display,
         )
 
     @staticmethod
@@ -436,6 +439,7 @@ class DesktopWorkbench:
     @staticmethod
     def _shank_render_callbacks(
         ports: DesktopShankRenderPorts,
+        ephys_display: DesktopEphysDisplay,
     ) -> DesktopShankRenderCallbacks:
         """Build callbacks for shank selection rendering."""
         return DesktopShankRenderCallbacks(
@@ -446,7 +450,7 @@ class DesktopWorkbench:
             apply_plot_data_state=ports.apply_plot_data_state,
             raw_image_payloads=ports.raw_image_payloads,
             render_plot_menus=ports.render_plot_menus,
-            render_ephys_plots=ports.render_ephys_plots,
+            render_ephys_plots=ephys_display.render_shank_ephys_plots,
             render_histology_plots=ports.render_histology_plots,
             restore_slice_selection=ports.restore_slice_selection,
             configure_view=ports.configure_view,
@@ -497,14 +501,13 @@ class DesktopWorkbench:
     def _plot_exporter(
         ports: DesktopExportPorts,
         *,
-        ephys_plot_presenter: Any,
-        ephys_panel: Any,
+        ephys_display: DesktopEphysDisplay,
         slice_panel: Any,
     ) -> DesktopPlotExporter:
         """Build the desktop plot exporter cluster."""
         ephys_exporter = DesktopEphysPlotExporter(
-            presenter=ephys_plot_presenter,
-            panel=ephys_panel,
+            presenter=ephys_display.plot_presenter,
+            panel=ephys_display.panel,
             layout=EphysExportLayout(
                 graphics_layout=ports.ephys_graphics_layout,
                 data_area=ports.ephys_data_area,

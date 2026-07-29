@@ -232,6 +232,16 @@ class FakePlotExporter:
         self.exports.append((output_dir, sess_info))
 
 
+class FakeEphysDisplay:
+    def __init__(self) -> None:
+        self.panel = object()
+        self.plot_presenter = object()
+        self.rendered_states: list[Any] = []
+
+    def render_shank_ephys_plots(self, state: Any) -> None:
+        self.rendered_states.append(state)
+
+
 class FakeInteractionPresenter:
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -293,6 +303,7 @@ def _workbench(
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
     interaction: Any | None = None,
+    ephys_display: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -316,6 +327,7 @@ def _workbench(
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
+        ephys_display=ephys_display or FakeEphysDisplay(),
     )
 
 
@@ -490,7 +502,6 @@ def _render_ports() -> DesktopRenderPorts:
             apply_plot_data_state=lambda _state: None,
             raw_image_payloads=dict,
             render_plot_menus=lambda _state: None,
-            render_ephys_plots=lambda _state: None,
             render_histology_plots=lambda _shank_idx: None,
             restore_slice_selection=lambda _state, _selection, _label: None,
             configure_view=lambda _preserve: None,
@@ -602,8 +613,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     commands = SimpleNamespace(can_load_data=lambda: Ok())
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
     panel = object()
-    ephys_plot_presenter = object()
-    ephys_panel = object()
+    ephys_display = FakeEphysDisplay()
     slice_panel = object()
 
     workbench = DesktopWorkbench.create(
@@ -611,8 +621,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         selection_view=object(),
         path_view=object(),
         parent=object(),
-        ephys_plot_presenter=ephys_plot_presenter,
-        ephys_panel=ephys_panel,
+        ephys_display=ephys_display,
         slice_panel=slice_panel,
         histology_panel=panel,
         ports=ports,
@@ -652,8 +661,13 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
-    assert workbench.plot_exporter.ephys_exporter.presenter is ephys_plot_presenter
-    assert workbench.plot_exporter.ephys_exporter.panel is ephys_panel
+    assert workbench.ephys_display is ephys_display
+    workbench.shank_presenter.callbacks.render_ephys_plots("state")
+    assert ephys_display.rendered_states == ["state"]
+    assert workbench.plot_exporter.ephys_exporter.presenter is (
+        ephys_display.plot_presenter
+    )
+    assert workbench.plot_exporter.ephys_exporter.panel is ephys_display.panel
     assert workbench.plot_exporter.slice_handles.slice_panel is slice_panel
     assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
     assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (

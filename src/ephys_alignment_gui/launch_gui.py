@@ -28,26 +28,14 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     ShankSelected,
 )
-from ephys_alignment_gui.desktop_ephys_panel_layout import (
-    DesktopEphysPanelLayout,
-    EphysPanelLayoutCallbacks,
-    EphysPanelLayoutSizes,
-)
-from ephys_alignment_gui.desktop_ephys_panel_view import (
-    DesktopEphysPanelView,
-    EphysPanelPlots,
-    EphysPanelStyle,
-)
-from ephys_alignment_gui.desktop_ephys_plot_presenter import (
-    DesktopEphysPlotPresenter,
-    EphysPlotRenderCallbacks,
-)
+from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
+    desktop_ephys_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.histology_panel_presenter import (
@@ -138,19 +126,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.workspace.alignment_derived_data_service
         )
         self.plot_data_factory = self.workspace.plot_data_factory
-        self.ephys_plot_presenter = DesktopEphysPlotPresenter(
-            app=self.app,
-            callbacks=EphysPlotRenderCallbacks(
-                raw_image_payloads=lambda: self.raw_image_payloads,
-                render_image=lambda data: self.ephys_panel.render_image(data),
-                render_scatter=lambda data: self.ephys_panel.render_scatter(data),
-                render_line=lambda data: self.ephys_panel.render_line(data),
-                render_probe=lambda data, bounds: self.ephys_panel.render_probe(
-                    data,
-                    bounds=bounds,
-                ),
-            ),
-        )
         self.popup_manager = DesktopPopupManager()
         self.init_variables()
         self.offline: bool = offline
@@ -169,25 +144,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             mouse_root_line=self.mouse_root_line,
             output_folder_line=self.output_folder_line,
         )
-        self.ephys_panel = DesktopEphysPanelView(
-            plots=EphysPanelPlots(
-                image=self.fig_img,
-                image_colorbar=self.fig_img_cb,
-                line=self.fig_line,
-                probe=self.fig_probe,
-                probe_colorbar=self.fig_probe_cb,
-            ),
-            style=EphysPanelStyle(line_pen=self.kpen_solid),
-            set_axis=self.set_axis,
-            cluster_clicked=lambda *args: self.desktop_workbench.cluster_clicked(*args),
-        )
-        self.ephys_panel_layout = DesktopEphysPanelLayout(
-            panel=self.ephys_panel,
-            graphics_layout=self.fig_data_layout,
-            callbacks=EphysPanelLayoutCallbacks(
-                set_axis=self.set_axis,
-                reset_axis=self.reset_axis_button_pressed,
-            ),
+        self.ephys_display = DesktopEphysDisplay.create(
+            app=self.app,
+            ports=desktop_ephys_display_ports_from_main_window(self),
         )
         self.reference_lines = ReferenceLineLayer(
             plots=ReferenceLinePlots(
@@ -243,8 +202,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             selection_view=self.selection_view,
             path_view=self.path_view,
             parent=self,
-            ephys_plot_presenter=self.ephys_plot_presenter,
-            ephys_panel=self.ephys_panel,
+            ephys_display=self.ephys_display,
             slice_panel=self.slice_panel,
             histology_panel=self.histology_panel,
             ports=desktop_workbench_ports_from_main_window(self),
@@ -484,14 +442,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.slice_height = self.fig_slice.height()
             self.slice_rect = self.fig_slice.viewRect()
 
-        self.ephys_panel_layout.apply_view(
-            view,
-            EphysPanelLayoutSizes(
-                axis_width=self.fig_ax_width,
-                image_width=self.fig_img_width,
-                line_width=self.fig_line_width,
-                probe_width=self.fig_probe_width,
-            ),
+        self.ephys_display.apply_view(
+            view=view,
+            axis_width=self.fig_ax_width,
+            image_width=self.fig_img_width,
+            line_width=self.fig_line_width,
+            probe_width=self.fig_probe_width,
         )
 
     def save_plots(self, save_path=None) -> None:
@@ -696,7 +652,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Clear desktop-owned plot and popup items for the active stream."""
         self.reference_lines.clear()
         self.popup_manager.close_all()
-        self.ephys_panel.clear()
+        self.ephys_display.clear()
         self.slice_panel.clear()
         self.histology_panel.clear()
 
@@ -980,8 +936,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             prev_slice_action.text() if prev_slice_action is not None else None
         )
         prev_ephys_plot_keys = (
-            self.ephys_plot_presenter.current_plot_keys()
-            if preserve_plot_selection and self.ephys_plot_presenter.has_plot_menus()
+            self.ephys_display.current_plot_keys()
+            if preserve_plot_selection and self.ephys_display.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -1043,9 +999,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         plot_menu_state: Any,
     ) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not self.ephys_plot_presenter.has_plot_menus():
+        if not self.ephys_display.has_plot_menus():
             self.init_menubar()
-        self.ephys_plot_presenter.render_menus(plot_menu_state)
+        self.ephys_display.render_menus(plot_menu_state)
 
     def _restore_shank_slice_selection(
         self,
@@ -1356,7 +1312,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def reset_axis_button_pressed(self) -> None:
         self.set_default_feature_y_range()
-        feature_xrange = self.ephys_panel.feature_xrange
+        feature_xrange = self.ephys_display.feature_xrange
         if feature_xrange is not None:
             self.fig_img.setXRange(
                 min=feature_xrange[0],

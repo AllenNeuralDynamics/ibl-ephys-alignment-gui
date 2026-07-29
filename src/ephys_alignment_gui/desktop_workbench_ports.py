@@ -7,6 +7,7 @@ from typing import Any
 from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop_busy_context import BusyContext
+from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
@@ -19,6 +20,25 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopShankRenderPorts,
     DesktopWorkbenchPorts,
 )
+
+
+def desktop_ephys_display_ports_from_main_window(
+    window: Any,
+) -> DesktopEphysDisplayPorts:
+    """Adapt MainWindow plot handles to ephys display ports."""
+    return DesktopEphysDisplayPorts(
+        image_plot=window.fig_img,
+        image_colorbar=window.fig_img_cb,
+        line_plot=window.fig_line,
+        probe_plot=window.fig_probe,
+        probe_colorbar=window.fig_probe_cb,
+        graphics_layout=window.fig_data_layout,
+        line_pen=window.kpen_solid,
+        raw_image_payloads=lambda: window.raw_image_payloads,
+        set_axis=window.set_axis,
+        reset_axis=window.reset_axis_button_pressed,
+        cluster_clicked=lambda *args: window.desktop_workbench.cluster_clicked(*args),
+    )
 
 
 def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPorts:
@@ -90,7 +110,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 apply_plot_data_state=window._apply_shank_plot_data_state,
                 raw_image_payloads=lambda: window.raw_image_payloads,
                 render_plot_menus=window._render_shank_plot_menus,
-                render_ephys_plots=window.ephys_plot_presenter.render_shank_ephys_plots,
                 render_histology_plots=lambda shank_idx: window.render_histology_plots(
                     shank_idx=shank_idx,
                 ),
