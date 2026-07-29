@@ -99,7 +99,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.data_context = self.workspace.data_context
         self.histology_context = self.workspace.histology_context
         self.slice_service = self.workspace.slice_service
-        self.probe_track_service = self.workspace.probe_track_service
         self.region_lookup_service = self.workspace.region_lookup_service
         self.controller = self.workspace.controller
         self.alignment_derived_data_service = (
@@ -728,40 +727,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when user finishes editing output_folder_line text field."""
         self.desktop_workbench.output_folder_edited()
 
-    def recreate_alignment_and_regions(
-        self,
-        track_annotations_ras: Any | None = None,
-    ) -> bool:
-        """Initialize active shank alignment runtime through the app command."""
-        if not self.histology_exists:
-            return True
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            logger.error("Cannot recreate alignment: brain atlas is not loaded")
-            return False
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None:
-            logger.error(
-                "Cannot recreate alignment: active shank runtime is not loaded"
-            )
-            return False
-        if track_annotations_ras is None:
-            track_annotations_ras = shank_runtime.track_annotations_ras
-        if track_annotations_ras is None:
-            logger.error("Cannot recreate alignment: track annotations are not loaded")
-            return False
-
-        result = self.app.commands.initialize_shank_runtime(
-            shank_runtime,
-            track_annotations_ras=track_annotations_ras,
-            brain_atlas=brain_atlas,
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-
-        return True
-
     def render_histology_plots(self, *, shank_idx: int | None = None) -> None:
         """Render all histology plots. Common code."""
         if not self.histology_exists:
@@ -819,46 +784,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             previous_slice_selection=prev_slice.selection,
             previous_slice_label=prev_slice.label,
             previous_ephys_plot_keys=prev_ephys_plot_keys,
-        )
-
-    def _prepare_shank_runtime_for_view(self, shank_idx: int) -> None:
-        """Ensure runtime state exists for the selected shank."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is not None:
-            collection = stream_runtime.shank_runtime_for(shank_idx).collection
-            logger.debug(f"Selected {len(collection.depths)} channels for this shank")
-
-    def _prepare_shank_histology_for_view(self, shank_idx: int) -> bool:
-        """Load shank histology state and recreate alignment-derived regions."""
-        if not self.histology_exists:
-            return True
-
-        probe = self.data_context.probe_info
-        brain_atlas = self.histology_context.brain_atlas
-        if probe is None:
-            raise RuntimeError("No probe selected. Please select a probe first.")
-        if brain_atlas is None:
-            raise RuntimeError("brain_atlas not yet loaded")
-        track_annotations_ras = self.probe_track_service.load_track_annotations(
-            probe=probe,
-            shank_idx=shank_idx,
-            brain_atlas=brain_atlas,
-        )
-        logger.debug("Loaded track_annotations_ras for shank")
-
-        choices = self.controller.active_alignment_choices(shank_idx)
-        if isinstance(choices, Failed):
-            logger.error(choices.message)
-            return False
-        self.populate_lists(
-            choices.choices,
-            self.align_list,
-            self.align_combobox,
-        )
-        if self._active_alignment() is None and not self._select_alignment_choice(0):
-            return False
-        return self.recreate_alignment_and_regions(
-            track_annotations_ras=track_annotations_ras,
         )
 
     def _apply_shank_plot_data_state(
@@ -919,7 +844,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.info("Data not loaded yet, alignment params updated")
             return
 
-        if not self.recreate_alignment_and_regions():
+        prepared = self.app.commands.prepare_loaded_shank(
+            self._active_shank_idx(),
+            select_default_alignment_if_empty=False,
+        )
+        if isinstance(prepared, Failed):
+            logger.error(prepared.message)
+            return
+        if not prepared.histology_available:
             return
 
         self.render_histology_plots()

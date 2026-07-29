@@ -53,12 +53,12 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentsLoaded,
     ProbeSelected,
     RecordingSelected,
-    ShankRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
+from ephys_alignment_gui.histology_data_service import HistologyDataContext
 from ephys_alignment_gui.histology_data_workflow import (
     HistologyDataWorkflow,
     HistologyLoadResult,
@@ -72,6 +72,7 @@ from ephys_alignment_gui.plot_registry import (
     resolve_plot_payload,
 )
 from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
+from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.session_runtime import (
     LoadDataPlan,
     LoadDataTarget,
@@ -121,6 +122,16 @@ class CachedEphysDataActivated:
 
 
 @dataclass(frozen=True)
+class LoadedShankPrepared:
+    """Runtime state for one loaded shank is ready for rendering."""
+
+    shank_idx: int
+    n_channels: int
+    histology_available: bool
+    alignment_choices: list[str] | None = None
+
+
+@dataclass(frozen=True)
 class VisitedAlignmentOutputsSaved:
     """Visited alignment outputs were persisted."""
 
@@ -143,6 +154,8 @@ class AlignmentCommands:
     _runtime: SessionRuntime
     _probe_data_workflow: ProbeDataWorkflow
     _histology_data_workflow: HistologyDataWorkflow
+    _histology_context: HistologyDataContext
+    _probe_track_service: ProbeTrackService
     _plot_data_factory: PlotDataFactory
     _derived_data_service: AlignmentDerivedDataService
 
@@ -259,20 +272,6 @@ class AlignmentCommands:
             shank_idx=self._active_or_given_shank(shank_idx),
         )
 
-    def initialize_shank_runtime(
-        self,
-        shank_runtime: Any,
-        *,
-        track_annotations_ras: Any,
-        brain_atlas: Any,
-    ) -> ShankRuntimeInitialized | Failed:
-        """Initialize runtime alignment data for the active shank."""
-        return self._controller.initialize_shank_runtime(
-            shank_runtime,
-            track_annotations_ras=track_annotations_ras,
-            brain_atlas=brain_atlas,
-        )
-
     def _active_or_given_shank(self, shank_idx: int | None) -> int:
         if shank_idx is not None:
             return shank_idx
@@ -353,6 +352,80 @@ class AlignmentCommands:
     def load_histology_data(self) -> HistologyLoadResult:
         """Load subject-level histology runtime data if it is available."""
         return self._histology_data_workflow.load_if_needed()
+
+    def prepare_loaded_shank(
+        self,
+        shank_idx: int,
+        *,
+        select_default_alignment_if_empty: bool = True,
+    ) -> LoadedShankPrepared | Failed:
+        """Prepare Qt-free runtime state for a loaded active shank."""
+        stream_runtime = self._runtime.active_stream_runtime
+        if stream_runtime is None:
+            return Failed("No active stream runtime for shank preparation")
+
+        try:
+            shank_runtime = stream_runtime.shank_runtime_for(shank_idx)
+        except Exception as exc:
+            return Failed(f"Failed to prepare shank runtime: {exc}")
+
+        n_channels = len(shank_runtime.collection.depths)
+        brain_atlas = self._histology_context.brain_atlas
+        if brain_atlas is None:
+            return LoadedShankPrepared(
+                shank_idx=shank_idx,
+                n_channels=n_channels,
+                histology_available=False,
+            )
+
+        probe = self._controller.data_context.probe_info
+        if probe is None:
+            return Failed("No probe selected. Please select a probe first.")
+
+        try:
+            track_annotations_ras = shank_runtime.track_annotations_ras
+            if track_annotations_ras is None:
+                track_annotations_ras = (
+                    self._probe_track_service.load_track_annotations(
+                        probe=probe,
+                        shank_idx=shank_idx,
+                        brain_atlas=brain_atlas,
+                    )
+                )
+        except Exception as exc:
+            return Failed(f"Failed to load shank track annotations: {exc}")
+
+        choices = self._controller.active_alignment_choices(shank_idx)
+        if isinstance(choices, Failed):
+            return choices
+
+        active_state = self._controller.document.active_alignment_state
+        if (
+            select_default_alignment_if_empty
+            and active_state is not None
+            and active_state.active_alignment is None
+        ):
+            selected = self._controller.select_previous_alignment(
+                0,
+                shank_idx=shank_idx,
+            )
+            if isinstance(selected, Failed):
+                return selected
+
+        initialized = self._controller.initialize_shank_runtime(
+            shank_runtime,
+            track_annotations_ras=track_annotations_ras,
+            brain_atlas=brain_atlas,
+        )
+        if isinstance(initialized, Failed):
+            return initialized
+
+        return LoadedShankPrepared(
+            shank_idx=shank_idx,
+            n_channels=n_channels,
+            histology_available=True,
+            alignment_choices=choices.choices,
+        )
 
     def can_load_data(self) -> PolicyResult:
         """Return whether the selected stream can be loaded."""

@@ -91,14 +91,12 @@ class DesktopShankRenderPorts:
     """Desktop operations needed to render an active shank."""
 
     capture_plot_selection: Callable[[bool], Any]
-    prepare_runtime: Callable[[int], None]
-    prepare_histology: Callable[[int], bool]
+    render_alignment_choices: Callable[[list[str]], None]
     apply_plot_data_state: Callable[[Any], None]
     raw_image_payloads: Callable[[], Any]
     render_plot_menus: Callable[[Any], None]
     render_histology_plots: Callable[[int], None]
     configure_view: Callable[[bool], None]
-    histology_available: Callable[[], bool]
     offline: Callable[[], bool]
 
 
@@ -395,8 +393,7 @@ class DesktopWorkbench:
         return DesktopShankRenderCallbacks(
             capture_plot_selection=ports.capture_plot_selection,
             clear_reference_lines=displays.reference_lines.clear,
-            prepare_runtime=ports.prepare_runtime,
-            prepare_histology=ports.prepare_histology,
+            render_alignment_choices=ports.render_alignment_choices,
             apply_plot_data_state=ports.apply_plot_data_state,
             raw_image_payloads=ports.raw_image_payloads,
             render_plot_menus=ports.render_plot_menus,
@@ -404,7 +401,6 @@ class DesktopWorkbench:
             render_histology_plots=ports.render_histology_plots,
             restore_slice_selection=displays.slice.restore_selection,
             configure_view=ports.configure_view,
-            histology_available=ports.histology_available,
             offline=ports.offline,
         )
 

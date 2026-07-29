@@ -551,14 +551,12 @@ def _render_ports() -> DesktopRenderPorts:
         ),
         shank=DesktopShankRenderPorts(
             capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
-            prepare_runtime=lambda _shank_idx: None,
-            prepare_histology=lambda _shank_idx: True,
+            render_alignment_choices=lambda _choices: None,
             apply_plot_data_state=lambda _state: None,
             raw_image_payloads=dict,
             render_plot_menus=lambda _state: None,
             render_histology_plots=lambda _shank_idx: None,
             configure_view=lambda _preserve: None,
-            histology_available=lambda: True,
             offline=lambda: True,
         ),
     )
@@ -700,8 +698,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert slice_display.plotted_channels == ["projection"]
     workbench.alignment_presenter.callbacks.refresh_perpendicular_histology()
     assert slice_display.perpendicular_refreshes == 1
-    assert workbench.shank_presenter.callbacks.prepare_runtime is (
-        ports.render.shank.prepare_runtime
+    assert workbench.shank_presenter.callbacks.render_alignment_choices is (
+        ports.render.shank.render_alignment_choices
     )
     assert workbench.save_workflow_presenter.callbacks.use_docdb is (
         ports.save_workflow.use_docdb

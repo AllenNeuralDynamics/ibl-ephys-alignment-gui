@@ -167,8 +167,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             ),
             shank=DesktopShankRenderPorts(
                 capture_plot_selection=window._capture_shank_plot_selection,
-                prepare_runtime=window._prepare_shank_runtime_for_view,
-                prepare_histology=window._prepare_shank_histology_for_view,
+                render_alignment_choices=render_alignment_choices,
                 apply_plot_data_state=window._apply_shank_plot_data_state,
                 raw_image_payloads=lambda: window.raw_image_payloads,
                 render_plot_menus=window._render_shank_plot_menus,
@@ -176,7 +175,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                     shank_idx=shank_idx,
                 ),
                 configure_view=window._configure_shank_view_after_render,
-                histology_available=lambda: window.histology_exists,
                 offline=lambda: window.offline,
             ),
         ),

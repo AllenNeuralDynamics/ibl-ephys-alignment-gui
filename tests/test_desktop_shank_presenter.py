@@ -12,6 +12,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ActiveShankScreenState,
 )
+from ephys_alignment_gui.app import LoadedShankPrepared
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
@@ -20,6 +21,7 @@ from ephys_alignment_gui.desktop_shank_presenter import (
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.slice_display_policy import SliceSelection
+from ephys_alignment_gui.workflow import Failed
 
 
 def _event(
@@ -40,11 +42,26 @@ def _event(
 
 
 class FakeCommands:
-    def __init__(self, calls: list[Any]) -> None:
+    def __init__(
+        self,
+        calls: list[Any],
+        *,
+        prepared: Any | None = None,
+    ) -> None:
         self.calls = calls
+        self.prepared = prepared or LoadedShankPrepared(
+            shank_idx=1,
+            n_channels=384,
+            histology_available=True,
+            alignment_choices=["original"],
+        )
 
     def set_unit_filter(self, unit_filter: str) -> None:
         self.calls.append(("set_unit_filter", unit_filter))
+
+    def prepare_loaded_shank(self, shank_idx: int):
+        self.calls.append(("prepare_shank", shank_idx))
+        return self.prepared
 
 
 class FakeQueries:
@@ -99,10 +116,11 @@ def _app(
     *,
     resolved_preserve: bool = True,
     slice_ready: bool = True,
+    prepared: Any | None = None,
 ):
     events = EventBus()
     return SimpleNamespace(
-        commands=FakeCommands(calls),
+        commands=FakeCommands(calls, prepared=prepared),
         queries=FakeQueries(
             calls,
             resolved_preserve=resolved_preserve,
@@ -112,12 +130,7 @@ def _app(
     )
 
 
-def _callbacks(
-    calls: list[Any],
-    *,
-    histology_ready: bool = True,
-    histology_available: bool = True,
-) -> DesktopShankRenderCallbacks:
+def _callbacks(calls: list[Any]) -> DesktopShankRenderCallbacks:
     selection = SliceSelection("slice_data", "ccf")
     selections = DesktopShankSelectionState(
         previous_slice_selection=selection,
@@ -133,9 +146,8 @@ def _callbacks(
             calls.append(("capture", preserve)) or selections
         ),
         clear_reference_lines=lambda: calls.append("clear_lines"),
-        prepare_runtime=lambda idx: calls.append(("runtime", idx)),
-        prepare_histology=lambda idx: (
-            calls.append(("histology", idx)) or histology_ready
+        render_alignment_choices=lambda choices: (
+            calls.append(("alignment_choices", choices))
         ),
         apply_plot_data_state=lambda state: calls.append(
             ("apply_plot_data", state)
@@ -150,7 +162,6 @@ def _callbacks(
             ("slice_selection", menu, selection, label)
         ),
         configure_view=lambda preserve: calls.append(("configure", preserve)),
-        histology_available=lambda: histology_available,
         offline=lambda: True,
     )
 
@@ -172,8 +183,8 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
         ("resolve", None),
         ("capture", True),
         "clear_lines",
-        ("runtime", 2),
-        ("histology", 2),
+        ("prepare_shank", 2),
+        ("alignment_choices", ["original"]),
         "prepare_plot_data",
         ("apply_plot_data", app.queries.plot_data_state),
         "prepare_slice_data",
@@ -216,12 +227,12 @@ def test_shank_presenter_does_not_render_before_data_is_loaded() -> None:
     assert calls == []
 
 
-def test_shank_presenter_stops_when_histology_preparation_fails() -> None:
+def test_shank_presenter_stops_when_shank_preparation_fails() -> None:
     calls: list[Any] = []
-    app = _app(calls, resolved_preserve=False)
+    app = _app(calls, resolved_preserve=False, prepared=Failed("not ready"))
     presenter = DesktopShankPresenter(
         app,
-        callbacks=_callbacks(calls, histology_ready=False),
+        callbacks=_callbacks(calls),
     )
 
     presenter.render_loaded_shank(shank_idx=1, preserve_plot_selection=False)
@@ -230,8 +241,7 @@ def test_shank_presenter_stops_when_histology_preparation_fails() -> None:
         ("resolve", False),
         ("capture", False),
         "clear_lines",
-        ("runtime", 1),
-        ("histology", 1),
+        ("prepare_shank", 1),
     ]
 
 
@@ -250,8 +260,8 @@ def test_shank_presenter_raises_when_required_slice_preparation_fails() -> None:
         ("resolve", True),
         ("capture", True),
         "clear_lines",
-        ("runtime", 1),
-        ("histology", 1),
+        ("prepare_shank", 1),
+        ("alignment_choices", ["original"]),
         "prepare_plot_data",
         ("apply_plot_data", app.queries.plot_data_state),
         "prepare_slice_data",
@@ -260,10 +270,20 @@ def test_shank_presenter_raises_when_required_slice_preparation_fails() -> None:
 
 def test_shank_presenter_allows_missing_slice_data_without_histology() -> None:
     calls: list[Any] = []
-    app = _app(calls, resolved_preserve=False, slice_ready=False)
+    app = _app(
+        calls,
+        resolved_preserve=False,
+        slice_ready=False,
+        prepared=LoadedShankPrepared(
+            shank_idx=1,
+            n_channels=384,
+            histology_available=False,
+            alignment_choices=None,
+        ),
+    )
     presenter = DesktopShankPresenter(
         app,
-        callbacks=_callbacks(calls, histology_available=False),
+        callbacks=_callbacks(calls),
     )
 
     presenter.render_loaded_shank(shank_idx=1, preserve_plot_selection=False)

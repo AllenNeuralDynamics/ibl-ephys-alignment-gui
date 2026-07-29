@@ -116,6 +116,8 @@ class AlignmentWorkspace:
                 self.runtime,
                 self.probe_data_workflow,
                 self.histology_data_workflow,
+                self.histology_context,
+                self.probe_track_service,
                 self.plot_data_factory,
                 self.alignment_derived_data_service,
             ),

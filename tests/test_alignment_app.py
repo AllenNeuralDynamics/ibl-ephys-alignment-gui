@@ -24,6 +24,7 @@ from ephys_alignment_gui.app import (
     AlignmentQueries,
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
+    LoadedShankPrepared,
     VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.controller import (
@@ -38,7 +39,6 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     ProbeSelected,
     RecordingSelected,
-    ShankRuntimeInitialized,
     ShankSelected,
 )
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
@@ -195,11 +195,21 @@ class FakeRuntimeInitializer:
 
     def initialize_shank_runtime(self, shank_runtime, **kwargs):
         self.calls.append((shank_runtime, kwargs))
+        shank_runtime.track_annotations_ras = kwargs["track_annotations_ras"]
         return SimpleNamespace(
             feature_init=np.array([1.0, 2.0]),
             track_init=np.array([3.0, 4.0]),
             track_annos_and_ends_ras=np.array([[1.0, 2.0, 3.0]]),
         )
+
+
+class FakeProbeTrackService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def load_track_annotations(self, **kwargs):
+        self.calls.append(kwargs)
+        return np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]])
 
 
 class FakeDerivedDataService:
@@ -1122,22 +1132,122 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
     assert workspace.display_state.unit_filter == "KS good"
 
 
-def test_commands_initialize_shank_runtime_delegates_to_controller() -> None:
-    runtime_initializer = FakeRuntimeInitializer()
-    workspace = AlignmentWorkspace(alignment_runtime_service=runtime_initializer)
-    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
-    shank_runtime = SimpleNamespace(shank_idx=0, chn_depths=np.array([10.0, 20.0]))
+def test_commands_prepare_loaded_shank_without_histology() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=0,
+    )
+    workspace.document.mark_data_loaded(True)
 
-    result = workspace.app.commands.initialize_shank_runtime(
-        shank_runtime,
-        track_annotations_ras=np.array([[0.0, 0.0, 0.0]]),
-        brain_atlas="atlas",
+    result = workspace.app.commands.prepare_loaded_shank(1)
+
+    assert isinstance(result, LoadedShankPrepared)
+    assert result.shank_idx == 1
+    assert 1 in stream_runtime.shank_runtime_by_idx
+    assert result.n_channels == 1
+    assert not result.histology_available
+    assert result.alignment_choices is None
+    assert workspace.document.active_alignment_state is not None
+    assert workspace.document.active_alignment_state.active_alignment is None
+
+
+def test_commands_prepare_loaded_shank_initializes_histology_runtime() -> None:
+    runtime_initializer = FakeRuntimeInitializer()
+    probe_track_service = FakeProbeTrackService()
+    workspace = AlignmentWorkspace(
+        alignment_runtime_service=runtime_initializer,
+        probe_track_service=probe_track_service,
+    )
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    workspace.data_context.channel_table = SimpleNamespace(n_shanks=2)
+    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 1))
+    workspace.document.mark_data_loaded(True)
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
     )
 
-    assert isinstance(result, ShankRuntimeInitialized)
-    assert result.seeded_document_alignment
+    result = workspace.app.commands.prepare_loaded_shank(1)
+
+    assert isinstance(result, LoadedShankPrepared)
+    assert result.histology_available
+    assert result.alignment_choices == ["original"]
+    assert probe_track_service.calls == [
+        {
+            "probe": workspace.data_context.probe_info,
+            "shank_idx": 1,
+            "brain_atlas": "atlas",
+        }
+    ]
+    shank_runtime = stream_runtime.shank_runtime_by_idx[1]
     assert runtime_initializer.calls[0][0] is shank_runtime
     assert runtime_initializer.calls[0][1]["brain_atlas"] == "atlas"
+    np.testing.assert_allclose(
+        runtime_initializer.calls[0][1]["track_annotations_ras"],
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 2.0]],
+    )
+    active_state = workspace.document.active_alignment_state
+    assert active_state is not None
+    assert active_state.active_alignment is not None
+    np.testing.assert_allclose(active_state.active_alignment.feature, [1.0, 2.0])
+    np.testing.assert_allclose(active_state.active_alignment.track, [3.0, 4.0])
+
+    second = workspace.app.commands.prepare_loaded_shank(1)
+
+    assert isinstance(second, LoadedShankPrepared)
+    assert len(probe_track_service.calls) == 1
+    assert len(runtime_initializer.calls) == 2
+
+
+def test_prepare_loaded_shank_preserves_explicit_original_selection() -> None:
+    runtime_initializer = FakeRuntimeInitializer()
+    probe_track_service = FakeProbeTrackService()
+    workspace = AlignmentWorkspace(
+        alignment_runtime_service=runtime_initializer,
+        probe_track_service=probe_track_service,
+    )
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    workspace.data_context.channel_table = SimpleNamespace(n_shanks=2)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.select_alignment_key(active_key)
+    state.set_alignments({"saved": [[10.0, 20.0], [30.0, 40.0]]})
+    selected = workspace.app.commands.select_previous_alignment(1)
+    assert isinstance(selected, PreviousAlignmentSelected)
+    assert selected.choice == "original"
+    workspace.document.mark_data_loaded(True)
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
+    )
+
+    result = workspace.app.commands.prepare_loaded_shank(
+        1,
+        select_default_alignment_if_empty=False,
+    )
+
+    assert isinstance(result, LoadedShankPrepared)
+    assert result.alignment_choices == ["saved", "original"]
+    assert state.feature_prev is None
+    assert state.track_prev is None
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.feature, [1.0, 2.0])
+    np.testing.assert_allclose(state.active_alignment.track, [3.0, 4.0])
+    assert runtime_initializer.calls[0][1]["feature_prev"] is None
+    assert runtime_initializer.calls[0][1]["track_prev"] is None
 
 
 def test_queries_return_default_unit_filter() -> None:
