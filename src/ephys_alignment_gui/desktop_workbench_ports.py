@@ -9,6 +9,7 @@ from PyQt5 import QtWidgets
 from ephys_alignment_gui.desktop_busy_context import BusyContext
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
+    DesktopExportPorts,
     DesktopHistologyRenderPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
@@ -120,5 +121,30 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             select_alignment=window.on_alignment_selected,
             busy_context=busy_context,
             reload_button=lambda: window.reload_folder_button,
+        ),
+        export=DesktopExportPorts(
+            ephys_graphics_layout=window.fig_data_layout,
+            ephys_data_area=window.fig_data_area,
+            slice_action_group=window.slice_options_group,
+            slice_plot=window.fig_slice,
+            slice_trajectory_pen=window.rpen_dot,
+            histology_layout=window.fig_hist_layout,
+            histology_extra_y_axis=window.fig_hist_extra_yaxis,
+            histology_aligned=window.fig_hist,
+            histology_reference=window.fig_hist_ref,
+            reset_axis=window.reset_axis_button_pressed,
+            set_view=window.set_view,
+            set_axis=window.set_axis,
+            set_font=window.set_font,
+            add_lines_points=window.reference_lines.add_to_plots,
+            ephys_sizes=lambda: (
+                window.fig_probe_width,
+                window.fig_ax_width,
+            ),
+            slice_geometry=lambda: (
+                window.slice_width,
+                window.slice_height,
+                window.slice_rect,
+            ),
         ),
     )

@@ -12,6 +12,12 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_ephys_plot_exporter import (
+    DesktopEphysPlotExporter,
+    EphysExportCallbacks,
+    EphysExportLayout,
+    EphysExportSizes,
+)
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_histology_presenter import (
     DesktopHistologyPresenter,
@@ -34,6 +40,14 @@ from ephys_alignment_gui.desktop_output_path_presenter import DesktopOutputPathP
 from ephys_alignment_gui.desktop_path_dialog_presenter import (
     DesktopPathDialogCallbacks,
     DesktopPathDialogPresenter,
+)
+from ephys_alignment_gui.desktop_plot_exporter import (
+    DesktopPlotExportCallbacks,
+    DesktopPlotExporter,
+    HistologyExportHandles,
+    SliceExportGeometry,
+    SliceExportHandles,
+    SliceExportStyle,
 )
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
@@ -141,6 +155,28 @@ class DesktopPreviousAlignmentLoadPorts:
 
 
 @dataclass(frozen=True)
+class DesktopExportPorts:
+    """Desktop operations and handles needed by plot export workflows."""
+
+    ephys_graphics_layout: Any
+    ephys_data_area: Any
+    slice_action_group: Any
+    slice_plot: Any
+    slice_trajectory_pen: Any
+    histology_layout: Any
+    histology_extra_y_axis: Any
+    histology_aligned: Any
+    histology_reference: Any
+    reset_axis: Callable[[], None]
+    set_view: Callable[..., None]
+    set_axis: Callable[..., Any]
+    set_font: Callable[..., None]
+    add_lines_points: Callable[[], None]
+    ephys_sizes: Callable[[], tuple[float, float]]
+    slice_geometry: Callable[[], tuple[float, float, Any]]
+
+
+@dataclass(frozen=True)
 class DesktopWorkbenchPorts:
     """MainWindow ports consumed by Workbench presenter composition."""
 
@@ -148,6 +184,7 @@ class DesktopWorkbenchPorts:
     selection: DesktopSelectionWorkflowCallbacks
     save_workflow: DesktopSaveWorkflowPorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
+    export: DesktopExportPorts
 
 
 @dataclass(frozen=True)
@@ -191,6 +228,7 @@ class DesktopWorkbench:
     folder_dialog: DesktopFolderDialog
     save_workflow_presenter: DesktopSaveWorkflowPresenter
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
+    plot_exporter: DesktopPlotExporter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -201,6 +239,9 @@ class DesktopWorkbench:
         selection_view: Any,
         path_view: Any,
         parent: Any,
+        ephys_plot_presenter: Any,
+        ephys_panel: Any,
+        slice_panel: Any,
         histology_panel: Any,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
@@ -294,6 +335,12 @@ class DesktopWorkbench:
                 folder_dialog,
             ),
         )
+        plot_exporter = cls._plot_exporter(
+            ports.export,
+            ephys_plot_presenter=ephys_plot_presenter,
+            ephys_panel=ephys_panel,
+            slice_panel=slice_panel,
+        )
         return cls(
             app=app,
             alignment_presenter=alignment_presenter,
@@ -310,6 +357,7 @@ class DesktopWorkbench:
             folder_dialog=folder_dialog,
             save_workflow_presenter=save_workflow_presenter,
             previous_alignment_load_presenter=previous_alignment_load_presenter,
+            plot_exporter=plot_exporter,
         )
 
     @staticmethod
@@ -407,6 +455,69 @@ class DesktopWorkbench:
             select_alignment=ports.select_alignment,
             busy_context=ports.busy_context,
             reload_button=ports.reload_button,
+        )
+
+    @staticmethod
+    def _plot_exporter(
+        ports: DesktopExportPorts,
+        *,
+        ephys_plot_presenter: Any,
+        ephys_panel: Any,
+        slice_panel: Any,
+    ) -> DesktopPlotExporter:
+        """Build the desktop plot exporter cluster."""
+        ephys_exporter = DesktopEphysPlotExporter(
+            presenter=ephys_plot_presenter,
+            panel=ephys_panel,
+            layout=EphysExportLayout(
+                graphics_layout=ports.ephys_graphics_layout,
+                data_area=ports.ephys_data_area,
+            ),
+            callbacks=DesktopWorkbench._ephys_export_callbacks(ports),
+        )
+        return DesktopPlotExporter(
+            ephys_exporter=ephys_exporter,
+            slice_handles=SliceExportHandles(
+                action_group=ports.slice_action_group,
+                slice_panel=slice_panel,
+                slice_plot=ports.slice_plot,
+            ),
+            slice_style=SliceExportStyle(
+                trajectory_pen=ports.slice_trajectory_pen,
+            ),
+            histology_handles=HistologyExportHandles(
+                layout=ports.histology_layout,
+                extra_y_axis=ports.histology_extra_y_axis,
+                aligned=ports.histology_aligned,
+                reference=ports.histology_reference,
+            ),
+            callbacks=DesktopWorkbench._plot_export_callbacks(ports),
+        )
+
+    @staticmethod
+    def _ephys_export_callbacks(
+        ports: DesktopExportPorts,
+    ) -> EphysExportCallbacks:
+        """Build callbacks for ephys plot export layout changes."""
+        return EphysExportCallbacks(
+            reset_axis=ports.reset_axis,
+            set_view=ports.set_view,
+            set_axis=ports.set_axis,
+            set_font=ports.set_font,
+            add_lines_points=ports.add_lines_points,
+            sizes=lambda: EphysExportSizes(*ports.ephys_sizes()),
+        )
+
+    @staticmethod
+    def _plot_export_callbacks(
+        ports: DesktopExportPorts,
+    ) -> DesktopPlotExportCallbacks:
+        """Build callbacks for non-ephys plot export steps."""
+        return DesktopPlotExportCallbacks(
+            set_axis=ports.set_axis,
+            set_font=ports.set_font,
+            add_lines_points=ports.add_lines_points,
+            slice_geometry=lambda: SliceExportGeometry(*ports.slice_geometry()),
         )
 
     @staticmethod
@@ -605,3 +716,7 @@ class DesktopWorkbench:
     def qc_button_clicked(self) -> bool:
         """Handle the QC save button."""
         return self.save_workflow_presenter.qc_button_clicked()
+
+    def export_plots(self, output_dir: Path, *, sess_info: str = "") -> None:
+        """Export all desktop plot panels for the active shank."""
+        self.plot_exporter.export(output_dir, sess_info=sess_info)

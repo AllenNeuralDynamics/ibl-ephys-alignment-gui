@@ -9,6 +9,7 @@ from ephys_alignment_gui.desktop_histology_presenter import DesktopHistologyPres
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
+    DesktopExportPorts,
     DesktopHistologyRenderPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
@@ -222,6 +223,14 @@ class FakePreviousAlignmentLoadPresenter:
         return True
 
 
+class FakePlotExporter:
+    def __init__(self) -> None:
+        self.exports: list[tuple[Any, str]] = []
+
+    def export(self, output_dir: Any, *, sess_info: str = "") -> None:
+        self.exports.append((output_dir, sess_info))
+
+
 def _workbench(
     alignment: Any,
     shank: Any,
@@ -237,6 +246,7 @@ def _workbench(
     folder_dialog: Any | None = None,
     save_workflow: Any | None = None,
     previous_alignment_load: Any | None = None,
+    plot_exporter: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -258,6 +268,7 @@ def _workbench(
         previous_alignment_load_presenter=(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
         ),
+        plot_exporter=plot_exporter or FakePlotExporter(),
     )
 
 
@@ -317,6 +328,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     folder_dialog = FakeFolderDialog()
     save_workflow = FakeSaveWorkflowPresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
+    plot_exporter = FakePlotExporter()
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
@@ -332,6 +344,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         folder_dialog=folder_dialog,
         save_workflow=save_workflow,
         previous_alignment_load=previous_alignment_load,
+        plot_exporter=plot_exporter,
     )
 
     assert workbench.load_heavy_data()
@@ -351,6 +364,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.display_qc_options()
     assert workbench.qc_button_clicked()
     assert workbench.load_existing_alignments()
+    workbench.export_plots("plots", sess_info="session-")
 
     assert load_data.load_count == 1
     assert mouse_root.set_roots == ["root"]
@@ -369,6 +383,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save_workflow.qc_display_count == 1
     assert save_workflow.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
+    assert plot_exporter.exports == [("plots", "session-")]
 
 
 def _render_ports() -> DesktopRenderPorts:
@@ -463,6 +478,24 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             ),
             reload_button=lambda: object(),
         ),
+        export=DesktopExportPorts(
+            ephys_graphics_layout=object(),
+            ephys_data_area=object(),
+            slice_action_group=object(),
+            slice_plot=object(),
+            slice_trajectory_pen=object(),
+            histology_layout=object(),
+            histology_extra_y_axis=object(),
+            histology_aligned=object(),
+            histology_reference=object(),
+            reset_axis=lambda: None,
+            set_view=lambda **_kwargs: None,
+            set_axis=lambda *_args, **_kwargs: None,
+            set_font=lambda *_args, **_kwargs: None,
+            add_lines_points=lambda: None,
+            ephys_sizes=lambda: (11.0, 3.0),
+            slice_geometry=lambda: (100.0, 200.0, "rect"),
+        ),
     )
 
 
@@ -476,12 +509,18 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     commands = SimpleNamespace(can_load_data=lambda: Ok())
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
     panel = object()
+    ephys_plot_presenter = object()
+    ephys_panel = object()
+    slice_panel = object()
 
     workbench = DesktopWorkbench.create(
         app=app,
         selection_view=object(),
         path_view=object(),
         parent=object(),
+        ephys_plot_presenter=ephys_plot_presenter,
+        ephys_panel=ephys_panel,
+        slice_panel=slice_panel,
         histology_panel=panel,
         ports=ports,
     )
@@ -519,4 +558,11 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
+    )
+    assert workbench.plot_exporter.ephys_exporter.presenter is ephys_plot_presenter
+    assert workbench.plot_exporter.ephys_exporter.panel is ephys_panel
+    assert workbench.plot_exporter.slice_handles.slice_panel is slice_panel
+    assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
+    assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (
+        ports.export.set_view
     )

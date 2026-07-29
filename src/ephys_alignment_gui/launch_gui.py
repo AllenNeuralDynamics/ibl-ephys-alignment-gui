@@ -38,12 +38,6 @@ from ephys_alignment_gui.desktop_ephys_panel_view import (
     EphysPanelPlots,
     EphysPanelStyle,
 )
-from ephys_alignment_gui.desktop_ephys_plot_exporter import (
-    DesktopEphysPlotExporter,
-    EphysExportCallbacks,
-    EphysExportLayout,
-    EphysExportSizes,
-)
 from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
@@ -54,14 +48,6 @@ from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionWidgets,
 )
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
-from ephys_alignment_gui.desktop_plot_exporter import (
-    DesktopPlotExportCallbacks,
-    DesktopPlotExporter,
-    HistologyExportHandles,
-    SliceExportGeometry,
-    SliceExportHandles,
-    SliceExportStyle,
-)
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
@@ -210,25 +196,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 reset_axis=self.reset_axis_button_pressed,
             ),
         )
-        self.ephys_plot_exporter = DesktopEphysPlotExporter(
-            presenter=self.ephys_plot_presenter,
-            panel=self.ephys_panel,
-            layout=EphysExportLayout(
-                graphics_layout=self.fig_data_layout,
-                data_area=self.fig_data_area,
-            ),
-            callbacks=EphysExportCallbacks(
-                reset_axis=self.reset_axis_button_pressed,
-                set_view=self.set_view,
-                set_axis=self.set_axis,
-                set_font=self.set_font,
-                add_lines_points=self.reference_lines.add_to_plots,
-                sizes=lambda: EphysExportSizes(
-                    probe_width=self.fig_probe_width,
-                    axis_width=self.fig_ax_width,
-                ),
-            ),
-        )
         self.reference_lines = ReferenceLineLayer(
             plots=ReferenceLinePlots(
                 histology=self.fig_hist,
@@ -279,12 +246,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
         )
         self._init_interaction_presenter()
-        self._init_plot_exporter()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             selection_view=self.selection_view,
             path_view=self.path_view,
             parent=self,
+            ephys_plot_presenter=self.ephys_plot_presenter,
+            ephys_panel=self.ephys_panel,
+            slice_panel=self.slice_panel,
             histology_panel=self.histology_panel,
             ports=desktop_workbench_ports_from_main_window(self),
         )
@@ -331,34 +300,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 activate_window=self.activateWindow,
                 set_axis=self.set_axis,
                 capture_pending_reference_lines=self._capture_pending_reference_lines,
-            ),
-        )
-
-    def _init_plot_exporter(self) -> None:
-        """Wire desktop plot export orchestration after panels are available."""
-        self.plot_exporter = DesktopPlotExporter(
-            ephys_exporter=self.ephys_plot_exporter,
-            slice_handles=SliceExportHandles(
-                action_group=self.slice_options_group,
-                slice_panel=self.slice_panel,
-                slice_plot=self.fig_slice,
-            ),
-            slice_style=SliceExportStyle(trajectory_pen=self.rpen_dot),
-            histology_handles=HistologyExportHandles(
-                layout=self.fig_hist_layout,
-                extra_y_axis=self.fig_hist_extra_yaxis,
-                aligned=self.fig_hist,
-                reference=self.fig_hist_ref,
-            ),
-            callbacks=DesktopPlotExportCallbacks(
-                set_axis=self.set_axis,
-                set_font=self.set_font,
-                add_lines_points=self.reference_lines.add_to_plots,
-                slice_geometry=lambda: SliceExportGeometry(
-                    width=self.slice_width,
-                    height=self.slice_height,
-                    rect=self.slice_rect,
-                ),
             ),
         )
 
@@ -609,7 +550,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
         image_path_overview.mkdir(exist_ok=True)
-        self.plot_exporter.export(image_path_overview, sess_info=sess_info)
+        self.desktop_workbench.export_plots(image_path_overview, sess_info=sess_info)
 
     def toggle_plots(self, options_group, reverse=False) -> None:
         """
