@@ -21,6 +21,7 @@ from ephys_alignment_gui.alignment_repository import (
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.app import (
+    ActiveReferenceLineRenderState,
     ActiveStreamDetached,
     AlignmentQueries,
     CachedEphysDataActivated,
@@ -545,6 +546,41 @@ def test_commands_capture_active_reference_lines_noops_when_data_unloaded() -> N
     result = workspace.app.commands.capture_active_reference_lines(None)
 
     assert isinstance(result, Ok)
+
+
+def test_queries_active_reference_line_state_prefers_pending_lines() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.feature_prev = np.array([0.0, 1.0, 2.0])
+    workspace.document.active_set_pending_reference_lines([10.0], [11.0])
+
+    result = workspace.app.queries.active_reference_line_state(0)
+
+    assert isinstance(result, ActiveReferenceLineRenderState)
+    np.testing.assert_allclose(result.feature_positions_um, [10.0])
+    np.testing.assert_allclose(result.track_positions_um, [11.0])
+
+
+def test_queries_active_reference_line_state_falls_back_to_previous_feature() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.feature_prev = np.array([-0.001, 0.001, 0.002, 0.003])
+
+    result = workspace.app.queries.active_reference_line_state(0)
+
+    assert isinstance(result, ActiveReferenceLineRenderState)
+    np.testing.assert_allclose(result.feature_positions_um, [1000.0, 2000.0])
+    assert result.track_positions_um is None
+
+
+def test_queries_active_reference_line_state_rejects_mismatched_shank() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
+    workspace.document.active_set_pending_reference_lines([10.0], [11.0])
+
+    assert workspace.app.queries.active_reference_line_state(1) is None
 
 
 def test_commands_load_fresh_ephys_data_caches_runtime_and_marks_loaded() -> None:

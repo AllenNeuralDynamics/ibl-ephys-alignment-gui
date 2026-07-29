@@ -168,9 +168,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 apply_plot_data_state=window._apply_shank_plot_data_state,
                 raw_image_payloads=lambda: window.raw_image_payloads,
                 render_plot_menus=window._render_shank_plot_menus,
-                render_histology_plots=lambda shank_idx: window.render_histology_plots(
-                    shank_idx=shank_idx,
-                ),
                 configure_view=window._configure_shank_view_after_render,
                 offline=lambda: window.offline,
             ),

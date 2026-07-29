@@ -24,6 +24,7 @@ from ephys_alignment_gui.alignment_events import (
 )
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
+    ActiveReferenceLineRenderState,
     ActiveShankPlotDataState,
     ActiveShankScreenState,
     ActiveSliceDataState,
@@ -716,6 +717,32 @@ class AlignmentQueries:
             shank_id=shank_idx + 1,
             alignment_key=self.document.selected_alignment_key,
             data_loaded=self.document.data_loaded,
+        )
+
+    def active_reference_line_state(
+        self,
+        shank_idx: int | None = None,
+    ) -> ActiveReferenceLineRenderState | None:
+        """Return pending or previous-alignment reference lines for rendering."""
+        state = self.document.active_alignment_state
+        key = self.document.selected_alignment_key
+        if state is None or key is None:
+            return None
+        if shank_idx is not None and key.shank_idx != shank_idx:
+            return None
+
+        pending = state.pending_reference_lines
+        if pending is not None:
+            return ActiveReferenceLineRenderState(
+                feature_positions_um=pending.feature_positions_um,
+                track_positions_um=pending.track_positions_um,
+            )
+
+        feature_prev = state.feature_prev
+        if feature_prev is None or not np.any(feature_prev):
+            return None
+        return ActiveReferenceLineRenderState(
+            feature_positions_um=np.asarray(feature_prev)[1:-1] * 1e6,
         )
 
     def is_loaded_stream_shank(

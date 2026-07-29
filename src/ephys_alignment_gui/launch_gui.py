@@ -666,33 +666,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Triggered when user finishes editing output_folder_line text field."""
         self.desktop_workbench.output_folder_edited()
 
-    def render_histology_plots(self, *, shank_idx: int | None = None) -> None:
-        """Render all histology plots. Common code."""
-        if not self.histology_exists:
-            return
-        if shank_idx is None:
-            shank_idx = self.app.queries.active_shank_selection().shank_idx
-
-        if not self.desktop_workbench.render_active_histology_panels():
-            return
-        self.displays.slice.refresh_perpendicular_histology()
-
-        pending_lines = self.controller.active_pending_reference_lines(shank_idx)
-        if isinstance(pending_lines, Failed):
-            logger.error(pending_lines.message)
-            pending_lines = None
-        if pending_lines is not None:
-            self.displays.reference_lines.create_lines(
-                pending_lines.feature_positions_um,
-                pending_lines.track_positions_um,
-            )
-        else:
-            feature_prev = self._active_previous_feature()
-            if feature_prev is not None and np.any(feature_prev):
-                self.displays.reference_lines.create_previous_feature_lines(
-                    np.asarray(feature_prev)[1:-1] * 1e6
-                )
-
     def _capture_shank_plot_selection(
         self,
         preserve_plot_selection: bool,
@@ -778,7 +751,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not prepared.histology_available:
             return
 
-        self.render_histology_plots()
+        self.desktop_workbench.render_loaded_shank_histology()
 
         logger.info("Alignment change complete")
 

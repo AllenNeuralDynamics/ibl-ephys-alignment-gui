@@ -20,6 +20,9 @@ from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     EphysExportSizes,
 )
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
+from ephys_alignment_gui.desktop_histology_refresh_presenter import (
+    DesktopHistologyRefreshPresenter,
+)
 from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
@@ -102,7 +105,6 @@ class DesktopShankRenderPorts:
     apply_plot_data_state: Callable[[Any], None]
     raw_image_payloads: Callable[[], Any]
     render_plot_menus: Callable[[Any], None]
-    render_histology_plots: Callable[[int], None]
     configure_view: Callable[[bool], None]
     offline: Callable[[], bool]
 
@@ -239,6 +241,7 @@ class DesktopWorkbench:
     interaction_presenter: DesktopInteractionPresenter
     lifecycle_presenter: DesktopLifecyclePresenter
     reference_line_presenter: DesktopReferenceLinePresenter
+    histology_refresh_presenter: DesktopHistologyRefreshPresenter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -265,11 +268,18 @@ class DesktopWorkbench:
                 displays,
             ),
         )
+        histology_refresh_presenter = DesktopHistologyRefreshPresenter(
+            app=app,
+            histology_display=displays.histology,
+            slice_display=displays.slice,
+            reference_line_display=displays.reference_lines,
+        )
         shank_presenter = DesktopShankPresenter(app)
         shank_presenter.configure(
             callbacks=cls._shank_render_callbacks(
                 ports.render.shank,
                 displays,
+                histology_refresh_presenter,
             )
         )
         lifecycle_presenter = DesktopLifecyclePresenter(
@@ -391,6 +401,7 @@ class DesktopWorkbench:
             interaction_presenter=interaction_presenter,
             lifecycle_presenter=lifecycle_presenter,
             reference_line_presenter=reference_line_presenter,
+            histology_refresh_presenter=histology_refresh_presenter,
         )
 
     @staticmethod
@@ -424,6 +435,7 @@ class DesktopWorkbench:
     def _shank_render_callbacks(
         ports: DesktopShankRenderPorts,
         displays: DesktopDisplays,
+        histology_refresh_presenter: DesktopHistologyRefreshPresenter,
     ) -> DesktopShankRenderCallbacks:
         """Build callbacks for shank selection rendering."""
         return DesktopShankRenderCallbacks(
@@ -434,7 +446,9 @@ class DesktopWorkbench:
             raw_image_payloads=ports.raw_image_payloads,
             render_plot_menus=ports.render_plot_menus,
             render_ephys_plots=displays.ephys.render_shank_ephys_plots,
-            render_histology_plots=ports.render_histology_plots,
+            render_histology_plots=(
+                histology_refresh_presenter.render_loaded_shank_histology
+            ),
             restore_slice_selection=displays.slice.restore_selection,
             configure_view=ports.configure_view,
             offline=ports.offline,
@@ -735,6 +749,12 @@ class DesktopWorkbench:
     def render_active_histology_panels(self) -> bool:
         """Render reference histology, aligned histology, scale, and fit panels."""
         return self.displays.histology.render_active_panels()
+
+    def render_loaded_shank_histology(self, shank_idx: int | None = None) -> bool:
+        """Render loaded-shank histology, perpendicular slice, and line overlays."""
+        return self.histology_refresh_presenter.render_loaded_shank_histology(
+            shank_idx
+        )
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""

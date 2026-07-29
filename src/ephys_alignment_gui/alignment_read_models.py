@@ -101,6 +101,14 @@ class NearbyBoundaryRenderState:
 
 
 @dataclass(frozen=True)
+class ActiveReferenceLineRenderState:
+    """Reference-line coordinates ready for frontend overlay rendering."""
+
+    feature_positions_um: Any
+    track_positions_um: Any | None = None
+
+
+@dataclass(frozen=True)
 class ActiveShankPlotDataState:
     """Prepared ephys plot-data bounds for the active shank."""
 

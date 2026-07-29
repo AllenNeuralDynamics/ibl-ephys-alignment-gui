@@ -273,6 +273,7 @@ class FakeReferenceLineDisplay:
         self.reattach_count = 0
         self.sync_count = 0
         self.add_count = 0
+        self.created_lines: list[tuple[Any, Any]] = []
         self.lines_changed_callback = None
         self.current_positions = ([1.0], [2.0])
 
@@ -293,6 +294,9 @@ class FakeReferenceLineDisplay:
 
     def add_to_plots(self) -> None:
         self.add_count += 1
+
+    def create_lines(self, positions: Any, track_positions: Any = None) -> None:
+        self.created_lines.append((positions, track_positions))
 
 
 def _displays(
@@ -373,6 +377,7 @@ def _workbench(
     interaction: Any | None = None,
     lifecycle: Any | None = None,
     reference_line_presenter: Any | None = None,
+    histology_refresh_presenter: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
@@ -407,6 +412,7 @@ def _workbench(
         interaction_presenter=interaction or FakeInteractionPresenter(),
         lifecycle_presenter=lifecycle or object(),
         reference_line_presenter=reference_line_presenter or object(),
+        histology_refresh_presenter=histology_refresh_presenter or object(),
     )
 
 
@@ -568,7 +574,6 @@ def _render_ports() -> DesktopRenderPorts:
             apply_plot_data_state=lambda _state: None,
             raw_image_payloads=dict,
             render_plot_menus=lambda _state: None,
-            render_histology_plots=lambda _shank_idx: None,
             configure_view=lambda _preserve: None,
             offline=lambda: True,
         ),
@@ -664,6 +669,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         active_mouse_root_path=lambda: None,
         active_output_root=lambda: None,
         has_output_directory=lambda: False,
+        active_reference_line_state=lambda _shank_idx: SimpleNamespace(
+            feature_positions_um=[1.0],
+            track_positions_um=[2.0],
+        ),
     )
     captured_reference_lines: list[Any] = []
     commands = SimpleNamespace(
@@ -739,6 +748,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert reference_line_display.sync_count == 1
     workbench.shank_presenter.callbacks.render_ephys_plots("state")
     assert ephys_display.rendered_states == ["state"]
+    workbench.shank_presenter.callbacks.render_histology_plots(1)
+    assert panel.calls[-1] == "panels"
+    assert slice_display.perpendicular_refreshes == 2
+    assert reference_line_display.created_lines == [([1.0], [2.0])]
     workbench.shank_presenter.callbacks.restore_slice_selection(
         "menu",
         "selection",
