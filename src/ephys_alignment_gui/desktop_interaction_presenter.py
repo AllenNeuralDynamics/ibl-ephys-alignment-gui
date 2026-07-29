@@ -48,7 +48,7 @@ class DesktopInteractionPresenter:
     app: Any
     popup_manager: Any
     ephys_panel: Any
-    histology_panel: Any
+    histology_display: Any
     reference_lines: Any
     region_lookup_service: Any
     widgets: DesktopInteractionWidgets
@@ -152,7 +152,7 @@ class DesktopInteractionPresenter:
         if not self.callbacks.histology_available():
             return False
 
-        idx = self.histology_panel.selected_region_index()
+        idx = self.histology_display.selected_region_index()
         if idx is None:
             return False
         region_id = self.app.queries.active_histology_region_id(idx)
@@ -224,7 +224,9 @@ class DesktopInteractionPresenter:
             items[1],
             self.linear_region_type,
         ):
-            scale_factor = self.histology_panel.scale_factor_for_region_item(items[1])
+            scale_factor = self.histology_display.scale_factor_for_region_item(
+                items[1]
+            )
             if scale_factor is not None:
                 self.widgets.scale_axis.setLabel(
                     "Scale Factor = " + str(np.around(scale_factor, 2))
@@ -233,12 +235,12 @@ class DesktopInteractionPresenter:
             items[1],
             self.linear_region_type,
         ):
-            self.histology_panel.select_region(items[1])
+            self.histology_display.select_region(items[1])
         elif items[0] is self.widgets.histology_reference_plot and isinstance(
             items[1],
             self.linear_region_type,
         ):
-            self.histology_panel.select_region(items[1])
+            self.histology_display.select_region(items[1])
 
     def _select_structure(
         self,

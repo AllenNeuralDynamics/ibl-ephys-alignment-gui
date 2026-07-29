@@ -28,6 +28,7 @@ from ephys_alignment_gui.controller import (
     ShankSelected,
 )
 from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
+from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplay
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
@@ -36,15 +37,9 @@ from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
     desktop_ephys_display_ports_from_main_window,
+    desktop_histology_display_ports_from_main_window,
     desktop_slice_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
-)
-from ephys_alignment_gui.histology_panel_presenter import (
-    FitPanelItems,
-    HistologyPanelAxes,
-    HistologyPanelPlots,
-    HistologyPanelPresenter,
-    HistologyPanelStyle,
 )
 from ephys_alignment_gui.reference_line_layer import (
     ReferenceLineLayer,
@@ -159,25 +154,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             app=self.app,
             ports=desktop_slice_display_ports_from_main_window(self),
         )
-        self.histology_panel = HistologyPanelPresenter(
-            plots=HistologyPanelPlots(
-                aligned=self.fig_hist,
-                reference=self.fig_hist_ref,
-                scale=self.fig_scale,
-                scale_colorbar=self.fig_scale_cb,
-            ),
-            axes=HistologyPanelAxes(
-                aligned=self.ax_hist,
-                reference=self.ax_hist_ref,
-            ),
-            style=HistologyPanelStyle(dotted_pen=self.kpen_dot),
-            set_axis=self.set_axis,
-            padding_provider=lambda: self.pad,
-            fit_items=FitPanelItems(
-                fit_curve=self.fit_plot,
-                fit_scatter=self.fit_scatter,
-                linear_fit_curve=self.fit_plot_lin,
-            ),
+        self.histology_display = DesktopHistologyDisplay.create(
+            app=self.app,
+            ports=desktop_histology_display_ports_from_main_window(self),
         )
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
@@ -186,7 +165,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             parent=self,
             ephys_display=self.ephys_display,
             slice_display=self.slice_display,
-            histology_panel=self.histology_panel,
+            histology_display=self.histology_display,
             ports=desktop_workbench_ports_from_main_window(self),
         )
         self.desktop_workbench.connect_events()
@@ -475,9 +454,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for nearby histology boundary rendering."""
-        state = self._active_nearby_boundary_state()
-        if state is not None:
-            self.histology_panel.render_nearby(state, fig, movable=movable)
+        self.histology_display.render_active_nearby(fig, movable=movable)
 
     def _probe_extent_query_kwargs(self) -> dict[str, float]:
         depth_view = self.display_state.depth_view
@@ -487,24 +464,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "probe_extra_um": depth_view.probe_extra_um,
         }
 
-    def _active_nearby_boundary_state(self):
-        if not self.histology_exists:
-            return None
-        brain_atlas = self.histology_context.brain_atlas
-        if brain_atlas is None:
-            logger.error("Cannot render nearby boundaries: brain atlas is not loaded")
-            return None
-        state = self.app.queries.active_nearby_boundary_state(
-            **self._probe_extent_query_kwargs(),
-            allen=self.allen,
-            brain_atlas=brain_atlas,
-        )
-        if state is None:
-            logger.error(
-                "Cannot render nearby boundaries: active alignment data is not loaded"
-            )
-        return state
-
     def offset_hist_data(self, track_shift_m: float = 0.0) -> bool:
         """
         Offset location of probe tip along probe track
@@ -513,7 +472,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        tip_position_um = self.histology_panel.tip_position_um()
+        tip_position_um = self.histology_display.tip_position_um()
         if tip_position_um is None:
             logger.error("Cannot offset alignment: probe tip line is not rendered")
             return False
@@ -608,7 +567,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.popup_manager.close_all()
         self.ephys_display.clear()
         self.slice_display.clear()
-        self.histology_panel.clear()
+        self.histology_display.clear()
 
     def _active_shank_idx(self) -> int:
         """Return the document-owned active shank index."""
@@ -1090,7 +1049,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+A key pressed. Shows/hides labels Allen atlas labels on brain regions
         in histology plots
         """
-        self.histology_panel.toggle_labels()
+        self.histology_display.toggle_labels()
 
     def toggle_line_button_pressed(self) -> None:
         """
@@ -1298,14 +1257,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
-        self.histology_panel.sync_top_to_tip()
+        self.histology_display.sync_top_to_tip()
 
     def top_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
-        self.histology_panel.sync_tip_to_top()
+        self.histology_display.sync_tip_to_top()
 
     def _reattach_reference_lines(self) -> None:
         self.reference_lines.remove_from_plots()

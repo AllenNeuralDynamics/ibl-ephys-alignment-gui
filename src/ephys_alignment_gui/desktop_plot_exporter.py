@@ -47,10 +47,7 @@ class SliceExportStyle:
 class HistologyExportHandles:
     """Desktop histology plot handles needed by plot export."""
 
-    layout: Any
-    extra_y_axis: Any
-    aligned: Any
-    reference: Any
+    histology_display: Any
 
 
 @dataclass(frozen=True)
@@ -158,21 +155,31 @@ class DesktopPlotExporter:
         )
 
     def _export_histology_image(self, output_dir: Path, sess_info: str) -> None:
-        histology = self.histology_handles
+        histology = self.histology_handles.histology_display
         self.callbacks.set_axis(histology.extra_y_axis, "left")
-        self.callbacks.set_axis(histology.aligned, "bottom", label="aligned")
-        self.callbacks.set_font(histology.aligned, "bottom", ptsize=12)
-        self.callbacks.set_axis(histology.reference, "bottom", label="original")
-        self.callbacks.set_font(histology.reference, "bottom", ptsize=12)
+        self.callbacks.set_axis(histology.aligned_plot, "bottom", label="aligned")
+        self.callbacks.set_font(histology.aligned_plot, "bottom", ptsize=12)
+        self.callbacks.set_axis(histology.reference_plot, "bottom", label="original")
+        self.callbacks.set_font(histology.reference_plot, "bottom", ptsize=12)
         self._export_item(
-            histology.layout.scene(),
+            histology.export_scene(),
             output_dir / f"{sess_info}hist.png",
         )
         self.callbacks.set_axis(histology.extra_y_axis, "left", pen=None)
-        self.callbacks.set_font(histology.aligned, "bottom", ptsize=8)
-        self.callbacks.set_axis(histology.aligned, "bottom", pen="w", label="blank")
-        self.callbacks.set_font(histology.reference, "bottom", ptsize=8)
-        self.callbacks.set_axis(histology.reference, "bottom", pen="w", label="blank")
+        self.callbacks.set_font(histology.aligned_plot, "bottom", ptsize=8)
+        self.callbacks.set_axis(
+            histology.aligned_plot,
+            "bottom",
+            pen="w",
+            label="blank",
+        )
+        self.callbacks.set_font(histology.reference_plot, "bottom", ptsize=8)
+        self.callbacks.set_axis(
+            histology.reference_plot,
+            "bottom",
+            pen="w",
+            label="blank",
+        )
 
     def _export_item(self, item: Any, output_path: Path) -> None:
         exporter = self.image_exporter_factory(item)

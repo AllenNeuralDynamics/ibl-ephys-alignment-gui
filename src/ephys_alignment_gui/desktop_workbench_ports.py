@@ -8,11 +8,11 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop_busy_context import BusyContext
 from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplayPorts
+from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplayPorts
 from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
-    DesktopHistologyRenderPorts,
     DesktopInteractionPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
@@ -39,6 +39,35 @@ def desktop_ephys_display_ports_from_main_window(
         set_axis=window.set_axis,
         reset_axis=window.reset_axis_button_pressed,
         cluster_clicked=lambda *args: window.desktop_workbench.cluster_clicked(*args),
+    )
+
+
+def desktop_histology_display_ports_from_main_window(
+    window: Any,
+) -> DesktopHistologyDisplayPorts:
+    """Adapt MainWindow plot handles to histology display ports."""
+    return DesktopHistologyDisplayPorts(
+        aligned_plot=window.fig_hist,
+        reference_plot=window.fig_hist_ref,
+        scale_plot=window.fig_scale,
+        scale_colorbar=window.fig_scale_cb,
+        aligned_axis=window.ax_hist,
+        reference_axis=window.ax_hist_ref,
+        layout=window.fig_hist_layout,
+        extra_y_axis=window.fig_hist_extra_yaxis,
+        dotted_pen=window.kpen_dot,
+        fit_curve=window.fit_plot,
+        fit_scatter=window.fit_scatter,
+        linear_fit_curve=window.fit_plot_lin,
+        set_axis=window.set_axis,
+        padding_provider=lambda: window.pad,
+        probe_extent_query_kwargs=window._probe_extent_query_kwargs,
+        fit_depth_um=lambda: window.display_state.depth_view.fit_depth_um,
+        lin_fit_enabled=lambda: window.display_state.edit_settings.lin_fit,
+        scale_factor_y_range=window._scale_factor_y_range,
+        histology_available=lambda: window.histology_exists,
+        brain_atlas=lambda: window.histology_context.brain_atlas,
+        allen=lambda: window.allen,
     )
 
 
@@ -110,12 +139,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 set_default_feature_y_range=window.set_default_feature_y_range,
                 update_status=window.update_string,
             ),
-            histology=DesktopHistologyRenderPorts(
-                probe_extent_query_kwargs=window._probe_extent_query_kwargs,
-                fit_depth_um=lambda: window.display_state.depth_view.fit_depth_um,
-                lin_fit_enabled=lambda: window.display_state.edit_settings.lin_fit,
-                scale_factor_y_range=window._scale_factor_y_range,
-            ),
             shank=DesktopShankRenderPorts(
                 capture_plot_selection=window._capture_shank_plot_selection,
                 clear_reference_lines=window.reference_lines.clear,
@@ -160,10 +183,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             ephys_data_area=window.fig_data_area,
             slice_plot=window.fig_slice,
             slice_trajectory_pen=window.rpen_dot,
-            histology_layout=window.fig_hist_layout,
-            histology_extra_y_axis=window.fig_hist_extra_yaxis,
-            histology_aligned=window.fig_hist,
-            histology_reference=window.fig_hist_ref,
             reset_axis=window.reset_axis_button_pressed,
             set_view=window.set_view,
             set_axis=window.set_axis,

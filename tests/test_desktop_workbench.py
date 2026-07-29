@@ -5,12 +5,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.desktop_histology_presenter import DesktopHistologyPresenter
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
-    DesktopHistologyRenderPorts,
     DesktopInteractionPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
@@ -61,7 +59,7 @@ class FakeShankPresenter:
         self.render_calls.append((shank_idx, preserve_plot_selection))
 
 
-class FakeHistologyPresenter:
+class FakeHistologyDisplay:
     def __init__(self) -> None:
         self.calls: list[Any] = []
 
@@ -93,6 +91,10 @@ class FakeHistologyPresenter:
 
     def render_active_panels(self) -> bool:
         self.calls.append("panels")
+        return True
+
+    def render_alignment_edit(self, render_state: Any) -> bool:
+        self.calls.append(("edit", render_state))
         return True
 
 
@@ -331,7 +333,7 @@ def _workbench(
         app=object(),
         alignment_presenter=alignment,
         shank_presenter=shank,
-        histology_presenter=histology,
+        histology_display=histology,
         load_data_presenter=load_data or FakeLoadDataPresenter(),
         probe_selection_presenter=probe_selection or FakeProbeSelectionPresenter(),
         session_selection_presenter=(
@@ -359,7 +361,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     shank_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
-    workbench = _workbench(alignment, shank, FakeHistologyPresenter())
+    workbench = _workbench(alignment, shank, FakeHistologyDisplay())
 
     subscriptions = workbench.connect_events()
     second_connect = workbench.connect_events()
@@ -378,7 +380,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:
     shank = FakeShankPresenter([])
-    histology = FakeHistologyPresenter()
+    histology = FakeHistologyDisplay()
     workbench = _workbench(FakeAlignmentPresenter([]), shank, histology)
 
     workbench.render_loaded_shank(shank_idx=2, preserve_plot_selection=True)
@@ -415,7 +417,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
-        FakeHistologyPresenter(),
+        FakeHistologyDisplay(),
         load_data=load_data,
         mouse_root=mouse_root,
         session_selection=session_selection,
@@ -508,12 +510,6 @@ def _render_ports() -> DesktopRenderPorts:
             create_reference_lines_for_previous_alignment=lambda: None,
             set_default_feature_y_range=lambda: None,
             update_status=lambda: None,
-        ),
-        histology=DesktopHistologyRenderPorts(
-            probe_extent_query_kwargs=dict,
-            fit_depth_um=lambda: [],
-            lin_fit_enabled=lambda: False,
-            scale_factor_y_range=lambda: (0.0, 1.0),
         ),
         shank=DesktopShankRenderPorts(
             capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
@@ -631,7 +627,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     commands = SimpleNamespace(can_load_data=lambda: Ok())
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
-    panel = object()
+    panel = FakeHistologyDisplay()
     ephys_display = FakeEphysDisplay()
     slice_display = FakeSliceDisplay()
 
@@ -642,12 +638,11 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         parent=object(),
         ephys_display=ephys_display,
         slice_display=slice_display,
-        histology_panel=panel,
+        histology_display=panel,
         ports=ports,
     )
 
-    assert isinstance(workbench.histology_presenter, DesktopHistologyPresenter)
-    assert workbench.histology_presenter.panel is panel
+    assert workbench.histology_display is panel
     assert workbench.alignment_presenter.callbacks is not None
     assert workbench.shank_presenter.callbacks is not None
     assert workbench.load_data_presenter.callbacks is not None
@@ -662,16 +657,12 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         queries.has_output_directory
     )
     assert workbench.load_workflow_presenter.can_load_data is commands.can_load_data
-    assert workbench.histology_presenter.callbacks.fit_depth_um is (
-        ports.render.histology.fit_depth_um
-    )
+    workbench.alignment_presenter.callbacks.render_histology_alignment("edit-state")
+    assert panel.calls == [("edit", "edit-state")]
     workbench.alignment_presenter.callbacks.plot_channels("projection")
     assert slice_display.plotted_channels == ["projection"]
     workbench.alignment_presenter.callbacks.refresh_perpendicular_histology()
     assert slice_display.perpendicular_refreshes == 1
-    assert workbench.alignment_presenter.callbacks.render_histology_alignment == (
-        workbench.histology_presenter.render_alignment_edit
-    )
     assert workbench.shank_presenter.callbacks.prepare_runtime is (
         ports.render.shank.prepare_runtime
     )

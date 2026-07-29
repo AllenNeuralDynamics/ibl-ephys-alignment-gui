@@ -107,8 +107,12 @@ class FakeSlicePlot:
         self.ranges.append(kwargs)
 
 
-class FakeLayout:
-    def scene(self) -> str:
+class FakeHistologyDisplay:
+    extra_y_axis = "extra-y"
+    aligned_plot = "aligned-histology"
+    reference_plot = "reference-histology"
+
+    def export_scene(self) -> str:
         return "histology-scene"
 
 
@@ -145,10 +149,7 @@ def _exporter() -> tuple[
         ),
         slice_style=SliceExportStyle(trajectory_pen="trajectory-pen"),
         histology_handles=HistologyExportHandles(
-            layout=FakeLayout(),
-            extra_y_axis="extra-y",
-            aligned="aligned-histology",
-            reference="reference-histology",
+            histology_display=FakeHistologyDisplay(),
         ),
         callbacks=DesktopPlotExportCallbacks(
             set_axis=lambda *args, **kwargs: calls.append(("set_axis", args, kwargs)),

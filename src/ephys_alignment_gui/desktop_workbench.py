@@ -20,10 +20,7 @@ from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     EphysExportSizes,
 )
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
-from ephys_alignment_gui.desktop_histology_presenter import (
-    DesktopHistologyPresenter,
-    DesktopHistologyRenderCallbacks,
-)
+from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplay
 from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
@@ -95,16 +92,6 @@ class DesktopAlignmentRenderPorts:
 
 
 @dataclass(frozen=True)
-class DesktopHistologyRenderPorts:
-    """Desktop operations needed to build histology render read models."""
-
-    probe_extent_query_kwargs: Callable[[], dict[str, float]]
-    fit_depth_um: Callable[[], Any]
-    lin_fit_enabled: Callable[[], bool]
-    scale_factor_y_range: Callable[[], tuple[float, float]]
-
-
-@dataclass(frozen=True)
 class DesktopShankRenderPorts:
     """Desktop operations needed to render an active shank."""
 
@@ -126,7 +113,6 @@ class DesktopRenderPorts:
     """MainWindow render ports consumed by focused desktop presenters."""
 
     alignment: DesktopAlignmentRenderPorts
-    histology: DesktopHistologyRenderPorts
     shank: DesktopShankRenderPorts
 
 
@@ -241,7 +227,7 @@ class DesktopWorkbench:
     app: Any
     alignment_presenter: DesktopAlignmentPresenter
     shank_presenter: DesktopShankPresenter
-    histology_presenter: DesktopHistologyPresenter
+    histology_display: DesktopHistologyDisplay
     load_data_presenter: DesktopLoadDataPresenter
     probe_selection_presenter: DesktopProbeSelectionPresenter
     session_selection_presenter: DesktopSessionSelectionPresenter
@@ -269,15 +255,10 @@ class DesktopWorkbench:
         parent: Any,
         ephys_display: DesktopEphysDisplay,
         slice_display: DesktopSliceDisplay,
-        histology_panel: Any,
+        histology_display: DesktopHistologyDisplay,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
-        histology_presenter = DesktopHistologyPresenter(
-            app=app,
-            panel=histology_panel,
-            callbacks=cls._histology_render_callbacks(ports.render.histology),
-        )
         output_path_presenter = DesktopOutputPathPresenter(
             commands=app.commands,
             path_view=path_view,
@@ -287,7 +268,7 @@ class DesktopWorkbench:
             queries=app.queries,
             callbacks=cls._alignment_render_callbacks(
                 ports.render.alignment,
-                histology_presenter,
+                histology_display,
                 slice_display,
             ),
         )
@@ -371,18 +352,19 @@ class DesktopWorkbench:
             ports.interaction,
             app=app,
             ephys_panel=ephys_display.panel,
-            histology_panel=histology_panel,
+            histology_display=histology_display,
         )
         plot_exporter = cls._plot_exporter(
             ports.export,
             ephys_display=ephys_display,
             slice_display=slice_display,
+            histology_display=histology_display,
         )
         return cls(
             app=app,
             alignment_presenter=alignment_presenter,
             shank_presenter=shank_presenter,
-            histology_presenter=histology_presenter,
+            histology_display=histology_display,
             load_data_presenter=load_data_presenter,
             probe_selection_presenter=probe_selection_presenter,
             session_selection_presenter=session_selection_presenter,
@@ -403,7 +385,7 @@ class DesktopWorkbench:
     @staticmethod
     def _alignment_render_callbacks(
         ports: DesktopAlignmentRenderPorts,
-        histology_presenter: DesktopHistologyPresenter,
+        histology_display: DesktopHistologyDisplay,
         slice_display: DesktopSliceDisplay,
     ) -> DesktopAlignmentRenderCallbacks:
         """Build callbacks for alignment edit rendering."""
@@ -413,7 +395,7 @@ class DesktopWorkbench:
             capture_depth_plot_y_ranges=ports.capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
             reattach_reference_lines=ports.reattach_reference_lines,
-            render_histology_alignment=histology_presenter.render_alignment_edit,
+            render_histology_alignment=histology_display.render_alignment_edit,
             plot_channels=slice_display.plot_channels,
             refresh_perpendicular_histology=(
                 slice_display.refresh_perpendicular_histology
@@ -426,18 +408,6 @@ class DesktopWorkbench:
             ),
             set_default_feature_y_range=ports.set_default_feature_y_range,
             update_status=ports.update_status,
-        )
-
-    @staticmethod
-    def _histology_render_callbacks(
-        ports: DesktopHistologyRenderPorts,
-    ) -> DesktopHistologyRenderCallbacks:
-        """Build callbacks for histology panel rendering."""
-        return DesktopHistologyRenderCallbacks(
-            probe_extent_query_kwargs=ports.probe_extent_query_kwargs,
-            fit_depth_um=ports.fit_depth_um,
-            lin_fit_enabled=ports.lin_fit_enabled,
-            scale_factor_y_range=ports.scale_factor_y_range,
         )
 
     @staticmethod
@@ -508,6 +478,7 @@ class DesktopWorkbench:
         *,
         ephys_display: DesktopEphysDisplay,
         slice_display: DesktopSliceDisplay,
+        histology_display: DesktopHistologyDisplay,
     ) -> DesktopPlotExporter:
         """Build the desktop plot exporter cluster."""
         ephys_exporter = DesktopEphysPlotExporter(
@@ -529,10 +500,7 @@ class DesktopWorkbench:
                 trajectory_pen=ports.slice_trajectory_pen,
             ),
             histology_handles=HistologyExportHandles(
-                layout=ports.histology_layout,
-                extra_y_axis=ports.histology_extra_y_axis,
-                aligned=ports.histology_aligned,
-                reference=ports.histology_reference,
+                histology_display=histology_display,
             ),
             callbacks=DesktopWorkbench._plot_export_callbacks(ports),
         )
@@ -543,14 +511,14 @@ class DesktopWorkbench:
         *,
         app: Any,
         ephys_panel: Any,
-        histology_panel: Any,
+        histology_display: Any,
     ) -> DesktopInteractionPresenter:
         """Build the desktop interaction presenter."""
         return DesktopInteractionPresenter(
             app=app,
             popup_manager=ports.popup_manager,
             ephys_panel=ephys_panel,
-            histology_panel=histology_panel,
+            histology_display=histology_display,
             reference_lines=ports.reference_lines,
             region_lookup_service=ports.region_lookup_service,
             widgets=DesktopInteractionWidgets(
@@ -704,7 +672,7 @@ class DesktopWorkbench:
         movable: bool = True,
     ) -> bool:
         """Render the active aligned histology panel."""
-        return self.histology_presenter.render_active_aligned(fig, movable=movable)
+        return self.histology_display.render_active_aligned(fig, movable=movable)
 
     def render_active_reference_histology(
         self,
@@ -713,19 +681,19 @@ class DesktopWorkbench:
         movable: bool = False,
     ) -> bool:
         """Render the active reference histology panel."""
-        return self.histology_presenter.render_active_reference(fig, movable=movable)
+        return self.histology_display.render_active_reference(fig, movable=movable)
 
     def render_active_scale_factor(self) -> bool:
         """Render the active scale-factor panel."""
-        return self.histology_presenter.render_active_scale_factor()
+        return self.histology_display.render_active_scale_factor()
 
     def render_active_fit(self) -> bool:
         """Render the active feature/track fit panel."""
-        return self.histology_presenter.render_active_fit()
+        return self.histology_display.render_active_fit()
 
     def render_active_histology_panels(self) -> bool:
         """Render reference histology, aligned histology, scale, and fit panels."""
-        return self.histology_presenter.render_active_panels()
+        return self.histology_display.render_active_panels()
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""

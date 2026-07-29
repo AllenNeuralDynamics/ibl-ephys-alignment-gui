@@ -241,7 +241,7 @@ def _presenter(
     calls: dict[str, Any] = {"axis": [], "activate": 0, "capture": 0}
     popup_manager = DesktopPopupManager()
     ephys_panel = FakeEphysPanel()
-    histology_panel = FakeHistologyPanel()
+    histology_display = FakeHistologyPanel()
     reference_lines = FakeReferenceLines()
     region_lookup = FakeRegionLookupService()
     struct_list = FakeStructList()
@@ -279,7 +279,7 @@ def _presenter(
         app=app,
         popup_manager=popup_manager,
         ephys_panel=ephys_panel,
-        histology_panel=histology_panel,
+        histology_display=histology_display,
         reference_lines=reference_lines,
         region_lookup_service=region_lookup,
         widgets=widgets,
@@ -307,7 +307,7 @@ def _presenter(
         "calls": calls,
         "popup_manager": popup_manager,
         "ephys_panel": ephys_panel,
-        "histology_panel": histology_panel,
+        "histology_display": histology_display,
         "reference_lines": reference_lines,
         "region_lookup": region_lookup,
         "widgets": widgets,
@@ -393,7 +393,7 @@ def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
     assert state["reference_lines"].clear_calls == 4
     assert state["reference_lines"].selected == [line]
     assert state["scale_axis"].label == "Scale Factor = 1.23"
-    assert state["histology_panel"].selected_regions == [hist_region, ref_region]
+    assert state["histology_display"].selected_regions == [hist_region, ref_region]
 
 
 def test_describe_labels_pressed_creates_region_popup() -> None:
