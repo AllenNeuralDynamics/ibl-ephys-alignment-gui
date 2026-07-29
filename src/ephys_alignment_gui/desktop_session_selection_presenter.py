@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 class DesktopSessionSelectionCallbacks:
     """Non-widget side effects for session selection."""
 
-    mouse_root_loaded: Callable[[], bool]
     capture_pending_reference_lines: Callable[[], None]
     evict_stream_cache: Callable[[], None]
     show_empty_state: Callable[[], None]
@@ -28,14 +27,14 @@ class DesktopSessionSelectionCallbacks:
 class DesktopSessionSelectionPresenter:
     """Coordinate desktop behavior for selecting a recording/session."""
 
-    commands: Any
+    app: Any
     selection_view: Any
     callbacks: DesktopSessionSelectionCallbacks
 
     def session_selected(self) -> bool:
         """Select the current recording and render its probe choices."""
         callbacks = self.callbacks
-        if not callbacks.mouse_root_loaded():
+        if not self.app.queries.mouse_root_loaded():
             return False
 
         session_name = self.selection_view.current_session()
@@ -44,7 +43,7 @@ class DesktopSessionSelectionPresenter:
 
         callbacks.capture_pending_reference_lines()
         callbacks.evict_stream_cache()
-        result = self.commands.select_recording_metadata(session_name)
+        result = self.app.commands.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)
             return False

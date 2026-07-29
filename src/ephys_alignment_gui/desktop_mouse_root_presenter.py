@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 class DesktopMouseRootCallbacks:
     """Non-widget side effects for mouse-root loading."""
 
-    clear_histology_context: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
     select_first_session: Callable[[], None]
 
@@ -46,7 +45,7 @@ class DesktopMouseRootPresenter:
                 return False
             assert isinstance(result, MouseRootLoaded)
             if result.root_changed:
-                self.callbacks.clear_histology_context()
+                self.commands.clear_histology_context()
             loaded_root = result.mouse_root
 
             self.path_view.set_mouse_root(loaded_root.root)

@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 class DesktopProbeSelectionCallbacks:
     """Desktop callbacks used by the probe-selection presenter."""
 
-    mouse_root_loaded: Callable[[], bool]
     capture_pending_reference_lines: Callable[[], None]
     detach_active_stream: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
@@ -39,7 +38,7 @@ class DesktopProbeSelectionPresenter:
     def probe_selected(self) -> bool:
         """Select the current probe or present its cached stream."""
         callbacks = self.callbacks
-        if not callbacks.mouse_root_loaded():
+        if not self.app.queries.mouse_root_loaded():
             return False
 
         session_name = self.selection_view.current_session()

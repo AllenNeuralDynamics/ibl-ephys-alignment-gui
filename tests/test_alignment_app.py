@@ -825,6 +825,7 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     queries = workspace.app.queries
 
     assert queries.active_mouse_root_path() is None
+    assert not queries.mouse_root_loaded()
     assert queries.active_output_root() is None
     assert not queries.has_output_directory()
 
@@ -836,8 +837,19 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     workspace.document.set_output_directory(output_directory)
 
     assert queries.active_mouse_root_path() == mouse_root.root
+    assert queries.mouse_root_loaded()
     assert queries.active_output_root() == output_root
     assert queries.has_output_directory()
+
+
+def test_commands_clear_histology_context() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.histology_context.runtime_data = object()
+
+    result = workspace.app.commands.clear_histology_context()
+
+    assert isinstance(result, Ok)
+    assert workspace.histology_context.runtime_data is None
 
 
 def test_commands_select_probe_metadata_delegates_to_controller() -> None:

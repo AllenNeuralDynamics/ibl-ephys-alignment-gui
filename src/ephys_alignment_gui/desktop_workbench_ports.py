@@ -140,10 +140,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         selection=DesktopSelectionWorkflowCallbacks(
             clear_empty_state=window._clear_empty_state,
             set_histology_available=window._set_histology_available,
-            mouse_root_loaded=lambda: window.data_context.mouse_root is not None,
-            clear_histology_context=window.histology_context.clear,
-            select_first_session=lambda: window.on_session_combobox_activated(0),
-            select_first_probe=lambda: window.on_probe_combobox_activated(0),
             busy_context=busy_context,
         ),
         lifecycle=DesktopLifecyclePorts(

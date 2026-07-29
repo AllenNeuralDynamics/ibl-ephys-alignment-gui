@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.controller import RecordingSelected
@@ -58,11 +59,14 @@ def _presenter(
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
     selection_view = FakeSelectionView(calls, session_name=session_name)
-    presenter = DesktopSessionSelectionPresenter(
+    app = SimpleNamespace(
         commands=commands,
+        queries=SimpleNamespace(mouse_root_loaded=lambda: mouse_root_loaded),
+    )
+    presenter = DesktopSessionSelectionPresenter(
+        app=app,
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
-            mouse_root_loaded=lambda: mouse_root_loaded,
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
             evict_stream_cache=lambda: calls.append(("evict",)),
             show_empty_state=lambda: calls.append(("empty",)),

@@ -294,6 +294,11 @@ class AlignmentCommands:
         """Load a mouse root and update document metadata."""
         return self._controller.set_mouse_root(mouse_root)
 
+    def clear_histology_context(self) -> Ok:
+        """Clear loaded histology runtime data after a mouse-root change."""
+        self._histology_context.clear()
+        return Ok()
+
     def set_output_root(self, output_root: Path) -> OutputRootSet | Failed:
         """Set the output root and derive the active probe output directory."""
         return self._controller.set_output_root(output_root)
@@ -1084,6 +1089,10 @@ class AlignmentQueries:
         if self.data_context is None or self.data_context.mouse_root is None:
             return None
         return self.data_context.mouse_root.root
+
+    def mouse_root_loaded(self) -> bool:
+        """Return whether an input mouse-root datapackage is loaded."""
+        return self.active_mouse_root_path() is not None
 
     def active_output_root(self) -> Path | None:
         """Return the active output root, if one has been set."""

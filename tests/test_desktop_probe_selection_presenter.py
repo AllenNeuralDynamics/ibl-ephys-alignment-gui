@@ -114,6 +114,7 @@ def _presenter(
     app = SimpleNamespace(
         commands=commands,
         queries=SimpleNamespace(
+            mouse_root_loaded=lambda: mouse_root_loaded,
             active_shank_selection=lambda: SimpleNamespace(shank_idx=active_shank_idx)
         ),
     )
@@ -121,7 +122,6 @@ def _presenter(
         app=app,
         selection_view=selection_view,
         callbacks=DesktopProbeSelectionCallbacks(
-            mouse_root_loaded=lambda: mouse_root_loaded,
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
             detach_active_stream=lambda: calls.append(("detach",)),
             present_cached_probe_selection=lambda session, probe, shank: (

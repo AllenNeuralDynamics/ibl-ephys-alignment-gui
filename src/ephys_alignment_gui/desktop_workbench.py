@@ -229,10 +229,6 @@ class DesktopSelectionWorkflowCallbacks:
     clear_empty_state: Callable[[], None]
     set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
-    mouse_root_loaded: Callable[[], bool]
-    clear_histology_context: Callable[[], None]
-    select_first_session: Callable[[], None]
-    select_first_probe: Callable[[], None]
 
 
 @dataclass
@@ -360,19 +356,23 @@ class DesktopWorkbench:
             ),
         )
         session_selection_presenter = DesktopSessionSelectionPresenter(
-            commands=app.commands,
+            app=app,
             selection_view=selection_view,
             callbacks=cls._session_selection_callbacks(
                 ports.selection,
                 lifecycle_presenter,
                 reference_line_presenter,
+                probe_selection_presenter,
             ),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
             commands=app.commands,
             path_view=path_view,
             selection_view=selection_view,
-            callbacks=cls._mouse_root_callbacks(ports.selection),
+            callbacks=cls._mouse_root_callbacks(
+                ports.selection,
+                session_selection_presenter,
+            ),
         )
         folder_dialog = DesktopFolderDialog(parent=None)
         path_dialog_presenter = DesktopPathDialogPresenter(
@@ -689,7 +689,6 @@ class DesktopWorkbench:
     ) -> DesktopProbeSelectionCallbacks:
         """Build callbacks for probe selection."""
         return DesktopProbeSelectionCallbacks(
-            mouse_root_loaded=callbacks.mouse_root_loaded,
             capture_pending_reference_lines=(
                 reference_line_presenter.capture_pending_reference_lines
             ),
@@ -713,27 +712,27 @@ class DesktopWorkbench:
         callbacks: DesktopSelectionWorkflowCallbacks,
         lifecycle_presenter: DesktopLifecyclePresenter,
         reference_line_presenter: DesktopReferenceLinePresenter,
+        probe_selection_presenter: DesktopProbeSelectionPresenter,
     ) -> DesktopSessionSelectionCallbacks:
         """Build callbacks for session selection."""
         return DesktopSessionSelectionCallbacks(
-            mouse_root_loaded=callbacks.mouse_root_loaded,
             capture_pending_reference_lines=(
                 reference_line_presenter.capture_pending_reference_lines
             ),
             evict_stream_cache=lifecycle_presenter.evict_stream_cache,
             show_empty_state=lifecycle_presenter.show_empty_state,
-            select_first_probe=callbacks.select_first_probe,
+            select_first_probe=probe_selection_presenter.probe_selected,
         )
 
     @staticmethod
     def _mouse_root_callbacks(
         callbacks: DesktopSelectionWorkflowCallbacks,
+        session_selection_presenter: DesktopSessionSelectionPresenter,
     ) -> DesktopMouseRootCallbacks:
         """Build callbacks for mouse-root loading."""
         return DesktopMouseRootCallbacks(
-            clear_histology_context=callbacks.clear_histology_context,
             busy_context=callbacks.busy_context,
-            select_first_session=callbacks.select_first_session,
+            select_first_session=session_selection_presenter.session_selected,
         )
 
     def connect_events(self) -> list[EventSubscription]:

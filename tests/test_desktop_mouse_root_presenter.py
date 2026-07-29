@@ -80,10 +80,14 @@ class FakeCommands:
             root_changed=True,
         )
         self.calls: list[Path] = []
+        self.clear_histology_calls = 0
 
     def set_mouse_root(self, mouse_root: Path):
         self.calls.append(mouse_root)
         return self.result
+
+    def clear_histology_context(self) -> None:
+        self.clear_histology_calls += 1
 
 
 def _presenter(
@@ -99,7 +103,6 @@ def _presenter(
         path_view=FakePathView(calls, text=path_text),
         selection_view=FakeSelectionView(calls),
         callbacks=DesktopMouseRootCallbacks(
-            clear_histology_context=lambda: calls.append(("clear-histology",)),
             busy_context=lambda *args, **kwargs: FakeBusyContext(
                 calls,
                 *args,
@@ -117,6 +120,7 @@ def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
     assert presenter.set_mouse_root(Path("/data/mouse"))
 
     assert commands.calls == [Path("/data/mouse")]
+    assert commands.clear_histology_calls == 1
     assert calls == [
         (
             "busy",
@@ -124,7 +128,6 @@ def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
             {"disable_widgets": ["button", "line"]},
         ),
         ("busy-enter",),
-        ("clear-histology",),
         ("path", Path("/data/mouse")),
         ("sessions", ["rec1"]),
         ("clear-probes",),
@@ -150,7 +153,7 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
 
     assert presenter.set_mouse_root(Path("/data/mouse"))
 
-    assert ("clear-histology",) not in calls
+    assert _commands.clear_histology_calls == 0
     assert ("select-session", 0) not in calls
     assert ("select-first-session",) not in calls
 
