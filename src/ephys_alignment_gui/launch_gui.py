@@ -42,11 +42,6 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
-from ephys_alignment_gui.desktop_interaction_presenter import (
-    DesktopInteractionCallbacks,
-    DesktopInteractionPresenter,
-    DesktopInteractionWidgets,
-)
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
@@ -184,9 +179,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ),
             style=EphysPanelStyle(line_pen=self.kpen_solid),
             set_axis=self.set_axis,
-            cluster_clicked=lambda *args: self.interaction_presenter.cluster_clicked(
-                *args
-            ),
+            cluster_clicked=lambda *args: self.desktop_workbench.cluster_clicked(*args),
         )
         self.ephys_panel_layout = DesktopEphysPanelLayout(
             panel=self.ephys_panel,
@@ -245,7 +238,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 linear_fit_curve=self.fit_plot_lin,
             ),
         )
-        self._init_interaction_presenter()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             selection_view=self.selection_view,
@@ -274,34 +266,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if workbench is not None:
             workbench.disconnect_events()
         super().closeEvent(event)
-
-    def _init_interaction_presenter(self) -> None:
-        """Wire desktop popup and mouse interaction behavior."""
-        self.interaction_presenter = DesktopInteractionPresenter(
-            app=self.app,
-            popup_manager=self.popup_manager,
-            ephys_panel=self.ephys_panel,
-            histology_panel=self.histology_panel,
-            reference_lines=self.reference_lines,
-            region_lookup_service=self.region_lookup_service,
-            widgets=DesktopInteractionWidgets(
-                struct_list=self.struct_list,
-                struct_view=self.struct_view,
-                struct_description=self.struct_description,
-                scale_plot=self.fig_scale,
-                histology_plot=self.fig_hist,
-                histology_reference_plot=self.fig_hist_ref,
-                scale_axis=self.fig_scale_ax,
-                bar_colour=self.bar_colour,
-                line_pen=self.kpen_solid,
-            ),
-            callbacks=DesktopInteractionCallbacks(
-                histology_available=lambda: self.histology_exists,
-                activate_window=self.activateWindow,
-                set_axis=self.set_axis,
-                capture_pending_reference_lines=self._capture_pending_reference_lines,
-            ),
-        )
 
     @staticmethod
     def _normalize_offline_flag(offline: Any) -> bool:
@@ -1287,16 +1251,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.reference_lines.delete_selected()
 
     def describe_labels_pressed(self) -> None:
-        self.interaction_presenter.describe_labels_pressed()
+        self.desktop_workbench.describe_labels_pressed()
 
     def label_closed(self, popup) -> None:
-        self.interaction_presenter.label_closed(popup)
+        self.desktop_workbench.label_closed(popup)
 
     def label_moved(self) -> None:
-        self.interaction_presenter.label_moved()
+        self.desktop_workbench.label_moved()
 
     def label_pressed(self, item) -> None:
-        self.interaction_presenter.label_pressed(item)
+        self.desktop_workbench.label_pressed(item)
 
     def next_button_pressed(self) -> None:
         """
@@ -1401,22 +1365,22 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
 
     def display_session_notes(self) -> None:
-        self.interaction_presenter.display_session_notes()
+        self.desktop_workbench.display_session_notes()
 
     def display_nearby_sessions(self) -> None:
         self._show_one_unsupported("Nearby sessions")
 
     def popup_closed(self, popup) -> None:
-        self.interaction_presenter.popup_closed(popup)
+        self.desktop_workbench.popup_closed(popup)
 
     def popup_moved(self) -> None:
-        self.interaction_presenter.popup_moved()
+        self.desktop_workbench.popup_moved()
 
     def close_popups(self) -> None:
-        self.interaction_presenter.close_popups()
+        self.desktop_workbench.close_popups()
 
     def minimise_popups(self) -> None:
-        self.interaction_presenter.minimise_popups()
+        self.desktop_workbench.minimise_popups()
 
     def lin_fit_option_changed(self, state) -> None:
         """
@@ -1436,7 +1400,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.fit_button_pressed()
 
     def cluster_clicked(self, item, point):
-        return self.interaction_presenter.cluster_clicked(item, point)
+        return self.desktop_workbench.cluster_clicked(item, point)
 
     def display_subject_scaling(self) -> None:
         self._show_one_unsupported("Subject scaling")
@@ -1452,14 +1416,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         :param event: double click event signals
         :type event: pyqtgraph mouseEvents
         """
-        self.interaction_presenter.on_mouse_double_clicked(event)
+        self.desktop_workbench.on_mouse_double_clicked(event)
 
     def on_mouse_hover(self, items) -> None:
         """
         Returns the pyqtgraph items that the mouse is hovering over. Used to identify reference
         lines so that they can be deleted
         """
-        self.interaction_presenter.on_mouse_hover(items)
+        self.desktop_workbench.on_mouse_hover(items)
 
     def tip_line_moved(self) -> None:
         """

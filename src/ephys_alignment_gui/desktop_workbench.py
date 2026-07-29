@@ -23,6 +23,11 @@ from ephys_alignment_gui.desktop_histology_presenter import (
     DesktopHistologyPresenter,
     DesktopHistologyRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_interaction_presenter import (
+    DesktopInteractionCallbacks,
+    DesktopInteractionPresenter,
+    DesktopInteractionWidgets,
+)
 from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -177,6 +182,28 @@ class DesktopExportPorts:
 
 
 @dataclass(frozen=True)
+class DesktopInteractionPorts:
+    """Desktop operations and handles needed by interaction presentation."""
+
+    popup_manager: Any
+    reference_lines: Any
+    region_lookup_service: Any
+    struct_list: Any
+    struct_view: Any
+    struct_description: Any
+    scale_plot: Any
+    histology_plot: Any
+    histology_reference_plot: Any
+    scale_axis: Any
+    bar_colour: Any
+    line_pen: Any
+    histology_available: Callable[[], bool]
+    activate_window: Callable[[], None]
+    set_axis: Callable[..., Any]
+    capture_pending_reference_lines: Callable[[], None]
+
+
+@dataclass(frozen=True)
 class DesktopWorkbenchPorts:
     """MainWindow ports consumed by Workbench presenter composition."""
 
@@ -185,6 +212,7 @@ class DesktopWorkbenchPorts:
     save_workflow: DesktopSaveWorkflowPorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
     export: DesktopExportPorts
+    interaction: DesktopInteractionPorts
 
 
 @dataclass(frozen=True)
@@ -229,6 +257,7 @@ class DesktopWorkbench:
     save_workflow_presenter: DesktopSaveWorkflowPresenter
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
+    interaction_presenter: DesktopInteractionPresenter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -335,6 +364,12 @@ class DesktopWorkbench:
                 folder_dialog,
             ),
         )
+        interaction_presenter = cls._interaction_presenter(
+            ports.interaction,
+            app=app,
+            ephys_panel=ephys_panel,
+            histology_panel=histology_panel,
+        )
         plot_exporter = cls._plot_exporter(
             ports.export,
             ephys_plot_presenter=ephys_plot_presenter,
@@ -358,6 +393,7 @@ class DesktopWorkbench:
             save_workflow_presenter=save_workflow_presenter,
             previous_alignment_load_presenter=previous_alignment_load_presenter,
             plot_exporter=plot_exporter,
+            interaction_presenter=interaction_presenter,
         )
 
     @staticmethod
@@ -492,6 +528,41 @@ class DesktopWorkbench:
                 reference=ports.histology_reference,
             ),
             callbacks=DesktopWorkbench._plot_export_callbacks(ports),
+        )
+
+    @staticmethod
+    def _interaction_presenter(
+        ports: DesktopInteractionPorts,
+        *,
+        app: Any,
+        ephys_panel: Any,
+        histology_panel: Any,
+    ) -> DesktopInteractionPresenter:
+        """Build the desktop interaction presenter."""
+        return DesktopInteractionPresenter(
+            app=app,
+            popup_manager=ports.popup_manager,
+            ephys_panel=ephys_panel,
+            histology_panel=histology_panel,
+            reference_lines=ports.reference_lines,
+            region_lookup_service=ports.region_lookup_service,
+            widgets=DesktopInteractionWidgets(
+                struct_list=ports.struct_list,
+                struct_view=ports.struct_view,
+                struct_description=ports.struct_description,
+                scale_plot=ports.scale_plot,
+                histology_plot=ports.histology_plot,
+                histology_reference_plot=ports.histology_reference_plot,
+                scale_axis=ports.scale_axis,
+                bar_colour=ports.bar_colour,
+                line_pen=ports.line_pen,
+            ),
+            callbacks=DesktopInteractionCallbacks(
+                histology_available=ports.histology_available,
+                activate_window=ports.activate_window,
+                set_axis=ports.set_axis,
+                capture_pending_reference_lines=ports.capture_pending_reference_lines,
+            ),
         )
 
     @staticmethod
@@ -720,3 +791,51 @@ class DesktopWorkbench:
     def export_plots(self, output_dir: Path, *, sess_info: str = "") -> None:
         """Export all desktop plot panels for the active shank."""
         self.plot_exporter.export(output_dir, sess_info=sess_info)
+
+    def display_session_notes(self) -> None:
+        """Show session notes for the active stream."""
+        self.interaction_presenter.display_session_notes()
+
+    def popup_closed(self, popup: Any) -> None:
+        """Forget a closed cluster popup."""
+        self.interaction_presenter.popup_closed(popup)
+
+    def popup_moved(self) -> None:
+        """Bring the main window back to front after popup movement."""
+        self.interaction_presenter.popup_moved()
+
+    def close_popups(self) -> None:
+        """Close cluster detail popups."""
+        self.interaction_presenter.close_popups()
+
+    def minimise_popups(self) -> None:
+        """Toggle cluster detail popups between minimized and normal."""
+        self.interaction_presenter.minimise_popups()
+
+    def cluster_clicked(self, item: Any, point: Any) -> Any | None:
+        """Open cluster detail popup for a clicked ephys cluster point."""
+        return self.interaction_presenter.cluster_clicked(item, point)
+
+    def describe_labels_pressed(self) -> bool:
+        """Show region information for the selected histology label."""
+        return self.interaction_presenter.describe_labels_pressed()
+
+    def label_closed(self, popup: Any) -> None:
+        """Hide the label popup without forgetting reusable widgets."""
+        self.interaction_presenter.label_closed(popup)
+
+    def label_moved(self) -> None:
+        """Bring the main window back to front after label popup movement."""
+        self.interaction_presenter.label_moved()
+
+    def label_pressed(self, item: Any) -> None:
+        """Render region information for a clicked structure tree item."""
+        self.interaction_presenter.label_pressed(item)
+
+    def on_mouse_double_clicked(self, event: Any) -> bool:
+        """Add a reference line from a double-clicked feature plot position."""
+        return self.interaction_presenter.on_mouse_double_clicked(event)
+
+    def on_mouse_hover(self, items: list[Any]) -> None:
+        """Dispatch hover interactions to reference-line and histology views."""
+        self.interaction_presenter.on_mouse_hover(items)

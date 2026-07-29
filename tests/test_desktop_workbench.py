@@ -11,6 +11,7 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
     DesktopHistologyRenderPorts,
+    DesktopInteractionPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
     DesktopSaveWorkflowPorts,
@@ -231,6 +232,50 @@ class FakePlotExporter:
         self.exports.append((output_dir, sess_info))
 
 
+class FakeInteractionPresenter:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def display_session_notes(self) -> None:
+        self.calls.append("notes")
+
+    def popup_closed(self, popup: Any) -> None:
+        self.calls.append(("popup-closed", popup))
+
+    def popup_moved(self) -> None:
+        self.calls.append("popup-moved")
+
+    def close_popups(self) -> None:
+        self.calls.append("close-popups")
+
+    def minimise_popups(self) -> None:
+        self.calls.append("minimise-popups")
+
+    def cluster_clicked(self, item: Any, point: Any) -> str:
+        self.calls.append(("cluster-clicked", item, point))
+        return "cluster"
+
+    def describe_labels_pressed(self) -> bool:
+        self.calls.append("describe-labels")
+        return True
+
+    def label_closed(self, popup: Any) -> None:
+        self.calls.append(("label-closed", popup))
+
+    def label_moved(self) -> None:
+        self.calls.append("label-moved")
+
+    def label_pressed(self, item: Any) -> None:
+        self.calls.append(("label-pressed", item))
+
+    def on_mouse_double_clicked(self, event: Any) -> bool:
+        self.calls.append(("double-clicked", event))
+        return True
+
+    def on_mouse_hover(self, items: list[Any]) -> None:
+        self.calls.append(("hover", items))
+
+
 def _workbench(
     alignment: Any,
     shank: Any,
@@ -247,6 +292,7 @@ def _workbench(
     save_workflow: Any | None = None,
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
+    interaction: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -269,6 +315,7 @@ def _workbench(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
+        interaction_presenter=interaction or FakeInteractionPresenter(),
     )
 
 
@@ -329,6 +376,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     save_workflow = FakeSaveWorkflowPresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     plot_exporter = FakePlotExporter()
+    interaction = FakeInteractionPresenter()
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
@@ -345,6 +393,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         save_workflow=save_workflow,
         previous_alignment_load=previous_alignment_load,
         plot_exporter=plot_exporter,
+        interaction=interaction,
     )
 
     assert workbench.load_heavy_data()
@@ -365,6 +414,18 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.qc_button_clicked()
     assert workbench.load_existing_alignments()
     workbench.export_plots("plots", sess_info="session-")
+    workbench.display_session_notes()
+    workbench.popup_closed("popup")
+    workbench.popup_moved()
+    workbench.close_popups()
+    workbench.minimise_popups()
+    assert workbench.cluster_clicked("item", "point") == "cluster"
+    assert workbench.describe_labels_pressed()
+    workbench.label_closed("label-popup")
+    workbench.label_moved()
+    workbench.label_pressed("label")
+    assert workbench.on_mouse_double_clicked("event")
+    workbench.on_mouse_hover(["items"])
 
     assert load_data.load_count == 1
     assert mouse_root.set_roots == ["root"]
@@ -384,6 +445,20 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save_workflow.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
+    assert interaction.calls == [
+        "notes",
+        ("popup-closed", "popup"),
+        "popup-moved",
+        "close-popups",
+        "minimise-popups",
+        ("cluster-clicked", "item", "point"),
+        "describe-labels",
+        ("label-closed", "label-popup"),
+        "label-moved",
+        ("label-pressed", "label"),
+        ("double-clicked", "event"),
+        ("hover", ["items"]),
+    ]
 
 
 def _render_ports() -> DesktopRenderPorts:
@@ -496,6 +571,24 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             ephys_sizes=lambda: (11.0, 3.0),
             slice_geometry=lambda: (100.0, 200.0, "rect"),
         ),
+        interaction=DesktopInteractionPorts(
+            popup_manager=object(),
+            reference_lines=object(),
+            region_lookup_service=object(),
+            struct_list=object(),
+            struct_view=object(),
+            struct_description=object(),
+            scale_plot=object(),
+            histology_plot=object(),
+            histology_reference_plot=object(),
+            scale_axis=object(),
+            bar_colour=object(),
+            line_pen=object(),
+            histology_available=lambda: True,
+            activate_window=lambda: None,
+            set_axis=lambda *_args, **_kwargs: None,
+            capture_pending_reference_lines=lambda: None,
+        ),
     )
 
 
@@ -565,4 +658,16 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
     assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (
         ports.export.set_view
+    )
+    assert workbench.interaction_presenter.popup_manager is (
+        ports.interaction.popup_manager
+    )
+    assert workbench.interaction_presenter.reference_lines is (
+        ports.interaction.reference_lines
+    )
+    assert workbench.interaction_presenter.region_lookup_service is (
+        ports.interaction.region_lookup_service
+    )
+    assert workbench.interaction_presenter.callbacks.set_axis is (
+        ports.interaction.set_axis
     )
