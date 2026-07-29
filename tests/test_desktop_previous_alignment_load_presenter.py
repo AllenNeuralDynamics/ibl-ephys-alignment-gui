@@ -51,6 +51,7 @@ def _presenter(
     selected_folder: str = "",
     use_docdb: bool = False,
     reload_button: Any = "reload-button",
+    select_alignment_result: bool = True,
 ) -> tuple[DesktopPreviousAlignmentLoadPresenter, dict[str, Any]]:
     calls: dict[str, Any] = {
         "reload_text": [],
@@ -65,7 +66,10 @@ def _presenter(
             use_docdb=lambda: use_docdb,
             set_reload_folder_text=calls["reload_text"].append,
             render_alignment_choices=calls["rendered_choices"].append,
-            select_alignment=calls["selected_alignments"].append,
+            select_alignment=lambda idx: (
+                calls["selected_alignments"].append(idx)
+                or select_alignment_result
+            ),
             busy_context=busy_factory,
             reload_button=lambda: reload_button,
         ),
@@ -84,7 +88,7 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
-            select_alignment=lambda _idx: None,
+            select_alignment=lambda _idx: True,
             busy_context=FakeBusyFactory(),
             reload_button=lambda: None,
         ),
@@ -114,6 +118,22 @@ def test_cancel_with_docdb_loads_without_local_folder() -> None:
     assert calls["reload_text"] == []
     assert calls["rendered_choices"] == []
     assert calls["selected_alignments"] == []
+
+
+def test_loaded_alignment_choices_fail_when_selection_fails() -> None:
+    commands = FakeCommands(load_result=AlignmentChoicesUpdated(["original"]))
+    presenter, calls = _presenter(
+        commands,
+        selected_folder="/tmp/alignments",
+        select_alignment_result=False,
+    )
+
+    assert not presenter.load_existing_alignments()
+    assert commands.load_calls == [
+        {"folder": Path("/tmp/alignments"), "use_docdb": False}
+    ]
+    assert calls["rendered_choices"] == [["original"]]
+    assert calls["selected_alignments"] == [0]
 
 
 def test_selected_folder_renders_loaded_alignment_choices() -> None:

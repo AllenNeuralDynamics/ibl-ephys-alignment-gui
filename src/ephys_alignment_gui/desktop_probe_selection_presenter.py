@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.controller import ProbeSelected
+from ephys_alignment_gui.controller import ProbeSelected, ShankSelected
 from ephys_alignment_gui.workflow import Failed
 
 logger = logging.getLogger(__name__)
@@ -20,13 +20,11 @@ class DesktopProbeSelectionCallbacks:
     """Desktop callbacks used by the probe-selection presenter."""
 
     mouse_root_loaded: Callable[[], bool]
-    active_shank_idx: Callable[[], int]
     capture_pending_reference_lines: Callable[[], None]
     detach_active_stream: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
     show_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
-    select_shank_for_view: Callable[[int, str], int | None]
     display_output_directory: Callable[[Path | None], None]
 
 
@@ -34,7 +32,7 @@ class DesktopProbeSelectionCallbacks:
 class DesktopProbeSelectionPresenter:
     """Coordinate desktop behavior for selecting a probe."""
 
-    commands: Any
+    app: Any
     selection_view: Any
     callbacks: DesktopProbeSelectionCallbacks
 
@@ -51,10 +49,11 @@ class DesktopProbeSelectionPresenter:
 
         callbacks.capture_pending_reference_lines()
 
+        target_shank = self.app.queries.active_shank_selection().shank_idx
         if callbacks.present_cached_probe_selection(
             session_name,
             probe_name,
-            callbacks.active_shank_idx(),
+            target_shank,
         ):
             return True
 
@@ -74,7 +73,10 @@ class DesktopProbeSelectionPresenter:
             "Ready",
             disable_widgets=self.selection_view.selection_widgets(),
         ):
-            result = self.commands.select_probe_metadata(session_name, probe_name)
+            result = self.app.commands.select_probe_metadata(
+                session_name,
+                probe_name,
+            )
             if isinstance(result, Failed):
                 logger.error(result.message)
                 self.selection_view.set_load_data_enabled(False)
@@ -85,7 +87,12 @@ class DesktopProbeSelectionPresenter:
                 self.selection_view.populate_probe_shanks(result.shanks)
                 logger.info("Found %s shanks in data.", result.n_shanks)
 
-            if callbacks.select_shank_for_view(0, "probe-selected") is None:
+            selected = self.app.commands.select_shank(0, source="probe-selected")
+            if isinstance(selected, Failed):
+                logger.error(selected.message)
+                self.selection_view.set_load_data_enabled(False)
+                return False
+            if not isinstance(selected, ShankSelected):
                 self.selection_view.set_load_data_enabled(False)
                 return False
 

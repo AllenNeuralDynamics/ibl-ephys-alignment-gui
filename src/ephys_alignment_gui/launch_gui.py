@@ -19,7 +19,6 @@ import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
 )
-from ephys_alignment_gui.controller import ShankSelected
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
@@ -36,10 +35,7 @@ from ephys_alignment_gui.settings import (
 )
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
-from ephys_alignment_gui.workflow import (
-    Failed,
-    Requirement,
-)
+from ephys_alignment_gui.workflow import Requirement
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 logger = logging.getLogger(__name__)
@@ -386,9 +382,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.on_output_folder_selected()
             if self.document.output_directory is None:
                 return
+            shank_id = self.app.queries.active_shank_selection().shank_id
             image_path_overview = Path(
-                self.document.output_directory
-                / f"Plots_Shank_{self._active_shank_idx() + 1}"
+                self.document.output_directory / f"Plots_Shank_{shank_id}"
             )
 
         image_path_overview.mkdir(exist_ok=True)
@@ -461,10 +457,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.render_active_fit()
 
     ### --------- interaction functions --------- ###
-    def _active_shank_idx(self) -> int:
-        """Return the document-owned active shank index."""
-        return self.app.queries.active_shank_selection().shank_idx
-
     def _active_alignment_state(self):
         """Return document-owned editable state for the active alignment."""
         return self.document.active_alignment_state
@@ -473,29 +465,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Return the selected previous feature alignment, if any."""
         state = self._active_alignment_state()
         return None if state is None else state.feature_prev
-
-    def _valid_shank_idx(self, shank_idx: int) -> int:
-        """Return a shank index valid for the selected probe metadata."""
-        n_shanks = self.data_context.n_shanks
-        if n_shanks <= 0 or not 0 <= shank_idx < n_shanks:
-            return 0
-        return shank_idx
-
-    def _select_shank_for_view(
-        self,
-        shank_idx: int,
-        *,
-        source: str,
-    ) -> int | None:
-        """Select a document shank for desktop presentation."""
-        target_shank = self._valid_shank_idx(shank_idx)
-        result = self.app.commands.select_shank(target_shank, source=source)
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return None
-        if not isinstance(result, ShankSelected):
-            return None
-        return result.shank_idx
 
     # -- Empty-state placeholder ---------------------------------------
 

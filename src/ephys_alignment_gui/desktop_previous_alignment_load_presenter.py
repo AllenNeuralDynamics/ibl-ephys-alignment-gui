@@ -26,7 +26,7 @@ class PreviousAlignmentLoadCallbacks:
     use_docdb: Callable[[], bool]
     set_reload_folder_text: Callable[[str], None]
     render_alignment_choices: Callable[[list[str]], None]
-    select_alignment: Callable[[int], None]
+    select_alignment: Callable[[int], bool]
     busy_context: Callable[..., AbstractContextManager[Any]]
     reload_button: Callable[[], Any]
 
@@ -75,7 +75,8 @@ class DesktopPreviousAlignmentLoadPresenter:
                 return False
             if isinstance(result, AlignmentChoicesUpdated):
                 self.callbacks.render_alignment_choices(result.choices)
-                self.callbacks.select_alignment(0)
+                if not self.callbacks.select_alignment(0):
+                    return False
                 logger.info("Loaded %d previous alignments", len(result.choices))
             elif isinstance(result, NoPreviousAlignments):
                 logger.info("No previous alignments found")

@@ -138,13 +138,9 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             tip_position_um=window.displays.histology.tip_position_um,
         ),
         selection=DesktopSelectionWorkflowCallbacks(
-            select_shank_for_view=lambda shank_idx, source: (
-                window._select_shank_for_view(shank_idx, source=source)
-            ),
             clear_empty_state=window._clear_empty_state,
             set_histology_available=window._set_histology_available,
             mouse_root_loaded=lambda: window.data_context.mouse_root is not None,
-            active_shank_idx=window._active_shank_idx,
             clear_histology_context=window.histology_context.clear,
             select_first_session=lambda: window.on_session_combobox_activated(0),
             select_first_probe=lambda: window.on_probe_combobox_activated(0),
@@ -196,7 +192,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             use_docdb=lambda: window.use_docdb,
             set_reload_folder_text=window.reload_folder_line.setText,
             render_alignment_choices=render_alignment_choices,
-            select_alignment=window.on_alignment_selected,
             busy_context=busy_context,
             reload_button=lambda: window.reload_folder_button,
         ),

@@ -158,7 +158,6 @@ class DesktopPreviousAlignmentLoadPorts:
     use_docdb: Callable[[], bool]
     set_reload_folder_text: Callable[[str], None]
     render_alignment_choices: Callable[[list[str]], None]
-    select_alignment: Callable[[int], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
     reload_button: Callable[[], Any]
 
@@ -227,12 +226,10 @@ class DesktopWorkbenchPorts:
 class DesktopSelectionWorkflowCallbacks:
     """MainWindow bridge callbacks for selection and load presenters."""
 
-    select_shank_for_view: Callable[[int, str], int | None]
     clear_empty_state: Callable[[], None]
     set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
     mouse_root_loaded: Callable[[], bool]
-    active_shank_idx: Callable[[], int]
     clear_histology_context: Callable[[], None]
     select_first_session: Callable[[], None]
     select_first_probe: Callable[[], None]
@@ -352,7 +349,7 @@ class DesktopWorkbench:
             ),
         )
         probe_selection_presenter = DesktopProbeSelectionPresenter(
-            commands=app.commands,
+            app=app,
             selection_view=selection_view,
             callbacks=cls._probe_selection_callbacks(
                 ports.selection,
@@ -415,6 +412,7 @@ class DesktopWorkbench:
             callbacks=cls._previous_alignment_load_callbacks(
                 ports.previous_alignment_load,
                 folder_dialog,
+                alignment_selection_actions,
             ),
         )
         interaction_presenter = cls._interaction_presenter(
@@ -528,6 +526,7 @@ class DesktopWorkbench:
     def _previous_alignment_load_callbacks(
         ports: DesktopPreviousAlignmentLoadPorts,
         folder_dialog: DesktopFolderDialog,
+        alignment_selection_actions: DesktopAlignmentSelectionActions,
     ) -> PreviousAlignmentLoadCallbacks:
         """Build callbacks for previous-alignment loading."""
         return PreviousAlignmentLoadCallbacks(
@@ -537,7 +536,7 @@ class DesktopWorkbench:
             use_docdb=ports.use_docdb,
             set_reload_folder_text=ports.set_reload_folder_text,
             render_alignment_choices=ports.render_alignment_choices,
-            select_alignment=ports.select_alignment,
+            select_alignment=alignment_selection_actions.alignment_selected,
             busy_context=ports.busy_context,
             reload_button=ports.reload_button,
         )
@@ -691,7 +690,6 @@ class DesktopWorkbench:
         """Build callbacks for probe selection."""
         return DesktopProbeSelectionCallbacks(
             mouse_root_loaded=callbacks.mouse_root_loaded,
-            active_shank_idx=callbacks.active_shank_idx,
             capture_pending_reference_lines=(
                 reference_line_presenter.capture_pending_reference_lines
             ),
@@ -707,7 +705,6 @@ class DesktopWorkbench:
             ),
             show_empty_state=lifecycle_presenter.show_empty_state,
             busy_context=callbacks.busy_context,
-            select_shank_for_view=callbacks.select_shank_for_view,
             display_output_directory=output_path_presenter.display_output_directory,
         )
 

@@ -670,14 +670,12 @@ def _render_ports() -> DesktopRenderPorts:
 
 def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
     return DesktopSelectionWorkflowCallbacks(
-        select_shank_for_view=lambda _shank_idx, _source: 0,
         clear_empty_state=lambda: None,
         set_histology_available=lambda _available: None,
         mouse_root_loaded=lambda: True,
         clear_histology_context=lambda: None,
         select_first_session=lambda: None,
         select_first_probe=lambda: None,
-        active_shank_idx=lambda: 0,
         busy_context=lambda *args, **kwargs: SimpleNamespace(
             __enter__=lambda: None,
             __exit__=lambda *_args: None,
@@ -717,7 +715,6 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
-            select_alignment=lambda _idx: None,
             busy_context=lambda *args, **kwargs: SimpleNamespace(
                 __enter__=lambda: None,
                 __exit__=lambda *_args: None,
@@ -765,6 +762,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
             feature_positions_um=[1.0],
             track_positions_um=[2.0],
         ),
+        active_shank_selection=lambda: SimpleNamespace(shank_idx=0),
     )
     captured_reference_lines: list[Any] = []
     commands = SimpleNamespace(
@@ -829,6 +827,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
+    )
+    assert (
+        workbench.previous_alignment_load_presenter.callbacks.select_alignment.__self__
+        is workbench.alignment_selection_actions
     )
     assert workbench.displays.ephys is ephys_display
     assert workbench.displays.slice is slice_display

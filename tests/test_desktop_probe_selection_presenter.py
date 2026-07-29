@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.controller import ProbeSelected
+from ephys_alignment_gui.controller import ProbeSelected, ShankSelected
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
@@ -33,19 +34,36 @@ class FakeBusyContext:
 
 
 class FakeCommands:
-    def __init__(self, result: Any | None = None) -> None:
-        self.result = result or ProbeSelected(
+    def __init__(
+        self,
+        *,
+        probe_result: Any | None = None,
+        shank_result: Any | None = None,
+    ) -> None:
+        self.probe_result = probe_result or ProbeSelected(
             recording_id="rec",
             probe_name="probeA",
             shanks=["1/2", "2/2"],
             n_shanks=2,
             output_directory=Path("/tmp/out"),
         )
+        self.shank_result = shank_result
         self.calls: list[tuple[str, str]] = []
+        self.shank_calls: list[tuple[int, str]] = []
 
     def select_probe_metadata(self, session_name: str, probe_name: str):
         self.calls.append((session_name, probe_name))
-        return self.result
+        return self.probe_result
+
+    def select_shank(self, shank_idx: int, *, source: str) -> Any:
+        self.shank_calls.append((shank_idx, source))
+        return self.shank_result or ShankSelected(
+            previous_key=None,
+            selected_key=None,
+            previous_shank_idx=1,
+            shank_idx=shank_idx,
+            data_loaded=False,
+        )
 
 
 class FakeSelectionView:
@@ -85,7 +103,6 @@ def _presenter(
     probe_name: str = "probeA",
     active_shank_idx: int = 1,
     cached: bool = False,
-    selected_shank: int | None = 0,
 ) -> tuple[DesktopProbeSelectionPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
@@ -94,12 +111,17 @@ def _presenter(
         session_name=session_name,
         probe_name=probe_name,
     )
-    presenter = DesktopProbeSelectionPresenter(
+    app = SimpleNamespace(
         commands=commands,
+        queries=SimpleNamespace(
+            active_shank_selection=lambda: SimpleNamespace(shank_idx=active_shank_idx)
+        ),
+    )
+    presenter = DesktopProbeSelectionPresenter(
+        app=app,
         selection_view=selection_view,
         callbacks=DesktopProbeSelectionCallbacks(
             mouse_root_loaded=lambda: mouse_root_loaded,
-            active_shank_idx=lambda: active_shank_idx,
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
             detach_active_stream=lambda: calls.append(("detach",)),
             present_cached_probe_selection=lambda session, probe, shank: (
@@ -110,9 +132,6 @@ def _presenter(
                 calls,
                 *args,
                 **kwargs,
-            ),
-            select_shank_for_view=lambda shank_idx, source: (
-                calls.append(("select-shank", shank_idx, source)) or selected_shank
             ),
             display_output_directory=lambda path: calls.append(("output", path)),
         ),
@@ -164,14 +183,14 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
         {"disable_widgets": ["probe", "session"]},
     ) in calls
     assert ("populate", ["1/2", "2/2"]) in calls
-    assert ("select-shank", 0, "probe-selected") in calls
+    assert commands.shank_calls == [(0, "probe-selected")]
     assert ("output", Path("/tmp/out")) in calls
     assert calls[-1] == ("enable", True)
 
 
 def test_probe_selected_failure_disables_load_button() -> None:
     presenter, commands, calls = _presenter(
-        commands=FakeCommands(result=Failed("channel info failed"))
+        commands=FakeCommands(probe_result=Failed("channel info failed"))
     )
 
     assert not presenter.probe_selected()
@@ -182,11 +201,13 @@ def test_probe_selected_failure_disables_load_button() -> None:
 
 
 def test_probe_selected_shank_selection_failure_disables_load_button() -> None:
-    presenter, commands, calls = _presenter(selected_shank=None)
+    presenter, commands, calls = _presenter(
+        commands=FakeCommands(shank_result=Failed("bad shank"))
+    )
 
     assert not presenter.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
-    assert ("select-shank", 0, "probe-selected") in calls
+    assert commands.shank_calls == [(0, "probe-selected")]
     assert ("enable", False) in calls
     assert ("output", Path("/tmp/out")) not in calls
