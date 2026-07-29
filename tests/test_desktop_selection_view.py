@@ -81,6 +81,7 @@ class FakeButton:
 def _view() -> tuple[DesktopSelectionView, FakeModel, FakeCombobox, FakeButton]:
     session_model = FakeModel()
     session_combobox = FakeCombobox("rec1")
+    shank_combobox = FakeCombobox("2/4")
     button = FakeButton()
     view = DesktopSelectionView(
         session_model=session_model,
@@ -88,7 +89,7 @@ def _view() -> tuple[DesktopSelectionView, FakeModel, FakeCombobox, FakeButton]:
         probe_model=FakeModel(),
         probe_combobox=FakeCombobox("probeA"),
         shank_model=FakeModel(),
-        shank_combobox=FakeCombobox(),
+        shank_combobox=shank_combobox,
         load_data_button=button,
         item_factory=FakeItem,
     )
@@ -122,5 +123,13 @@ def test_selection_view_wraps_current_values_and_load_button() -> None:
 
     assert view.current_session() == "rec1"
     assert view.current_probe() == "probeA"
+    assert view.current_shank_index() == 1
     assert view.load_data_widget() is button
     assert button.enabled is True
+
+
+def test_selection_view_returns_none_for_invalid_shank_label() -> None:
+    view, _model, _combobox, _button = _view()
+    view.shank_combobox.text = "not-a-shank"
+
+    assert view.current_shank_index() is None

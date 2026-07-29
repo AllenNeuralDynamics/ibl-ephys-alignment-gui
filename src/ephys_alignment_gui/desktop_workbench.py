@@ -16,6 +16,10 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_alignment_selection_actions import (
+    DesktopAlignmentSelectionActions,
+    DesktopAlignmentSelectionCallbacks,
+)
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     DesktopEphysPlotExporter,
@@ -84,6 +88,9 @@ from ephys_alignment_gui.desktop_session_selection_presenter import (
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
+)
+from ephys_alignment_gui.desktop_shank_selection_actions import (
+    DesktopShankSelectionActions,
 )
 from ephys_alignment_gui.event_bus import EventSubscription
 
@@ -256,6 +263,8 @@ class DesktopWorkbench:
     reference_line_presenter: DesktopReferenceLinePresenter
     histology_refresh_presenter: DesktopHistologyRefreshPresenter
     alignment_edit_actions: DesktopAlignmentEditActions
+    shank_selection_actions: DesktopShankSelectionActions
+    alignment_selection_actions: DesktopAlignmentSelectionActions
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -316,6 +325,19 @@ class DesktopWorkbench:
                     reference_line_presenter.capture_pending_reference_lines
                 ),
                 tip_position_um=ports.alignment_edit_actions.tip_position_um,
+            ),
+        )
+        shank_selection_actions = DesktopShankSelectionActions(
+            app=app,
+            selection_view=selection_view,
+            reference_line_display=displays.reference_lines,
+        )
+        alignment_selection_actions = DesktopAlignmentSelectionActions(
+            app=app,
+            callbacks=DesktopAlignmentSelectionCallbacks(
+                render_loaded_shank_histology=(
+                    histology_refresh_presenter.render_loaded_shank_histology
+                )
             ),
         )
         load_data_presenter = DesktopLoadDataPresenter(
@@ -427,6 +449,8 @@ class DesktopWorkbench:
             reference_line_presenter=reference_line_presenter,
             histology_refresh_presenter=histology_refresh_presenter,
             alignment_edit_actions=alignment_edit_actions,
+            shank_selection_actions=shank_selection_actions,
+            alignment_selection_actions=alignment_selection_actions,
         )
 
     @staticmethod
@@ -798,6 +822,14 @@ class DesktopWorkbench:
     def probe_selected(self) -> bool:
         """Select the current probe from the desktop widgets."""
         return self.probe_selection_presenter.probe_selected()
+
+    def shank_selected(self, _idx: int | None = None) -> bool:
+        """Select the current shank from the desktop widgets."""
+        return self.shank_selection_actions.shank_selected()
+
+    def alignment_selected(self, idx: int) -> bool:
+        """Select the current previous/original alignment choice."""
+        return self.alignment_selection_actions.alignment_selected(idx)
 
     def load_data_button_pressed(self) -> bool:
         """Run desktop load workflow policy and load data when allowed."""

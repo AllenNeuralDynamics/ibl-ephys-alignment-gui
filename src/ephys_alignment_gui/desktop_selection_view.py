@@ -30,6 +30,15 @@ class DesktopSelectionView:
         """Return the selected probe label."""
         return self.probe_combobox.currentText()
 
+    def current_shank_index(self) -> int | None:
+        """Return the selected zero-based shank index, if the label is valid."""
+        text = self.shank_combobox.currentText()
+        try:
+            shank_id = int(str(text).split("/")[0])
+        except (TypeError, ValueError):
+            return None
+        return shank_id - 1
+
     def selection_widgets(self) -> list[Any]:
         """Widgets disabled while probe metadata is loading."""
         return [self.probe_combobox, self.session_combobox]

@@ -19,10 +19,7 @@ import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
 )
-from ephys_alignment_gui.controller import (
-    PreviousAlignmentSelected,
-    ShankSelected,
-)
+from ephys_alignment_gui.controller import ShankSelected
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
@@ -638,61 +635,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def on_shank_selected(self, idx) -> None:
         """Triggered when selecting shank from dropdown"""
-        shank_text = self.shank_combobox.currentText()
-        new_shank_id = int(shank_text.split("/")[0])
-        new_shank_idx = new_shank_id - 1
-        selection = self.app.queries.active_shank_selection()
-        if new_shank_idx == selection.shank_idx:
-            logger.info(f"Shank {new_shank_id} already selected")
-            return
-
-        result = self.app.commands.select_shank(
-            new_shank_idx,
-            outgoing_reference_lines=self.displays.reference_lines.positions(),
-            source="dropdown",
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
-        if not isinstance(result, ShankSelected):
-            return
-
-        logger.info(f"Shank {new_shank_id} selected (index {result.shank_idx})")
+        self.desktop_workbench.shank_selected(idx)
 
     def on_alignment_selected(self, idx) -> None:
         """Triggered when selecting alignment from dropdown"""
-        logger.info(f"Alignment index {idx} selected")
-
-        if not self._select_alignment_choice(idx):
-            return
-
-        if not self.document.data_loaded:
-            # Data not loaded yet - just update alignment params
-            logger.info("Data not loaded yet, alignment params updated")
-            return
-
-        prepared = self.app.commands.prepare_loaded_shank(
-            self._active_shank_idx(),
-            select_default_alignment_if_empty=False,
-        )
-        if isinstance(prepared, Failed):
-            logger.error(prepared.message)
-            return
-        if not prepared.histology_available:
-            return
-
-        self.desktop_workbench.render_loaded_shank_histology()
-
-        logger.info("Alignment change complete")
-
-    def _select_alignment_choice(self, idx: int) -> bool:
-        """Select an alignment choice through the controller and project it."""
-        result = self.app.commands.select_previous_alignment(idx)
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        assert isinstance(result, PreviousAlignmentSelected)
-        return True
+        self.desktop_workbench.alignment_selected(idx)
 
     def toggle_histology_button_pressed(self) -> None:
         boundaries_visible = self.display_state.toggle_histology_boundaries_visible()

@@ -143,6 +143,24 @@ class FakeAlignmentEditActions:
         return True
 
 
+class FakeShankSelectionActions:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def shank_selected(self) -> bool:
+        self.calls.append("shank")
+        return True
+
+
+class FakeAlignmentSelectionActions:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def alignment_selected(self, idx: int) -> bool:
+        self.calls.append(("alignment", idx))
+        return True
+
+
 class FakeMouseRootPresenter:
     def __init__(self) -> None:
         self.set_roots: list[Any] = []
@@ -413,6 +431,8 @@ def _workbench(
     reference_line_presenter: Any | None = None,
     histology_refresh_presenter: Any | None = None,
     alignment_edit_actions: Any | None = None,
+    shank_selection_actions: Any | None = None,
+    alignment_selection_actions: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
@@ -449,6 +469,12 @@ def _workbench(
         reference_line_presenter=reference_line_presenter or object(),
         histology_refresh_presenter=histology_refresh_presenter or object(),
         alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
+        shank_selection_actions=(
+            shank_selection_actions or FakeShankSelectionActions()
+        ),
+        alignment_selection_actions=(
+            alignment_selection_actions or FakeAlignmentSelectionActions()
+        ),
     )
 
 
@@ -511,6 +537,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     plot_exporter = FakePlotExporter()
     interaction = FakeInteractionPresenter()
     alignment_edit_actions = FakeAlignmentEditActions()
+    shank_selection_actions = FakeShankSelectionActions()
+    alignment_selection_actions = FakeAlignmentSelectionActions()
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
@@ -529,6 +557,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         plot_exporter=plot_exporter,
         interaction=interaction,
         alignment_edit_actions=alignment_edit_actions,
+        shank_selection_actions=shank_selection_actions,
+        alignment_selection_actions=alignment_selection_actions,
     )
 
     assert workbench.load_heavy_data()
@@ -543,6 +573,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.mouse_root_edited()
     assert workbench.session_selected()
     assert workbench.probe_selected()
+    assert workbench.shank_selected(2)
+    assert workbench.alignment_selected(3)
     assert workbench.load_data_button_pressed()
     assert workbench.set_save_root("save-root")
     assert workbench.select_mouse_root()
@@ -596,6 +628,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         "prev",
         "reset",
     ]
+    assert shank_selection_actions.calls == ["shank"]
+    assert alignment_selection_actions.calls == [("alignment", 3)]
     assert interaction.calls == [
         "notes",
         ("popup-closed", "popup"),
@@ -778,6 +812,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.load_workflow_presenter.can_load_data is commands.can_load_data
     assert workbench.alignment_edit_actions.commands is commands
     assert workbench.alignment_edit_actions.callbacks.tip_position_um() == 42.0
+    assert workbench.shank_selection_actions.app is app
+    assert workbench.shank_selection_actions.selection_view is not None
+    assert workbench.alignment_selection_actions.app is app
     workbench.alignment_presenter.callbacks.render_histology_alignment("edit-state")
     assert panel.calls == [("edit", "edit-state")]
     workbench.alignment_presenter.callbacks.plot_channels("projection")
