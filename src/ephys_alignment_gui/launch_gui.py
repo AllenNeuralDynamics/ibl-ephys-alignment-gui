@@ -21,7 +21,6 @@ from PyQt5.QtCore import QThread
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
-    ActiveSliceMenuState,
 )
 from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
@@ -33,9 +32,11 @@ from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
+from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
     desktop_ephys_display_ports_from_main_window,
+    desktop_slice_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.histology_panel_presenter import (
@@ -52,12 +53,6 @@ from ephys_alignment_gui.reference_line_layer import (
 from ephys_alignment_gui.settings import (
     OUTPUT_ROOT_ENV_VAR,
     output_root_from_environment,
-)
-from ephys_alignment_gui.slice_display_policy import SliceSelection
-from ephys_alignment_gui.slice_panel_presenter import (
-    SlicePanelPlots,
-    SlicePanelPresenter,
-    SlicePanelStyle,
 )
 from ephys_alignment_gui.thread_worker import Worker
 from ephys_alignment_gui.view_limits import default_feature_y_limits
@@ -160,22 +155,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             style_factory=self.create_line_style,
             on_lines_changed=self._capture_pending_reference_lines,
         )
-        self.slice_panel = SlicePanelPresenter(
+        self.slice_display = DesktopSliceDisplay.create(
             app=self.app,
-            plots=SlicePanelPlots(
-                coronal=self.fig_slice,
-                coronal_layout=self.fig_slice_layout,
-                histogram_alt=self.fig_slice_hist_alt,
-                perpendicular=self.fig_hist_perp,
-            ),
-            style=SlicePanelStyle(
-                dotted_pen=self.kpen_dot,
-                solid_pen=self.kpen_solid,
-                reference_line_pen=self.reference_line_kpen,
-            ),
-            histology_exists=lambda: getattr(self, "histology_exists", False),
-            action_group_provider=lambda: getattr(self, "slice_options_group", None),
-            slice_item=self.slice_item,
+            ports=desktop_slice_display_ports_from_main_window(self),
         )
         self.histology_panel = HistologyPanelPresenter(
             plots=HistologyPanelPlots(
@@ -203,7 +185,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             path_view=self.path_view,
             parent=self,
             ephys_display=self.ephys_display,
-            slice_panel=self.slice_panel,
+            slice_display=self.slice_display,
             histology_panel=self.histology_panel,
             ports=desktop_workbench_ports_from_main_window(self),
         )
@@ -472,34 +454,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         image_path_overview.mkdir(exist_ok=True)
         self.desktop_workbench.export_plots(image_path_overview, sess_info=sess_info)
 
-    def toggle_plots(self, options_group, reverse=False) -> None:
-        """
-        Allows user to toggle through image, line, probe and slice plots using keyboard shortcuts
-        Alt+1, Alt+2, Alt+3 and Alt+4 respectively
-        :param options_group: Set of plots to toggle through
-        :param reverse: if True, goes backward
-        :type options_group: QtGui.QActionGroup
-        """
-
-        current_act = options_group.checkedAction()
-        actions = options_group.actions()
-        if not actions:
-            logger.warning("No available plot actions to toggle")
-            return
-        if current_act is None:
-            actions[0].setChecked(True)
-            actions[0].trigger()
-            return
-        try:
-            current_idx = actions.index(current_act)
-        except ValueError:
-            actions[0].setChecked(True)
-            actions[0].trigger()
-            return
-        next_idx = np.mod(current_idx + (-1 if reverse else 1), len(actions))
-        actions[next_idx].setChecked(True)
-        actions[next_idx].trigger()
-
     """
     Plot functions
     """
@@ -653,7 +607,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.reference_lines.clear()
         self.popup_manager.close_all()
         self.ephys_display.clear()
-        self.slice_panel.clear()
+        self.slice_display.clear()
         self.histology_panel.clear()
 
     def _active_shank_idx(self) -> int:
@@ -888,7 +842,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.desktop_workbench.render_active_histology_panels():
             return
-        self.slice_panel.refresh_perpendicular_histology()
+        self.slice_display.refresh_perpendicular_histology()
 
         pending_lines = self.controller.active_pending_reference_lines(shank_idx)
         if isinstance(pending_lines, Failed):
@@ -924,25 +878,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         preserve_plot_selection: bool,
     ) -> DesktopShankSelectionState:
         """Capture desktop plot selections to preserve across shank redraw."""
-        prev_slice_action = (
-            self.slice_options_group.checkedAction()
-            if hasattr(self, "slice_options_group")
-            else None
-        )
-        prev_slice_selection = SliceSelection.from_payload(
-            prev_slice_action.data() if prev_slice_action is not None else None
-        )
-        prev_slice_label = (
-            prev_slice_action.text() if prev_slice_action is not None else None
-        )
+        prev_slice = self.slice_display.capture_selection()
         prev_ephys_plot_keys = (
             self.ephys_display.current_plot_keys()
             if preserve_plot_selection and self.ephys_display.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
-            previous_slice_selection=prev_slice_selection,
-            previous_slice_label=prev_slice_label,
+            previous_slice_selection=prev_slice.selection,
+            previous_slice_label=prev_slice.label,
             previous_ephys_plot_keys=prev_ephys_plot_keys,
         )
 
@@ -1002,38 +946,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.ephys_display.has_plot_menus():
             self.init_menubar()
         self.ephys_display.render_menus(plot_menu_state)
-
-    def _restore_shank_slice_selection(
-        self,
-        slice_menu_state: ActiveSliceMenuState | None,
-        previous_selection: SliceSelection | None,
-        previous_label: str | None,
-    ) -> None:
-        """Restore or choose the active slice menu selection after shank redraw."""
-        if slice_menu_state is None:
-            logger.warning("No default slice selection is available")
-        else:
-            choice = slice_menu_state.selection
-            selected_action = self.slice_panel.action_for_selection(choice.selection)
-            if selected_action is None:
-                selected_action = self.slice_init
-            if selected_action is None:
-                logger.warning("No slice action is available")
-            else:
-                if (
-                    previous_selection is not None
-                    and SliceSelection.from_payload(selected_action.data())
-                    != previous_selection
-                    and not choice.used_previous
-                ):
-                    logger.info(
-                        f"Slice selection '{previous_label}' not available "
-                        f"for this probe; falling back to '{selected_action.text()}'"
-                    )
-                selected_action.setChecked(True)
-                selected_selection = SliceSelection.from_payload(selected_action.data())
-                if selected_selection is not None:
-                    self.slice_panel.plot_slice_selection(selected_selection)
 
     def _configure_shank_view_after_render(self, preserve_plot_selection: bool) -> None:
         """Apply one-time view configuration after shank rendering."""
@@ -1196,7 +1108,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
         and perpendicular slice image
         """
-        self.slice_panel.toggle_channel_visibility()
+        self.slice_display.toggle_channel_visibility()
 
     def delete_line_button_pressed(self) -> None:
         """

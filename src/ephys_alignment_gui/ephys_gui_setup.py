@@ -58,8 +58,11 @@ class Setup:
 
         self.ephys_display.attach_plot_menus(menu_bar)
 
-        # SLICE PLOTS MENU BAR
-        self.init_slice_menu()
+        self.slice_display.attach_slice_menu(
+            menu_bar,
+            parent=self,
+            offline=self.offline,
+        )
 
         self.ephys_display.attach_unit_filter_menu(menu_bar, self)
 
@@ -141,7 +144,7 @@ class Setup:
         toggle4_option = QtWidgets.QAction("Toggle Slice Plots", self)
         toggle4_option.setShortcut("Alt+4")
         toggle4_option.triggered.connect(
-            lambda: self.toggle_plots(self.slice_options_group)
+            lambda: self.slice_display.toggle_slice_plot()
         )
 
         toggle5_option = QtWidgets.QAction("Toggle Previous Image Plots", self)
@@ -162,7 +165,7 @@ class Setup:
         toggle8_option = QtWidgets.QAction("Toggle Previous Slice Plots", self)
         toggle8_option.setShortcut("Alt+Ctrl+4")
         toggle8_option.triggered.connect(
-            lambda: self.toggle_plots(self.slice_options_group, reverse=True)
+            lambda: self.slice_display.toggle_slice_plot(reverse=True)
         )
 
         # Shortcuts to switch order of 3 panels in ephys plot
@@ -272,40 +275,6 @@ class Setup:
             feature_info = QtWidgets.QAction("Region Feature", self)
             feature_info.triggered.connect(self.display_region_features)
             info_options.addAction(feature_info)
-
-    def init_slice_menu(self) -> None:
-        menu_bar = self.menuBar()
-        slice_options = menu_bar.addMenu("Slice Plots")
-        self.slice_options_group = QtWidgets.QActionGroup(slice_options)
-        self.slice_options_group.setExclusive(True)
-        self.slice_init = None
-
-        menu_state = self.app.queries.active_slice_menu_state(
-            offline=self.offline,
-        )
-        if menu_state is None:
-            return
-
-        for item in menu_state.items:
-            action = QtWidgets.QAction(
-                item.label,
-                self,
-                checkable=True,
-                checked=False,
-            )
-            action.setData(item.selection.to_payload())
-            action.triggered.connect(
-                lambda _checked=False, selection=item.selection: (
-                    self.slice_panel.plot_slice_selection(selection)
-                )
-            )
-            slice_options.addAction(action)
-            self.slice_options_group.addAction(action)
-            if item.selection == menu_state.default_selection:
-                self.slice_init = action
-
-        if self.slice_init is None and self.slice_options_group.actions():
-            self.slice_init = self.slice_options_group.actions()[0]
 
     def init_interaction_features(self) -> None:
         """

@@ -32,8 +32,7 @@ class SliceExportGeometry:
 class SliceExportHandles:
     """Desktop slice plot handles needed by plot export."""
 
-    action_group: Any
-    slice_panel: Any
+    slice_display: Any
     slice_plot: Any
 
 
@@ -87,35 +86,41 @@ class DesktopPlotExporter:
         self.callbacks.add_lines_points()
 
     def _export_slice_images(self, output_dir: Path, sess_info: str) -> None:
+        action_group = self._slice_action_group()
+        if action_group is None:
+            return
         plot = None
-        start_plot = self.slice_handles.action_group.checkedAction()
+        start_plot = action_group.checkedAction()
         while start_plot is not None and plot != start_plot:
             self._prepare_slice_export_overlay()
-            slice_action = self.slice_handles.action_group.checkedAction()
+            slice_action = action_group.checkedAction()
             if slice_action is None:
                 break
             self._export_item(
                 self.slice_handles.slice_plot,
                 output_dir / f"{sess_info}slice_{slice_action.text()}.png",
             )
-            self._toggle_action_group(self.slice_handles.action_group)
-            plot = self.slice_handles.action_group.checkedAction()
+            self._toggle_action_group(action_group)
+            plot = action_group.checkedAction()
 
     def _export_zoomed_slice_images(self, output_dir: Path, sess_info: str) -> None:
+        action_group = self._slice_action_group()
+        if action_group is None:
+            return
         geometry = self.callbacks.slice_geometry()
         plot = None
-        start_plot = self.slice_handles.action_group.checkedAction()
+        start_plot = action_group.checkedAction()
         while start_plot is not None and plot != start_plot:
             self._prepare_slice_export_overlay()
-            slice_action = self.slice_handles.action_group.checkedAction()
+            slice_action = action_group.checkedAction()
             if slice_action is None:
                 break
             channel_locations_ras = (
-                self.slice_handles.slice_panel.current_channel_locations_ras()
+                self.slice_handles.slice_display.current_channel_locations_ras()
             )
             if channel_locations_ras is None:
-                self._toggle_action_group(self.slice_handles.action_group)
-                plot = self.slice_handles.action_group.checkedAction()
+                self._toggle_action_group(action_group)
+                plot = action_group.checkedAction()
                 continue
             self._set_zoomed_slice_range(channel_locations_ras)
             self.slice_handles.slice_plot.resize(50, geometry.height)
@@ -125,15 +130,22 @@ class DesktopPlotExporter:
             )
             self.slice_handles.slice_plot.resize(geometry.width, geometry.height)
             self.slice_handles.slice_plot.setRange(rect=geometry.rect)
-            self._toggle_action_group(self.slice_handles.action_group)
-            plot = self.slice_handles.action_group.checkedAction()
+            self._toggle_action_group(action_group)
+            plot = action_group.checkedAction()
 
     def _prepare_slice_export_overlay(self) -> None:
-        self.slice_handles.slice_panel.toggle_channel_visibility()
-        self.slice_handles.slice_panel.render_export_trajectory_overlay(
+        self.slice_handles.slice_display.toggle_channel_visibility()
+        self.slice_handles.slice_display.render_export_trajectory_overlay(
             self.slice_style.trajectory_pen
         )
-        self.slice_handles.slice_panel.plot_channels()
+        self.slice_handles.slice_display.plot_channels()
+
+    def _slice_action_group(self) -> Any | None:
+        action_group = self.slice_handles.slice_display.action_group
+        if action_group is None:
+            logger.warning("No available slice plot actions to export")
+            return None
+        return action_group
 
     def _set_zoomed_slice_range(self, channel_locations_ras: Any) -> None:
         self.slice_handles.slice_plot.setXRange(

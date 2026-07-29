@@ -242,6 +242,27 @@ class FakeEphysDisplay:
         self.rendered_states.append(state)
 
 
+class FakeSliceDisplay:
+    def __init__(self) -> None:
+        self.restored: list[tuple[Any, Any, Any]] = []
+        self.plotted_channels: list[Any] = []
+        self.perpendicular_refreshes = 0
+
+    def restore_selection(
+        self,
+        slice_menu_state: Any,
+        previous_selection: Any,
+        previous_label: Any,
+    ) -> None:
+        self.restored.append((slice_menu_state, previous_selection, previous_label))
+
+    def plot_channels(self, projection: Any = None) -> None:
+        self.plotted_channels.append(projection)
+
+    def refresh_perpendicular_histology(self) -> None:
+        self.perpendicular_refreshes += 1
+
+
 class FakeInteractionPresenter:
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -304,6 +325,7 @@ def _workbench(
     plot_exporter: Any | None = None,
     interaction: Any | None = None,
     ephys_display: Any | None = None,
+    slice_display: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -328,6 +350,7 @@ def _workbench(
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
         ephys_display=ephys_display or FakeEphysDisplay(),
+        slice_display=slice_display or FakeSliceDisplay(),
     )
 
 
@@ -481,8 +504,6 @@ def _render_ports() -> DesktopRenderPorts:
             capture_depth_plot_y_ranges=lambda: None,
             restore_depth_plot_y_ranges=lambda _ranges: None,
             reattach_reference_lines=lambda: None,
-            plot_channels=lambda _projection: None,
-            refresh_perpendicular_histology=lambda: None,
             update_reference_lines_to_alignment=lambda: None,
             create_reference_lines_for_previous_alignment=lambda: None,
             set_default_feature_y_range=lambda: None,
@@ -503,7 +524,6 @@ def _render_ports() -> DesktopRenderPorts:
             raw_image_payloads=dict,
             render_plot_menus=lambda _state: None,
             render_histology_plots=lambda _shank_idx: None,
-            restore_slice_selection=lambda _state, _selection, _label: None,
             configure_view=lambda _preserve: None,
             histology_available=lambda: True,
             offline=lambda: True,
@@ -567,7 +587,6 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
         export=DesktopExportPorts(
             ephys_graphics_layout=object(),
             ephys_data_area=object(),
-            slice_action_group=object(),
             slice_plot=object(),
             slice_trajectory_pen=object(),
             histology_layout=object(),
@@ -614,7 +633,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
     panel = object()
     ephys_display = FakeEphysDisplay()
-    slice_panel = object()
+    slice_display = FakeSliceDisplay()
 
     workbench = DesktopWorkbench.create(
         app=app,
@@ -622,7 +641,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         path_view=object(),
         parent=object(),
         ephys_display=ephys_display,
-        slice_panel=slice_panel,
+        slice_display=slice_display,
         histology_panel=panel,
         ports=ports,
     )
@@ -646,9 +665,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.histology_presenter.callbacks.fit_depth_um is (
         ports.render.histology.fit_depth_um
     )
-    assert workbench.alignment_presenter.callbacks.plot_channels is (
-        ports.render.alignment.plot_channels
-    )
+    workbench.alignment_presenter.callbacks.plot_channels("projection")
+    assert slice_display.plotted_channels == ["projection"]
+    workbench.alignment_presenter.callbacks.refresh_perpendicular_histology()
+    assert slice_display.perpendicular_refreshes == 1
     assert workbench.alignment_presenter.callbacks.render_histology_alignment == (
         workbench.histology_presenter.render_alignment_edit
     )
@@ -662,13 +682,20 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         ports.previous_alignment_load.use_docdb
     )
     assert workbench.ephys_display is ephys_display
+    assert workbench.slice_display is slice_display
     workbench.shank_presenter.callbacks.render_ephys_plots("state")
     assert ephys_display.rendered_states == ["state"]
+    workbench.shank_presenter.callbacks.restore_slice_selection(
+        "menu",
+        "selection",
+        "label",
+    )
+    assert slice_display.restored == [("menu", "selection", "label")]
     assert workbench.plot_exporter.ephys_exporter.presenter is (
         ephys_display.plot_presenter
     )
     assert workbench.plot_exporter.ephys_exporter.panel is ephys_display.panel
-    assert workbench.plot_exporter.slice_handles.slice_panel is slice_panel
+    assert workbench.plot_exporter.slice_handles.slice_display is slice_display
     assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
     assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (
         ports.export.set_view

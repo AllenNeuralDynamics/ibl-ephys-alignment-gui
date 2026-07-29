@@ -62,8 +62,9 @@ class FakeEphysExporter:
         self.calls.append(("ephys", output_dir, sess_info))
 
 
-class FakeSlicePanel:
-    def __init__(self) -> None:
+class FakeSliceDisplay:
+    def __init__(self, action_group: FakeActionGroup) -> None:
+        self.action_group = action_group
         self.toggles = 0
         self.trajectory_pens: list[Any] = []
         self.plot_channels_calls = 0
@@ -124,13 +125,13 @@ def _exporter() -> tuple[
     DesktopPlotExporter,
     list[Any],
     list[FakeAction],
-    FakeSlicePanel,
+    FakeSliceDisplay,
     FakeSlicePlot,
 ]:
     calls: list[Any] = []
     actions = [FakeAction("ccf"), FakeAction("registration")]
     action_group = FakeActionGroup(actions)
-    slice_panel = FakeSlicePanel()
+    slice_display = FakeSliceDisplay(action_group)
     slice_plot = FakeSlicePlot()
 
     def image_exporter_factory(item: Any) -> FakeImageExporter:
@@ -139,8 +140,7 @@ def _exporter() -> tuple[
     exporter = DesktopPlotExporter(
         ephys_exporter=FakeEphysExporter(calls),
         slice_handles=SliceExportHandles(
-            action_group=action_group,
-            slice_panel=slice_panel,
+            slice_display=slice_display,
             slice_plot=slice_plot,
         ),
         slice_style=SliceExportStyle(trajectory_pen="trajectory-pen"),
@@ -165,11 +165,11 @@ def _exporter() -> tuple[
         ),
         image_exporter_factory=image_exporter_factory,
     )
-    return exporter, calls, actions, slice_panel, slice_plot
+    return exporter, calls, actions, slice_display, slice_plot
 
 
 def test_desktop_plot_exporter_exports_all_plot_groups() -> None:
-    exporter, calls, actions, slice_panel, _slice_plot = _exporter()
+    exporter, calls, actions, slice_display, _slice_plot = _exporter()
 
     exporter.export(Path("/tmp/out"), sess_info="session_")
 
@@ -193,14 +193,14 @@ def test_desktop_plot_exporter_exports_all_plot_groups() -> None:
         {"save_folder": Path("/tmp/out")},
     )
     assert calls[-1] == ("add_lines_points",)
-    assert slice_panel.toggles == 4
-    assert slice_panel.trajectory_pens == ["trajectory-pen"] * 4
-    assert slice_panel.plot_channels_calls == 4
+    assert slice_display.toggles == 4
+    assert slice_display.trajectory_pens == ["trajectory-pen"] * 4
+    assert slice_display.plot_channels_calls == 4
     assert [action.triggers for action in actions] == [2, 2]
 
 
 def test_desktop_plot_exporter_restores_zoomed_slice_geometry() -> None:
-    exporter, calls, _actions, _slice_panel, slice_plot = _exporter()
+    exporter, calls, _actions, _slice_display, slice_plot = _exporter()
 
     exporter.export(Path("/tmp/out"))
 

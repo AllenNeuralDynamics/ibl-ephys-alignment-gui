@@ -75,6 +75,7 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
 )
+from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
 from ephys_alignment_gui.event_bus import EventSubscription
 
 
@@ -87,8 +88,6 @@ class DesktopAlignmentRenderPorts:
     capture_depth_plot_y_ranges: Callable[[], Any]
     restore_depth_plot_y_ranges: Callable[[Any], None]
     reattach_reference_lines: Callable[[], None]
-    plot_channels: Callable[[Any], None]
-    refresh_perpendicular_histology: Callable[[], None]
     update_reference_lines_to_alignment: Callable[[], None]
     create_reference_lines_for_previous_alignment: Callable[[], None]
     set_default_feature_y_range: Callable[[], None]
@@ -117,7 +116,6 @@ class DesktopShankRenderPorts:
     raw_image_payloads: Callable[[], Any]
     render_plot_menus: Callable[[Any], None]
     render_histology_plots: Callable[[int], None]
-    restore_slice_selection: Callable[[Any, Any, Any], None]
     configure_view: Callable[[bool], None]
     histology_available: Callable[[], bool]
     offline: Callable[[], bool]
@@ -165,7 +163,6 @@ class DesktopExportPorts:
 
     ephys_graphics_layout: Any
     ephys_data_area: Any
-    slice_action_group: Any
     slice_plot: Any
     slice_trajectory_pen: Any
     histology_layout: Any
@@ -259,6 +256,7 @@ class DesktopWorkbench:
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
     ephys_display: DesktopEphysDisplay
+    slice_display: DesktopSliceDisplay
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -270,7 +268,7 @@ class DesktopWorkbench:
         path_view: Any,
         parent: Any,
         ephys_display: DesktopEphysDisplay,
-        slice_panel: Any,
+        slice_display: DesktopSliceDisplay,
         histology_panel: Any,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
@@ -290,6 +288,7 @@ class DesktopWorkbench:
             callbacks=cls._alignment_render_callbacks(
                 ports.render.alignment,
                 histology_presenter,
+                slice_display,
             ),
         )
         shank_presenter = DesktopShankPresenter(app)
@@ -297,6 +296,7 @@ class DesktopWorkbench:
             callbacks=cls._shank_render_callbacks(
                 ports.render.shank,
                 ephys_display,
+                slice_display,
             )
         )
         load_data_presenter = DesktopLoadDataPresenter(
@@ -376,7 +376,7 @@ class DesktopWorkbench:
         plot_exporter = cls._plot_exporter(
             ports.export,
             ephys_display=ephys_display,
-            slice_panel=slice_panel,
+            slice_display=slice_display,
         )
         return cls(
             app=app,
@@ -397,12 +397,14 @@ class DesktopWorkbench:
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
             ephys_display=ephys_display,
+            slice_display=slice_display,
         )
 
     @staticmethod
     def _alignment_render_callbacks(
         ports: DesktopAlignmentRenderPorts,
         histology_presenter: DesktopHistologyPresenter,
+        slice_display: DesktopSliceDisplay,
     ) -> DesktopAlignmentRenderCallbacks:
         """Build callbacks for alignment edit rendering."""
         return DesktopAlignmentRenderCallbacks(
@@ -412,8 +414,10 @@ class DesktopWorkbench:
             restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
             reattach_reference_lines=ports.reattach_reference_lines,
             render_histology_alignment=histology_presenter.render_alignment_edit,
-            plot_channels=ports.plot_channels,
-            refresh_perpendicular_histology=ports.refresh_perpendicular_histology,
+            plot_channels=slice_display.plot_channels,
+            refresh_perpendicular_histology=(
+                slice_display.refresh_perpendicular_histology
+            ),
             update_reference_lines_to_alignment=(
                 ports.update_reference_lines_to_alignment
             ),
@@ -440,6 +444,7 @@ class DesktopWorkbench:
     def _shank_render_callbacks(
         ports: DesktopShankRenderPorts,
         ephys_display: DesktopEphysDisplay,
+        slice_display: DesktopSliceDisplay,
     ) -> DesktopShankRenderCallbacks:
         """Build callbacks for shank selection rendering."""
         return DesktopShankRenderCallbacks(
@@ -452,7 +457,7 @@ class DesktopWorkbench:
             render_plot_menus=ports.render_plot_menus,
             render_ephys_plots=ephys_display.render_shank_ephys_plots,
             render_histology_plots=ports.render_histology_plots,
-            restore_slice_selection=ports.restore_slice_selection,
+            restore_slice_selection=slice_display.restore_selection,
             configure_view=ports.configure_view,
             histology_available=ports.histology_available,
             offline=ports.offline,
@@ -502,7 +507,7 @@ class DesktopWorkbench:
         ports: DesktopExportPorts,
         *,
         ephys_display: DesktopEphysDisplay,
-        slice_panel: Any,
+        slice_display: DesktopSliceDisplay,
     ) -> DesktopPlotExporter:
         """Build the desktop plot exporter cluster."""
         ephys_exporter = DesktopEphysPlotExporter(
@@ -517,8 +522,7 @@ class DesktopWorkbench:
         return DesktopPlotExporter(
             ephys_exporter=ephys_exporter,
             slice_handles=SliceExportHandles(
-                action_group=ports.slice_action_group,
-                slice_panel=slice_panel,
+                slice_display=slice_display,
                 slice_plot=ports.slice_plot,
             ),
             slice_style=SliceExportStyle(

@@ -8,6 +8,7 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop_busy_context import BusyContext
 from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplayPorts
+from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
@@ -38,6 +39,23 @@ def desktop_ephys_display_ports_from_main_window(
         set_axis=window.set_axis,
         reset_axis=window.reset_axis_button_pressed,
         cluster_clicked=lambda *args: window.desktop_workbench.cluster_clicked(*args),
+    )
+
+
+def desktop_slice_display_ports_from_main_window(
+    window: Any,
+) -> DesktopSliceDisplayPorts:
+    """Adapt MainWindow plot handles to slice display ports."""
+    return DesktopSliceDisplayPorts(
+        coronal_plot=window.fig_slice,
+        coronal_layout=window.fig_slice_layout,
+        histogram_alt=window.fig_slice_hist_alt,
+        perpendicular_plot=window.fig_hist_perp,
+        dotted_pen=window.kpen_dot,
+        solid_pen=window.kpen_solid,
+        reference_line_pen=window.reference_line_kpen,
+        histology_exists=lambda: getattr(window, "histology_exists", False),
+        slice_item=window.slice_item,
     )
 
 
@@ -85,10 +103,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 capture_depth_plot_y_ranges=window._capture_depth_plot_y_ranges,
                 restore_depth_plot_y_ranges=window._restore_depth_plot_y_ranges,
                 reattach_reference_lines=window._reattach_reference_lines,
-                plot_channels=window.slice_panel.plot_channels,
-                refresh_perpendicular_histology=(
-                    window.slice_panel.refresh_perpendicular_histology
-                ),
                 update_reference_lines_to_alignment=window.update_lines_points,
                 create_reference_lines_for_previous_alignment=(
                     window._create_reference_lines_for_previous_alignment
@@ -113,7 +127,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 render_histology_plots=lambda shank_idx: window.render_histology_plots(
                     shank_idx=shank_idx,
                 ),
-                restore_slice_selection=window._restore_shank_slice_selection,
                 configure_view=window._configure_shank_view_after_render,
                 histology_available=lambda: window.histology_exists,
                 offline=lambda: window.offline,
@@ -145,7 +158,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         export=DesktopExportPorts(
             ephys_graphics_layout=window.fig_data_layout,
             ephys_data_area=window.fig_data_area,
-            slice_action_group=window.slice_options_group,
             slice_plot=window.fig_slice,
             slice_trajectory_pen=window.rpen_dot,
             histology_layout=window.fig_hist_layout,
