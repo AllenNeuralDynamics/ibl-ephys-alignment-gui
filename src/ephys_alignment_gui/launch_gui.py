@@ -10,8 +10,6 @@ if platform.system() == "Darwin":
     if platform.release().split(".")[0] >= "20":
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
-from random import randrange
-
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
 import numpy as np
 import pyqtgraph as pg
@@ -31,6 +29,9 @@ from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
 from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplay
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
+from ephys_alignment_gui.desktop_reference_line_display import (
+    DesktopReferenceLineDisplay,
+)
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
@@ -38,12 +39,9 @@ from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
     desktop_ephys_display_ports_from_main_window,
     desktop_histology_display_ports_from_main_window,
+    desktop_reference_line_display_ports_from_main_window,
     desktop_slice_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
-)
-from ephys_alignment_gui.reference_line_layer import (
-    ReferenceLineLayer,
-    ReferenceLinePlots,
 )
 from ephys_alignment_gui.settings import (
     OUTPUT_ROOT_ENV_VAR,
@@ -138,17 +136,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             app=self.app,
             ports=desktop_ephys_display_ports_from_main_window(self),
         )
-        self.reference_lines = ReferenceLineLayer(
-            plots=ReferenceLinePlots(
-                histology=self.fig_hist,
-                image=self.fig_img,
-                line=self.fig_line,
-                probe=self.fig_probe,
-                perpendicular=self.fig_hist_perp,
-                fit=self.fig_fit,
-            ),
-            style_factory=self.create_line_style,
-            on_lines_changed=self._capture_pending_reference_lines,
+        self.reference_line_display = DesktopReferenceLineDisplay.create(
+            ports=desktop_reference_line_display_ports_from_main_window(self),
         )
         self.slice_display = DesktopSliceDisplay.create(
             app=self.app,
@@ -166,6 +155,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             ephys_display=self.ephys_display,
             slice_display=self.slice_display,
             histology_display=self.histology_display,
+            reference_line_display=self.reference_line_display,
             ports=desktop_workbench_ports_from_main_window(self),
         )
         self.desktop_workbench.connect_events()
@@ -497,7 +487,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        line_positions = self.reference_lines.positions()
+        line_positions = self.reference_line_display.positions()
         if line_positions is None:
             line_feature = np.array([], dtype=float)
             line_track = np.array([], dtype=float)
@@ -528,7 +518,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _create_reference_lines_for_previous_alignment(self) -> None:
         feature_prev = self._active_previous_feature()
         if feature_prev is not None and np.any(feature_prev):
-            self.reference_lines.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
+            self.reference_line_display.create_previous_feature_lines(
+                np.asarray(feature_prev)[1:-1] * 1e6
+            )
 
     def plot_scale_factor(self) -> None:
         """
@@ -563,7 +555,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _clear_active_stream_presentation(self) -> None:
         """Clear desktop-owned plot and popup items for the active stream."""
-        self.reference_lines.clear()
+        self.reference_line_display.clear()
         self.popup_manager.close_all()
         self.ephys_display.clear()
         self.slice_display.clear()
@@ -712,7 +704,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.document.data_loaded:
             return
-        positions = self.reference_lines.positions()
+        positions = self.reference_line_display.positions()
         shank_idx = self._active_shank_idx()
         if positions is None:
             result = self.controller.clear_pending_reference_lines(shank_idx)
@@ -808,14 +800,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             logger.error(pending_lines.message)
             pending_lines = None
         if pending_lines is not None:
-            self.reference_lines.create_lines(
+            self.reference_line_display.create_lines(
                 pending_lines.feature_positions_um,
                 pending_lines.track_positions_um,
             )
         else:
             feature_prev = self._active_previous_feature()
             if feature_prev is not None and np.any(feature_prev):
-                self.reference_lines.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
+                self.reference_line_display.create_previous_feature_lines(
+                    np.asarray(feature_prev)[1:-1] * 1e6
+                )
 
     def setup_session_view(
         self,
@@ -924,7 +918,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         result = self.app.commands.select_shank(
             new_shank_idx,
-            outgoing_reference_lines=self.reference_lines.positions(),
+            outgoing_reference_lines=self.reference_line_display.positions(),
             source="dropdown",
         )
         if isinstance(result, Failed):
@@ -976,7 +970,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_histology()
         self.plot_histology_ref()
         self.plot_scale_factor()
-        self._reattach_reference_lines()
+        self.reference_line_display.reattach()
 
     def fit_button_pressed(self) -> None:
         """
@@ -1058,9 +1052,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         lines_visible = self.display_state.toggle_reference_lines_visible()
         if not lines_visible:
-            self.reference_lines.remove_from_plots()
+            self.reference_line_display.remove_from_plots()
         else:
-            self.reference_lines.add_to_plots()
+            self.reference_line_display.add_to_plots()
 
     def toggle_channel_button_pressed(self) -> None:
         """
@@ -1075,7 +1069,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Deletes a reference line from the ephys and histology plots
         """
 
-        self.reference_lines.delete_selected()
+        self.reference_line_display.delete_selected()
 
     def describe_labels_pressed(self) -> None:
         self.desktop_workbench.describe_labels_pressed()
@@ -1220,7 +1214,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use
-        if not self.histology_exists or not self.reference_lines.has_lines():
+        if not self.histology_exists or not self.reference_line_display.has_lines():
             return
 
         # Recompute alignment with new setting using existing fit logic
@@ -1265,46 +1259,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
         self.histology_display.sync_tip_to_top()
-
-    def _reattach_reference_lines(self) -> None:
-        self.reference_lines.remove_from_plots()
-        self.reference_lines.add_to_plots()
-
-    def update_lines_points(self) -> None:
-        """
-        Updates position of reference lines on histology plot after fit has been applied. Also
-        updates location of scatter point
-        """
-        self.reference_lines.sync_track_to_feature()
-
-    def create_line_style(self):
-        """
-        Create random choice of colour and style for reference line
-        :return pen: style to use for the line
-        :type pen: pyqtgraph Pen
-        :return brush: colour use for the line
-        :type brush: pyqtgraph Brush
-        """
-        colours = [
-            "#cc0000",
-            "#6aa84f",
-            "#ff8d00",
-            "#00FFF7",
-            "#03fc84",
-            "#fc03e7",
-            "#1c03fc",
-            "#000000",
-        ]
-        style = [
-            QtCore.Qt.SolidLine,
-            QtCore.Qt.DashLine,
-            QtCore.Qt.DashDotLine,
-        ]
-        col = QtGui.QColor(colours[randrange(len(colours))])
-        sty = style[randrange(len(style))]
-        pen = pg.mkPen(color=col, style=sty, width=7)
-        brush = pg.mkBrush(color=col)
-        return pen, brush
 
     def update_string(self) -> None:
         """

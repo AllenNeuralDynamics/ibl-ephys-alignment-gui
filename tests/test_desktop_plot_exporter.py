@@ -154,7 +154,6 @@ def _exporter() -> tuple[
         callbacks=DesktopPlotExportCallbacks(
             set_axis=lambda *args, **kwargs: calls.append(("set_axis", args, kwargs)),
             set_font=lambda *args, **kwargs: calls.append(("set_font", args, kwargs)),
-            add_lines_points=lambda: calls.append(("add_lines_points",)),
             slice_geometry=lambda: SliceExportGeometry(
                 width=120,
                 height=80,
@@ -164,6 +163,7 @@ def _exporter() -> tuple[
                 ("overview", args, kwargs)
             ),
         ),
+        add_lines_points=lambda: calls.append(("add_lines_points",)),
         image_exporter_factory=image_exporter_factory,
     )
     return exporter, calls, actions, slice_display, slice_plot

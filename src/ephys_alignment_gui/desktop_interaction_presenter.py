@@ -49,7 +49,7 @@ class DesktopInteractionPresenter:
     popup_manager: Any
     ephys_panel: Any
     histology_display: Any
-    reference_lines: Any
+    reference_line_display: Any
     region_lookup_service: Any
     widgets: DesktopInteractionWidgets
     callbacks: DesktopInteractionCallbacks
@@ -208,7 +208,7 @@ class DesktopInteractionPresenter:
         feature_y_um = self.ephys_panel.feature_y_from_scene(event.scenePos())
         if feature_y_um is None:
             return False
-        self.reference_lines.create_lines([feature_y_um])
+        self.reference_line_display.create_lines([feature_y_um])
         self.callbacks.capture_pending_reference_lines()
         return True
 
@@ -217,9 +217,9 @@ class DesktopInteractionPresenter:
         if len(items) <= 1:
             return
 
-        self.reference_lines.clear_selection()
+        self.reference_line_display.clear_selection()
         if isinstance(items[0], self.infinite_line_type):
-            self.reference_lines.select_line(items[0])
+            self.reference_line_display.select_line(items[0])
         elif items[0] is self.widgets.scale_plot and isinstance(
             items[1],
             self.linear_region_type,

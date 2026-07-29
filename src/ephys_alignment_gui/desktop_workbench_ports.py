@@ -9,6 +9,9 @@ from PyQt5 import QtWidgets
 from ephys_alignment_gui.desktop_busy_context import BusyContext
 from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplayPorts
 from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplayPorts
+from ephys_alignment_gui.desktop_reference_line_display import (
+    DesktopReferenceLineDisplayPorts,
+)
 from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
@@ -71,6 +74,21 @@ def desktop_histology_display_ports_from_main_window(
     )
 
 
+def desktop_reference_line_display_ports_from_main_window(
+    window: Any,
+) -> DesktopReferenceLineDisplayPorts:
+    """Adapt MainWindow plot handles to reference-line display ports."""
+    return DesktopReferenceLineDisplayPorts(
+        histology_plot=window.fig_hist,
+        image_plot=window.fig_img,
+        line_plot=window.fig_line,
+        probe_plot=window.fig_probe,
+        perpendicular_plot=window.fig_hist_perp,
+        fit_plot=window.fig_fit,
+        on_lines_changed=window._capture_pending_reference_lines,
+    )
+
+
 def desktop_slice_display_ports_from_main_window(
     window: Any,
 ) -> DesktopSliceDisplayPorts:
@@ -128,11 +146,8 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         render=DesktopRenderPorts(
             alignment=DesktopAlignmentRenderPorts(
                 restore_lin_fit=window._restore_lin_fit_from_edit,
-                clear_reference_lines=window.reference_lines.clear,
                 capture_depth_plot_y_ranges=window._capture_depth_plot_y_ranges,
                 restore_depth_plot_y_ranges=window._restore_depth_plot_y_ranges,
-                reattach_reference_lines=window._reattach_reference_lines,
-                update_reference_lines_to_alignment=window.update_lines_points,
                 create_reference_lines_for_previous_alignment=(
                     window._create_reference_lines_for_previous_alignment
                 ),
@@ -141,7 +156,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             ),
             shank=DesktopShankRenderPorts(
                 capture_plot_selection=window._capture_shank_plot_selection,
-                clear_reference_lines=window.reference_lines.clear,
                 prepare_runtime=window._prepare_shank_runtime_for_view,
                 prepare_histology=window._prepare_shank_histology_for_view,
                 apply_plot_data_state=window._apply_shank_plot_data_state,
@@ -187,7 +201,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             set_view=window.set_view,
             set_axis=window.set_axis,
             set_font=window.set_font,
-            add_lines_points=window.reference_lines.add_to_plots,
             ephys_sizes=lambda: (
                 window.fig_probe_width,
                 window.fig_ax_width,
@@ -200,7 +213,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         ),
         interaction=DesktopInteractionPorts(
             popup_manager=window.popup_manager,
-            reference_lines=window.reference_lines,
             region_lookup_service=window.region_lookup_service,
             struct_list=window.struct_list,
             struct_view=window.struct_view,

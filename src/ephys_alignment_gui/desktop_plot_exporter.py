@@ -56,7 +56,6 @@ class DesktopPlotExportCallbacks:
 
     set_axis: Callable[..., Any]
     set_font: Callable[..., None]
-    add_lines_points: Callable[[], None]
     slice_geometry: Callable[[], SliceExportGeometry]
     make_overview: Callable[..., Any] = make_overview_plot
 
@@ -70,6 +69,7 @@ class DesktopPlotExporter:
     slice_style: SliceExportStyle
     histology_handles: HistologyExportHandles
     callbacks: DesktopPlotExportCallbacks
+    add_lines_points: Callable[[], None]
     image_exporter_factory: Callable[[Any], Any] = pg_exporters.ImageExporter
 
     def export(self, output_dir: Path, *, sess_info: str = "") -> None:
@@ -80,7 +80,7 @@ class DesktopPlotExporter:
         self._export_zoomed_slice_images(output_dir, sess_info)
         self._export_histology_image(output_dir, sess_info)
         self.callbacks.make_overview(output_dir, sess_info, save_folder=output_dir)
-        self.callbacks.add_lines_points()
+        self.add_lines_points()
 
     def _export_slice_images(self, output_dir: Path, sess_info: str) -> None:
         action_group = self._slice_action_group()

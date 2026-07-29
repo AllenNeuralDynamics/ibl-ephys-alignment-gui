@@ -265,6 +265,26 @@ class FakeSliceDisplay:
         self.perpendicular_refreshes += 1
 
 
+class FakeReferenceLineDisplay:
+    def __init__(self) -> None:
+        self.clear_count = 0
+        self.reattach_count = 0
+        self.sync_count = 0
+        self.add_count = 0
+
+    def clear(self) -> None:
+        self.clear_count += 1
+
+    def reattach(self) -> None:
+        self.reattach_count += 1
+
+    def sync_track_to_feature(self) -> None:
+        self.sync_count += 1
+
+    def add_to_plots(self) -> None:
+        self.add_count += 1
+
+
 class FakeInteractionPresenter:
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -328,6 +348,7 @@ def _workbench(
     interaction: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
+    reference_line_display: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -353,6 +374,7 @@ def _workbench(
         interaction_presenter=interaction or FakeInteractionPresenter(),
         ephys_display=ephys_display or FakeEphysDisplay(),
         slice_display=slice_display or FakeSliceDisplay(),
+        reference_line_display=reference_line_display or FakeReferenceLineDisplay(),
     )
 
 
@@ -502,18 +524,14 @@ def _render_ports() -> DesktopRenderPorts:
     return DesktopRenderPorts(
         alignment=DesktopAlignmentRenderPorts(
             restore_lin_fit=lambda _lin_fit: None,
-            clear_reference_lines=lambda: None,
             capture_depth_plot_y_ranges=lambda: None,
             restore_depth_plot_y_ranges=lambda _ranges: None,
-            reattach_reference_lines=lambda: None,
-            update_reference_lines_to_alignment=lambda: None,
             create_reference_lines_for_previous_alignment=lambda: None,
             set_default_feature_y_range=lambda: None,
             update_status=lambda: None,
         ),
         shank=DesktopShankRenderPorts(
             capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
-            clear_reference_lines=lambda: None,
             prepare_runtime=lambda _shank_idx: None,
             prepare_histology=lambda _shank_idx: True,
             apply_plot_data_state=lambda _state: None,
@@ -585,21 +603,15 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             ephys_data_area=object(),
             slice_plot=object(),
             slice_trajectory_pen=object(),
-            histology_layout=object(),
-            histology_extra_y_axis=object(),
-            histology_aligned=object(),
-            histology_reference=object(),
             reset_axis=lambda: None,
             set_view=lambda **_kwargs: None,
             set_axis=lambda *_args, **_kwargs: None,
             set_font=lambda *_args, **_kwargs: None,
-            add_lines_points=lambda: None,
             ephys_sizes=lambda: (11.0, 3.0),
             slice_geometry=lambda: (100.0, 200.0, "rect"),
         ),
         interaction=DesktopInteractionPorts(
             popup_manager=object(),
-            reference_lines=object(),
             region_lookup_service=object(),
             struct_list=object(),
             struct_view=object(),
@@ -630,6 +642,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     panel = FakeHistologyDisplay()
     ephys_display = FakeEphysDisplay()
     slice_display = FakeSliceDisplay()
+    reference_line_display = FakeReferenceLineDisplay()
 
     workbench = DesktopWorkbench.create(
         app=app,
@@ -639,6 +652,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         ephys_display=ephys_display,
         slice_display=slice_display,
         histology_display=panel,
+        reference_line_display=reference_line_display,
         ports=ports,
     )
 
@@ -674,6 +688,14 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert workbench.ephys_display is ephys_display
     assert workbench.slice_display is slice_display
+    assert workbench.reference_line_display is reference_line_display
+    workbench.alignment_presenter.callbacks.clear_reference_lines()
+    workbench.alignment_presenter.callbacks.reattach_reference_lines()
+    workbench.alignment_presenter.callbacks.update_reference_lines_to_alignment()
+    workbench.shank_presenter.callbacks.clear_reference_lines()
+    assert reference_line_display.clear_count == 2
+    assert reference_line_display.reattach_count == 1
+    assert reference_line_display.sync_count == 1
     workbench.shank_presenter.callbacks.render_ephys_plots("state")
     assert ephys_display.rendered_states == ["state"]
     workbench.shank_presenter.callbacks.restore_slice_selection(
@@ -687,6 +709,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert workbench.plot_exporter.ephys_exporter.panel is ephys_display.panel
     assert workbench.plot_exporter.slice_handles.slice_display is slice_display
+    workbench.plot_exporter.add_lines_points()
+    assert reference_line_display.add_count == 1
     assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
     assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (
         ports.export.set_view
@@ -694,8 +718,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.interaction_presenter.popup_manager is (
         ports.interaction.popup_manager
     )
-    assert workbench.interaction_presenter.reference_lines is (
-        ports.interaction.reference_lines
+    assert workbench.interaction_presenter.reference_line_display is (
+        reference_line_display
     )
     assert workbench.interaction_presenter.region_lookup_service is (
         ports.interaction.region_lookup_service

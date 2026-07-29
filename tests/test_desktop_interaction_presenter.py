@@ -242,7 +242,7 @@ def _presenter(
     popup_manager = DesktopPopupManager()
     ephys_panel = FakeEphysPanel()
     histology_display = FakeHistologyPanel()
-    reference_lines = FakeReferenceLines()
+    reference_line_display = FakeReferenceLines()
     region_lookup = FakeRegionLookupService()
     struct_list = FakeStructList()
     struct_view = FakeStructView()
@@ -280,7 +280,7 @@ def _presenter(
         popup_manager=popup_manager,
         ephys_panel=ephys_panel,
         histology_display=histology_display,
-        reference_lines=reference_lines,
+        reference_line_display=reference_line_display,
         region_lookup_service=region_lookup,
         widgets=widgets,
         callbacks=DesktopInteractionCallbacks(
@@ -308,7 +308,7 @@ def _presenter(
         "popup_manager": popup_manager,
         "ephys_panel": ephys_panel,
         "histology_display": histology_display,
-        "reference_lines": reference_lines,
+        "reference_line_display": reference_line_display,
         "region_lookup": region_lookup,
         "widgets": widgets,
         "struct_list": struct_list,
@@ -363,7 +363,7 @@ def test_double_click_creates_reference_line_and_captures_pending() -> None:
     assert presenter.on_mouse_double_clicked(event)
 
     assert state["ephys_panel"].scene_pos_calls == ["scene-pos"]
-    assert state["reference_lines"].created == [[125.0]]
+    assert state["reference_line_display"].created == [[125.0]]
     assert state["calls"]["capture"] == 1
 
 
@@ -373,7 +373,7 @@ def test_double_click_noops_without_histology() -> None:
 
     assert not presenter.on_mouse_double_clicked(event)
 
-    assert state["reference_lines"].created == []
+    assert state["reference_line_display"].created == []
 
 
 def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
@@ -390,8 +390,8 @@ def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
         [state["widgets"].histology_reference_plot, ref_region]
     )
 
-    assert state["reference_lines"].clear_calls == 4
-    assert state["reference_lines"].selected == [line]
+    assert state["reference_line_display"].clear_calls == 4
+    assert state["reference_line_display"].selected == [line]
     assert state["scale_axis"].label == "Scale Factor = 1.23"
     assert state["histology_display"].selected_regions == [hist_region, ref_region]
 
