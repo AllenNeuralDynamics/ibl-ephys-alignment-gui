@@ -10,20 +10,20 @@ if platform.system() == "Darwin":
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show properly :/
-import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.alignment_read_models import (
-    ActiveShankPlotDataState,
+from ephys_alignment_gui.desktop_alignment_screen_view import (
+    DesktopAlignmentScreenView,
 )
+from ephys_alignment_gui.desktop_depth_plot_view import DesktopDepthPlotView
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
-from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
+from ephys_alignment_gui.desktop_shank_screen_view import DesktopShankScreenView
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
     desktop_display_ports_from_main_window,
@@ -34,7 +34,6 @@ from ephys_alignment_gui.settings import (
     output_root_from_environment,
 )
 from ephys_alignment_gui.thread_worker import Worker
-from ephys_alignment_gui.view_limits import default_feature_y_limits
 from ephys_alignment_gui.workflow import Requirement
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
@@ -118,6 +117,39 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             app=self.app,
             ports=desktop_display_ports_from_main_window(self),
         )
+        self.depth_plot_view = DesktopDepthPlotView(
+            depth_view=lambda: self.display_state.depth_view,
+            in_brain_depths_um=self.app.queries.active_in_brain_depths_um,
+            default_range_plots=(self.fig_hist, self.fig_hist_ref, self.fig_img),
+            range_plots={
+                "fig_img": self.fig_img,
+                "fig_line": self.fig_line,
+                "fig_probe": self.fig_probe,
+                "fig_hist": self.fig_hist,
+                "fig_hist_ref": self.fig_hist_ref,
+                "fig_hist_perp": self.fig_hist_perp,
+                "fig_scale": self.fig_scale,
+            },
+            probe_tip_lines=self.probe_tip_lines,
+            probe_top_lines=self.probe_top_lines,
+            padding=lambda: self.pad,
+        )
+        self.shank_screen_view = DesktopShankScreenView(
+            displays=self.displays,
+            depth_plots=self.depth_plot_view,
+            init_menubar=self.init_menubar,
+            set_view=self.set_view,
+        )
+        self.alignment_screen_view = DesktopAlignmentScreenView(
+            depth_plots=self.depth_plot_view,
+            display_state=self.display_state,
+            reference_lines=self.displays.reference_lines,
+            active_alignment_state=lambda: self.document.active_alignment_state,
+            lin_fit_checkbox=self.lin_fit_option,
+            current_index_label=self.idx_string,
+            total_index_label=self.tot_idx_string,
+        )
+        self._initialize_startup_stream_state()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             selection_view=self.selection_view,
@@ -129,7 +161,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.connect_events()
         self._set_default_output_root_from_environment()
 
-        self.configure: bool = True
         self.histology_exists: bool = True
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
@@ -188,7 +219,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Padding to add to figures to make sure always same size viewbox
         self.pad = 0.05
-        self._initialize_startup_stream_state()
 
         # Guide the user before any data is loaded / after clearing.
         if hasattr(self, "fig_img"):
@@ -197,12 +227,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _initialize_startup_stream_state(self) -> None:
         """Initialise startup state for stream-dependent app and desktop data."""
         self.popup_manager.close_all()
-        self._reset_raw_image_payloads()
+        self.shank_screen_view.reset_raw_image_payloads()
         self.app.commands.detach_active_stream()
-
-    def _reset_raw_image_payloads(self) -> None:
-        """Reset desktop-owned raw image payload cache."""
-        self.raw_image_payloads: dict[str, Any] = {}
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -256,63 +282,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             axis.setWidth(width)
         if height:
             axis.setHeight(height)
-
-    def set_lims(self, min, max) -> None:
-        self.display_state.depth_view.set_probe_limits(min, max)
-
-        [top_line.setY(max) for top_line in self.probe_top_lines]
-        [tip_line.setY(min) for tip_line in self.probe_tip_lines]
-
-    def default_feature_y_limits(self) -> tuple[float, float]:
-        """Return the current default feature-depth display limits."""
-        in_brain_depths_um = self.app.queries.active_in_brain_depths_um()
-        depth_view = self.display_state.depth_view
-        return default_feature_y_limits(
-            probe_tip_um=depth_view.probe_tip_um,
-            probe_top_um=depth_view.probe_top_um,
-            probe_extra_um=depth_view.probe_extra_um,
-            in_brain_depths_um=in_brain_depths_um,
-        )
-
-    def set_default_feature_y_range(self) -> None:
-        """Apply the default feature-depth range to the linked depth plots."""
-        y_min, y_max = self.default_feature_y_limits()
-        self.fig_hist.setYRange(min=y_min, max=y_max, padding=self.pad)
-        self.fig_hist_ref.setYRange(min=y_min, max=y_max, padding=self.pad)
-        self.fig_img.setYRange(min=y_min, max=y_max, padding=self.pad)
-
-    def _capture_depth_plot_y_ranges(self) -> dict[str, tuple[float, float]]:
-        """Capture current y-ranges on the linked depth plots."""
-        ranges: dict[str, tuple[float, float]] = {}
-        for name in (
-            "fig_img",
-            "fig_line",
-            "fig_probe",
-            "fig_hist",
-            "fig_hist_ref",
-            "fig_hist_perp",
-            "fig_scale",
-        ):
-            fig = getattr(self, name, None)
-            if fig is None:
-                continue
-            try:
-                y_min, y_max = fig.viewRange()[1]
-            except (AttributeError, IndexError, TypeError):
-                continue
-            ranges[name] = (float(y_min), float(y_max))
-        return ranges
-
-    def _restore_depth_plot_y_ranges(
-        self,
-        ranges: dict[str, tuple[float, float]],
-    ) -> None:
-        """Restore y-ranges captured before an alignment redraw."""
-        for name, (y_min, y_max) in ranges.items():
-            fig = getattr(self, name, None)
-            if fig is None or y_min == y_max:
-                continue
-            fig.setYRange(min=y_min, max=y_max, padding=0)
 
     def populate_lists(self, data, list_name, combobox) -> None:
         """
@@ -425,13 +394,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         y_min, y_max = self.fig_img.viewRange()[1]
         return float(y_min), float(y_max)
 
-    def _create_reference_lines_for_previous_alignment(self) -> None:
-        feature_prev = self._active_previous_feature()
-        if feature_prev is not None and np.any(feature_prev):
-            self.displays.reference_lines.create_previous_feature_lines(
-                np.asarray(feature_prev)[1:-1] * 1e6
-            )
-
     def plot_scale_factor(self) -> None:
         """
         Plots the scale factor applied to brain regions along probe track, displayed
@@ -457,15 +419,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.render_active_fit()
 
     ### --------- interaction functions --------- ###
-    def _active_alignment_state(self):
-        """Return document-owned editable state for the active alignment."""
-        return self.document.active_alignment_state
-
-    def _active_previous_feature(self):
-        """Return the selected previous feature alignment, if any."""
-        state = self._active_alignment_state()
-        return None if state is None else state.feature_prev
-
     # -- Empty-state placeholder ---------------------------------------
 
     def _show_empty_state(self, text: str = "Select and load data") -> None:
@@ -561,46 +514,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def on_output_folder_edited(self) -> None:
         """Triggered when user finishes editing output_folder_line text field."""
         self.desktop_workbench.output_folder_edited()
-
-    def _capture_shank_plot_selection(
-        self,
-        preserve_plot_selection: bool,
-    ) -> DesktopShankSelectionState:
-        """Capture desktop plot selections to preserve across shank redraw."""
-        prev_slice = self.displays.slice.capture_selection()
-        prev_ephys_plot_keys = (
-            self.displays.ephys.current_plot_keys()
-            if preserve_plot_selection and self.displays.ephys.has_plot_menus()
-            else None
-        )
-        return DesktopShankSelectionState(
-            previous_slice_selection=prev_slice.selection,
-            previous_slice_label=prev_slice.label,
-            previous_ephys_plot_keys=prev_ephys_plot_keys,
-        )
-
-    def _apply_shank_plot_data_state(
-        self,
-        state: ActiveShankPlotDataState,
-    ) -> None:
-        """Apply prepared shank plot-data bounds to desktop depth plots."""
-        self.set_lims(np.min([0, state.channel_min_um]), state.channel_max_um)
-        self.raw_image_payloads = {}
-
-    def _render_shank_plot_menus(
-        self,
-        plot_menu_state: Any,
-    ) -> None:
-        """Refresh ephys plot menus for the selected shank."""
-        if not self.displays.ephys.has_plot_menus():
-            self.init_menubar()
-        self.displays.ephys.render_menus(plot_menu_state)
-
-    def _configure_shank_view_after_render(self, preserve_plot_selection: bool) -> None:
-        """Apply one-time view configuration after shank rendering."""
-        self.set_view(view=1, configure=self.configure and not preserve_plot_selection)
-        if not preserve_plot_selection:
-            self.configure = False
 
     def on_shank_selected(self, idx) -> None:
         """Triggered when selecting shank from dropdown"""
@@ -721,14 +634,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         self.desktop_workbench.reset_button_pressed()
 
-    def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
-        if lin_fit is None:
-            return
-        self.display_state.edit_settings.set_lin_fit(lin_fit)
-        self.lin_fit_option.blockSignals(True)
-        self.lin_fit_option.setChecked(self.display_state.edit_settings.lin_fit)
-        self.lin_fit_option.blockSignals(False)
-
     def run_complete_button_in_thread(self) -> None:
         self.thread = QThread()
         self.worker = Worker(self.complete_button_pressed_offline)
@@ -761,7 +666,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return ephys_desc
 
     def reset_axis_button_pressed(self) -> None:
-        self.set_default_feature_y_range()
+        self.alignment_screen_view.set_default_feature_y_range()
         feature_xrange = self.displays.ephys.feature_xrange
         if feature_xrange is not None:
             self.fig_img.setXRange(
@@ -844,16 +749,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
         self.displays.histology.sync_tip_to_top()
-
-    def update_string(self) -> None:
-        """
-        Updates text boxes to indicate to user which move they are looking at
-        """
-        state = self._active_alignment_state()
-        current_idx = 0 if state is None else state.edit_history.current_idx
-        total_idx = 0 if state is None else state.edit_history.total_idx
-        self.idx_string.setText(f"Current Index = {current_idx}")
-        self.tot_idx_string.setText(f"Total Index = {total_idx}")
 
 
 def viewer(probe_id, one=None, histology=False, spike_collection=None, title=None):

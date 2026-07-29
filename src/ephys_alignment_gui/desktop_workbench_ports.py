@@ -43,7 +43,7 @@ def desktop_ephys_display_ports_from_main_window(
         probe_colorbar=window.fig_probe_cb,
         graphics_layout=window.fig_data_layout,
         line_pen=window.kpen_solid,
-        raw_image_payloads=lambda: window.raw_image_payloads,
+        raw_image_payloads=lambda: window.shank_screen_view.raw_image_payload_mapping(),
         set_axis=window.set_axis,
         reset_axis=window.reset_axis_button_pressed,
         cluster_clicked=lambda *args: window.desktop_workbench.cluster_clicked(*args),
@@ -145,28 +145,36 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=window.popup_manager.close_all,
-            reset_raw_image_payloads=window._reset_raw_image_payloads,
+            reset_raw_image_payloads=window.shank_screen_view.reset_raw_image_payloads,
             show_empty_state=window._show_empty_state,
             collect_garbage=gc.collect,
         ),
         render=DesktopRenderPorts(
             alignment=DesktopAlignmentRenderPorts(
-                restore_lin_fit=window._restore_lin_fit_from_edit,
-                capture_depth_plot_y_ranges=window._capture_depth_plot_y_ranges,
-                restore_depth_plot_y_ranges=window._restore_depth_plot_y_ranges,
-                create_reference_lines_for_previous_alignment=(
-                    window._create_reference_lines_for_previous_alignment
+                restore_lin_fit=window.alignment_screen_view.restore_lin_fit_from_edit,
+                capture_depth_plot_y_ranges=(
+                    window.alignment_screen_view.capture_depth_plot_y_ranges
                 ),
-                set_default_feature_y_range=window.set_default_feature_y_range,
-                update_status=window.update_string,
+                restore_depth_plot_y_ranges=(
+                    window.alignment_screen_view.restore_depth_plot_y_ranges
+                ),
+                create_reference_lines_for_previous_alignment=(
+                    window.alignment_screen_view.create_reference_lines_for_previous_alignment
+                ),
+                set_default_feature_y_range=(
+                    window.alignment_screen_view.set_default_feature_y_range
+                ),
+                update_status=window.alignment_screen_view.update_status,
             ),
             shank=DesktopShankRenderPorts(
-                capture_plot_selection=window._capture_shank_plot_selection,
+                capture_plot_selection=window.shank_screen_view.capture_plot_selection,
                 render_alignment_choices=render_alignment_choices,
-                apply_plot_data_state=window._apply_shank_plot_data_state,
-                raw_image_payloads=lambda: window.raw_image_payloads,
-                render_plot_menus=window._render_shank_plot_menus,
-                configure_view=window._configure_shank_view_after_render,
+                apply_plot_data_state=window.shank_screen_view.apply_plot_data_state,
+                raw_image_payloads=window.shank_screen_view.raw_image_payload_mapping,
+                render_plot_menus=window.shank_screen_view.render_plot_menus,
+                configure_view=(
+                    window.shank_screen_view.configure_view_after_render
+                ),
                 offline=lambda: window.offline,
             ),
         ),
