@@ -8,6 +8,7 @@ from typing import Any
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_export_view import DesktopExportView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
+from ephys_alignment_gui.desktop_views import DesktopViews
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
@@ -779,16 +780,25 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         reference_lines=reference_line_display,
         slice_display=slice_display,
     )
+    views = DesktopViews(
+        selection=object(),
+        path=object(),
+        displays=displays,
+        depth=object(),
+        shank_screen=object(),
+        alignment_screen=object(),
+        export=ports.export,
+    )
 
     workbench = DesktopWorkbench.create(
         app=app,
-        selection_view=object(),
-        path_view=object(),
         parent=object(),
-        displays=displays,
+        views=views,
         ports=ports,
     )
 
+    assert workbench.views is views
+    assert workbench.render_cluster is not None
     assert workbench.displays.histology is panel
     assert workbench.alignment_presenter.callbacks is not None
     assert workbench.shank_presenter.callbacks is not None

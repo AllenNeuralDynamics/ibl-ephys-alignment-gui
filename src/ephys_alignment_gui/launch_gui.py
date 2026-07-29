@@ -15,19 +15,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.desktop_alignment_screen_view import (
-    DesktopAlignmentScreenView,
-)
-from ephys_alignment_gui.desktop_depth_plot_view import DesktopDepthPlotView
-from ephys_alignment_gui.desktop_displays import DesktopDisplays
-from ephys_alignment_gui.desktop_export_view import DesktopExportView
-from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
-from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
-from ephys_alignment_gui.desktop_shank_screen_view import DesktopShankScreenView
+from ephys_alignment_gui.desktop_views import DesktopViews
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
-    desktop_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.settings import (
@@ -100,82 +91,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.init_variables()
         self.offline: bool = offline
         self.init_layout(self, offline=offline)
-        self.selection_view = DesktopSelectionView(
-            session_model=self.session_list,
-            session_combobox=self.session_combobox,
-            probe_model=self.probe_list,
-            probe_combobox=self.probe_combobox,
-            shank_model=self.shank_list,
-            shank_combobox=self.shank_combobox,
-            load_data_button=self.load_data_button,
-        )
-        self.path_view = DesktopPathView(
-            mouse_root_button=self.mouse_root_button,
-            mouse_root_line=self.mouse_root_line,
-            output_folder_line=self.output_folder_line,
-        )
-        self.displays = DesktopDisplays.create(
-            app=self.app,
-            ports=desktop_display_ports_from_main_window(self),
-        )
-        self.depth_plot_view = DesktopDepthPlotView(
-            depth_view=lambda: self.display_state.depth_view,
-            in_brain_depths_um=self.app.queries.active_in_brain_depths_um,
-            default_range_plots=(self.fig_hist, self.fig_hist_ref, self.fig_img),
-            range_plots={
-                "fig_img": self.fig_img,
-                "fig_line": self.fig_line,
-                "fig_probe": self.fig_probe,
-                "fig_hist": self.fig_hist,
-                "fig_hist_ref": self.fig_hist_ref,
-                "fig_hist_perp": self.fig_hist_perp,
-                "fig_scale": self.fig_scale,
-            },
-            probe_tip_lines=self.probe_tip_lines,
-            probe_top_lines=self.probe_top_lines,
-            padding=lambda: self.pad,
-        )
-        self.shank_screen_view = DesktopShankScreenView(
-            displays=self.displays,
-            depth_plots=self.depth_plot_view,
-            init_menubar=self.init_menubar,
-            set_view=self.set_view,
-        )
-        self.alignment_screen_view = DesktopAlignmentScreenView(
-            depth_plots=self.depth_plot_view,
-            display_state=self.display_state,
-            reference_lines=self.displays.reference_lines,
-            active_alignment_state=lambda: self.document.active_alignment_state,
-            lin_fit_checkbox=self.lin_fit_option,
-            current_index_label=self.idx_string,
-            total_index_label=self.tot_idx_string,
-        )
-        self.export_view = DesktopExportView(
-            ephys_graphics_layout=self.fig_data_layout,
-            ephys_data_area=self.fig_data_area,
-            slice_plot=self.fig_slice,
-            slice_trajectory_pen=self.rpen_dot,
-            reset_axis=self.reset_axis_button_pressed,
-            set_view=self.set_view,
-            set_axis=self.set_axis,
-            set_font=self.set_font,
-            ephys_sizes=lambda: (
-                self.fig_probe_width,
-                self.fig_ax_width,
-            ),
-            slice_geometry=lambda: (
-                self.slice_width,
-                self.slice_height,
-                self.slice_rect,
-            ),
-        )
+        self.views = DesktopViews.from_main_window(self, app=self.app)
+        self.selection_view = self.views.selection
+        self.path_view = self.views.path
+        self.displays = self.views.displays
+        self.depth_plot_view = self.views.depth
+        self.shank_screen_view = self.views.shank_screen
+        self.alignment_screen_view = self.views.alignment_screen
+        self.export_view = self.views.export
         self._initialize_startup_stream_state()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
-            selection_view=self.selection_view,
-            path_view=self.path_view,
             parent=self,
-            displays=self.displays,
+            views=self.views,
             ports=desktop_workbench_ports_from_main_window(self),
         )
         self.desktop_workbench.connect_events()

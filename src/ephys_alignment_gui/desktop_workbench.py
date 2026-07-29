@@ -9,16 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.desktop_alignment_edit_actions import (
-    DesktopAlignmentEditActionCallbacks,
     DesktopAlignmentEditActions,
 )
-from ephys_alignment_gui.desktop_alignment_presenter import (
-    DesktopAlignmentPresenter,
-    DesktopAlignmentRenderCallbacks,
-)
+from ephys_alignment_gui.desktop_alignment_presenter import DesktopAlignmentPresenter
 from ephys_alignment_gui.desktop_alignment_selection_actions import (
     DesktopAlignmentSelectionActions,
-    DesktopAlignmentSelectionCallbacks,
 )
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_ephys_plot_exporter import (
@@ -71,6 +66,10 @@ from ephys_alignment_gui.desktop_probe_selection_presenter import (
 from ephys_alignment_gui.desktop_reference_line_presenter import (
     DesktopReferenceLinePresenter,
 )
+from ephys_alignment_gui.desktop_render_composition import (
+    DesktopRenderCluster,
+    build_desktop_render_cluster,
+)
 from ephys_alignment_gui.desktop_save_workflow_presenter import (
     DesktopSaveWorkflowCallbacks,
     DesktopSaveWorkflowPresenter,
@@ -79,13 +78,11 @@ from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
     DesktopSessionSelectionPresenter,
 )
-from ephys_alignment_gui.desktop_shank_presenter import (
-    DesktopShankPresenter,
-    DesktopShankRenderCallbacks,
-)
+from ephys_alignment_gui.desktop_shank_presenter import DesktopShankPresenter
 from ephys_alignment_gui.desktop_shank_selection_actions import (
     DesktopShankSelectionActions,
 )
+from ephys_alignment_gui.desktop_views import DesktopViews
 from ephys_alignment_gui.event_bus import EventSubscription
 
 
@@ -243,6 +240,8 @@ class DesktopWorkbench:
     alignment_edit_actions: DesktopAlignmentEditActions
     shank_selection_actions: DesktopShankSelectionActions
     alignment_selection_actions: DesktopAlignmentSelectionActions
+    views: DesktopViews | None = None
+    render_cluster: DesktopRenderCluster | None = None
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -250,110 +249,62 @@ class DesktopWorkbench:
         cls,
         *,
         app: Any,
-        selection_view: Any,
-        path_view: Any,
         parent: Any,
-        displays: DesktopDisplays,
+        views: DesktopViews,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
+        displays = views.displays
+        render_cluster = build_desktop_render_cluster(
+            app=app,
+            views=views,
+            ports=ports,
+        )
         output_path_presenter = DesktopOutputPathPresenter(
             commands=app.commands,
-            path_view=path_view,
-        )
-        alignment_presenter = DesktopAlignmentPresenter(app.events)
-        alignment_presenter.configure(
-            queries=app.queries,
-            callbacks=cls._alignment_render_callbacks(
-                ports.render.alignment,
-                displays,
-            ),
-        )
-        histology_refresh_presenter = DesktopHistologyRefreshPresenter(
-            app=app,
-            histology_display=displays.histology,
-            slice_display=displays.slice,
-            reference_line_display=displays.reference_lines,
-        )
-        shank_presenter = DesktopShankPresenter(app)
-        shank_presenter.configure(
-            callbacks=cls._shank_render_callbacks(
-                ports.render.shank,
-                displays,
-                histology_refresh_presenter,
-            )
+            path_view=views.path,
         )
         lifecycle_presenter = DesktopLifecyclePresenter(
             app=app,
             displays=displays,
             callbacks=cls._lifecycle_callbacks(ports.lifecycle),
         )
-        reference_line_presenter = DesktopReferenceLinePresenter(
-            app=app,
-            reference_line_display=displays.reference_lines,
-        )
-        displays.reference_lines.set_lines_changed_callback(
-            reference_line_presenter.capture_pending_reference_lines
-        )
-        alignment_edit_actions = DesktopAlignmentEditActions(
-            commands=app.commands,
-            callbacks=DesktopAlignmentEditActionCallbacks(
-                histology_available=ports.alignment_edit_actions.histology_available,
-                capture_pending_reference_lines=(
-                    reference_line_presenter.capture_pending_reference_lines
-                ),
-                tip_position_um=ports.alignment_edit_actions.tip_position_um,
-            ),
-        )
-        shank_selection_actions = DesktopShankSelectionActions(
-            app=app,
-            selection_view=selection_view,
-            reference_line_display=displays.reference_lines,
-        )
-        alignment_selection_actions = DesktopAlignmentSelectionActions(
-            app=app,
-            callbacks=DesktopAlignmentSelectionCallbacks(
-                render_loaded_shank_histology=(
-                    histology_refresh_presenter.render_loaded_shank_histology
-                )
-            ),
-        )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
-            selection_view=selection_view,
+            selection_view=views.selection,
             callbacks=cls._load_data_callbacks(
                 ports.load_data,
                 ports.busy,
                 output_path_presenter,
-                shank_presenter,
+                render_cluster.shank_presenter,
                 lifecycle_presenter,
-                reference_line_presenter,
+                render_cluster.reference_line_presenter,
             ),
         )
         probe_selection_presenter = DesktopProbeSelectionPresenter(
             app=app,
-            selection_view=selection_view,
+            selection_view=views.selection,
             callbacks=cls._probe_selection_callbacks(
                 ports.busy,
                 output_path_presenter,
                 load_data_presenter,
                 lifecycle_presenter,
-                reference_line_presenter,
+                render_cluster.reference_line_presenter,
             ),
         )
         session_selection_presenter = DesktopSessionSelectionPresenter(
             app=app,
-            selection_view=selection_view,
+            selection_view=views.selection,
             callbacks=cls._session_selection_callbacks(
                 lifecycle_presenter,
-                reference_line_presenter,
+                render_cluster.reference_line_presenter,
                 probe_selection_presenter,
             ),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
             commands=app.commands,
-            path_view=path_view,
-            selection_view=selection_view,
+            path_view=views.path,
+            selection_view=views.selection,
             callbacks=cls._mouse_root_callbacks(
                 ports.busy,
                 session_selection_presenter,
@@ -397,14 +348,14 @@ class DesktopWorkbench:
             callbacks=cls._previous_alignment_load_callbacks(
                 ports.previous_alignment_load,
                 folder_dialog,
-                alignment_selection_actions,
+                render_cluster.alignment_selection_actions,
             ),
         )
         interaction_presenter = cls._interaction_presenter(
             ports.interaction,
             app=app,
             displays=displays,
-            reference_line_presenter=reference_line_presenter,
+            reference_line_presenter=render_cluster.reference_line_presenter,
         )
         plot_exporter = cls._plot_exporter(
             ports.export,
@@ -413,8 +364,8 @@ class DesktopWorkbench:
         return cls(
             app=app,
             displays=displays,
-            alignment_presenter=alignment_presenter,
-            shank_presenter=shank_presenter,
+            alignment_presenter=render_cluster.alignment_presenter,
+            shank_presenter=render_cluster.shank_presenter,
             load_data_presenter=load_data_presenter,
             probe_selection_presenter=probe_selection_presenter,
             session_selection_presenter=session_selection_presenter,
@@ -429,61 +380,13 @@ class DesktopWorkbench:
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
             lifecycle_presenter=lifecycle_presenter,
-            reference_line_presenter=reference_line_presenter,
-            histology_refresh_presenter=histology_refresh_presenter,
-            alignment_edit_actions=alignment_edit_actions,
-            shank_selection_actions=shank_selection_actions,
-            alignment_selection_actions=alignment_selection_actions,
-        )
-
-    @staticmethod
-    def _alignment_render_callbacks(
-        ports: DesktopAlignmentRenderPorts,
-        displays: DesktopDisplays,
-    ) -> DesktopAlignmentRenderCallbacks:
-        """Build callbacks for alignment edit rendering."""
-        return DesktopAlignmentRenderCallbacks(
-            restore_lin_fit=ports.restore_lin_fit,
-            clear_reference_lines=displays.reference_lines.clear,
-            capture_depth_plot_y_ranges=ports.capture_depth_plot_y_ranges,
-            restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
-            reattach_reference_lines=displays.reference_lines.reattach,
-            render_histology_alignment=displays.histology.render_alignment_edit,
-            plot_channels=displays.slice.plot_channels,
-            refresh_perpendicular_histology=(
-                displays.slice.refresh_perpendicular_histology
-            ),
-            update_reference_lines_to_alignment=(
-                displays.reference_lines.sync_track_to_feature
-            ),
-            create_reference_lines_for_previous_alignment=(
-                ports.create_reference_lines_for_previous_alignment
-            ),
-            set_default_feature_y_range=ports.set_default_feature_y_range,
-            update_status=ports.update_status,
-        )
-
-    @staticmethod
-    def _shank_render_callbacks(
-        ports: DesktopShankRenderPorts,
-        displays: DesktopDisplays,
-        histology_refresh_presenter: DesktopHistologyRefreshPresenter,
-    ) -> DesktopShankRenderCallbacks:
-        """Build callbacks for shank selection rendering."""
-        return DesktopShankRenderCallbacks(
-            capture_plot_selection=ports.capture_plot_selection,
-            clear_reference_lines=displays.reference_lines.clear,
-            render_alignment_choices=ports.render_alignment_choices,
-            apply_plot_data_state=ports.apply_plot_data_state,
-            raw_image_payloads=ports.raw_image_payloads,
-            render_plot_menus=ports.render_plot_menus,
-            render_ephys_plots=displays.ephys.render_shank_ephys_plots,
-            render_histology_plots=(
-                histology_refresh_presenter.render_loaded_shank_histology
-            ),
-            restore_slice_selection=displays.slice.restore_selection,
-            configure_view=ports.configure_view,
-            offline=ports.offline,
+            reference_line_presenter=render_cluster.reference_line_presenter,
+            histology_refresh_presenter=render_cluster.histology_refresh_presenter,
+            alignment_edit_actions=render_cluster.alignment_edit_actions,
+            shank_selection_actions=render_cluster.shank_selection_actions,
+            alignment_selection_actions=render_cluster.alignment_selection_actions,
+            views=views,
+            render_cluster=render_cluster,
         )
 
     @staticmethod
