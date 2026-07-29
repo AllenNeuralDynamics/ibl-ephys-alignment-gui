@@ -98,6 +98,14 @@ class AlignmentDisplayState:
         """Reset alignment edit settings to defaults."""
         self.edit_settings = AlignmentEditSettings()
 
+    def reset_for_active_stream(self) -> None:
+        """Reset frontend-agnostic display state for a stream transition."""
+        self.reset_region_annotation_source()
+        self.reset_unit_filter()
+        self.reset_visibility_toggles()
+        self.reset_depth_view()
+        self.reset_edit_settings()
+
     def set_unit_filter(self, unit_filter: str) -> str:
         """Set and return the unit subset used for displayed ephys plots."""
         self.unit_filter = unit_filter

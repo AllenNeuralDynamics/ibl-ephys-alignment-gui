@@ -156,15 +156,14 @@ def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
 def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     return DesktopLoadDataCallbacks(
         capture_pending_reference_lines=lambda: calls.append(("capture",)),
-        stash_and_detach_current=lambda: calls.append(("stash",)),
-        teardown_session=lambda: calls.append(("teardown",)),
-        init_session_variables=lambda: calls.append(("init",)),
+        detach_active_stream=lambda: calls.append(("detach",)),
+        prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
         select_shank_for_view=lambda shank_idx, source: (
             calls.append(("select-shank", shank_idx, source)) or shank_idx
         ),
         display_output_directory=lambda path: calls.append(("output", path)),
-        setup_session_view=lambda preserve, shank_idx: calls.append(
-            ("setup", preserve, shank_idx)
+        render_loaded_shank=lambda shank_idx, preserve: calls.append(
+            ("render-shank", shank_idx, preserve)
         ),
         clear_empty_state=lambda: calls.append(("clear-empty",)),
         set_histology_available=lambda available: calls.append(
@@ -225,12 +224,11 @@ def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
     ]
     assert calls == [
         ("capture",),
-        ("stash",),
-        ("init",),
+        ("detach",),
         ("clear-empty",),
         ("populate", ["1/2", "2/2"], 0),
         ("output", Path("/tmp/out")),
-        ("setup", True, 0),
+        ("render-shank", 0, True),
         ("enable-load", True),
     ]
 
@@ -252,8 +250,25 @@ def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
     )
 
     assert commands.cached_calls[0]["shank_idx"] == 1
-    assert ("setup", True, 1) in calls
+    assert ("render-shank", 1, True) in calls
     assert ("enable-load", True) in calls
+
+
+def test_probe_selection_noops_for_already_active_stream_shank() -> None:
+    presenter, commands, _queries, calls = _presenter(
+        plan=LoadDataAlreadyActive(
+            LoadDataTarget(("rec", "stream"), shank_idx=0)
+        ),
+    )
+
+    assert presenter.present_cached_probe_selection(
+        session_name="rec",
+        probe_name="probeA",
+        target_shank=0,
+    )
+
+    assert commands.cached_calls == []
+    assert calls == [("enable-load", True)]
 
 
 def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
@@ -264,10 +279,11 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
 
     assert commands.prepare_calls == [("rec", "stream")]
     assert commands.fresh_calls == [0]
+    assert ("prepare-fresh",) in calls
     assert ("message", "Loading ephys data...") in calls
     assert ("message", "Loading atlas and histology...") in calls
     assert ("message", "Setting up visualization...") in calls
-    assert ("setup", True, 0) in calls
+    assert ("render-shank", 0, True) in calls
     assert ("clear-empty",) in calls
 
 
@@ -283,7 +299,7 @@ def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
     assert presenter.load_heavy_data()
 
     assert ("histology", False) in calls
-    assert ("setup", True, 0) in calls
+    assert ("render-shank", 0, True) in calls
 
 
 def test_present_cached_stream_returns_false_on_command_failure() -> None:
@@ -300,4 +316,4 @@ def test_present_cached_stream_returns_false_on_command_failure() -> None:
     )
 
     assert commands.cached_calls
-    assert calls == [("init",)]
+    assert calls == [("detach",)]

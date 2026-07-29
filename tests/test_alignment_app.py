@@ -21,10 +21,12 @@ from ephys_alignment_gui.alignment_repository import (
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.app import (
+    ActiveStreamDetached,
     AlignmentQueries,
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
     LoadedShankPrepared,
+    StreamCacheEvicted,
     VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.controller import (
@@ -344,10 +346,10 @@ def _mouse_root_with_probe(probe: ProbeInfo | None = None) -> MouseRoot:
     )
 
 
-def _ephys_stream() -> EphysStreamData:
+def _ephys_stream(ephys_collection: str = "stream") -> EphysStreamData:
     return EphysStreamData(
         recording_id="rec",
-        ephys_collection="stream",
+        ephys_collection=ephys_collection,
         ephys_dir=Path("/tmp/ephys"),
         channel_table=ChannelTable(
             local_coordinates=np.array([[0.0, 0.0], [250.0, 0.0]]),
@@ -528,6 +530,7 @@ def test_commands_load_fresh_ephys_data_caches_runtime_and_marks_loaded() -> Non
 def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> None:
     workspace = AlignmentWorkspace()
     workspace.document.mark_data_loaded(True)
+    workspace.display_state.set_unit_filter("KS good")
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
         workspace.plot_data_factory,
@@ -543,6 +546,50 @@ def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> 
     assert workspace.runtime.current_stream_key is None
     assert ("rec", "stream") not in workspace.runtime.stream_cache
     assert stream_runtime.stream_key == ("rec", "stream")
+    assert workspace.display_state.unit_filter == "all"
+
+
+def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.display_state.set_unit_filter("KS good")
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream(),
+        workspace.plot_data_factory,
+        shank_idx=1,
+    )
+
+    result = workspace.app.commands.detach_active_stream()
+
+    assert isinstance(result, ActiveStreamDetached)
+    assert result.cached_stream_count == 1
+    assert workspace.runtime.active_stream_runtime is None
+    assert workspace.runtime.current_stream_key is None
+    assert workspace.runtime.stream_cache[("rec", "stream")] is stream_runtime
+    assert workspace.display_state.unit_filter == "all"
+
+
+def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.display_state.set_unit_filter("KS good")
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream("streamA"),
+        workspace.plot_data_factory,
+        shank_idx=0,
+    )
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream("streamB"),
+        workspace.plot_data_factory,
+        shank_idx=0,
+    )
+
+    result = workspace.app.commands.evict_stream_cache()
+
+    assert isinstance(result, StreamCacheEvicted)
+    assert result.evicted_stream_count == 2
+    assert workspace.runtime.stream_cache == {}
+    assert workspace.runtime.active_stream_runtime is None
+    assert workspace.runtime.current_stream_key is None
+    assert workspace.display_state.unit_filter == "all"
 
 
 def test_commands_load_fresh_ephys_data_failure_does_not_mark_loaded() -> None:

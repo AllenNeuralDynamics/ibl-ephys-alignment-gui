@@ -1,4 +1,3 @@
-import gc
 import logging
 import os
 import platform
@@ -197,22 +196,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Padding to add to figures to make sure always same size viewbox
         self.pad = 0.05
-        self.init_session_variables()
+        self._initialize_startup_stream_state()
 
         # Guide the user before any data is loaded / after clearing.
         if hasattr(self, "fig_img"):
             self._show_empty_state()
 
-    def init_session_variables(self) -> None:
-        """Initialise variables that need to be reset for each session."""
+    def _initialize_startup_stream_state(self) -> None:
+        """Initialise startup state for stream-dependent app and desktop data."""
         self.popup_manager.close_all()
+        self._reset_raw_image_payloads()
+        self.app.commands.detach_active_stream()
+
+    def _reset_raw_image_payloads(self) -> None:
+        """Reset desktop-owned raw image payload cache."""
         self.raw_image_payloads: dict[str, Any] = {}
-        self.runtime.clear_active_stream()
-        self.display_state.reset_region_annotation_source()
-        self.display_state.reset_unit_filter()
-        self.display_state.reset_visibility_toggles()
-        self.display_state.reset_depth_view()
-        self.display_state.reset_edit_settings()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -524,20 +522,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.render_active_fit()
 
     ### --------- interaction functions --------- ###
-    def _teardown_session(self) -> None:
-        """Break reference cycles from the previous active stream view."""
-        self._clear_active_stream_presentation()
-        self.runtime.clear_active_stream()
-        gc.collect()
-
-    def _clear_active_stream_presentation(self) -> None:
-        """Clear desktop-owned plot and popup items for the active stream."""
-        self.displays.reference_lines.clear()
-        self.popup_manager.close_all()
-        self.displays.ephys.clear()
-        self.displays.slice.clear()
-        self.displays.histology.clear()
-
     def _active_shank_idx(self) -> int:
         """Return the document-owned active shank index."""
         return self.app.queries.active_shank_selection().shank_idx
@@ -615,23 +599,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             pass
         vb.removeItem(item)
         self._empty_state_item = None
-
-    # -- Per-stream runtime cache --------------------------------------
-
-    def _stash_and_detach_current(self) -> None:
-        """Tear down the displayed view session, keeping stream runtime cached."""
-        self.runtime.clear_active_stream()
-        self._clear_active_stream_presentation()
-
-    def _evict_stream_cache(self) -> None:
-        """Tear down the active view session and clear cached stream runtimes.
-
-        Called when the recording session changes — the cache belongs to one
-        recording session, so this bounds memory to a single session's streams.
-        """
-        self._clear_active_stream_presentation()
-        self.runtime.clear_stream_cache()
-        gc.collect()
 
     def load_heavy_data(self) -> bool:
         """Load all heavy data - ephys, atlas, histology. Called once per session."""
@@ -753,21 +720,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 self.displays.reference_lines.create_previous_feature_lines(
                     np.asarray(feature_prev)[1:-1] * 1e6
                 )
-
-    def setup_session_view(
-        self,
-        preserve_plot_selection: bool | None = None,
-        *,
-        shank_idx: int | None = None,
-    ) -> None:
-        """Setup/refresh view for current session. Used by both initial load and session switching."""
-        logger.info("Setting up session view")
-        if shank_idx is None:
-            shank_idx = self.app.queries.active_shank_selection().shank_idx
-        self.desktop_workbench.render_loaded_shank(
-            shank_idx=shank_idx,
-            preserve_plot_selection=preserve_plot_selection,
-        )
 
     def _capture_shank_plot_selection(
         self,

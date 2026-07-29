@@ -28,12 +28,11 @@ class DesktopLoadDataCallbacks:
     """Desktop callbacks used by the load-data presenter."""
 
     capture_pending_reference_lines: Callable[[], None]
-    stash_and_detach_current: Callable[[], None]
-    teardown_session: Callable[[], None]
-    init_session_variables: Callable[[], None]
+    detach_active_stream: Callable[[], None]
+    prepare_for_fresh_stream_load: Callable[[], None]
     select_shank_for_view: Callable[[int, str], int | None]
     display_output_directory: Callable[[Path | None], None]
-    setup_session_view: Callable[[bool | None, int], None]
+    render_loaded_shank: Callable[[int, bool | None], None]
     clear_empty_state: Callable[[], None]
     set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
@@ -69,7 +68,6 @@ class DesktopLoadDataPresenter:
 
         if isinstance(load_plan, LoadDataCachedStreamAvailable):
             callbacks.capture_pending_reference_lines()
-            callbacks.stash_and_detach_current()
             cached_stream_key = load_plan.target.stream_key
             assert cached_stream_key is not None
             if self.present_cached_stream(
@@ -90,8 +88,7 @@ class DesktopLoadDataPresenter:
             logger.info("=== Starting heavy data load ===")
             callbacks.capture_pending_reference_lines()
             prepared = self.app.commands.prepare_fresh_ephys_load(stream_key)
-            callbacks.teardown_session()
-            callbacks.init_session_variables()
+            callbacks.prepare_for_fresh_stream_load()
 
             selected_shank = callbacks.select_shank_for_view(
                 target_shank,
@@ -124,9 +121,9 @@ class DesktopLoadDataPresenter:
                 callbacks.set_histology_available(False)
 
             ctx.update_message("Setting up visualization...")
-            callbacks.setup_session_view(
-                prepared.preserve_plot_selection,
+            callbacks.render_loaded_shank(
                 target_shank,
+                prepared.preserve_plot_selection,
             )
 
             callbacks.clear_empty_state()
@@ -143,6 +140,9 @@ class DesktopLoadDataPresenter:
         """Present a cached probe-selection change after caller teardown."""
         stream_key = self.app.queries.stream_key_for_selection(session_name, probe_name)
         load_plan = self.app.queries.plan_load_data(stream_key, target_shank)
+        if isinstance(load_plan, LoadDataAlreadyActive):
+            self.selection_view.set_load_data_enabled(True)
+            return True
         if not isinstance(load_plan, LoadDataCachedStreamAvailable):
             return False
 
@@ -168,7 +168,7 @@ class DesktopLoadDataPresenter:
     ) -> bool:
         """Display an already-loaded stream from the cache without heavy IO."""
         callbacks = self.callbacks
-        callbacks.init_session_variables()
+        callbacks.detach_active_stream()
         result = self.app.commands.activate_cached_ephys_data(
             recording_id=session_name,
             probe_name=probe_name,
@@ -190,6 +190,6 @@ class DesktopLoadDataPresenter:
             )
         callbacks.display_output_directory(result.probe.output_directory)
 
-        callbacks.setup_session_view(True, target_shank)
+        callbacks.render_loaded_shank(target_shank, True)
         logger.info("Activated cached stream %s", stream_key)
         return True

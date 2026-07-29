@@ -122,6 +122,20 @@ class CachedEphysDataActivated:
 
 
 @dataclass(frozen=True)
+class ActiveStreamDetached:
+    """The active stream was detached while cached runtimes were preserved."""
+
+    cached_stream_count: int
+
+
+@dataclass(frozen=True)
+class StreamCacheEvicted:
+    """Cached stream runtimes were evicted for a recording/session transition."""
+
+    evicted_stream_count: int
+
+
+@dataclass(frozen=True)
 class LoadedShankPrepared:
     """Runtime state for one loaded shank is ready for rendering."""
 
@@ -288,7 +302,23 @@ class AlignmentCommands:
         """Mark data unloaded and discard stale active/cache state."""
         prepared = self._controller.prepare_load_data()
         self._runtime.prepare_fresh_load(stream_key)
+        self._display_state.reset_for_active_stream()
         return prepared
+
+    def detach_active_stream(self) -> ActiveStreamDetached:
+        """Detach the active stream while preserving cached runtimes."""
+        self._runtime.clear_active_stream()
+        self._display_state.reset_for_active_stream()
+        return ActiveStreamDetached(
+            cached_stream_count=len(self._runtime.stream_cache),
+        )
+
+    def evict_stream_cache(self) -> StreamCacheEvicted:
+        """Evict cached stream runtimes for a recording/session transition."""
+        evicted_stream_count = len(self._runtime.stream_cache)
+        self._runtime.clear_stream_cache()
+        self._display_state.reset_for_active_stream()
+        return StreamCacheEvicted(evicted_stream_count=evicted_stream_count)
 
     def load_fresh_ephys_data(
         self,

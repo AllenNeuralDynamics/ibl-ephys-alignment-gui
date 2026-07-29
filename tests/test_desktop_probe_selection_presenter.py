@@ -101,7 +101,7 @@ def _presenter(
             mouse_root_loaded=lambda: mouse_root_loaded,
             active_shank_idx=lambda: active_shank_idx,
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            stash_and_detach_current=lambda: calls.append(("stash",)),
+            detach_active_stream=lambda: calls.append(("detach",)),
             present_cached_probe_selection=lambda session, probe, shank: (
                 calls.append(("cached", session, probe, shank)) or cached
             ),
@@ -111,7 +111,6 @@ def _presenter(
                 *args,
                 **kwargs,
             ),
-            init_session_variables=lambda: calls.append(("init",)),
             select_shank_for_view=lambda shank_idx, source: (
                 calls.append(("select-shank", shank_idx, source)) or selected_shank
             ),
@@ -147,7 +146,6 @@ def test_probe_selected_presents_cached_probe_without_channel_info_load() -> Non
     assert commands.calls == []
     assert calls == [
         ("capture",),
-        ("stash",),
         ("cached", "rec", "probeA", 1),
     ]
 
@@ -158,6 +156,7 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
     assert presenter.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
+    assert ("detach",) in calls
     assert ("empty",) in calls
     assert (
         "busy",
@@ -165,7 +164,6 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
         {"disable_widgets": ["probe", "session"]},
     ) in calls
     assert ("populate", ["1/2", "2/2"]) in calls
-    assert ("init",) in calls
     assert ("select-shank", 0, "probe-selected") in calls
     assert ("output", Path("/tmp/out")) in calls
     assert calls[-1] == ("enable", True)
@@ -180,7 +178,7 @@ def test_probe_selected_failure_disables_load_button() -> None:
 
     assert commands.calls == [("rec", "probeA")]
     assert ("enable", False) in calls
-    assert ("init",) not in calls
+    assert ("detach",) in calls
 
 
 def test_probe_selected_shank_selection_failure_disables_load_button() -> None:

@@ -22,11 +22,10 @@ class DesktopProbeSelectionCallbacks:
     mouse_root_loaded: Callable[[], bool]
     active_shank_idx: Callable[[], int]
     capture_pending_reference_lines: Callable[[], None]
-    stash_and_detach_current: Callable[[], None]
+    detach_active_stream: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
     show_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
-    init_session_variables: Callable[[], None]
     select_shank_for_view: Callable[[int, str], int | None]
     display_output_directory: Callable[[Path | None], None]
 
@@ -51,7 +50,6 @@ class DesktopProbeSelectionPresenter:
             return False
 
         callbacks.capture_pending_reference_lines()
-        callbacks.stash_and_detach_current()
 
         if callbacks.present_cached_probe_selection(
             session_name,
@@ -60,6 +58,7 @@ class DesktopProbeSelectionPresenter:
         ):
             return True
 
+        callbacks.detach_active_stream()
         return self._prepare_probe_for_fresh_load(session_name, probe_name)
 
     def _prepare_probe_for_fresh_load(
@@ -86,7 +85,6 @@ class DesktopProbeSelectionPresenter:
                 self.selection_view.populate_probe_shanks(result.shanks)
                 logger.info("Found %s shanks in data.", result.n_shanks)
 
-            callbacks.init_session_variables()
             if callbacks.select_shank_for_view(0, "probe-selected") is None:
                 self.selection_view.set_load_data_enabled(False)
                 return False

@@ -11,6 +11,7 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
+    DesktopLifecyclePorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
     DesktopSaveWorkflowPorts,
@@ -362,6 +363,7 @@ def _workbench(
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
     interaction: Any | None = None,
+    lifecycle: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
@@ -394,6 +396,7 @@ def _workbench(
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
+        lifecycle_presenter=lifecycle or object(),
     )
 
 
@@ -565,16 +568,10 @@ def _render_ports() -> DesktopRenderPorts:
 def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
     return DesktopSelectionWorkflowCallbacks(
         capture_pending_reference_lines=lambda: None,
-        stash_and_detach_current=lambda: None,
-        teardown_session=lambda: None,
-        init_session_variables=lambda: None,
         select_shank_for_view=lambda _shank_idx, _source: 0,
-        setup_session_view=lambda _preserve, _shank_idx: None,
         clear_empty_state=lambda: None,
         set_histology_available=lambda _available: None,
         mouse_root_loaded=lambda: True,
-        show_empty_state=lambda: None,
-        evict_stream_cache=lambda: None,
         clear_histology_context=lambda: None,
         select_first_session=lambda: None,
         select_first_probe=lambda: None,
@@ -590,6 +587,12 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
     return DesktopWorkbenchPorts(
         render=_render_ports(),
         selection=_selection_workflow_callbacks(),
+        lifecycle=DesktopLifecyclePorts(
+            close_popups=lambda: None,
+            reset_raw_image_payloads=lambda: None,
+            show_empty_state=lambda: None,
+            collect_garbage=lambda: None,
+        ),
         save_workflow=DesktopSaveWorkflowPorts(
             use_docdb=lambda: False,
             render_alignment_choices=lambda _choices: None,

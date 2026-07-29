@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 from typing import Any
 
 from PyQt5 import QtWidgets
@@ -18,6 +19,7 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
+    DesktopLifecyclePorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
     DesktopSaveWorkflowPorts,
@@ -133,26 +135,23 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
     return DesktopWorkbenchPorts(
         selection=DesktopSelectionWorkflowCallbacks(
             capture_pending_reference_lines=window._capture_pending_reference_lines,
-            stash_and_detach_current=window._stash_and_detach_current,
-            teardown_session=window._teardown_session,
-            init_session_variables=window.init_session_variables,
             select_shank_for_view=lambda shank_idx, source: (
                 window._select_shank_for_view(shank_idx, source=source)
-            ),
-            setup_session_view=lambda preserve, shank_idx: window.setup_session_view(
-                preserve_plot_selection=preserve,
-                shank_idx=shank_idx,
             ),
             clear_empty_state=window._clear_empty_state,
             set_histology_available=window._set_histology_available,
             mouse_root_loaded=lambda: window.data_context.mouse_root is not None,
             active_shank_idx=window._active_shank_idx,
-            show_empty_state=window._show_empty_state,
-            evict_stream_cache=window._evict_stream_cache,
             clear_histology_context=window.histology_context.clear,
             select_first_session=lambda: window.on_session_combobox_activated(0),
             select_first_probe=lambda: window.on_probe_combobox_activated(0),
             busy_context=busy_context,
+        ),
+        lifecycle=DesktopLifecyclePorts(
+            close_popups=window.popup_manager.close_all,
+            reset_raw_image_payloads=window._reset_raw_image_payloads,
+            show_empty_state=window._show_empty_state,
+            collect_garbage=gc.collect,
         ),
         render=DesktopRenderPorts(
             alignment=DesktopAlignmentRenderPorts(

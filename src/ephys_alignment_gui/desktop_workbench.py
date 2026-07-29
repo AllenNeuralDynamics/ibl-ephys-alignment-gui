@@ -25,6 +25,10 @@ from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionPresenter,
     DesktopInteractionWidgets,
 )
+from ephys_alignment_gui.desktop_lifecycle_presenter import (
+    DesktopLifecycleCallbacks,
+    DesktopLifecyclePresenter,
+)
 from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -173,11 +177,22 @@ class DesktopInteractionPorts:
 
 
 @dataclass(frozen=True)
+class DesktopLifecyclePorts:
+    """Desktop-only operations for stream/session lifecycle presentation."""
+
+    close_popups: Callable[[], None]
+    reset_raw_image_payloads: Callable[[], None]
+    show_empty_state: Callable[[], None]
+    collect_garbage: Callable[[], None]
+
+
+@dataclass(frozen=True)
 class DesktopWorkbenchPorts:
     """MainWindow ports consumed by Workbench presenter composition."""
 
     render: DesktopRenderPorts
     selection: DesktopSelectionWorkflowCallbacks
+    lifecycle: DesktopLifecyclePorts
     save_workflow: DesktopSaveWorkflowPorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
     export: DesktopExportPorts
@@ -189,18 +204,12 @@ class DesktopSelectionWorkflowCallbacks:
     """MainWindow bridge callbacks for selection and load presenters."""
 
     capture_pending_reference_lines: Callable[[], None]
-    stash_and_detach_current: Callable[[], None]
-    teardown_session: Callable[[], None]
-    init_session_variables: Callable[[], None]
     select_shank_for_view: Callable[[int, str], int | None]
-    setup_session_view: Callable[[bool | None, int], None]
     clear_empty_state: Callable[[], None]
     set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
     mouse_root_loaded: Callable[[], bool]
     active_shank_idx: Callable[[], int]
-    show_empty_state: Callable[[], None]
-    evict_stream_cache: Callable[[], None]
     clear_histology_context: Callable[[], None]
     select_first_session: Callable[[], None]
     select_first_probe: Callable[[], None]
@@ -227,6 +236,7 @@ class DesktopWorkbench:
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
+    lifecycle_presenter: DesktopLifecyclePresenter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -260,12 +270,19 @@ class DesktopWorkbench:
                 displays,
             )
         )
+        lifecycle_presenter = DesktopLifecyclePresenter(
+            app=app,
+            displays=displays,
+            callbacks=cls._lifecycle_callbacks(ports.lifecycle),
+        )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
             selection_view=selection_view,
             callbacks=cls._load_data_callbacks(
                 ports.selection,
                 output_path_presenter,
+                shank_presenter,
+                lifecycle_presenter,
             ),
         )
         probe_selection_presenter = DesktopProbeSelectionPresenter(
@@ -275,12 +292,16 @@ class DesktopWorkbench:
                 ports.selection,
                 output_path_presenter,
                 load_data_presenter,
+                lifecycle_presenter,
             ),
         )
         session_selection_presenter = DesktopSessionSelectionPresenter(
             commands=app.commands,
             selection_view=selection_view,
-            callbacks=cls._session_selection_callbacks(ports.selection),
+            callbacks=cls._session_selection_callbacks(
+                ports.selection,
+                lifecycle_presenter,
+            ),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
             commands=app.commands,
@@ -355,6 +376,7 @@ class DesktopWorkbench:
             previous_alignment_load_presenter=previous_alignment_load_presenter,
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
+            lifecycle_presenter=lifecycle_presenter,
         )
 
     @staticmethod
@@ -513,6 +535,18 @@ class DesktopWorkbench:
         )
 
     @staticmethod
+    def _lifecycle_callbacks(
+        ports: DesktopLifecyclePorts,
+    ) -> DesktopLifecycleCallbacks:
+        """Build callbacks for desktop lifecycle presentation."""
+        return DesktopLifecycleCallbacks(
+            close_popups=ports.close_popups,
+            reset_raw_image_payloads=ports.reset_raw_image_payloads,
+            show_empty_state=ports.show_empty_state,
+            collect_garbage=ports.collect_garbage,
+        )
+
+    @staticmethod
     def _ephys_export_callbacks(
         ports: DesktopExportPorts,
         displays: DesktopDisplays,
@@ -542,16 +576,24 @@ class DesktopWorkbench:
     def _load_data_callbacks(
         callbacks: DesktopSelectionWorkflowCallbacks,
         output_path_presenter: DesktopOutputPathPresenter,
+        shank_presenter: DesktopShankPresenter,
+        lifecycle_presenter: DesktopLifecyclePresenter,
     ) -> DesktopLoadDataCallbacks:
         """Build callbacks for cached/fresh data loading."""
         return DesktopLoadDataCallbacks(
             capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
-            stash_and_detach_current=callbacks.stash_and_detach_current,
-            teardown_session=callbacks.teardown_session,
-            init_session_variables=callbacks.init_session_variables,
+            detach_active_stream=lifecycle_presenter.detach_active_stream,
+            prepare_for_fresh_stream_load=(
+                lifecycle_presenter.prepare_for_fresh_stream_load
+            ),
             select_shank_for_view=callbacks.select_shank_for_view,
             display_output_directory=output_path_presenter.display_output_directory,
-            setup_session_view=callbacks.setup_session_view,
+            render_loaded_shank=lambda shank_idx, preserve: (
+                shank_presenter.render_loaded_shank(
+                    shank_idx=shank_idx,
+                    preserve_plot_selection=preserve,
+                )
+            ),
             clear_empty_state=callbacks.clear_empty_state,
             set_histology_available=callbacks.set_histology_available,
             busy_context=callbacks.busy_context,
@@ -562,13 +604,14 @@ class DesktopWorkbench:
         callbacks: DesktopSelectionWorkflowCallbacks,
         output_path_presenter: DesktopOutputPathPresenter,
         load_data_presenter: DesktopLoadDataPresenter,
+        lifecycle_presenter: DesktopLifecyclePresenter,
     ) -> DesktopProbeSelectionCallbacks:
         """Build callbacks for probe selection."""
         return DesktopProbeSelectionCallbacks(
             mouse_root_loaded=callbacks.mouse_root_loaded,
             active_shank_idx=callbacks.active_shank_idx,
             capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
-            stash_and_detach_current=callbacks.stash_and_detach_current,
+            detach_active_stream=lifecycle_presenter.detach_active_stream,
             present_cached_probe_selection=(
                 lambda session, probe, shank: (
                     load_data_presenter.present_cached_probe_selection(
@@ -578,9 +621,8 @@ class DesktopWorkbench:
                     )
                 )
             ),
-            show_empty_state=callbacks.show_empty_state,
+            show_empty_state=lifecycle_presenter.show_empty_state,
             busy_context=callbacks.busy_context,
-            init_session_variables=callbacks.init_session_variables,
             select_shank_for_view=callbacks.select_shank_for_view,
             display_output_directory=output_path_presenter.display_output_directory,
         )
@@ -588,13 +630,14 @@ class DesktopWorkbench:
     @staticmethod
     def _session_selection_callbacks(
         callbacks: DesktopSelectionWorkflowCallbacks,
+        lifecycle_presenter: DesktopLifecyclePresenter,
     ) -> DesktopSessionSelectionCallbacks:
         """Build callbacks for session selection."""
         return DesktopSessionSelectionCallbacks(
             mouse_root_loaded=callbacks.mouse_root_loaded,
             capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
-            evict_stream_cache=callbacks.evict_stream_cache,
-            show_empty_state=callbacks.show_empty_state,
+            evict_stream_cache=lifecycle_presenter.evict_stream_cache,
+            show_empty_state=lifecycle_presenter.show_empty_state,
             select_first_probe=callbacks.select_first_probe,
         )
 
