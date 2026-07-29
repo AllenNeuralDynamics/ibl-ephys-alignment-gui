@@ -33,6 +33,7 @@ from ephys_alignment_gui.app import (
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
+    AlignmentEditNoop,
     Failed,
     LoadDataPrepared,
     MouseRootLoaded,
@@ -283,6 +284,31 @@ class FakeFitAligner:
     def feature2track_lin(self, depths, feature, track):
         self.calls.append((depths, feature, track))
         return depths + 0.001
+
+
+class FakeEditEphysAlignment:
+    feature_init = np.array([1.0, 3.0])
+    track_init = np.array([2.0, 4.0])
+
+    def __init__(self) -> None:
+        self.feature2track_calls: list[tuple[Any, Any, Any]] = []
+        self.uniform_calls: list[tuple[Any, Any]] = []
+        self.linear_calls: list[tuple[Any, Any, Any]] = []
+
+    def feature2track(self, depths_track, feature_ref, track_ref):
+        self.feature2track_calls.append((depths_track, feature_ref, track_ref))
+        return np.asarray(depths_track, dtype=float) + 0.1
+
+    def adjust_extremes_uniform(self, feature, track):
+        self.uniform_calls.append((feature, track))
+        return np.asarray(track, dtype=float) + 0.01
+
+    def adjust_extremes_linear(self, feature, track, extend_feature=1):
+        self.linear_calls.append((feature, track, extend_feature))
+        return (
+            np.asarray(feature, dtype=float) + extend_feature,
+            np.asarray(track, dtype=float) + extend_feature,
+        )
 
 
 class FakeProbeDataWorkflow:
@@ -994,6 +1020,133 @@ def test_commands_offset_alignment_defaults_to_active_shank() -> None:
     assert events[0].active_key == active_key
     assert events[0].active_alignment == result.alignment
     assert events[0].lin_fit is False
+
+
+def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.004]),
+        np.array([0.010, 0.014]),
+        lin_fit=True,
+    )
+    workspace.document.active_set_pending_reference_lines([1000.0], [11000.0])
+    workspace.display_state.edit_settings.set_lin_fit(False)
+    workspace.display_state.edit_settings.extend_feature = 7
+    ephysalign = FakeEditEphysAlignment()
+    shank_runtime = SimpleNamespace(
+        shank_idx=1,
+        ephysalign=ephysalign,
+        chn_depths=np.array([0.0, 4000.0]),
+    )
+    workspace.runtime.active_stream_runtime = SimpleNamespace(
+        shank_runtime_by_idx={1: shank_runtime}
+    )
+
+    result = workspace.app.commands.fit_active_alignment_from_pending_reference_lines()
+
+    assert isinstance(result, AlignmentEditApplied)
+    assert result.lin_fit is False
+    assert len(ephysalign.feature2track_calls) == 1
+    depths_track, previous_feature, previous_track = ephysalign.feature2track_calls[0]
+    np.testing.assert_allclose(depths_track, [0.010, 0.011, 0.014])
+    np.testing.assert_allclose(previous_feature, [0.0, 0.004])
+    np.testing.assert_allclose(previous_track, [0.010, 0.014])
+    np.testing.assert_allclose(result.alignment.feature, [0.0, 0.001, 0.004])
+    assert ephysalign.linear_calls == []
+
+
+def test_commands_fit_active_alignment_reports_missing_runtime() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+
+    result = workspace.app.commands.fit_active_alignment_from_pending_reference_lines()
+
+    assert isinstance(result, Failed)
+    assert result.message == "Cannot fit alignment: active shank runtime is not loaded"
+
+
+def test_commands_offset_active_alignment_uses_display_settings() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+        lin_fit=True,
+    )
+    workspace.display_state.depth_view.probe_tip_um = 20.0
+    workspace.display_state.edit_settings.set_lin_fit(False)
+
+    result = workspace.app.commands.offset_active_alignment_from_tip(
+        tip_position_um=120.0,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    assert result.lin_fit is False
+    np.testing.assert_allclose(result.alignment.track, [10.0001, 14.0001])
+
+
+def test_commands_nudge_active_alignment_respects_channel_depth_bounds() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.004]),
+        np.array([0.0, 0.004]),
+    )
+    workspace.runtime.active_stream_runtime = SimpleNamespace(
+        shank_runtime_by_idx={
+            1: SimpleNamespace(
+                shank_idx=1,
+                chn_depths=np.array([0.0, 3840.0]),
+            )
+        }
+    )
+
+    applied = workspace.app.commands.nudge_active_alignment_from_tip(
+        tip_position_um=0.0,
+        track_shift_m=-50 / 1e6,
+    )
+    blocked = workspace.app.commands.nudge_active_alignment_from_tip(
+        tip_position_um=0.0,
+        track_shift_m=-500 / 1e6,
+    )
+
+    assert isinstance(applied, AlignmentEditApplied)
+    np.testing.assert_allclose(applied.alignment.track, [-50e-6, 0.00395])
+    assert isinstance(blocked, AlignmentEditNoop)
+
+
+def test_commands_reset_active_alignment_uses_runtime_and_display_settings() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 4.0]),
+        np.array([10.0, 14.0]),
+    )
+    workspace.document.active_set_pending_reference_lines([10.0], [11.0])
+    workspace.display_state.edit_settings.set_lin_fit(False)
+    workspace.runtime.active_stream_runtime = SimpleNamespace(
+        shank_runtime_by_idx={
+            1: SimpleNamespace(
+                shank_idx=1,
+                ephysalign=SimpleNamespace(
+                    feature_init=np.array([1.0, 3.0]),
+                    track_init=np.array([2.0, 4.0]),
+                ),
+            )
+        }
+    )
+
+    result = workspace.app.commands.reset_active_alignment_to_initial()
+
+    assert isinstance(result, AlignmentEditApplied)
+    assert result.lin_fit is False
+    assert state.pending_reference_lines is None
+    np.testing.assert_allclose(result.alignment.feature, [1.0, 3.0])
+    np.testing.assert_allclose(result.alignment.track, [2.0, 4.0])
 
 
 def test_commands_previous_next_alignment_default_to_active_shank() -> None:

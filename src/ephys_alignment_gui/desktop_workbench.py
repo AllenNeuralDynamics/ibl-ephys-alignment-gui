@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.desktop_alignment_edit_actions import (
+    DesktopAlignmentEditActionCallbacks,
+    DesktopAlignmentEditActions,
+)
 from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
@@ -94,6 +98,14 @@ class DesktopAlignmentRenderPorts:
     create_reference_lines_for_previous_alignment: Callable[[], None]
     set_default_feature_y_range: Callable[[], None]
     update_status: Callable[[], None]
+
+
+@dataclass(frozen=True)
+class DesktopAlignmentEditActionPorts:
+    """Desktop state needed to start alignment edit commands."""
+
+    histology_available: Callable[[], bool]
+    tip_position_um: Callable[[], float | None]
 
 
 @dataclass(frozen=True)
@@ -195,6 +207,7 @@ class DesktopWorkbenchPorts:
     """MainWindow ports consumed by Workbench presenter composition."""
 
     render: DesktopRenderPorts
+    alignment_edit_actions: DesktopAlignmentEditActionPorts
     selection: DesktopSelectionWorkflowCallbacks
     lifecycle: DesktopLifecyclePorts
     save_workflow: DesktopSaveWorkflowPorts
@@ -242,6 +255,7 @@ class DesktopWorkbench:
     lifecycle_presenter: DesktopLifecyclePresenter
     reference_line_presenter: DesktopReferenceLinePresenter
     histology_refresh_presenter: DesktopHistologyRefreshPresenter
+    alignment_edit_actions: DesktopAlignmentEditActions
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -293,6 +307,16 @@ class DesktopWorkbench:
         )
         displays.reference_lines.set_lines_changed_callback(
             reference_line_presenter.capture_pending_reference_lines
+        )
+        alignment_edit_actions = DesktopAlignmentEditActions(
+            commands=app.commands,
+            callbacks=DesktopAlignmentEditActionCallbacks(
+                histology_available=ports.alignment_edit_actions.histology_available,
+                capture_pending_reference_lines=(
+                    reference_line_presenter.capture_pending_reference_lines
+                ),
+                tip_position_um=ports.alignment_edit_actions.tip_position_um,
+            ),
         )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
@@ -402,6 +426,7 @@ class DesktopWorkbench:
             lifecycle_presenter=lifecycle_presenter,
             reference_line_presenter=reference_line_presenter,
             histology_refresh_presenter=histology_refresh_presenter,
+            alignment_edit_actions=alignment_edit_actions,
         )
 
     @staticmethod
@@ -779,6 +804,36 @@ class DesktopWorkbench:
     def load_data_button_pressed(self) -> bool:
         """Run desktop load workflow policy and load data when allowed."""
         return self.load_workflow_presenter.load_data_button_pressed()
+
+    def fit_button_pressed(self) -> bool:
+        """Fit the active alignment from current desktop reference lines."""
+        return self.alignment_edit_actions.fit_button_pressed()
+
+    def offset_button_pressed(self, *, track_shift_m: float = 0.0) -> bool:
+        """Offset the active alignment from the desktop probe-tip line."""
+        return self.alignment_edit_actions.offset_button_pressed(
+            track_shift_m=track_shift_m
+        )
+
+    def movedown_button_pressed(self) -> bool:
+        """Nudge the active alignment down by one fixed step."""
+        return self.alignment_edit_actions.movedown_button_pressed()
+
+    def moveup_button_pressed(self) -> bool:
+        """Nudge the active alignment up by one fixed step."""
+        return self.alignment_edit_actions.moveup_button_pressed()
+
+    def next_button_pressed(self) -> bool:
+        """Move the active alignment edit cursor forward."""
+        return self.alignment_edit_actions.next_button_pressed()
+
+    def prev_button_pressed(self) -> bool:
+        """Move the active alignment edit cursor backward."""
+        return self.alignment_edit_actions.prev_button_pressed()
+
+    def reset_button_pressed(self) -> bool:
+        """Reset the active alignment to initialized geometry."""
+        return self.alignment_edit_actions.reset_button_pressed()
 
     def ensure_output_directory_for_save(self, requirement: Any | None = None) -> bool:
         """Require a save location before writing alignment outputs."""

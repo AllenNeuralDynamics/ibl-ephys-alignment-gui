@@ -8,6 +8,7 @@ from typing import Any
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
+    DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
@@ -106,6 +107,39 @@ class FakeLoadDataPresenter:
 
     def load_heavy_data(self) -> bool:
         self.load_count += 1
+        return True
+
+
+class FakeAlignmentEditActions:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def fit_button_pressed(self) -> bool:
+        self.calls.append("fit")
+        return True
+
+    def offset_button_pressed(self, *, track_shift_m: float = 0.0) -> bool:
+        self.calls.append(("offset", track_shift_m))
+        return True
+
+    def movedown_button_pressed(self) -> bool:
+        self.calls.append("movedown")
+        return True
+
+    def moveup_button_pressed(self) -> bool:
+        self.calls.append("moveup")
+        return True
+
+    def next_button_pressed(self) -> bool:
+        self.calls.append("next")
+        return True
+
+    def prev_button_pressed(self) -> bool:
+        self.calls.append("prev")
+        return True
+
+    def reset_button_pressed(self) -> bool:
+        self.calls.append("reset")
         return True
 
 
@@ -378,6 +412,7 @@ def _workbench(
     lifecycle: Any | None = None,
     reference_line_presenter: Any | None = None,
     histology_refresh_presenter: Any | None = None,
+    alignment_edit_actions: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
@@ -413,6 +448,7 @@ def _workbench(
         lifecycle_presenter=lifecycle or object(),
         reference_line_presenter=reference_line_presenter or object(),
         histology_refresh_presenter=histology_refresh_presenter or object(),
+        alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
     )
 
 
@@ -474,6 +510,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     plot_exporter = FakePlotExporter()
     interaction = FakeInteractionPresenter()
+    alignment_edit_actions = FakeAlignmentEditActions()
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
@@ -491,9 +528,17 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         previous_alignment_load=previous_alignment_load,
         plot_exporter=plot_exporter,
         interaction=interaction,
+        alignment_edit_actions=alignment_edit_actions,
     )
 
     assert workbench.load_heavy_data()
+    assert workbench.fit_button_pressed()
+    assert workbench.offset_button_pressed(track_shift_m=0.5)
+    assert workbench.movedown_button_pressed()
+    assert workbench.moveup_button_pressed()
+    assert workbench.next_button_pressed()
+    assert workbench.prev_button_pressed()
+    assert workbench.reset_button_pressed()
     assert workbench.set_mouse_root("root")
     assert workbench.mouse_root_edited()
     assert workbench.session_selected()
@@ -542,6 +587,15 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save_workflow.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
+    assert alignment_edit_actions.calls == [
+        "fit",
+        ("offset", 0.5),
+        "movedown",
+        "moveup",
+        "next",
+        "prev",
+        "reset",
+    ]
     assert interaction.calls == [
         "notes",
         ("popup-closed", "popup"),
@@ -600,6 +654,10 @@ def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
 def _workbench_ports() -> DesktopWorkbenchPorts:
     return DesktopWorkbenchPorts(
         render=_render_ports(),
+        alignment_edit_actions=DesktopAlignmentEditActionPorts(
+            histology_available=lambda: True,
+            tip_position_um=lambda: 42.0,
+        ),
         selection=_selection_workflow_callbacks(),
         lifecycle=DesktopLifecyclePorts(
             close_popups=lambda: None,
@@ -718,6 +776,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         queries.has_output_directory
     )
     assert workbench.load_workflow_presenter.can_load_data is commands.can_load_data
+    assert workbench.alignment_edit_actions.commands is commands
+    assert workbench.alignment_edit_actions.callbacks.tip_position_um() == 42.0
     workbench.alignment_presenter.callbacks.render_histology_alignment("edit-state")
     assert panel.calls == [("edit", "edit-state")]
     workbench.alignment_presenter.callbacks.plot_channels("projection")

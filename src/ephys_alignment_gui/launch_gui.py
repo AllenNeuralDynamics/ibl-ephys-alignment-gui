@@ -20,7 +20,6 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
 )
 from ephys_alignment_gui.controller import (
-    AlignmentEditApplied,
     PreviousAlignmentSelected,
     ShankSelected,
 )
@@ -429,63 +428,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             "probe_extra_um": depth_view.probe_extra_um,
         }
 
-    def offset_hist_data(self, track_shift_m: float = 0.0) -> bool:
-        """
-        Offset location of probe tip along probe track
-        """
-        # If no histology we can't do alignment
-        if not self.histology_exists:
-            return False
-
-        tip_position_um = self.displays.histology.tip_position_um()
-        if tip_position_um is None:
-            logger.error("Cannot offset alignment: probe tip line is not rendered")
-            return False
-
-        result = self.app.commands.offset_alignment_from_tip(
-            tip_position_um=tip_position_um,
-            probe_tip_um=self.display_state.depth_view.probe_tip_um,
-            lin_fit=self.display_state.edit_settings.lin_fit,
-            track_shift_m=track_shift_m,
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        return isinstance(result, AlignmentEditApplied)
-
-    def scale_hist_data(self) -> bool:
-        """
-        Scale brain regions along probe track
-        """
-
-        # If no histology we can't do alignment
-        if not self.histology_exists:
-            return False
-
-        line_positions = self.displays.reference_lines.positions()
-        if line_positions is None:
-            line_feature = np.array([], dtype=float)
-            line_track = np.array([], dtype=float)
-        else:
-            # Feature comes from ephys plots; track comes from histology plots.
-            line_feature, line_track = line_positions
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None:
-            logger.error("Cannot fit alignment: active shank runtime is not loaded")
-            return False
-
-        result = self.app.commands.fit_alignment_to_reference_lines(
-            shank_runtime,
-            line_features_um=line_feature,
-            line_tracks_um=line_track,
-            lin_fit=self.display_state.edit_settings.lin_fit,
-            extend_feature=self.display_state.edit_settings.extend_feature,
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        return isinstance(result, AlignmentEditApplied)
-
     def _scale_factor_y_range(self) -> tuple[float, float]:
         y_min, y_max = self.fig_img.viewRange()[1]
         return float(y_min), float(y_max)
@@ -526,21 +468,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Return the document-owned active shank index."""
         return self.app.queries.active_shank_selection().shank_idx
 
-    def _active_shank_runtime(self):
-        """Return runtime data for the active shank, if it has been built."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return None
-        return stream_runtime.shank_runtime_by_idx.get(self._active_shank_idx())
-
     def _active_alignment_state(self):
         """Return document-owned editable state for the active alignment."""
         return self.document.active_alignment_state
-
-    def _active_alignment(self):
-        """Return the document-owned active alignment, if present."""
-        state = self._active_alignment_state()
-        return None if state is None else state.active_alignment
 
     def _active_previous_feature(self):
         """Return the selected previous feature alignment, if any."""
@@ -785,13 +715,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         according to locations of reference lines on ephys and histology plots. Updates all plots
         and indices after scaling has been applied
         """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        if not self.scale_hist_data():
-            return
+        self.desktop_workbench.fit_button_pressed()
 
     def offset_button_pressed(
         self, _checked: bool = False, *, track_shift_m: float = 0.0
@@ -801,49 +725,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         locations of probe tip line on histology plot. Updates all plots and indices after offset
         has been applied
         """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        if not self.offset_hist_data(track_shift_m=track_shift_m):
-            return
+        self.desktop_workbench.offset_button_pressed(track_shift_m=track_shift_m)
 
     def movedown_button_pressed(self) -> None:
         """
         Triggered when Shift+down key pressed. Moves probe tip down by 50um and offsets data
         """
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        alignment = self._active_alignment()
-        shank_runtime = self._active_shank_runtime()
-        if (
-            alignment is not None
-            and shank_runtime is not None
-            and alignment.track[-1] - 50 / 1e6
-            >= np.max(shank_runtime.chn_depths) / 1e6
-        ):
-            self.offset_button_pressed(track_shift_m=-50 / 1e6)
+        self.desktop_workbench.movedown_button_pressed()
 
     def moveup_button_pressed(self) -> None:
         """
         Triggered when Shift+down key pressed. Moves probe tip up by 50um and offsets data
         """
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        alignment = self._active_alignment()
-        shank_runtime = self._active_shank_runtime()
-        if (
-            alignment is not None
-            and shank_runtime is not None
-            and alignment.track[0] + 50 / 1e6
-            <= np.min(shank_runtime.chn_depths) / 1e6
-        ):
-            self.offset_button_pressed(track_shift_m=50 / 1e6)
+        self.desktop_workbench.moveup_button_pressed()
 
     def toggle_labels_button_pressed(self) -> None:
         """
@@ -895,53 +789,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when right key pressed. Updates all plots and indices with next move. Ensures
         user cannot go past latest move
         """
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        result = self.app.commands.go_next_alignment()
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
+        self.desktop_workbench.next_button_pressed()
 
     def prev_button_pressed(self) -> None:
         """
         Triggered when left key pressed. Updates all plots and indices with previous move.
         Ensures user cannot go back past the active edit-history buffer.
         """
-
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        result = self.app.commands.go_previous_alignment()
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
+        self.desktop_workbench.prev_button_pressed()
 
     def reset_button_pressed(self) -> None:
         """
         Triggered when reset button or Shift+R key pressed. Resets channel locations to orignal
         location
         """
-        # If no histology we can't plot histology
-        if not self.histology_exists:
-            return
-
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None:
-            logger.error("Cannot reset alignment: active shank runtime is not loaded")
-            return
-
-        result = self.app.commands.reset_alignment_to_initial(
-            shank_runtime,
-            lin_fit=self.display_state.edit_settings.lin_fit,
-        )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
-        if not isinstance(result, AlignmentEditApplied):
-            return
+        self.desktop_workbench.reset_button_pressed()
 
     def _restore_lin_fit_from_edit(self, lin_fit: bool | None) -> None:
         if lin_fit is None:

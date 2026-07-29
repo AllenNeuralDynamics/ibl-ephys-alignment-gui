@@ -16,6 +16,7 @@ from ephys_alignment_gui.desktop_reference_line_display import (
 )
 from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
+    DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
@@ -132,6 +133,10 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         )
 
     return DesktopWorkbenchPorts(
+        alignment_edit_actions=DesktopAlignmentEditActionPorts(
+            histology_available=lambda: window.histology_exists,
+            tip_position_um=window.displays.histology.tip_position_um,
+        ),
         selection=DesktopSelectionWorkflowCallbacks(
             select_shank_for_view=lambda shank_idx, source: (
                 window._select_shank_for_view(shank_idx, source=source)

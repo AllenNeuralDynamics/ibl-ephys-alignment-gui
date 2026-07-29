@@ -608,6 +608,34 @@ class AlignmentCommands:
         self._emit_alignment_edited("offset", result)
         return result
 
+    def offset_active_alignment_from_tip(
+        self,
+        *,
+        tip_position_um: float,
+        track_shift_m: float = 0.0,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply a tip-offset edit using app-owned display settings."""
+        return self.offset_alignment_from_tip(
+            tip_position_um=tip_position_um,
+            probe_tip_um=self._display_state.depth_view.probe_tip_um,
+            lin_fit=self._display_state.edit_settings.lin_fit,
+            track_shift_m=track_shift_m,
+        )
+
+    def nudge_active_alignment_from_tip(
+        self,
+        *,
+        tip_position_um: float,
+        track_shift_m: float,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply a bounded tip-offset nudge for the active alignment."""
+        if not self._active_alignment_can_shift(track_shift_m):
+            return AlignmentEditNoop()
+        return self.offset_active_alignment_from_tip(
+            tip_position_um=tip_position_um,
+            track_shift_m=track_shift_m,
+        )
+
     def fit_alignment_to_reference_lines(
         self,
         shank_runtime: Any,
@@ -627,6 +655,34 @@ class AlignmentCommands:
         )
         self._emit_alignment_edited("fit", result)
         return result
+
+    def fit_active_alignment_from_pending_reference_lines(
+        self,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Apply a fit edit from document-owned pending reference lines."""
+        shank_runtime = self._active_shank_runtime()
+        if shank_runtime is None:
+            return Failed("Cannot fit alignment: active shank runtime is not loaded")
+
+        pending_lines = self._controller.active_pending_reference_lines(
+            shank_runtime.shank_idx
+        )
+        if isinstance(pending_lines, Failed):
+            return pending_lines
+        if pending_lines is None:
+            line_features_um = np.array([], dtype=float)
+            line_tracks_um = np.array([], dtype=float)
+        else:
+            line_features_um = pending_lines.feature_positions_um
+            line_tracks_um = pending_lines.track_positions_um
+
+        return self.fit_alignment_to_reference_lines(
+            shank_runtime,
+            line_features_um=line_features_um,
+            line_tracks_um=line_tracks_um,
+            lin_fit=self._display_state.edit_settings.lin_fit,
+            extend_feature=self._display_state.edit_settings.extend_feature,
+        )
 
     def go_next_alignment(
         self,
@@ -669,6 +725,50 @@ class AlignmentCommands:
                 logger.error(clear_result.message)
             self._emit_alignment_edited("reset", result)
         return result
+
+    def reset_active_alignment_to_initial(
+        self,
+    ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
+        """Reset active alignment using the active runtime and display settings."""
+        shank_runtime = self._active_shank_runtime()
+        if shank_runtime is None:
+            return Failed("Cannot reset alignment: active shank runtime is not loaded")
+        return self.reset_alignment_to_initial(
+            shank_runtime,
+            lin_fit=self._display_state.edit_settings.lin_fit,
+        )
+
+    def _active_alignment_can_shift(self, track_shift_m: float) -> bool:
+        """Return whether a bounded nudge keeps the alignment inside channel depths."""
+        if track_shift_m == 0:
+            return True
+        state = self._controller.document.active_alignment_state
+        alignment = None if state is None else state.active_alignment
+        shank_runtime = self._active_shank_runtime()
+        if (
+            alignment is None
+            or shank_runtime is None
+            or shank_runtime.chn_depths is None
+        ):
+            return False
+
+        channel_depths_m = np.asarray(shank_runtime.chn_depths, dtype=float) / 1e6
+        if channel_depths_m.size == 0:
+            return False
+        if track_shift_m < 0:
+            return alignment.track[-1] + track_shift_m >= float(
+                np.max(channel_depths_m)
+            )
+        return alignment.track[0] + track_shift_m <= float(np.min(channel_depths_m))
+
+    def _active_shank_runtime(self) -> ShankRuntime | None:
+        """Return active shank runtime data for command-side alignment edits."""
+        stream_runtime = self._runtime.active_stream_runtime
+        if stream_runtime is None:
+            return None
+        return stream_runtime.shank_runtime_by_idx.get(
+            self._controller.document.selected_shank
+        )
 
     def _emit_alignment_edited(
         self,
