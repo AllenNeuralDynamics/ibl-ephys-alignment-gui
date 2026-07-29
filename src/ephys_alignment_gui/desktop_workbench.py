@@ -638,14 +638,12 @@ class DesktopWorkbench:
     ) -> DesktopLoadDataCallbacks:
         """Build callbacks for cached/fresh data loading."""
         return DesktopLoadDataCallbacks(
-            capture_pending_reference_lines=(
-                reference_line_presenter.capture_pending_reference_lines
+            reference_line_positions=(
+                reference_line_presenter.reference_line_display.positions
             ),
-            detach_active_stream=lifecycle_presenter.detach_active_stream,
             prepare_for_fresh_stream_load=(
                 lifecycle_presenter.prepare_for_fresh_stream_load
             ),
-            select_shank_for_view=callbacks.select_shank_for_view,
             display_output_directory=output_path_presenter.display_output_directory,
             render_loaded_shank=lambda shank_idx, preserve: (
                 shank_presenter.render_loaded_shank(

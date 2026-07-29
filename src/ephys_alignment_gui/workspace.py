@@ -23,6 +23,7 @@ from ephys_alignment_gui.histology_data_service import (
     HistologyDataService,
 )
 from ephys_alignment_gui.histology_data_workflow import HistologyDataWorkflow
+from ephys_alignment_gui.load_data_job import LoadDataJob
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
@@ -81,6 +82,7 @@ class AlignmentWorkspace:
     events: EventBus = field(default_factory=EventBus)
     probe_data_workflow: ProbeDataWorkflow = field(init=False)
     histology_data_workflow: HistologyDataWorkflow = field(init=False)
+    load_data_job: LoadDataJob = field(init=False)
     controller: AlignmentController = field(init=False)
     app: AlignmentApp = field(init=False)
 
@@ -93,6 +95,10 @@ class AlignmentWorkspace:
             self.data_context,
             self.histology_data_service,
             self.histology_context,
+        )
+        self.load_data_job = LoadDataJob(
+            probe_data_workflow=self.probe_data_workflow,
+            histology_data_workflow=self.histology_data_workflow,
         )
         self.alignment_output_service = AlignmentOutputService(
             self.data_context,
@@ -114,8 +120,7 @@ class AlignmentWorkspace:
                 self.events,
                 self.display_state,
                 self.runtime,
-                self.probe_data_workflow,
-                self.histology_data_workflow,
+                self.load_data_job,
                 self.histology_context,
                 self.probe_track_service,
                 self.plot_data_factory,

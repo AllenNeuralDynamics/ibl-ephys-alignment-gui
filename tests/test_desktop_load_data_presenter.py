@@ -9,8 +9,13 @@ from typing import Any
 from ephys_alignment_gui.app import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
+    LoadDataAlreadyActiveResult,
+    LoadDataCachedActivated,
+    LoadDataFreshCompleted,
+    LoadDataFreshPrepared,
+    LoadDataFreshRequiredResult,
 )
-from ephys_alignment_gui.controller import LoadDataPrepared, ProbeSelected
+from ephys_alignment_gui.controller import ProbeSelected
 from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -18,12 +23,6 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
 from ephys_alignment_gui.histology_data_workflow import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
-)
-from ephys_alignment_gui.session_runtime import (
-    LoadDataAlreadyActive,
-    LoadDataCachedStreamAvailable,
-    LoadDataFreshRequired,
-    LoadDataTarget,
 )
 from ephys_alignment_gui.workflow import Failed
 
@@ -51,64 +50,41 @@ class FakeBusyContext:
 
 
 class FakeQueries:
-    def __init__(
-        self,
-        *,
-        plan: Any,
-        shank_idx: int = 0,
-        histology_loaded: bool = False,
-    ) -> None:
-        self.plan = plan
+    def __init__(self, *, shank_idx: int = 0) -> None:
         self.shank_idx = shank_idx
-        self.histology_loaded = histology_loaded
-        self.stream_key_calls: list[tuple[str, str]] = []
-        self.plan_calls: list[tuple[Any, int]] = []
 
     def active_shank_selection(self):
         return SimpleNamespace(shank_idx=self.shank_idx)
-
-    def stream_key_for_selection(self, session_name: str, probe_name: str):
-        self.stream_key_calls.append((session_name, probe_name))
-        return ("rec", "stream")
-
-    def plan_load_data(self, stream_key, target_shank: int):
-        self.plan_calls.append((stream_key, target_shank))
-        return self.plan
-
-    def histology_data_loaded(self) -> bool:
-        return self.histology_loaded
 
 
 class FakeCommands:
     def __init__(
         self,
         *,
-        cached_result: Any | None = None,
-        histology_result: Any | None = None,
+        begin_result: Any | None = None,
+        complete_result: Any | None = None,
+        probe_cache_result: Any | None = None,
     ) -> None:
-        self.cached_result = cached_result or _cached_result(shank_idx=0)
-        self.histology_result = histology_result or HistologyDataLoaded()
-        self.prepare_calls: list[Any] = []
-        self.cached_calls: list[dict[str, Any]] = []
-        self.fresh_calls: list[int] = []
-
-    def prepare_fresh_ephys_load(self, stream_key):
-        self.prepare_calls.append(stream_key)
-        return LoadDataPrepared(preserve_plot_selection=True)
-
-    def activate_cached_ephys_data(self, **kwargs):
-        self.cached_calls.append(kwargs)
-        return self.cached_result
-
-    def load_fresh_ephys_data(self, shank_idx: int):
-        self.fresh_calls.append(shank_idx)
-        stream_runtime = SimpleNamespace(
-            stream=SimpleNamespace(ephys_dir=Path("/tmp/ephys"))
+        self.begin_result = begin_result or _fresh_prepared(shank_idx=0)
+        self.complete_result = complete_result or _fresh_completed(shank_idx=0)
+        self.probe_cache_result = (
+            probe_cache_result or LoadDataFreshRequiredResult(("rec", "stream"), 0)
         )
-        return FreshEphysDataLoaded(stream_runtime=stream_runtime, shank_idx=shank_idx)
+        self.begin_calls: list[dict[str, Any]] = []
+        self.complete_calls: list[LoadDataFreshPrepared] = []
+        self.probe_cache_calls: list[dict[str, Any]] = []
 
-    def load_histology_data(self):
-        return self.histology_result
+    def begin_load_data(self, **kwargs):
+        self.begin_calls.append(kwargs)
+        return self.begin_result
+
+    def complete_fresh_load_data(self, prepared: LoadDataFreshPrepared):
+        self.complete_calls.append(prepared)
+        return self.complete_result
+
+    def activate_cached_probe_selection(self, **kwargs):
+        self.probe_cache_calls.append(kwargs)
+        return self.probe_cache_result
 
 
 class FakeSelectionView:
@@ -153,14 +129,51 @@ def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
     )
 
 
+def _cached_transaction(shank_idx: int) -> LoadDataCachedActivated:
+    return LoadDataCachedActivated(
+        stream_key=("rec", "stream"),
+        activated=_cached_result(shank_idx),
+    )
+
+
+def _fresh_prepared(
+    *,
+    shank_idx: int,
+    preserve_plot_selection: bool = True,
+) -> LoadDataFreshPrepared:
+    return LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=shank_idx,
+        preserve_plot_selection=preserve_plot_selection,
+    )
+
+
+def _fresh_completed(
+    *,
+    shank_idx: int,
+    histology_result: Any | None = None,
+    preserve_plot_selection: bool = True,
+) -> LoadDataFreshCompleted:
+    stream_runtime = SimpleNamespace(
+        stream=SimpleNamespace(ephys_dir=Path("/tmp/ephys"))
+    )
+    return LoadDataFreshCompleted(
+        stream_key=("rec", "stream"),
+        ephys=FreshEphysDataLoaded(
+            stream_runtime=stream_runtime,
+            shank_idx=shank_idx,
+        ),
+        histology=histology_result or HistologyDataLoaded(),
+        preserve_plot_selection=preserve_plot_selection,
+    )
+
+
 def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     return DesktopLoadDataCallbacks(
-        capture_pending_reference_lines=lambda: calls.append(("capture",)),
-        detach_active_stream=lambda: calls.append(("detach",)),
-        prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
-        select_shank_for_view=lambda shank_idx, source: (
-            calls.append(("select-shank", shank_idx, source)) or shank_idx
+        reference_line_positions=lambda: (
+            calls.append(("positions",)) or ([1.0], [2.0])
         ),
+        prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
         display_output_directory=lambda path: calls.append(("output", path)),
         render_loaded_shank=lambda shank_idx, preserve: calls.append(
             ("render-shank", shank_idx, preserve)
@@ -175,14 +188,13 @@ def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
 
 def _presenter(
     *,
-    plan: Any,
+    begin_result: Any | None = None,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
-    histology_loaded: bool = False,
 ) -> tuple[DesktopLoadDataPresenter, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
-    queries = FakeQueries(plan=plan, histology_loaded=histology_loaded)
-    commands = commands or FakeCommands()
+    queries = FakeQueries()
+    commands = commands or FakeCommands(begin_result=begin_result)
     app = SimpleNamespace(queries=queries, commands=commands)
     selection_view = FakeSelectionView(calls)
     return (
@@ -195,36 +207,41 @@ def _presenter(
 
 def test_load_heavy_data_skips_already_active_stream_shank() -> None:
     presenter, commands, queries, calls = _presenter(
-        plan=LoadDataAlreadyActive(LoadDataTarget(("rec", "stream"), shank_idx=0))
+        begin_result=LoadDataAlreadyActiveResult(("rec", "stream"), 0)
     )
 
     assert presenter.load_heavy_data()
 
-    assert queries.plan_calls == [(("rec", "stream"), 0)]
-    assert commands.prepare_calls == []
-    assert calls == []
-
-
-def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
-    plan = LoadDataCachedStreamAvailable(
-        target=LoadDataTarget(("rec", "stream"), shank_idx=0),
-        cached_shank_idx=1,
-    )
-    presenter, commands, _queries, calls = _presenter(plan=plan)
-
-    assert presenter.load_heavy_data()
-
-    assert commands.cached_calls == [
+    assert queries.shank_idx == 0
+    assert commands.begin_calls == [
         {
             "recording_id": "rec",
             "probe_name": "probeA",
-            "stream_key": ("rec", "stream"),
-            "shank_idx": 0,
+            "target_shank": 0,
+            "outgoing_reference_lines": ([1.0], [2.0]),
+        }
+    ]
+    assert commands.complete_calls == []
+    assert calls == [("positions",)]
+
+
+def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
+    presenter, commands, _queries, calls = _presenter(
+        begin_result=_cached_transaction(shank_idx=0),
+    )
+
+    assert presenter.load_heavy_data()
+
+    assert commands.begin_calls == [
+        {
+            "recording_id": "rec",
+            "probe_name": "probeA",
+            "target_shank": 0,
+            "outgoing_reference_lines": ([1.0], [2.0]),
         }
     ]
     assert calls == [
-        ("capture",),
-        ("detach",),
+        ("positions",),
         ("clear-empty",),
         ("populate", ["1/2", "2/2"], 0),
         ("output", Path("/tmp/out")),
@@ -234,13 +251,8 @@ def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
 
 
 def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
-    plan = LoadDataCachedStreamAvailable(
-        target=LoadDataTarget(("rec", "stream"), shank_idx=0),
-        cached_shank_idx=1,
-    )
     presenter, commands, _queries, calls = _presenter(
-        plan=plan,
-        commands=FakeCommands(cached_result=_cached_result(shank_idx=1)),
+        commands=FakeCommands(probe_cache_result=_cached_transaction(shank_idx=1)),
     )
 
     assert presenter.present_cached_probe_selection(
@@ -249,15 +261,21 @@ def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
         target_shank=0,
     )
 
-    assert commands.cached_calls[0]["shank_idx"] == 1
+    assert commands.probe_cache_calls == [
+        {
+            "recording_id": "rec",
+            "probe_name": "probeA",
+            "target_shank": 0,
+        }
+    ]
     assert ("render-shank", 1, True) in calls
     assert ("enable-load", True) in calls
 
 
 def test_probe_selection_noops_for_already_active_stream_shank() -> None:
     presenter, commands, _queries, calls = _presenter(
-        plan=LoadDataAlreadyActive(
-            LoadDataTarget(("rec", "stream"), shank_idx=0)
+        commands=FakeCommands(
+            probe_cache_result=LoadDataAlreadyActiveResult(("rec", "stream"), 0)
         ),
     )
 
@@ -267,32 +285,34 @@ def test_probe_selection_noops_for_already_active_stream_shank() -> None:
         target_shank=0,
     )
 
-    assert commands.cached_calls == []
+    assert commands.probe_cache_calls
     assert calls == [("enable-load", True)]
 
 
 def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
-    plan = LoadDataFreshRequired(LoadDataTarget(("rec", "stream"), shank_idx=0))
-    presenter, commands, _queries, calls = _presenter(plan=plan)
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    presenter, commands, _queries, calls = _presenter(begin_result=prepared)
 
     assert presenter.load_heavy_data()
 
-    assert commands.prepare_calls == [("rec", "stream")]
-    assert commands.fresh_calls == [0]
+    assert commands.complete_calls == [prepared]
     assert ("prepare-fresh",) in calls
-    assert ("message", "Loading ephys data...") in calls
-    assert ("message", "Loading atlas and histology...") in calls
+    assert ("message", "Loading ephys and histology data...") in calls
     assert ("message", "Setting up visualization...") in calls
     assert ("render-shank", 0, True) in calls
     assert ("clear-empty",) in calls
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
-    plan = LoadDataFreshRequired(LoadDataTarget(("rec", "stream"), shank_idx=0))
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
     presenter, _commands, _queries, calls = _presenter(
-        plan=plan,
+        begin_result=prepared,
         commands=FakeCommands(
-            histology_result=HistologyDataUnavailable("no histology")
+            begin_result=prepared,
+            complete_result=_fresh_completed(
+                shank_idx=0,
+                histology_result=HistologyDataUnavailable("no histology"),
+            ),
         ),
     )
 
@@ -302,18 +322,16 @@ def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
     assert ("render-shank", 0, True) in calls
 
 
-def test_present_cached_stream_returns_false_on_command_failure() -> None:
+def test_probe_selection_returns_false_on_cached_command_failure() -> None:
     presenter, commands, _queries, calls = _presenter(
-        plan=LoadDataFreshRequired(LoadDataTarget(("rec", "stream"), shank_idx=0)),
-        commands=FakeCommands(cached_result=Failed("missing cache")),
+        commands=FakeCommands(probe_cache_result=Failed("missing cache")),
     )
 
-    assert not presenter.present_cached_stream(
+    assert not presenter.present_cached_probe_selection(
         session_name="rec",
         probe_name="probeA",
-        stream_key=("rec", "stream"),
-        shank_idx=0,
+        target_shank=0,
     )
 
-    assert commands.cached_calls
-    assert calls == [("detach",)]
+    assert commands.probe_cache_calls
+    assert calls == []

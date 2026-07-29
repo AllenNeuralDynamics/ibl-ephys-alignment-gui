@@ -61,10 +61,8 @@ from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.histology_data_service import HistologyDataContext
-from ephys_alignment_gui.histology_data_workflow import (
-    HistologyDataWorkflow,
-    HistologyLoadResult,
-)
+from ephys_alignment_gui.histology_data_workflow import HistologyLoadResult
+from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plot_registry import (
@@ -73,9 +71,11 @@ from ephys_alignment_gui.plot_registry import (
     resolve_plot_bounds,
     resolve_plot_payload,
 )
-from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
+from ephys_alignment_gui.probe_data_workflow import LoadedProbeData
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.session_runtime import (
+    LoadDataAlreadyActive,
+    LoadDataCachedStreamAvailable,
     LoadDataPlan,
     LoadDataTarget,
     SessionRuntime,
@@ -156,6 +156,58 @@ class VisitedAlignmentOutputsSaved:
     active_choices: list[str] | None
 
 
+@dataclass(frozen=True)
+class LoadDataAlreadyActiveResult:
+    """The requested stream/shank is already active; no load work ran."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class LoadDataCachedActivated:
+    """A cached stream was activated for desktop presentation."""
+
+    stream_key: StreamKey
+    activated: CachedEphysDataActivated
+
+
+@dataclass(frozen=True)
+class LoadDataFreshPrepared:
+    """Fresh load state was prepared and is ready for heavy IO."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+    preserve_plot_selection: bool
+
+
+@dataclass(frozen=True)
+class LoadDataFreshRequiredResult:
+    """The requested stream is not cached and requires an explicit fresh load."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class LoadDataFreshCompleted:
+    """Fresh ephys data and subject histology load steps completed."""
+
+    stream_key: StreamKey | None
+    ephys: FreshEphysDataLoaded
+    histology: HistologyLoadResult
+    preserve_plot_selection: bool
+
+
+LoadDataBeginResult = (
+    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshPrepared
+)
+
+ProbeSelectionCacheResult = (
+    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshRequiredResult
+)
+
+
 @dataclass
 class AlignmentCommands:
     """Command-side app port.
@@ -168,8 +220,7 @@ class AlignmentCommands:
     _events: EventBus
     _display_state: AlignmentDisplayState
     _runtime: SessionRuntime
-    _probe_data_workflow: ProbeDataWorkflow
-    _histology_data_workflow: HistologyDataWorkflow
+    _load_data_job: LoadDataJob
     _histology_context: HistologyDataContext
     _probe_track_service: ProbeTrackService
     _plot_data_factory: PlotDataFactory
@@ -305,9 +356,151 @@ class AlignmentCommands:
             return shank_idx
         return self._controller.document.selected_shank
 
+    def _stream_key_for_selection(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> StreamKey | None:
+        if self._controller.data_context is None:
+            return None
+        try:
+            return self._controller.data_context.stream_key_for_selection(
+                recording_id,
+                probe_name,
+            )
+        except Exception:
+            logger.warning(
+                "Could not resolve stream key for %s/%s",
+                recording_id,
+                probe_name,
+                exc_info=True,
+            )
+            return None
+
+    def _capture_active_reference_lines_if_provided(
+        self,
+        reference_lines: ReferenceLineCapture,
+    ) -> Ok | PendingReferenceLinesUpdated | Failed:
+        if reference_lines is _REFERENCE_LINES_NOT_PROVIDED:
+            return Ok()
+        return self.capture_active_reference_lines(reference_lines)
+
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
         return self._controller.can_load_previous_alignments()
+
+    def begin_load_data(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        target_shank: int,
+        outgoing_reference_lines: ReferenceLineCapture = _REFERENCE_LINES_NOT_PROVIDED,
+    ) -> LoadDataBeginResult | Failed:
+        """Prepare or activate the selected stream/shank load transaction."""
+        stream_key = self._stream_key_for_selection(recording_id, probe_name)
+        load_plan = self._runtime.plan_load_data(
+            LoadDataTarget(stream_key=stream_key, shank_idx=target_shank),
+            data_loaded=self._controller.document.data_loaded,
+        )
+
+        if isinstance(load_plan, LoadDataAlreadyActive):
+            logger.info(
+                "Data already loaded for stream %s shank %s; skipping load",
+                stream_key,
+                target_shank,
+            )
+            return LoadDataAlreadyActiveResult(
+                stream_key=stream_key,
+                shank_idx=target_shank,
+            )
+
+        capture_result = self._capture_active_reference_lines_if_provided(
+            outgoing_reference_lines
+        )
+        if isinstance(capture_result, Failed):
+            return capture_result
+
+        if isinstance(load_plan, LoadDataCachedStreamAvailable):
+            if stream_key is None:
+                return Failed("Cached stream activation requires a stream key.")
+            self.detach_active_stream()
+            result = self.activate_cached_ephys_data(
+                recording_id=recording_id,
+                probe_name=probe_name,
+                stream_key=stream_key,
+                shank_idx=load_plan.target.shank_idx,
+            )
+            if isinstance(result, Failed):
+                return result
+            return LoadDataCachedActivated(stream_key=stream_key, activated=result)
+
+        prepared = self.prepare_fresh_ephys_load(stream_key)
+        selected = self._controller.select_shank(target_shank)
+        if isinstance(selected, Failed):
+            return selected
+        return LoadDataFreshPrepared(
+            stream_key=stream_key,
+            shank_idx=selected.shank_idx,
+            preserve_plot_selection=prepared.preserve_plot_selection,
+        )
+
+    def activate_cached_probe_selection(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        target_shank: int,
+    ) -> ProbeSelectionCacheResult | Failed:
+        """Activate a cached probe selection or report that fresh loading is needed."""
+        stream_key = self._stream_key_for_selection(recording_id, probe_name)
+        load_plan = self._runtime.plan_load_data(
+            LoadDataTarget(stream_key=stream_key, shank_idx=target_shank),
+            data_loaded=self._controller.document.data_loaded,
+        )
+
+        if isinstance(load_plan, LoadDataAlreadyActive):
+            return LoadDataAlreadyActiveResult(
+                stream_key=stream_key,
+                shank_idx=target_shank,
+            )
+        if not isinstance(load_plan, LoadDataCachedStreamAvailable):
+            return LoadDataFreshRequiredResult(
+                stream_key=stream_key,
+                shank_idx=target_shank,
+            )
+        if stream_key is None:
+            return Failed("Cached stream activation requires a stream key.")
+
+        self.detach_active_stream()
+        result = self.activate_cached_ephys_data(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=stream_key,
+            shank_idx=load_plan.cached_shank_idx,
+        )
+        if isinstance(result, Failed):
+            return result
+        return LoadDataCachedActivated(stream_key=stream_key, activated=result)
+
+    def complete_fresh_load_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+    ) -> LoadDataFreshCompleted | Failed:
+        """Run fresh ephys and histology load steps for a prepared transaction."""
+        job_result = self._load_data_job.run(LoadDataJobRequest(prepared.shank_idx))
+        if isinstance(job_result, Failed):
+            return job_result
+        ephys_result = self._cache_loaded_probe_data(
+            job_result.ephys,
+            shank_idx=prepared.shank_idx,
+        )
+        return LoadDataFreshCompleted(
+            stream_key=prepared.stream_key,
+            ephys=ephys_result,
+            histology=job_result.histology,
+            preserve_plot_selection=prepared.preserve_plot_selection,
+        )
 
     def prepare_fresh_ephys_load(
         self,
@@ -334,23 +527,18 @@ class AlignmentCommands:
         self._display_state.reset_for_active_stream()
         return StreamCacheEvicted(evicted_stream_count=evicted_stream_count)
 
-    def load_fresh_ephys_data(
+    def _cache_loaded_probe_data(
         self,
+        loaded: LoadedProbeData,
+        *,
         shank_idx: int,
-    ) -> FreshEphysDataLoaded | Failed:
-        """Load selected-probe ephys data, cache runtime, and mark data loaded."""
-        try:
-            loaded = self._probe_data_workflow.load(shank_idx)
-            if not loaded.stream.ephys_dir:
-                return Failed("Failed to load ephys data")
-            stream_runtime = self._runtime.cache_loaded_stream_data(
-                loaded.stream,
-                self._plot_data_factory,
-                shank_idx=shank_idx,
-            )
-        except Exception as exc:
-            return Failed(f"Failed to load ephys data: {exc}")
-
+    ) -> FreshEphysDataLoaded:
+        """Insert loaded ephys data into runtime cache and mark document loaded."""
+        stream_runtime = self._runtime.cache_loaded_stream_data(
+            loaded.stream,
+            self._plot_data_factory,
+            shank_idx=shank_idx,
+        )
         self._controller.finish_load_data(shank_idx)
         return FreshEphysDataLoaded(
             stream_runtime=stream_runtime,
@@ -392,10 +580,6 @@ class AlignmentCommands:
             shank_idx=shank_idx,
             probe=probe,
         )
-
-    def load_histology_data(self) -> HistologyLoadResult:
-        """Load subject-level histology runtime data if it is available."""
-        return self._histology_data_workflow.load_if_needed()
 
     def prepare_loaded_shank(
         self,
