@@ -18,13 +18,14 @@ from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplayPorts
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
+    DesktopBusyPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
     DesktopLifecyclePorts,
+    DesktopLoadDataPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
     DesktopSaveWorkflowPorts,
-    DesktopSelectionWorkflowCallbacks,
     DesktopShankRenderPorts,
     DesktopWorkbenchPorts,
 )
@@ -137,10 +138,10 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             histology_available=lambda: window.histology_exists,
             tip_position_um=window.displays.histology.tip_position_um,
         ),
-        selection=DesktopSelectionWorkflowCallbacks(
+        busy=DesktopBusyPorts(busy_context=busy_context),
+        load_data=DesktopLoadDataPorts(
             clear_empty_state=window._clear_empty_state,
             set_histology_available=window._set_histology_available,
-            busy_context=busy_context,
         ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=window.popup_manager.close_all,

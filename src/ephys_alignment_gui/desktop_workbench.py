@@ -137,6 +137,21 @@ class DesktopRenderPorts:
 
 
 @dataclass(frozen=True)
+class DesktopBusyPorts:
+    """Desktop busy-state operations shared by workflow presenters."""
+
+    busy_context: Callable[..., AbstractContextManager[Any]]
+
+
+@dataclass(frozen=True)
+class DesktopLoadDataPorts:
+    """Desktop operations needed by heavy data load presentation."""
+
+    clear_empty_state: Callable[[], None]
+    set_histology_available: Callable[[bool], None]
+
+
+@dataclass(frozen=True)
 class DesktopSaveWorkflowPorts:
     """Desktop operations needed by save and QC workflows."""
 
@@ -214,21 +229,13 @@ class DesktopWorkbenchPorts:
 
     render: DesktopRenderPorts
     alignment_edit_actions: DesktopAlignmentEditActionPorts
-    selection: DesktopSelectionWorkflowCallbacks
+    busy: DesktopBusyPorts
+    load_data: DesktopLoadDataPorts
     lifecycle: DesktopLifecyclePorts
     save_workflow: DesktopSaveWorkflowPorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
     export: DesktopExportPorts
     interaction: DesktopInteractionPorts
-
-
-@dataclass(frozen=True)
-class DesktopSelectionWorkflowCallbacks:
-    """MainWindow bridge callbacks for selection and load presenters."""
-
-    clear_empty_state: Callable[[], None]
-    set_histology_available: Callable[[bool], None]
-    busy_context: Callable[..., AbstractContextManager[Any]]
 
 
 @dataclass
@@ -337,7 +344,8 @@ class DesktopWorkbench:
             app=app,
             selection_view=selection_view,
             callbacks=cls._load_data_callbacks(
-                ports.selection,
+                ports.load_data,
+                ports.busy,
                 output_path_presenter,
                 shank_presenter,
                 lifecycle_presenter,
@@ -348,7 +356,7 @@ class DesktopWorkbench:
             app=app,
             selection_view=selection_view,
             callbacks=cls._probe_selection_callbacks(
-                ports.selection,
+                ports.busy,
                 output_path_presenter,
                 load_data_presenter,
                 lifecycle_presenter,
@@ -359,7 +367,6 @@ class DesktopWorkbench:
             app=app,
             selection_view=selection_view,
             callbacks=cls._session_selection_callbacks(
-                ports.selection,
                 lifecycle_presenter,
                 reference_line_presenter,
                 probe_selection_presenter,
@@ -370,7 +377,7 @@ class DesktopWorkbench:
             path_view=path_view,
             selection_view=selection_view,
             callbacks=cls._mouse_root_callbacks(
-                ports.selection,
+                ports.busy,
                 session_selection_presenter,
             ),
         )
@@ -653,7 +660,8 @@ class DesktopWorkbench:
 
     @staticmethod
     def _load_data_callbacks(
-        callbacks: DesktopSelectionWorkflowCallbacks,
+        load_data_ports: DesktopLoadDataPorts,
+        busy_ports: DesktopBusyPorts,
         output_path_presenter: DesktopOutputPathPresenter,
         shank_presenter: DesktopShankPresenter,
         lifecycle_presenter: DesktopLifecyclePresenter,
@@ -674,14 +682,14 @@ class DesktopWorkbench:
                     preserve_plot_selection=preserve,
                 )
             ),
-            clear_empty_state=callbacks.clear_empty_state,
-            set_histology_available=callbacks.set_histology_available,
-            busy_context=callbacks.busy_context,
+            clear_empty_state=load_data_ports.clear_empty_state,
+            set_histology_available=load_data_ports.set_histology_available,
+            busy_context=busy_ports.busy_context,
         )
 
     @staticmethod
     def _probe_selection_callbacks(
-        callbacks: DesktopSelectionWorkflowCallbacks,
+        busy_ports: DesktopBusyPorts,
         output_path_presenter: DesktopOutputPathPresenter,
         load_data_presenter: DesktopLoadDataPresenter,
         lifecycle_presenter: DesktopLifecyclePresenter,
@@ -703,13 +711,12 @@ class DesktopWorkbench:
                 )
             ),
             show_empty_state=lifecycle_presenter.show_empty_state,
-            busy_context=callbacks.busy_context,
+            busy_context=busy_ports.busy_context,
             display_output_directory=output_path_presenter.display_output_directory,
         )
 
     @staticmethod
     def _session_selection_callbacks(
-        callbacks: DesktopSelectionWorkflowCallbacks,
         lifecycle_presenter: DesktopLifecyclePresenter,
         reference_line_presenter: DesktopReferenceLinePresenter,
         probe_selection_presenter: DesktopProbeSelectionPresenter,
@@ -726,12 +733,12 @@ class DesktopWorkbench:
 
     @staticmethod
     def _mouse_root_callbacks(
-        callbacks: DesktopSelectionWorkflowCallbacks,
+        busy_ports: DesktopBusyPorts,
         session_selection_presenter: DesktopSessionSelectionPresenter,
     ) -> DesktopMouseRootCallbacks:
         """Build callbacks for mouse-root loading."""
         return DesktopMouseRootCallbacks(
-            busy_context=callbacks.busy_context,
+            busy_context=busy_ports.busy_context,
             select_first_session=session_selection_presenter.session_selected,
         )
 

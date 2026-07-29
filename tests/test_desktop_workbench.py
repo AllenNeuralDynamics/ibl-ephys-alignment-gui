@@ -10,13 +10,14 @@ from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionSta
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
+    DesktopBusyPorts,
     DesktopExportPorts,
     DesktopInteractionPorts,
     DesktopLifecyclePorts,
+    DesktopLoadDataPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
     DesktopSaveWorkflowPorts,
-    DesktopSelectionWorkflowCallbacks,
     DesktopShankRenderPorts,
     DesktopWorkbench,
     DesktopWorkbenchPorts,
@@ -668,17 +669,6 @@ def _render_ports() -> DesktopRenderPorts:
     )
 
 
-def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
-    return DesktopSelectionWorkflowCallbacks(
-        clear_empty_state=lambda: None,
-        set_histology_available=lambda _available: None,
-        busy_context=lambda *args, **kwargs: SimpleNamespace(
-            __enter__=lambda: None,
-            __exit__=lambda *_args: None,
-        ),
-    )
-
-
 def _workbench_ports() -> DesktopWorkbenchPorts:
     return DesktopWorkbenchPorts(
         render=_render_ports(),
@@ -686,7 +676,16 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             histology_available=lambda: True,
             tip_position_um=lambda: 42.0,
         ),
-        selection=_selection_workflow_callbacks(),
+        busy=DesktopBusyPorts(
+            busy_context=lambda *args, **kwargs: SimpleNamespace(
+                __enter__=lambda: None,
+                __exit__=lambda *_args: None,
+            ),
+        ),
+        load_data=DesktopLoadDataPorts(
+            clear_empty_state=lambda: None,
+            set_histology_available=lambda _available: None,
+        ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=lambda: None,
             reset_raw_image_payloads=lambda: None,
