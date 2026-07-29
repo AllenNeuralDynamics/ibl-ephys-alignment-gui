@@ -38,6 +38,7 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     OutputDirectoryDerived,
     OutputRootSet,
+    PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
     ProbeSelected,
     RecordingSelected,
@@ -506,6 +507,44 @@ def test_commands_select_shank_without_line_state_leaves_pending_lines() -> None
     assert pending is not None
     np.testing.assert_allclose(pending.feature_positions_um, [1.0])
     np.testing.assert_allclose(pending.track_positions_um, [2.0])
+
+
+def test_commands_capture_active_reference_lines_updates_document_state() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    workspace.document.select_alignment_key(key)
+    workspace.document.mark_data_loaded(True)
+
+    result = workspace.app.commands.capture_active_reference_lines(
+        ([10.0, 20.0], [11.0, 21.0])
+    )
+
+    assert isinstance(result, PendingReferenceLinesUpdated)
+    pending = workspace.document.alignment_state_for(key).pending_reference_lines
+    assert pending is not None
+    np.testing.assert_allclose(pending.feature_positions_um, [10.0, 20.0])
+    np.testing.assert_allclose(pending.track_positions_um, [11.0, 21.0])
+
+
+def test_commands_capture_active_reference_lines_clears_missing_lines() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    workspace.document.select_alignment_key(key)
+    workspace.document.mark_data_loaded(True)
+    workspace.document.active_set_pending_reference_lines([1.0], [2.0])
+
+    result = workspace.app.commands.capture_active_reference_lines(None)
+
+    assert isinstance(result, PendingReferenceLinesUpdated)
+    assert workspace.document.alignment_state_for(key).pending_reference_lines is None
+
+
+def test_commands_capture_active_reference_lines_noops_when_data_unloaded() -> None:
+    workspace = AlignmentWorkspace()
+
+    result = workspace.app.commands.capture_active_reference_lines(None)
+
+    assert isinstance(result, Ok)
 
 
 def test_commands_load_fresh_ephys_data_caches_runtime_and_marks_loaded() -> None:

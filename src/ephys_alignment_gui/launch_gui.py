@@ -639,34 +639,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Set the desktop histology availability flag."""
         self.histology_exists = available
 
-    def _capture_pending_reference_lines(self) -> None:
-        """Capture active reference-line coordinates as document state.
-
-        Called when line handles change or when navigating away from a loaded
-        alignment. The document stores only coordinates; pyqtgraph handles stay
-        in the view/session layer.
-        """
-        if not self.document.data_loaded:
-            return
-        positions = self.displays.reference_lines.positions()
-        shank_idx = self._active_shank_idx()
-        if positions is None:
-            result = self.controller.clear_pending_reference_lines(shank_idx)
-        else:
-            line_feature, line_track = positions
-            result = self.controller.set_pending_reference_lines(
-                feature_positions_um=line_feature,
-                track_positions_um=line_track,
-                shank_idx=shank_idx,
-            )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return
-        logger.debug(
-            "Captured reference lines for %s",
-            self.document.selected_alignment_key,
-        )
-
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
         self.use_docdb = state == QtCore.Qt.Checked

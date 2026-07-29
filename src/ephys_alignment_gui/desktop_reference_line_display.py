@@ -26,7 +26,6 @@ class DesktopReferenceLineDisplayPorts:
     probe_plot: Any
     perpendicular_plot: Any
     fit_plot: Any
-    on_lines_changed: Callable[[], None]
 
 
 @dataclass(frozen=True)
@@ -53,9 +52,13 @@ class DesktopReferenceLineDisplay:
                     fit=ports.fit_plot,
                 ),
                 style_factory=default_reference_line_style,
-                on_lines_changed=ports.on_lines_changed,
+                on_lines_changed=lambda: None,
             )
         )
+
+    def set_lines_changed_callback(self, callback: Callable[[], None]) -> None:
+        """Set the callback invoked when reference-line positions change."""
+        self.layer.set_on_lines_changed(callback)
 
     def has_lines(self) -> bool:
         """Return whether the display has reference-line handles."""

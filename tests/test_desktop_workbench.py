@@ -273,6 +273,14 @@ class FakeReferenceLineDisplay:
         self.reattach_count = 0
         self.sync_count = 0
         self.add_count = 0
+        self.lines_changed_callback = None
+        self.current_positions = ([1.0], [2.0])
+
+    def set_lines_changed_callback(self, callback: Any) -> None:
+        self.lines_changed_callback = callback
+
+    def positions(self) -> Any:
+        return self.current_positions
 
     def clear(self) -> None:
         self.clear_count += 1
@@ -364,6 +372,7 @@ def _workbench(
     plot_exporter: Any | None = None,
     interaction: Any | None = None,
     lifecycle: Any | None = None,
+    reference_line_presenter: Any | None = None,
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
@@ -397,6 +406,7 @@ def _workbench(
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
         lifecycle_presenter=lifecycle or object(),
+        reference_line_presenter=reference_line_presenter or object(),
     )
 
 
@@ -567,7 +577,6 @@ def _render_ports() -> DesktopRenderPorts:
 
 def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
     return DesktopSelectionWorkflowCallbacks(
-        capture_pending_reference_lines=lambda: None,
         select_shank_for_view=lambda _shank_idx, _source: 0,
         clear_empty_state=lambda: None,
         set_histology_available=lambda _available: None,
@@ -645,7 +654,6 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             histology_available=lambda: True,
             activate_window=lambda: None,
             set_axis=lambda *_args, **_kwargs: None,
-            capture_pending_reference_lines=lambda: None,
         ),
     )
 
@@ -657,7 +665,13 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         active_output_root=lambda: None,
         has_output_directory=lambda: False,
     )
-    commands = SimpleNamespace(can_load_data=lambda: Ok())
+    captured_reference_lines: list[Any] = []
+    commands = SimpleNamespace(
+        can_load_data=lambda: Ok(),
+        capture_active_reference_lines=lambda positions: (
+            captured_reference_lines.append(positions) or Ok()
+        ),
+    )
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
     panel = FakeHistologyDisplay()
     ephys_display = FakeEphysDisplay()
@@ -713,6 +727,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.displays.ephys is ephys_display
     assert workbench.displays.slice is slice_display
     assert workbench.displays.reference_lines is reference_line_display
+    assert reference_line_display.lines_changed_callback is not None
+    reference_line_display.lines_changed_callback()
+    assert captured_reference_lines == [([1.0], [2.0])]
     workbench.alignment_presenter.callbacks.clear_reference_lines()
     workbench.alignment_presenter.callbacks.reattach_reference_lines()
     workbench.alignment_presenter.callbacks.update_reference_lines_to_alignment()

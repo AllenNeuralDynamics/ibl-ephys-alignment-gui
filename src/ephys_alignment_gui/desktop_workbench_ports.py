@@ -88,7 +88,6 @@ def desktop_reference_line_display_ports_from_main_window(
         probe_plot=window.fig_probe,
         perpendicular_plot=window.fig_hist_perp,
         fit_plot=window.fig_fit,
-        on_lines_changed=window._capture_pending_reference_lines,
     )
 
 
@@ -134,7 +133,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
 
     return DesktopWorkbenchPorts(
         selection=DesktopSelectionWorkflowCallbacks(
-            capture_pending_reference_lines=window._capture_pending_reference_lines,
             select_shank_for_view=lambda shank_idx, source: (
                 window._select_shank_for_view(shank_idx, source=source)
             ),
@@ -234,6 +232,5 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             histology_available=lambda: window.histology_exists,
             activate_window=window.activateWindow,
             set_axis=window.set_axis,
-            capture_pending_reference_lines=window._capture_pending_reference_lines,
         ),
     )

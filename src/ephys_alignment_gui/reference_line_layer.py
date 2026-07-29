@@ -47,6 +47,10 @@ class ReferenceLineLayer:
         """Return whether the session has reference-line handles."""
         return len(self.lines_features) > 0 and len(self.lines_tracks) > 0
 
+    def set_on_lines_changed(self, callback: Callable[[], None]) -> None:
+        """Set the callback invoked when managed line coordinates change."""
+        self._on_lines_changed = callback
+
     def positions(self) -> tuple[np.ndarray, np.ndarray] | None:
         """Return feature/track reference-line positions in um."""
         if not self.has_lines():

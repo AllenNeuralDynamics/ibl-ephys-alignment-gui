@@ -63,6 +63,9 @@ from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
 )
+from ephys_alignment_gui.desktop_reference_line_presenter import (
+    DesktopReferenceLinePresenter,
+)
 from ephys_alignment_gui.desktop_save_workflow_presenter import (
     DesktopSaveWorkflowCallbacks,
     DesktopSaveWorkflowPresenter,
@@ -173,7 +176,6 @@ class DesktopInteractionPorts:
     histology_available: Callable[[], bool]
     activate_window: Callable[[], None]
     set_axis: Callable[..., Any]
-    capture_pending_reference_lines: Callable[[], None]
 
 
 @dataclass(frozen=True)
@@ -203,7 +205,6 @@ class DesktopWorkbenchPorts:
 class DesktopSelectionWorkflowCallbacks:
     """MainWindow bridge callbacks for selection and load presenters."""
 
-    capture_pending_reference_lines: Callable[[], None]
     select_shank_for_view: Callable[[int, str], int | None]
     clear_empty_state: Callable[[], None]
     set_histology_available: Callable[[bool], None]
@@ -237,6 +238,7 @@ class DesktopWorkbench:
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
     lifecycle_presenter: DesktopLifecyclePresenter
+    reference_line_presenter: DesktopReferenceLinePresenter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -275,6 +277,13 @@ class DesktopWorkbench:
             displays=displays,
             callbacks=cls._lifecycle_callbacks(ports.lifecycle),
         )
+        reference_line_presenter = DesktopReferenceLinePresenter(
+            app=app,
+            reference_line_display=displays.reference_lines,
+        )
+        displays.reference_lines.set_lines_changed_callback(
+            reference_line_presenter.capture_pending_reference_lines
+        )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
             selection_view=selection_view,
@@ -283,6 +292,7 @@ class DesktopWorkbench:
                 output_path_presenter,
                 shank_presenter,
                 lifecycle_presenter,
+                reference_line_presenter,
             ),
         )
         probe_selection_presenter = DesktopProbeSelectionPresenter(
@@ -293,6 +303,7 @@ class DesktopWorkbench:
                 output_path_presenter,
                 load_data_presenter,
                 lifecycle_presenter,
+                reference_line_presenter,
             ),
         )
         session_selection_presenter = DesktopSessionSelectionPresenter(
@@ -301,6 +312,7 @@ class DesktopWorkbench:
             callbacks=cls._session_selection_callbacks(
                 ports.selection,
                 lifecycle_presenter,
+                reference_line_presenter,
             ),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
@@ -353,6 +365,7 @@ class DesktopWorkbench:
             ports.interaction,
             app=app,
             displays=displays,
+            reference_line_presenter=reference_line_presenter,
         )
         plot_exporter = cls._plot_exporter(
             ports.export,
@@ -377,6 +390,7 @@ class DesktopWorkbench:
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
             lifecycle_presenter=lifecycle_presenter,
+            reference_line_presenter=reference_line_presenter,
         )
 
     @staticmethod
@@ -506,6 +520,7 @@ class DesktopWorkbench:
         *,
         app: Any,
         displays: DesktopDisplays,
+        reference_line_presenter: DesktopReferenceLinePresenter,
     ) -> DesktopInteractionPresenter:
         """Build the desktop interaction presenter."""
         return DesktopInteractionPresenter(
@@ -530,7 +545,9 @@ class DesktopWorkbench:
                 histology_available=ports.histology_available,
                 activate_window=ports.activate_window,
                 set_axis=ports.set_axis,
-                capture_pending_reference_lines=ports.capture_pending_reference_lines,
+                capture_pending_reference_lines=(
+                    reference_line_presenter.capture_pending_reference_lines
+                ),
             ),
         )
 
@@ -578,10 +595,13 @@ class DesktopWorkbench:
         output_path_presenter: DesktopOutputPathPresenter,
         shank_presenter: DesktopShankPresenter,
         lifecycle_presenter: DesktopLifecyclePresenter,
+        reference_line_presenter: DesktopReferenceLinePresenter,
     ) -> DesktopLoadDataCallbacks:
         """Build callbacks for cached/fresh data loading."""
         return DesktopLoadDataCallbacks(
-            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            capture_pending_reference_lines=(
+                reference_line_presenter.capture_pending_reference_lines
+            ),
             detach_active_stream=lifecycle_presenter.detach_active_stream,
             prepare_for_fresh_stream_load=(
                 lifecycle_presenter.prepare_for_fresh_stream_load
@@ -605,12 +625,15 @@ class DesktopWorkbench:
         output_path_presenter: DesktopOutputPathPresenter,
         load_data_presenter: DesktopLoadDataPresenter,
         lifecycle_presenter: DesktopLifecyclePresenter,
+        reference_line_presenter: DesktopReferenceLinePresenter,
     ) -> DesktopProbeSelectionCallbacks:
         """Build callbacks for probe selection."""
         return DesktopProbeSelectionCallbacks(
             mouse_root_loaded=callbacks.mouse_root_loaded,
             active_shank_idx=callbacks.active_shank_idx,
-            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            capture_pending_reference_lines=(
+                reference_line_presenter.capture_pending_reference_lines
+            ),
             detach_active_stream=lifecycle_presenter.detach_active_stream,
             present_cached_probe_selection=(
                 lambda session, probe, shank: (
@@ -631,11 +654,14 @@ class DesktopWorkbench:
     def _session_selection_callbacks(
         callbacks: DesktopSelectionWorkflowCallbacks,
         lifecycle_presenter: DesktopLifecyclePresenter,
+        reference_line_presenter: DesktopReferenceLinePresenter,
     ) -> DesktopSessionSelectionCallbacks:
         """Build callbacks for session selection."""
         return DesktopSessionSelectionCallbacks(
             mouse_root_loaded=callbacks.mouse_root_loaded,
-            capture_pending_reference_lines=callbacks.capture_pending_reference_lines,
+            capture_pending_reference_lines=(
+                reference_line_presenter.capture_pending_reference_lines
+            ),
             evict_stream_cache=lifecycle_presenter.evict_stream_cache,
             show_empty_state=lifecycle_presenter.show_empty_state,
             select_first_probe=callbacks.select_first_probe,

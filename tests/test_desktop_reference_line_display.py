@@ -13,6 +13,11 @@ from ephys_alignment_gui.desktop_reference_line_display import (
 class FakeLayer:
     def __init__(self) -> None:
         self.calls: list[Any] = []
+        self.on_lines_changed = lambda: None
+
+    def set_on_lines_changed(self, callback) -> None:
+        self.calls.append(("set-callback", callback))
+        self.on_lines_changed = callback
 
     def has_lines(self) -> bool:
         self.calls.append("has_lines")
@@ -59,7 +64,6 @@ def test_reference_line_display_constructs_layer_from_ports() -> None:
             probe_plot="probe",
             perpendicular_plot="perpendicular",
             fit_plot="fit",
-            on_lines_changed=lambda: changed.append("changed"),
         )
     )
 
@@ -70,6 +74,7 @@ def test_reference_line_display_constructs_layer_from_ports() -> None:
     assert plots.probe == "probe"
     assert plots.perpendicular == "perpendicular"
     assert plots.fit == "fit"
+    display.set_lines_changed_callback(lambda: changed.append("changed"))
     display.layer._on_lines_changed()
     assert changed == ["changed"]
 
@@ -79,6 +84,7 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
     display = DesktopReferenceLineDisplay(layer=layer)
 
     assert display.has_lines()
+    display.set_lines_changed_callback(lambda: None)
     assert display.positions() == ([1.0], [2.0])
     display.clear()
     display.reattach()
@@ -91,6 +97,7 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
 
     assert layer.calls == [
         "has_lines",
+        ("set-callback", layer.on_lines_changed),
         "positions",
         "clear",
         "remove",

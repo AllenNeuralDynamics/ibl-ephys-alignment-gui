@@ -49,6 +49,7 @@ from ephys_alignment_gui.controller import (
     NoPreviousAlignments,
     OutputDirectoryDerived,
     OutputRootSet,
+    PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
     PreviousAlignmentsLoaded,
     ProbeSelected,
@@ -224,6 +225,18 @@ class AlignmentCommands:
             track_positions_um=track_positions_um,
             shank_idx=outgoing_shank_idx,
         )
+
+    def capture_active_reference_lines(
+        self,
+        reference_lines: tuple[Any, Any] | None,
+    ) -> PendingReferenceLinesUpdated | Ok | Failed:
+        """Capture active reference-line coordinates as document state."""
+        if not self._controller.document.data_loaded:
+            return Ok()
+        result = self._capture_outgoing_reference_lines(reference_lines)
+        if result is None:
+            return Ok()
+        return result
 
     def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
         """Load a mouse root and update document metadata."""
