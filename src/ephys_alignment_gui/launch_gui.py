@@ -20,6 +20,7 @@ from ephys_alignment_gui.desktop_alignment_screen_view import (
 )
 from ephys_alignment_gui.desktop_depth_plot_view import DesktopDepthPlotView
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
+from ephys_alignment_gui.desktop_export_view import DesktopExportView
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
@@ -148,6 +149,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             lin_fit_checkbox=self.lin_fit_option,
             current_index_label=self.idx_string,
             total_index_label=self.tot_idx_string,
+        )
+        self.export_view = DesktopExportView(
+            ephys_graphics_layout=self.fig_data_layout,
+            ephys_data_area=self.fig_data_area,
+            slice_plot=self.fig_slice,
+            slice_trajectory_pen=self.rpen_dot,
+            reset_axis=self.reset_axis_button_pressed,
+            set_view=self.set_view,
+            set_axis=self.set_axis,
+            set_font=self.set_font,
+            ephys_sizes=lambda: (
+                self.fig_probe_width,
+                self.fig_ax_width,
+            ),
+            slice_geometry=lambda: (
+                self.slice_width,
+                self.slice_height,
+                self.slice_rect,
+            ),
         )
         self._initialize_startup_stream_state()
         self.desktop_workbench = DesktopWorkbench.create(

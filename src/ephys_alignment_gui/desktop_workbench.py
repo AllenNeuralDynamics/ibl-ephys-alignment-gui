@@ -23,10 +23,8 @@ from ephys_alignment_gui.desktop_alignment_selection_actions import (
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     DesktopEphysPlotExporter,
-    EphysExportCallbacks,
-    EphysExportLayout,
-    EphysExportSizes,
 )
+from ephys_alignment_gui.desktop_export_view import DesktopExportView
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop_histology_refresh_presenter import (
     DesktopHistologyRefreshPresenter,
@@ -59,12 +57,8 @@ from ephys_alignment_gui.desktop_path_dialog_presenter import (
     DesktopPathDialogPresenter,
 )
 from ephys_alignment_gui.desktop_plot_exporter import (
-    DesktopPlotExportCallbacks,
     DesktopPlotExporter,
     HistologyExportHandles,
-    SliceExportGeometry,
-    SliceExportHandles,
-    SliceExportStyle,
 )
 from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
@@ -178,22 +172,6 @@ class DesktopPreviousAlignmentLoadPorts:
 
 
 @dataclass(frozen=True)
-class DesktopExportPorts:
-    """Desktop operations and handles needed by plot export workflows."""
-
-    ephys_graphics_layout: Any
-    ephys_data_area: Any
-    slice_plot: Any
-    slice_trajectory_pen: Any
-    reset_axis: Callable[[], None]
-    set_view: Callable[..., None]
-    set_axis: Callable[..., Any]
-    set_font: Callable[..., None]
-    ephys_sizes: Callable[[], tuple[float, float]]
-    slice_geometry: Callable[[], tuple[float, float, Any]]
-
-
-@dataclass(frozen=True)
 class DesktopInteractionPorts:
     """Desktop operations and handles needed by interaction presentation."""
 
@@ -234,7 +212,7 @@ class DesktopWorkbenchPorts:
     lifecycle: DesktopLifecyclePorts
     save_workflow: DesktopSaveWorkflowPorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
-    export: DesktopExportPorts
+    export: DesktopExportView
     interaction: DesktopInteractionPorts
 
 
@@ -550,7 +528,7 @@ class DesktopWorkbench:
 
     @staticmethod
     def _plot_exporter(
-        ports: DesktopExportPorts,
+        export_view: DesktopExportView,
         *,
         displays: DesktopDisplays,
     ) -> DesktopPlotExporter:
@@ -558,28 +536,19 @@ class DesktopWorkbench:
         ephys_exporter = DesktopEphysPlotExporter(
             presenter=displays.ephys.plot_presenter,
             panel=displays.ephys.panel,
-            layout=EphysExportLayout(
-                graphics_layout=ports.ephys_graphics_layout,
-                data_area=ports.ephys_data_area,
-            ),
-            callbacks=DesktopWorkbench._ephys_export_callbacks(
-                ports,
-                displays,
+            layout=export_view.ephys_layout(),
+            callbacks=export_view.ephys_callbacks(
+                add_lines_points=displays.reference_lines.add_to_plots,
             ),
         )
         return DesktopPlotExporter(
             ephys_exporter=ephys_exporter,
-            slice_handles=SliceExportHandles(
-                slice_display=displays.slice,
-                slice_plot=ports.slice_plot,
-            ),
-            slice_style=SliceExportStyle(
-                trajectory_pen=ports.slice_trajectory_pen,
-            ),
+            slice_handles=export_view.slice_handles(displays.slice),
+            slice_style=export_view.slice_style(),
             histology_handles=HistologyExportHandles(
                 histology_display=displays.histology,
             ),
-            callbacks=DesktopWorkbench._plot_export_callbacks(ports),
+            callbacks=export_view.plot_callbacks(),
             add_lines_points=displays.reference_lines.add_to_plots,
         )
 
@@ -630,32 +599,6 @@ class DesktopWorkbench:
             reset_raw_image_payloads=ports.reset_raw_image_payloads,
             show_empty_state=ports.show_empty_state,
             collect_garbage=ports.collect_garbage,
-        )
-
-    @staticmethod
-    def _ephys_export_callbacks(
-        ports: DesktopExportPorts,
-        displays: DesktopDisplays,
-    ) -> EphysExportCallbacks:
-        """Build callbacks for ephys plot export layout changes."""
-        return EphysExportCallbacks(
-            reset_axis=ports.reset_axis,
-            set_view=ports.set_view,
-            set_axis=ports.set_axis,
-            set_font=ports.set_font,
-            add_lines_points=displays.reference_lines.add_to_plots,
-            sizes=lambda: EphysExportSizes(*ports.ephys_sizes()),
-        )
-
-    @staticmethod
-    def _plot_export_callbacks(
-        ports: DesktopExportPorts,
-    ) -> DesktopPlotExportCallbacks:
-        """Build callbacks for non-ephys plot export steps."""
-        return DesktopPlotExportCallbacks(
-            set_axis=ports.set_axis,
-            set_font=ports.set_font,
-            slice_geometry=lambda: SliceExportGeometry(*ports.slice_geometry()),
         )
 
     @staticmethod

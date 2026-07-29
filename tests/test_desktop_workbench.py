@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
+from ephys_alignment_gui.desktop_export_view import DesktopExportView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
     DesktopBusyPorts,
-    DesktopExportPorts,
     DesktopInteractionPorts,
     DesktopLifecyclePorts,
     DesktopLoadDataPorts,
@@ -716,7 +716,7 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             ),
             reload_button=lambda: object(),
         ),
-        export=DesktopExportPorts(
+        export=DesktopExportView(
             ephys_graphics_layout=object(),
             ephys_data_area=object(),
             slice_plot=object(),
