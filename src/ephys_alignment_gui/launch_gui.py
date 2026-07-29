@@ -25,22 +25,14 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     ShankSelected,
 )
-from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
-from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplay
+from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_path_view import DesktopPathView
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
-from ephys_alignment_gui.desktop_reference_line_display import (
-    DesktopReferenceLineDisplay,
-)
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
-from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop_workbench_ports import (
-    desktop_ephys_display_ports_from_main_window,
-    desktop_histology_display_ports_from_main_window,
-    desktop_reference_line_display_ports_from_main_window,
-    desktop_slice_display_ports_from_main_window,
+    desktop_display_ports_from_main_window,
     desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.settings import (
@@ -132,30 +124,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             mouse_root_line=self.mouse_root_line,
             output_folder_line=self.output_folder_line,
         )
-        self.ephys_display = DesktopEphysDisplay.create(
+        self.displays = DesktopDisplays.create(
             app=self.app,
-            ports=desktop_ephys_display_ports_from_main_window(self),
-        )
-        self.reference_line_display = DesktopReferenceLineDisplay.create(
-            ports=desktop_reference_line_display_ports_from_main_window(self),
-        )
-        self.slice_display = DesktopSliceDisplay.create(
-            app=self.app,
-            ports=desktop_slice_display_ports_from_main_window(self),
-        )
-        self.histology_display = DesktopHistologyDisplay.create(
-            app=self.app,
-            ports=desktop_histology_display_ports_from_main_window(self),
+            ports=desktop_display_ports_from_main_window(self),
         )
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             selection_view=self.selection_view,
             path_view=self.path_view,
             parent=self,
-            ephys_display=self.ephys_display,
-            slice_display=self.slice_display,
-            histology_display=self.histology_display,
-            reference_line_display=self.reference_line_display,
+            displays=self.displays,
             ports=desktop_workbench_ports_from_main_window(self),
         )
         self.desktop_workbench.connect_events()
@@ -393,7 +371,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             self.slice_height = self.fig_slice.height()
             self.slice_rect = self.fig_slice.viewRect()
 
-        self.ephys_display.apply_view(
+        self.displays.ephys.apply_view(
             view=view,
             axis_width=self.fig_ax_width,
             image_width=self.fig_img_width,
@@ -444,7 +422,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for nearby histology boundary rendering."""
-        self.histology_display.render_active_nearby(fig, movable=movable)
+        self.displays.histology.render_active_nearby(fig, movable=movable)
 
     def _probe_extent_query_kwargs(self) -> dict[str, float]:
         depth_view = self.display_state.depth_view
@@ -462,7 +440,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        tip_position_um = self.histology_display.tip_position_um()
+        tip_position_um = self.displays.histology.tip_position_um()
         if tip_position_um is None:
             logger.error("Cannot offset alignment: probe tip line is not rendered")
             return False
@@ -487,7 +465,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if not self.histology_exists:
             return False
 
-        line_positions = self.reference_line_display.positions()
+        line_positions = self.displays.reference_lines.positions()
         if line_positions is None:
             line_feature = np.array([], dtype=float)
             line_track = np.array([], dtype=float)
@@ -518,7 +496,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _create_reference_lines_for_previous_alignment(self) -> None:
         feature_prev = self._active_previous_feature()
         if feature_prev is not None and np.any(feature_prev):
-            self.reference_line_display.create_previous_feature_lines(
+            self.displays.reference_lines.create_previous_feature_lines(
                 np.asarray(feature_prev)[1:-1] * 1e6
             )
 
@@ -555,11 +533,11 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def _clear_active_stream_presentation(self) -> None:
         """Clear desktop-owned plot and popup items for the active stream."""
-        self.reference_line_display.clear()
+        self.displays.reference_lines.clear()
         self.popup_manager.close_all()
-        self.ephys_display.clear()
-        self.slice_display.clear()
-        self.histology_display.clear()
+        self.displays.ephys.clear()
+        self.displays.slice.clear()
+        self.displays.histology.clear()
 
     def _active_shank_idx(self) -> int:
         """Return the document-owned active shank index."""
@@ -704,7 +682,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         if not self.document.data_loaded:
             return
-        positions = self.reference_line_display.positions()
+        positions = self.displays.reference_lines.positions()
         shank_idx = self._active_shank_idx()
         if positions is None:
             result = self.controller.clear_pending_reference_lines(shank_idx)
@@ -793,21 +771,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         if not self.desktop_workbench.render_active_histology_panels():
             return
-        self.slice_display.refresh_perpendicular_histology()
+        self.displays.slice.refresh_perpendicular_histology()
 
         pending_lines = self.controller.active_pending_reference_lines(shank_idx)
         if isinstance(pending_lines, Failed):
             logger.error(pending_lines.message)
             pending_lines = None
         if pending_lines is not None:
-            self.reference_line_display.create_lines(
+            self.displays.reference_lines.create_lines(
                 pending_lines.feature_positions_um,
                 pending_lines.track_positions_um,
             )
         else:
             feature_prev = self._active_previous_feature()
             if feature_prev is not None and np.any(feature_prev):
-                self.reference_line_display.create_previous_feature_lines(
+                self.displays.reference_lines.create_previous_feature_lines(
                     np.asarray(feature_prev)[1:-1] * 1e6
                 )
 
@@ -831,10 +809,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         preserve_plot_selection: bool,
     ) -> DesktopShankSelectionState:
         """Capture desktop plot selections to preserve across shank redraw."""
-        prev_slice = self.slice_display.capture_selection()
+        prev_slice = self.displays.slice.capture_selection()
         prev_ephys_plot_keys = (
-            self.ephys_display.current_plot_keys()
-            if preserve_plot_selection and self.ephys_display.has_plot_menus()
+            self.displays.ephys.current_plot_keys()
+            if preserve_plot_selection and self.displays.ephys.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -896,9 +874,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         plot_menu_state: Any,
     ) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not self.ephys_display.has_plot_menus():
+        if not self.displays.ephys.has_plot_menus():
             self.init_menubar()
-        self.ephys_display.render_menus(plot_menu_state)
+        self.displays.ephys.render_menus(plot_menu_state)
 
     def _configure_shank_view_after_render(self, preserve_plot_selection: bool) -> None:
         """Apply one-time view configuration after shank rendering."""
@@ -918,7 +896,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         result = self.app.commands.select_shank(
             new_shank_idx,
-            outgoing_reference_lines=self.reference_line_display.positions(),
+            outgoing_reference_lines=self.displays.reference_lines.positions(),
             source="dropdown",
         )
         if isinstance(result, Failed):
@@ -970,7 +948,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.plot_histology()
         self.plot_histology_ref()
         self.plot_scale_factor()
-        self.reference_line_display.reattach()
+        self.displays.reference_lines.reattach()
 
     def fit_button_pressed(self) -> None:
         """
@@ -1043,7 +1021,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+A key pressed. Shows/hides labels Allen atlas labels on brain regions
         in histology plots
         """
-        self.histology_display.toggle_labels()
+        self.displays.histology.toggle_labels()
 
     def toggle_line_button_pressed(self) -> None:
         """
@@ -1052,16 +1030,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         lines_visible = self.display_state.toggle_reference_lines_visible()
         if not lines_visible:
-            self.reference_line_display.remove_from_plots()
+            self.displays.reference_lines.remove_from_plots()
         else:
-            self.reference_line_display.add_to_plots()
+            self.displays.reference_lines.add_to_plots()
 
     def toggle_channel_button_pressed(self) -> None:
         """
         Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
         and perpendicular slice image
         """
-        self.slice_display.toggle_channel_visibility()
+        self.displays.slice.toggle_channel_visibility()
 
     def delete_line_button_pressed(self) -> None:
         """
@@ -1069,7 +1047,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Deletes a reference line from the ephys and histology plots
         """
 
-        self.reference_line_display.delete_selected()
+        self.displays.reference_lines.delete_selected()
 
     def describe_labels_pressed(self) -> None:
         self.desktop_workbench.describe_labels_pressed()
@@ -1177,7 +1155,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def reset_axis_button_pressed(self) -> None:
         self.set_default_feature_y_range()
-        feature_xrange = self.ephys_display.feature_xrange
+        feature_xrange = self.displays.ephys.feature_xrange
         if feature_xrange is not None:
             self.fig_img.setXRange(
                 min=feature_xrange[0],
@@ -1214,7 +1192,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use
-        if not self.histology_exists or not self.reference_line_display.has_lines():
+        if not self.histology_exists or not self.displays.reference_lines.has_lines():
             return
 
         # Recompute alignment with new setting using existing fit logic
@@ -1251,14 +1229,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
-        self.histology_display.sync_top_to_tip()
+        self.displays.histology.sync_top_to_tip()
 
     def top_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
-        self.histology_display.sync_tip_to_top()
+        self.displays.histology.sync_tip_to_top()
 
     def update_string(self) -> None:
         """

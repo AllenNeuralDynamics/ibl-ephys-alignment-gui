@@ -56,15 +56,15 @@ class Setup:
         menu_bar.setNativeMenuBar(False)
         self.setMenuBar(menu_bar)
 
-        self.ephys_display.attach_plot_menus(menu_bar)
+        self.displays.ephys.attach_plot_menus(menu_bar)
 
-        self.slice_display.attach_slice_menu(
+        self.displays.slice.attach_slice_menu(
             menu_bar,
             parent=self,
             offline=self.offline,
         )
 
-        self.ephys_display.attach_unit_filter_menu(menu_bar, self)
+        self.displays.ephys.attach_unit_filter_menu(menu_bar, self)
 
         # FIT OPTIONS MENU BAR
         # Define all possible keyboard shortcut interactions for GUI
@@ -129,43 +129,43 @@ class Setup:
         toggle1_option = QtWidgets.QAction("Toggle Image Plots", self)
         toggle1_option.setShortcut("Alt+1")
         toggle1_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("image")
+            lambda: self.displays.ephys.toggle_plot("image")
         )
         toggle2_option = QtWidgets.QAction("Toggle Line Plots", self)
         toggle2_option.setShortcut("Alt+2")
         toggle2_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("line")
+            lambda: self.displays.ephys.toggle_plot("line")
         )
         toggle3_option = QtWidgets.QAction("Toggle Probe Plots", self)
         toggle3_option.setShortcut("Alt+3")
         toggle3_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("probe")
+            lambda: self.displays.ephys.toggle_plot("probe")
         )
         toggle4_option = QtWidgets.QAction("Toggle Slice Plots", self)
         toggle4_option.setShortcut("Alt+4")
         toggle4_option.triggered.connect(
-            lambda: self.slice_display.toggle_slice_plot()
+            lambda: self.displays.slice.toggle_slice_plot()
         )
 
         toggle5_option = QtWidgets.QAction("Toggle Previous Image Plots", self)
         toggle5_option.setShortcut("Alt+Ctrl+1")
         toggle5_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("image", reverse=True)
+            lambda: self.displays.ephys.toggle_plot("image", reverse=True)
         )
         toggle6_option = QtWidgets.QAction("Toggle Previous Line Plots", self)
         toggle6_option.setShortcut("Alt+Ctrl+2")
         toggle6_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("line", reverse=True)
+            lambda: self.displays.ephys.toggle_plot("line", reverse=True)
         )
         toggle7_option = QtWidgets.QAction("Toggle Previous Probe Plots", self)
         toggle7_option.setShortcut("Alt+Ctrl+3")
         toggle7_option.triggered.connect(
-            lambda: self.ephys_display.toggle_plot("probe", reverse=True)
+            lambda: self.displays.ephys.toggle_plot("probe", reverse=True)
         )
         toggle8_option = QtWidgets.QAction("Toggle Previous Slice Plots", self)
         toggle8_option.setShortcut("Alt+Ctrl+4")
         toggle8_option.triggered.connect(
-            lambda: self.slice_display.toggle_slice_plot(reverse=True)
+            lambda: self.displays.slice.toggle_slice_plot(reverse=True)
         )
 
         # Shortcuts to switch order of 3 panels in ephys plot

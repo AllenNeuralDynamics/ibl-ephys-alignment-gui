@@ -12,7 +12,7 @@ from ephys_alignment_gui.desktop_alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
 )
-from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplay
+from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     DesktopEphysPlotExporter,
     EphysExportCallbacks,
@@ -20,7 +20,6 @@ from ephys_alignment_gui.desktop_ephys_plot_exporter import (
     EphysExportSizes,
 )
 from ephys_alignment_gui.desktop_folder_dialog import DesktopFolderDialog
-from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplay
 from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
@@ -60,9 +59,6 @@ from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
 )
-from ephys_alignment_gui.desktop_reference_line_display import (
-    DesktopReferenceLineDisplay,
-)
 from ephys_alignment_gui.desktop_save_workflow_presenter import (
     DesktopSaveWorkflowCallbacks,
     DesktopSaveWorkflowPresenter,
@@ -75,7 +71,6 @@ from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
 )
-from ephys_alignment_gui.desktop_slice_display import DesktopSliceDisplay
 from ephys_alignment_gui.event_bus import EventSubscription
 
 
@@ -218,9 +213,9 @@ class DesktopWorkbench:
     """Own focused desktop presenters and desktop event subscription lifecycle."""
 
     app: Any
+    displays: DesktopDisplays
     alignment_presenter: DesktopAlignmentPresenter
     shank_presenter: DesktopShankPresenter
-    histology_display: DesktopHistologyDisplay
     load_data_presenter: DesktopLoadDataPresenter
     probe_selection_presenter: DesktopProbeSelectionPresenter
     session_selection_presenter: DesktopSessionSelectionPresenter
@@ -234,9 +229,6 @@ class DesktopWorkbench:
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
-    ephys_display: DesktopEphysDisplay
-    slice_display: DesktopSliceDisplay
-    reference_line_display: DesktopReferenceLineDisplay
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -247,10 +239,7 @@ class DesktopWorkbench:
         selection_view: Any,
         path_view: Any,
         parent: Any,
-        ephys_display: DesktopEphysDisplay,
-        slice_display: DesktopSliceDisplay,
-        histology_display: DesktopHistologyDisplay,
-        reference_line_display: DesktopReferenceLineDisplay,
+        displays: DesktopDisplays,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
@@ -263,18 +252,14 @@ class DesktopWorkbench:
             queries=app.queries,
             callbacks=cls._alignment_render_callbacks(
                 ports.render.alignment,
-                histology_display,
-                slice_display,
-                reference_line_display,
+                displays,
             ),
         )
         shank_presenter = DesktopShankPresenter(app)
         shank_presenter.configure(
             callbacks=cls._shank_render_callbacks(
                 ports.render.shank,
-                reference_line_display,
-                ephys_display,
-                slice_display,
+                displays,
             )
         )
         load_data_presenter = DesktopLoadDataPresenter(
@@ -348,22 +333,17 @@ class DesktopWorkbench:
         interaction_presenter = cls._interaction_presenter(
             ports.interaction,
             app=app,
-            ephys_panel=ephys_display.panel,
-            histology_display=histology_display,
-            reference_line_display=reference_line_display,
+            displays=displays,
         )
         plot_exporter = cls._plot_exporter(
             ports.export,
-            ephys_display=ephys_display,
-            slice_display=slice_display,
-            histology_display=histology_display,
-            reference_line_display=reference_line_display,
+            displays=displays,
         )
         return cls(
             app=app,
+            displays=displays,
             alignment_presenter=alignment_presenter,
             shank_presenter=shank_presenter,
-            histology_display=histology_display,
             load_data_presenter=load_data_presenter,
             probe_selection_presenter=probe_selection_presenter,
             session_selection_presenter=session_selection_presenter,
@@ -377,32 +357,27 @@ class DesktopWorkbench:
             previous_alignment_load_presenter=previous_alignment_load_presenter,
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
-            ephys_display=ephys_display,
-            slice_display=slice_display,
-            reference_line_display=reference_line_display,
         )
 
     @staticmethod
     def _alignment_render_callbacks(
         ports: DesktopAlignmentRenderPorts,
-        histology_display: DesktopHistologyDisplay,
-        slice_display: DesktopSliceDisplay,
-        reference_line_display: DesktopReferenceLineDisplay,
+        displays: DesktopDisplays,
     ) -> DesktopAlignmentRenderCallbacks:
         """Build callbacks for alignment edit rendering."""
         return DesktopAlignmentRenderCallbacks(
             restore_lin_fit=ports.restore_lin_fit,
-            clear_reference_lines=reference_line_display.clear,
+            clear_reference_lines=displays.reference_lines.clear,
             capture_depth_plot_y_ranges=ports.capture_depth_plot_y_ranges,
             restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
-            reattach_reference_lines=reference_line_display.reattach,
-            render_histology_alignment=histology_display.render_alignment_edit,
-            plot_channels=slice_display.plot_channels,
+            reattach_reference_lines=displays.reference_lines.reattach,
+            render_histology_alignment=displays.histology.render_alignment_edit,
+            plot_channels=displays.slice.plot_channels,
             refresh_perpendicular_histology=(
-                slice_display.refresh_perpendicular_histology
+                displays.slice.refresh_perpendicular_histology
             ),
             update_reference_lines_to_alignment=(
-                reference_line_display.sync_track_to_feature
+                displays.reference_lines.sync_track_to_feature
             ),
             create_reference_lines_for_previous_alignment=(
                 ports.create_reference_lines_for_previous_alignment
@@ -414,22 +389,20 @@ class DesktopWorkbench:
     @staticmethod
     def _shank_render_callbacks(
         ports: DesktopShankRenderPorts,
-        reference_line_display: DesktopReferenceLineDisplay,
-        ephys_display: DesktopEphysDisplay,
-        slice_display: DesktopSliceDisplay,
+        displays: DesktopDisplays,
     ) -> DesktopShankRenderCallbacks:
         """Build callbacks for shank selection rendering."""
         return DesktopShankRenderCallbacks(
             capture_plot_selection=ports.capture_plot_selection,
-            clear_reference_lines=reference_line_display.clear,
+            clear_reference_lines=displays.reference_lines.clear,
             prepare_runtime=ports.prepare_runtime,
             prepare_histology=ports.prepare_histology,
             apply_plot_data_state=ports.apply_plot_data_state,
             raw_image_payloads=ports.raw_image_payloads,
             render_plot_menus=ports.render_plot_menus,
-            render_ephys_plots=ephys_display.render_shank_ephys_plots,
+            render_ephys_plots=displays.ephys.render_shank_ephys_plots,
             render_histology_plots=ports.render_histology_plots,
-            restore_slice_selection=slice_display.restore_selection,
+            restore_slice_selection=displays.slice.restore_selection,
             configure_view=ports.configure_view,
             histology_available=ports.histology_available,
             offline=ports.offline,
@@ -478,38 +451,35 @@ class DesktopWorkbench:
     def _plot_exporter(
         ports: DesktopExportPorts,
         *,
-        ephys_display: DesktopEphysDisplay,
-        slice_display: DesktopSliceDisplay,
-        histology_display: DesktopHistologyDisplay,
-        reference_line_display: DesktopReferenceLineDisplay,
+        displays: DesktopDisplays,
     ) -> DesktopPlotExporter:
         """Build the desktop plot exporter cluster."""
         ephys_exporter = DesktopEphysPlotExporter(
-            presenter=ephys_display.plot_presenter,
-            panel=ephys_display.panel,
+            presenter=displays.ephys.plot_presenter,
+            panel=displays.ephys.panel,
             layout=EphysExportLayout(
                 graphics_layout=ports.ephys_graphics_layout,
                 data_area=ports.ephys_data_area,
             ),
             callbacks=DesktopWorkbench._ephys_export_callbacks(
                 ports,
-                reference_line_display,
+                displays,
             ),
         )
         return DesktopPlotExporter(
             ephys_exporter=ephys_exporter,
             slice_handles=SliceExportHandles(
-                slice_display=slice_display,
+                slice_display=displays.slice,
                 slice_plot=ports.slice_plot,
             ),
             slice_style=SliceExportStyle(
                 trajectory_pen=ports.slice_trajectory_pen,
             ),
             histology_handles=HistologyExportHandles(
-                histology_display=histology_display,
+                histology_display=displays.histology,
             ),
             callbacks=DesktopWorkbench._plot_export_callbacks(ports),
-            add_lines_points=reference_line_display.add_to_plots,
+            add_lines_points=displays.reference_lines.add_to_plots,
         )
 
     @staticmethod
@@ -517,17 +487,15 @@ class DesktopWorkbench:
         ports: DesktopInteractionPorts,
         *,
         app: Any,
-        ephys_panel: Any,
-        histology_display: Any,
-        reference_line_display: Any,
+        displays: DesktopDisplays,
     ) -> DesktopInteractionPresenter:
         """Build the desktop interaction presenter."""
         return DesktopInteractionPresenter(
             app=app,
             popup_manager=ports.popup_manager,
-            ephys_panel=ephys_panel,
-            histology_display=histology_display,
-            reference_line_display=reference_line_display,
+            ephys_panel=displays.ephys.panel,
+            histology_display=displays.histology,
+            reference_line_display=displays.reference_lines,
             region_lookup_service=ports.region_lookup_service,
             widgets=DesktopInteractionWidgets(
                 struct_list=ports.struct_list,
@@ -551,7 +519,7 @@ class DesktopWorkbench:
     @staticmethod
     def _ephys_export_callbacks(
         ports: DesktopExportPorts,
-        reference_line_display: DesktopReferenceLineDisplay,
+        displays: DesktopDisplays,
     ) -> EphysExportCallbacks:
         """Build callbacks for ephys plot export layout changes."""
         return EphysExportCallbacks(
@@ -559,7 +527,7 @@ class DesktopWorkbench:
             set_view=ports.set_view,
             set_axis=ports.set_axis,
             set_font=ports.set_font,
-            add_lines_points=reference_line_display.add_to_plots,
+            add_lines_points=displays.reference_lines.add_to_plots,
             sizes=lambda: EphysExportSizes(*ports.ephys_sizes()),
         )
 
@@ -680,7 +648,7 @@ class DesktopWorkbench:
         movable: bool = True,
     ) -> bool:
         """Render the active aligned histology panel."""
-        return self.histology_display.render_active_aligned(fig, movable=movable)
+        return self.displays.histology.render_active_aligned(fig, movable=movable)
 
     def render_active_reference_histology(
         self,
@@ -689,19 +657,19 @@ class DesktopWorkbench:
         movable: bool = False,
     ) -> bool:
         """Render the active reference histology panel."""
-        return self.histology_display.render_active_reference(fig, movable=movable)
+        return self.displays.histology.render_active_reference(fig, movable=movable)
 
     def render_active_scale_factor(self) -> bool:
         """Render the active scale-factor panel."""
-        return self.histology_display.render_active_scale_factor()
+        return self.displays.histology.render_active_scale_factor()
 
     def render_active_fit(self) -> bool:
         """Render the active feature/track fit panel."""
-        return self.histology_display.render_active_fit()
+        return self.displays.histology.render_active_fit()
 
     def render_active_histology_panels(self) -> bool:
         """Render reference histology, aligned histology, scale, and fit panels."""
-        return self.histology_display.render_active_panels()
+        return self.displays.histology.render_active_panels()
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""

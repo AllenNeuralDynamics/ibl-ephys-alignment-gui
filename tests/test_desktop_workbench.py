@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
     DesktopAlignmentRenderPorts,
@@ -285,6 +286,21 @@ class FakeReferenceLineDisplay:
         self.add_count += 1
 
 
+def _displays(
+    *,
+    ephys: Any | None = None,
+    histology: Any | None = None,
+    reference_lines: Any | None = None,
+    slice_display: Any | None = None,
+) -> DesktopDisplays:
+    return DesktopDisplays(
+        ephys=ephys or FakeEphysDisplay(),
+        histology=histology or FakeHistologyDisplay(),
+        reference_lines=reference_lines or FakeReferenceLineDisplay(),
+        slice=slice_display or FakeSliceDisplay(),
+    )
+
+
 class FakeInteractionPresenter:
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -332,7 +348,7 @@ class FakeInteractionPresenter:
 def _workbench(
     alignment: Any,
     shank: Any,
-    histology: Any,
+    histology: Any | None = None,
     load_data: Any | None = None,
     mouse_root: Any | None = None,
     session_selection: Any | None = None,
@@ -350,11 +366,17 @@ def _workbench(
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
 ) -> DesktopWorkbench:
+    displays = _displays(
+        ephys=ephys_display,
+        histology=histology,
+        reference_lines=reference_line_display,
+        slice_display=slice_display,
+    )
     return DesktopWorkbench(
         app=object(),
+        displays=displays,
         alignment_presenter=alignment,
         shank_presenter=shank,
-        histology_display=histology,
         load_data_presenter=load_data or FakeLoadDataPresenter(),
         probe_selection_presenter=probe_selection or FakeProbeSelectionPresenter(),
         session_selection_presenter=(
@@ -372,9 +394,6 @@ def _workbench(
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
-        ephys_display=ephys_display or FakeEphysDisplay(),
-        slice_display=slice_display or FakeSliceDisplay(),
-        reference_line_display=reference_line_display or FakeReferenceLineDisplay(),
     )
 
 
@@ -644,19 +663,23 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     slice_display = FakeSliceDisplay()
     reference_line_display = FakeReferenceLineDisplay()
 
+    displays = _displays(
+        ephys=ephys_display,
+        histology=panel,
+        reference_lines=reference_line_display,
+        slice_display=slice_display,
+    )
+
     workbench = DesktopWorkbench.create(
         app=app,
         selection_view=object(),
         path_view=object(),
         parent=object(),
-        ephys_display=ephys_display,
-        slice_display=slice_display,
-        histology_display=panel,
-        reference_line_display=reference_line_display,
+        displays=displays,
         ports=ports,
     )
 
-    assert workbench.histology_display is panel
+    assert workbench.displays.histology is panel
     assert workbench.alignment_presenter.callbacks is not None
     assert workbench.shank_presenter.callbacks is not None
     assert workbench.load_data_presenter.callbacks is not None
@@ -686,9 +709,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
-    assert workbench.ephys_display is ephys_display
-    assert workbench.slice_display is slice_display
-    assert workbench.reference_line_display is reference_line_display
+    assert workbench.displays.ephys is ephys_display
+    assert workbench.displays.slice is slice_display
+    assert workbench.displays.reference_lines is reference_line_display
     workbench.alignment_presenter.callbacks.clear_reference_lines()
     workbench.alignment_presenter.callbacks.reattach_reference_lines()
     workbench.alignment_presenter.callbacks.update_reference_lines_to_alignment()

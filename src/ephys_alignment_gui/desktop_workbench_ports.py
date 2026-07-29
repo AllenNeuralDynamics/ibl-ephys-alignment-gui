@@ -7,6 +7,7 @@ from typing import Any
 from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop_busy_context import BusyContext
+from ephys_alignment_gui.desktop_displays import DesktopDisplayPorts
 from ephys_alignment_gui.desktop_ephys_display import DesktopEphysDisplayPorts
 from ephys_alignment_gui.desktop_histology_display import DesktopHistologyDisplayPorts
 from ephys_alignment_gui.desktop_reference_line_display import (
@@ -103,6 +104,16 @@ def desktop_slice_display_ports_from_main_window(
         reference_line_pen=window.reference_line_kpen,
         histology_exists=lambda: getattr(window, "histology_exists", False),
         slice_item=window.slice_item,
+    )
+
+
+def desktop_display_ports_from_main_window(window: Any) -> DesktopDisplayPorts:
+    """Adapt MainWindow plot handles to desktop display-region ports."""
+    return DesktopDisplayPorts(
+        ephys=desktop_ephys_display_ports_from_main_window(window),
+        histology=desktop_histology_display_ports_from_main_window(window),
+        reference_lines=desktop_reference_line_display_ports_from_main_window(window),
+        slice=desktop_slice_display_ports_from_main_window(window),
     )
 
 
