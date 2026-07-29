@@ -35,9 +35,17 @@ from ephys_alignment_gui.desktop_path_dialog_presenter import (
     DesktopPathDialogCallbacks,
     DesktopPathDialogPresenter,
 )
+from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
+    DesktopPreviousAlignmentLoadPresenter,
+    PreviousAlignmentLoadCallbacks,
+)
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
+)
+from ephys_alignment_gui.desktop_save_workflow_presenter import (
+    DesktopSaveWorkflowCallbacks,
+    DesktopSaveWorkflowPresenter,
 )
 from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
@@ -49,10 +57,97 @@ from ephys_alignment_gui.desktop_shank_presenter import (
 )
 from ephys_alignment_gui.event_bus import EventSubscription
 
-AlignmentCallbacksFactory = Callable[
-    [DesktopHistologyPresenter],
-    DesktopAlignmentRenderCallbacks,
-]
+
+@dataclass(frozen=True)
+class DesktopAlignmentRenderPorts:
+    """Desktop operations needed to render alignment edits."""
+
+    restore_lin_fit: Callable[[bool | None], None]
+    clear_reference_lines: Callable[[], None]
+    capture_depth_plot_y_ranges: Callable[[], Any]
+    restore_depth_plot_y_ranges: Callable[[Any], None]
+    reattach_reference_lines: Callable[[], None]
+    plot_channels: Callable[[Any], None]
+    refresh_perpendicular_histology: Callable[[], None]
+    update_reference_lines_to_alignment: Callable[[], None]
+    create_reference_lines_for_previous_alignment: Callable[[], None]
+    set_default_feature_y_range: Callable[[], None]
+    update_status: Callable[[], None]
+
+
+@dataclass(frozen=True)
+class DesktopHistologyRenderPorts:
+    """Desktop operations needed to build histology render read models."""
+
+    probe_extent_query_kwargs: Callable[[], dict[str, float]]
+    fit_depth_um: Callable[[], Any]
+    lin_fit_enabled: Callable[[], bool]
+    scale_factor_y_range: Callable[[], tuple[float, float]]
+
+
+@dataclass(frozen=True)
+class DesktopShankRenderPorts:
+    """Desktop operations needed to render an active shank."""
+
+    capture_plot_selection: Callable[[bool], Any]
+    clear_reference_lines: Callable[[], None]
+    prepare_runtime: Callable[[int], None]
+    prepare_histology: Callable[[int], bool]
+    apply_plot_data_state: Callable[[Any], None]
+    raw_image_payloads: Callable[[], Any]
+    render_plot_menus: Callable[[Any], None]
+    render_ephys_plots: Callable[[Any], None]
+    render_histology_plots: Callable[[int], None]
+    restore_slice_selection: Callable[[Any, Any, Any], None]
+    configure_view: Callable[[bool], None]
+    histology_available: Callable[[], bool]
+    offline: Callable[[], bool]
+
+
+@dataclass(frozen=True)
+class DesktopRenderPorts:
+    """MainWindow render ports consumed by focused desktop presenters."""
+
+    alignment: DesktopAlignmentRenderPorts
+    histology: DesktopHistologyRenderPorts
+    shank: DesktopShankRenderPorts
+
+
+@dataclass(frozen=True)
+class DesktopSaveWorkflowPorts:
+    """Desktop operations needed by save and QC workflows."""
+
+    use_docdb: Callable[[], bool]
+    render_alignment_choices: Callable[[list[str]], None]
+    busy_context: Callable[..., AbstractContextManager[Any]]
+    complete_button: Callable[[], Any]
+    histology_available: Callable[[], bool]
+    open_qc_dialog: Callable[[], None]
+    ephys_qc: Callable[[], str]
+    selected_qc_descriptions: Callable[[], list[str]]
+    warning: Callable[[str, str], Any]
+
+
+@dataclass(frozen=True)
+class DesktopPreviousAlignmentLoadPorts:
+    """Desktop operations needed by previous-alignment loading."""
+
+    use_docdb: Callable[[], bool]
+    set_reload_folder_text: Callable[[str], None]
+    render_alignment_choices: Callable[[list[str]], None]
+    select_alignment: Callable[[int], None]
+    busy_context: Callable[..., AbstractContextManager[Any]]
+    reload_button: Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class DesktopWorkbenchPorts:
+    """MainWindow ports consumed by Workbench presenter composition."""
+
+    render: DesktopRenderPorts
+    selection: DesktopSelectionWorkflowCallbacks
+    save_workflow: DesktopSaveWorkflowPorts
+    previous_alignment_load: DesktopPreviousAlignmentLoadPorts
 
 
 @dataclass(frozen=True)
@@ -94,6 +189,8 @@ class DesktopWorkbench:
     load_workflow_presenter: DesktopLoadWorkflowPresenter
     output_folder_prompt: DesktopOutputFolderPrompt
     folder_dialog: DesktopFolderDialog
+    save_workflow_presenter: DesktopSaveWorkflowPresenter
+    previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -105,16 +202,13 @@ class DesktopWorkbench:
         path_view: Any,
         parent: Any,
         histology_panel: Any,
-        histology_callbacks: DesktopHistologyRenderCallbacks,
-        alignment_callbacks_factory: AlignmentCallbacksFactory,
-        shank_callbacks: DesktopShankRenderCallbacks,
-        selection_callbacks: DesktopSelectionWorkflowCallbacks,
+        ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
         histology_presenter = DesktopHistologyPresenter(
             app=app,
             panel=histology_panel,
-            callbacks=histology_callbacks,
+            callbacks=cls._histology_render_callbacks(ports.render.histology),
         )
         output_path_presenter = DesktopOutputPathPresenter(
             commands=app.commands,
@@ -123,15 +217,20 @@ class DesktopWorkbench:
         alignment_presenter = DesktopAlignmentPresenter(app.events)
         alignment_presenter.configure(
             queries=app.queries,
-            callbacks=alignment_callbacks_factory(histology_presenter),
+            callbacks=cls._alignment_render_callbacks(
+                ports.render.alignment,
+                histology_presenter,
+            ),
         )
         shank_presenter = DesktopShankPresenter(app)
-        shank_presenter.configure(callbacks=shank_callbacks)
+        shank_presenter.configure(
+            callbacks=cls._shank_render_callbacks(ports.render.shank)
+        )
         load_data_presenter = DesktopLoadDataPresenter(
             app=app,
             selection_view=selection_view,
             callbacks=cls._load_data_callbacks(
-                selection_callbacks,
+                ports.selection,
                 output_path_presenter,
             ),
         )
@@ -139,7 +238,7 @@ class DesktopWorkbench:
             commands=app.commands,
             selection_view=selection_view,
             callbacks=cls._probe_selection_callbacks(
-                selection_callbacks,
+                ports.selection,
                 output_path_presenter,
                 load_data_presenter,
             ),
@@ -147,13 +246,13 @@ class DesktopWorkbench:
         session_selection_presenter = DesktopSessionSelectionPresenter(
             commands=app.commands,
             selection_view=selection_view,
-            callbacks=cls._session_selection_callbacks(selection_callbacks),
+            callbacks=cls._session_selection_callbacks(ports.selection),
         )
         mouse_root_presenter = DesktopMouseRootPresenter(
             commands=app.commands,
             path_view=path_view,
             selection_view=selection_view,
-            callbacks=cls._mouse_root_callbacks(selection_callbacks),
+            callbacks=cls._mouse_root_callbacks(ports.selection),
         )
         folder_dialog = DesktopFolderDialog(parent=None)
         path_dialog_presenter = DesktopPathDialogPresenter(
@@ -180,6 +279,21 @@ class DesktopWorkbench:
             load_heavy_data=load_data_presenter.load_heavy_data,
             output_folder_prompt=output_folder_prompt,
         )
+        save_workflow_presenter = DesktopSaveWorkflowPresenter(
+            commands=app.commands,
+            callbacks=cls._save_workflow_callbacks(
+                ports.save_workflow,
+                output_folder_prompt,
+                load_workflow_presenter,
+            ),
+        )
+        previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
+            commands=app.commands,
+            callbacks=cls._previous_alignment_load_callbacks(
+                ports.previous_alignment_load,
+                folder_dialog,
+            ),
+        )
         return cls(
             app=app,
             alignment_presenter=alignment_presenter,
@@ -194,6 +308,105 @@ class DesktopWorkbench:
             load_workflow_presenter=load_workflow_presenter,
             output_folder_prompt=output_folder_prompt,
             folder_dialog=folder_dialog,
+            save_workflow_presenter=save_workflow_presenter,
+            previous_alignment_load_presenter=previous_alignment_load_presenter,
+        )
+
+    @staticmethod
+    def _alignment_render_callbacks(
+        ports: DesktopAlignmentRenderPorts,
+        histology_presenter: DesktopHistologyPresenter,
+    ) -> DesktopAlignmentRenderCallbacks:
+        """Build callbacks for alignment edit rendering."""
+        return DesktopAlignmentRenderCallbacks(
+            restore_lin_fit=ports.restore_lin_fit,
+            clear_reference_lines=ports.clear_reference_lines,
+            capture_depth_plot_y_ranges=ports.capture_depth_plot_y_ranges,
+            restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
+            reattach_reference_lines=ports.reattach_reference_lines,
+            render_histology_alignment=histology_presenter.render_alignment_edit,
+            plot_channels=ports.plot_channels,
+            refresh_perpendicular_histology=ports.refresh_perpendicular_histology,
+            update_reference_lines_to_alignment=(
+                ports.update_reference_lines_to_alignment
+            ),
+            create_reference_lines_for_previous_alignment=(
+                ports.create_reference_lines_for_previous_alignment
+            ),
+            set_default_feature_y_range=ports.set_default_feature_y_range,
+            update_status=ports.update_status,
+        )
+
+    @staticmethod
+    def _histology_render_callbacks(
+        ports: DesktopHistologyRenderPorts,
+    ) -> DesktopHistologyRenderCallbacks:
+        """Build callbacks for histology panel rendering."""
+        return DesktopHistologyRenderCallbacks(
+            probe_extent_query_kwargs=ports.probe_extent_query_kwargs,
+            fit_depth_um=ports.fit_depth_um,
+            lin_fit_enabled=ports.lin_fit_enabled,
+            scale_factor_y_range=ports.scale_factor_y_range,
+        )
+
+    @staticmethod
+    def _shank_render_callbacks(
+        ports: DesktopShankRenderPorts,
+    ) -> DesktopShankRenderCallbacks:
+        """Build callbacks for shank selection rendering."""
+        return DesktopShankRenderCallbacks(
+            capture_plot_selection=ports.capture_plot_selection,
+            clear_reference_lines=ports.clear_reference_lines,
+            prepare_runtime=ports.prepare_runtime,
+            prepare_histology=ports.prepare_histology,
+            apply_plot_data_state=ports.apply_plot_data_state,
+            raw_image_payloads=ports.raw_image_payloads,
+            render_plot_menus=ports.render_plot_menus,
+            render_ephys_plots=ports.render_ephys_plots,
+            render_histology_plots=ports.render_histology_plots,
+            restore_slice_selection=ports.restore_slice_selection,
+            configure_view=ports.configure_view,
+            histology_available=ports.histology_available,
+            offline=ports.offline,
+        )
+
+    @staticmethod
+    def _save_workflow_callbacks(
+        ports: DesktopSaveWorkflowPorts,
+        output_folder_prompt: DesktopOutputFolderPrompt,
+        load_workflow_presenter: DesktopLoadWorkflowPresenter,
+    ) -> DesktopSaveWorkflowCallbacks:
+        """Build callbacks for save/QC workflows."""
+        return DesktopSaveWorkflowCallbacks(
+            ensure_output_directory=output_folder_prompt.ensure_for_save,
+            log_requirement=load_workflow_presenter.log_requirement,
+            use_docdb=ports.use_docdb,
+            render_alignment_choices=ports.render_alignment_choices,
+            busy_context=ports.busy_context,
+            complete_button=ports.complete_button,
+            histology_available=ports.histology_available,
+            open_qc_dialog=ports.open_qc_dialog,
+            ephys_qc=ports.ephys_qc,
+            selected_qc_descriptions=ports.selected_qc_descriptions,
+            warning=ports.warning,
+        )
+
+    @staticmethod
+    def _previous_alignment_load_callbacks(
+        ports: DesktopPreviousAlignmentLoadPorts,
+        folder_dialog: DesktopFolderDialog,
+    ) -> PreviousAlignmentLoadCallbacks:
+        """Build callbacks for previous-alignment loading."""
+        return PreviousAlignmentLoadCallbacks(
+            select_folder=lambda: folder_dialog.select_existing_directory_text(
+                "Load Existing Alignments",
+            ),
+            use_docdb=ports.use_docdb,
+            set_reload_folder_text=ports.set_reload_folder_text,
+            render_alignment_choices=ports.render_alignment_choices,
+            select_alignment=ports.select_alignment,
+            busy_context=ports.busy_context,
+            reload_button=ports.reload_button,
         )
 
     @staticmethod
@@ -376,3 +589,19 @@ class DesktopWorkbench:
     def select_existing_directory_text(self, title: str) -> str:
         """Prompt for an existing directory and return Qt-style text."""
         return self.folder_dialog.select_existing_directory_text(title)
+
+    def load_existing_alignments(self) -> bool:
+        """Prompt for and load previous alignments."""
+        return self.previous_alignment_load_presenter.load_existing_alignments()
+
+    def save_alignment_outputs(self) -> bool:
+        """Save visited alignment outputs."""
+        return self.save_workflow_presenter.save_alignment_outputs()
+
+    def display_qc_options(self) -> bool:
+        """Display alignment QC choices."""
+        return self.save_workflow_presenter.display_qc_options()
+
+    def qc_button_clicked(self) -> bool:
+        """Handle the QC save button."""
+        return self.save_workflow_presenter.qc_button_clicked()

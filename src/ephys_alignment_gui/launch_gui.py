@@ -16,8 +16,7 @@ import matplotlib.pyplot as mpl  # noqa  # This is needed to make qt show proper
 import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt, QThread
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QThread
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
 from ephys_alignment_gui.alignment_read_models import (
@@ -28,9 +27,6 @@ from ephys_alignment_gui.controller import (
     AlignmentEditApplied,
     PreviousAlignmentSelected,
     ShankSelected,
-)
-from ephys_alignment_gui.desktop_alignment_presenter import (
-    DesktopAlignmentRenderCallbacks,
 )
 from ephys_alignment_gui.desktop_ephys_panel_layout import (
     DesktopEphysPanelLayout,
@@ -52,10 +48,6 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
-from ephys_alignment_gui.desktop_histology_presenter import (
-    DesktopHistologyPresenter,
-    DesktopHistologyRenderCallbacks,
-)
 from ephys_alignment_gui.desktop_interaction_presenter import (
     DesktopInteractionCallbacks,
     DesktopInteractionPresenter,
@@ -71,22 +63,11 @@ from ephys_alignment_gui.desktop_plot_exporter import (
     SliceExportStyle,
 )
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
-from ephys_alignment_gui.desktop_previous_alignment_load_presenter import (
-    DesktopPreviousAlignmentLoadPresenter,
-    PreviousAlignmentLoadCallbacks,
-)
-from ephys_alignment_gui.desktop_save_workflow_presenter import (
-    DesktopSaveWorkflowCallbacks,
-    DesktopSaveWorkflowPresenter,
-)
 from ephys_alignment_gui.desktop_selection_view import DesktopSelectionView
-from ephys_alignment_gui.desktop_shank_presenter import (
-    DesktopShankRenderCallbacks,
-    DesktopShankSelectionState,
-)
-from ephys_alignment_gui.desktop_workbench import (
-    DesktopSelectionWorkflowCallbacks,
-    DesktopWorkbench,
+from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
+from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
+from ephys_alignment_gui.desktop_workbench_ports import (
+    desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
@@ -120,128 +101,6 @@ from ephys_alignment_gui.workspace import AlignmentWorkspace
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
-
-
-class BusyContext:
-    """Context manager for long-running operations with visual feedback.
-
-    Provides busy cursor, status messages, and UI element disabling with
-    automatic cleanup and error handling.
-
-    Example usage:
-        # Simple usage - just busy cursor
-        with BusyContext(self):
-            do_work()
-
-        # With status message and success confirmation
-        with BusyContext(self, "Loading data...", "Data loaded successfully"):
-            do_work()
-
-        # Disable widgets during operation
-        with BusyContext(self, "Loading...",
-                         disable_widgets=[self.button1, self.button2]):
-            do_work()
-
-        # Multi-stage operation with progress updates
-        with BusyContext(self, "Loading...", "All data loaded") as ctx:
-            ctx.update_message("Loading ephys data...")
-            load_ephys()
-            ctx.update_message("Loading atlas...")
-            load_atlas()
-    """
-
-    def __init__(
-        self,
-        window,
-        message: str | None = None,
-        success_message: str | None = None,
-        error_message: str | None = None,
-        disable_widgets: list | None = None,
-        success_timeout_ms=3000,
-        error_timeout_ms=5000,
-    ):
-        """
-        Initialize context manager for busy state.
-
-        :param window: MainWindow instance (for statusBar access)
-        :param message: Status message to show while running
-        :param success_message: Message to show on success (None = no message)
-        :param disable_widgets: Widget or list of widgets to disable during operation
-        :param success_timeout_ms: Timeout for success message in ms (0 = permanent)
-        """
-        self.window = window
-        self.message = message
-        self.success_message = success_message
-        self.error_message = error_message
-        self.success_timeout_ms = success_timeout_ms
-        self.error_timeout_ms = error_timeout_ms
-
-        # Normalize to list
-        if disable_widgets is None:
-            self.disable_widgets = []
-        elif not isinstance(disable_widgets, list):
-            self.disable_widgets = [disable_widgets]
-        else:
-            self.disable_widgets = disable_widgets
-
-        self.widget_states = {}
-
-    def __enter__(self):
-        """Enter busy state: set cursor, show message, disable widgets."""
-        # Set busy cursor
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-
-        # Show status message (no processEvents to avoid reentrancy)
-        if self.message:
-            self.window.statusBar().showMessage(self.message)
-
-        # Disable widgets and save their states
-        for widget in self.disable_widgets:
-            self.widget_states[widget] = widget.isEnabled()
-            widget.setEnabled(False)
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit busy state: restore cursor, widgets, and handle status messages."""
-        # Restore cursor
-        QApplication.restoreOverrideCursor()
-
-        # Restore widget states
-        for widget, was_enabled in self.widget_states.items():
-            widget.setEnabled(was_enabled)
-
-        # Handle status message based on outcome
-        if exc_type is not None:
-            # Error occurred - show error message
-            if self.error_message is None:
-                error_msg = f"Error: {str(exc_val)}"
-            else:
-                error_msg = self.error_message
-            self.window.statusBar().showMessage(error_msg, self.error_timeout_ms)
-        elif self.success_message:
-            # Success - show success message
-            self.window.statusBar().showMessage(
-                self.success_message, self.success_timeout_ms
-            )
-        else:
-            # Clear status
-            self.window.statusBar().clearMessage()
-
-        # Don't suppress exceptions
-        return False
-
-    def update_message(self, new_message: str):
-        """
-        Update status message during a long operation.
-
-        Use sparingly - calls processEvents() which can cause reentrancy issues.
-
-        :param new_message: New message to display
-        """
-        if new_message:
-            self.window.statusBar().showMessage(new_message)
-            QApplication.processEvents()
 
 
 class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
@@ -427,14 +286,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             path_view=self.path_view,
             parent=self,
             histology_panel=self.histology_panel,
-            histology_callbacks=self._desktop_histology_render_callbacks(),
-            alignment_callbacks_factory=self._desktop_alignment_render_callbacks,
-            shank_callbacks=self._desktop_shank_render_callbacks(),
-            selection_callbacks=self._desktop_selection_workflow_callbacks(),
+            ports=desktop_workbench_ports_from_main_window(self),
         )
         self.desktop_workbench.connect_events()
-        self._init_save_workflow_presenter()
-        self._init_previous_alignment_load_presenter()
         self._set_default_output_root_from_environment()
 
         self.configure: bool = True
@@ -451,39 +305,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if workbench is not None:
             workbench.disconnect_events()
         super().closeEvent(event)
-
-    def _init_save_workflow_presenter(self) -> None:
-        """Wire desktop behavior for save and QC workflows."""
-        self.save_workflow_presenter = DesktopSaveWorkflowPresenter(
-            commands=self.app.commands,
-            callbacks=DesktopSaveWorkflowCallbacks(
-                ensure_output_directory=(
-                    self.desktop_workbench.ensure_output_directory_for_save
-                ),
-                log_requirement=self.desktop_workbench.log_load_requirement,
-                use_docdb=lambda: self.use_docdb,
-                render_alignment_choices=lambda choices: self.populate_lists(
-                    choices,
-                    self.align_list,
-                    self.align_combobox,
-                ),
-                busy_context=lambda *args, **kwargs: BusyContext(
-                    self,
-                    *args,
-                    **kwargs,
-                ),
-                complete_button=lambda: self.complete_button,
-                histology_available=lambda: self.histology_exists,
-                open_qc_dialog=self.qc_dialog.open,
-                ephys_qc=self.ephys_qc.currentText,
-                selected_qc_descriptions=self._selected_qc_descriptions,
-                warning=lambda title, message: QtWidgets.QMessageBox.warning(
-                    self,
-                    title,
-                    message,
-                ),
-            ),
-        )
 
     def _init_interaction_presenter(self) -> None:
         """Wire desktop popup and mouse interaction behavior."""
@@ -510,65 +331,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
                 activate_window=self.activateWindow,
                 set_axis=self.set_axis,
                 capture_pending_reference_lines=self._capture_pending_reference_lines,
-            ),
-        )
-
-    def _desktop_selection_workflow_callbacks(
-        self,
-    ) -> DesktopSelectionWorkflowCallbacks:
-        """Build the MainWindow bridge for selection/load presenters."""
-        return DesktopSelectionWorkflowCallbacks(
-            capture_pending_reference_lines=self._capture_pending_reference_lines,
-            stash_and_detach_current=self._stash_and_detach_current,
-            teardown_session=self._teardown_session,
-            init_session_variables=self.init_session_variables,
-            select_shank_for_view=lambda shank_idx, source: (
-                self._select_shank_for_view(shank_idx, source=source)
-            ),
-            setup_session_view=lambda preserve, shank_idx: self.setup_session_view(
-                preserve_plot_selection=preserve,
-                shank_idx=shank_idx,
-            ),
-            clear_empty_state=self._clear_empty_state,
-            set_histology_available=self._set_histology_available,
-            mouse_root_loaded=lambda: self.data_context.mouse_root is not None,
-            active_shank_idx=self._active_shank_idx,
-            show_empty_state=self._show_empty_state,
-            evict_stream_cache=self._evict_stream_cache,
-            clear_histology_context=self.histology_context.clear,
-            select_first_session=lambda: self.on_session_combobox_activated(0),
-            select_first_probe=lambda: self.on_probe_combobox_activated(0),
-            busy_context=lambda *args, **kwargs: BusyContext(
-                self,
-                *args,
-                **kwargs,
-            ),
-        )
-
-    def _init_previous_alignment_load_presenter(self) -> None:
-        """Wire desktop workflow for loading previous alignments."""
-        self.previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
-            commands=self.app.commands,
-            callbacks=PreviousAlignmentLoadCallbacks(
-                select_folder=lambda: (
-                    self.desktop_workbench.select_existing_directory_text(
-                        "Load Existing Alignments",
-                    )
-                ),
-                use_docdb=lambda: self.use_docdb,
-                set_reload_folder_text=self.reload_folder_line.setText,
-                render_alignment_choices=lambda choices: self.populate_lists(
-                    choices,
-                    self.align_list,
-                    self.align_combobox,
-                ),
-                select_alignment=self.on_alignment_selected,
-                busy_context=lambda *args, **kwargs: BusyContext(
-                    self,
-                    *args,
-                    **kwargs,
-                ),
-                reload_button=lambda: self.reload_folder_button,
             ),
         )
 
@@ -985,37 +747,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             return False
         return isinstance(result, AlignmentEditApplied)
 
-    def _desktop_alignment_render_callbacks(
-        self,
-        histology_presenter: DesktopHistologyPresenter,
-    ) -> DesktopAlignmentRenderCallbacks:
-        return DesktopAlignmentRenderCallbacks(
-            restore_lin_fit=self._restore_lin_fit_from_edit,
-            clear_reference_lines=self.reference_lines.clear,
-            capture_depth_plot_y_ranges=self._capture_depth_plot_y_ranges,
-            restore_depth_plot_y_ranges=self._restore_depth_plot_y_ranges,
-            reattach_reference_lines=self._reattach_reference_lines,
-            render_histology_alignment=histology_presenter.render_alignment_edit,
-            plot_channels=self.slice_panel.plot_channels,
-            refresh_perpendicular_histology=(
-                self.slice_panel.refresh_perpendicular_histology
-            ),
-            update_reference_lines_to_alignment=self.update_lines_points,
-            create_reference_lines_for_previous_alignment=(
-                self._create_reference_lines_for_previous_alignment
-            ),
-            set_default_feature_y_range=self.set_default_feature_y_range,
-            update_status=self.update_string,
-        )
-
-    def _desktop_histology_render_callbacks(self) -> DesktopHistologyRenderCallbacks:
-        return DesktopHistologyRenderCallbacks(
-            probe_extent_query_kwargs=self._probe_extent_query_kwargs,
-            fit_depth_um=lambda: self.display_state.depth_view.fit_depth_um,
-            lin_fit_enabled=lambda: self.display_state.edit_settings.lin_fit,
-            scale_factor_y_range=self._scale_factor_y_range,
-        )
-
     def _scale_factor_y_range(self) -> tuple[float, float]:
         y_min, y_max = self.fig_img.viewRange()[1]
         return float(y_min), float(y_max)
@@ -1024,23 +755,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         feature_prev = self._active_previous_feature()
         if feature_prev is not None and np.any(feature_prev):
             self.reference_lines.create_lines(np.asarray(feature_prev)[1:-1] * 1e6)
-
-    def _desktop_shank_render_callbacks(self) -> DesktopShankRenderCallbacks:
-        return DesktopShankRenderCallbacks(
-            capture_plot_selection=self._capture_shank_plot_selection,
-            clear_reference_lines=self.reference_lines.clear,
-            prepare_runtime=self._prepare_shank_runtime_for_view,
-            prepare_histology=self._prepare_shank_histology_for_view,
-            apply_plot_data_state=self._apply_shank_plot_data_state,
-            raw_image_payloads=lambda: self.raw_image_payloads,
-            render_plot_menus=self._render_shank_plot_menus,
-            render_ephys_plots=self.ephys_plot_presenter.render_shank_ephys_plots,
-            render_histology_plots=self.render_histology_plots,
-            restore_slice_selection=self._restore_shank_slice_selection,
-            configure_view=self._configure_shank_view_after_render,
-            histology_available=lambda: self.histology_exists,
-            offline=lambda: self.offline,
-        )
 
     def plot_scale_factor(self) -> None:
         """
@@ -1181,7 +895,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         return self.desktop_workbench.load_heavy_data()
 
     def load_existing_alignments(self) -> bool:
-        return self.previous_alignment_load_presenter.load_existing_alignments()
+        return self.desktop_workbench.load_existing_alignments()
 
     def set_mouse_root(self, mouse_root: Path) -> bool:
         """Point the GUI at a preprocessed mouse-root directory.
@@ -1719,13 +1433,13 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when save button or Shift+S keys are pressed.
         Saves final channel locations for all visited shanks to JSON files.
         """
-        self.save_workflow_presenter.save_alignment_outputs()
+        self.desktop_workbench.save_alignment_outputs()
 
     def display_qc_options(self) -> None:
-        self.save_workflow_presenter.display_qc_options()
+        self.desktop_workbench.display_qc_options()
 
     def qc_button_clicked(self) -> None:
-        self.save_workflow_presenter.qc_button_clicked()
+        self.desktop_workbench.qc_button_clicked()
 
     def _selected_qc_descriptions(self) -> list[str]:
         """Return selected QC description labels."""

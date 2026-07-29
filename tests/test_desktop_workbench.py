@@ -5,20 +5,18 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.desktop_alignment_presenter import (
-    DesktopAlignmentRenderCallbacks,
-)
-from ephys_alignment_gui.desktop_histology_presenter import (
-    DesktopHistologyPresenter,
-    DesktopHistologyRenderCallbacks,
-)
-from ephys_alignment_gui.desktop_shank_presenter import (
-    DesktopShankRenderCallbacks,
-    DesktopShankSelectionState,
-)
+from ephys_alignment_gui.desktop_histology_presenter import DesktopHistologyPresenter
+from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_workbench import (
+    DesktopAlignmentRenderPorts,
+    DesktopHistologyRenderPorts,
+    DesktopPreviousAlignmentLoadPorts,
+    DesktopRenderPorts,
+    DesktopSaveWorkflowPorts,
     DesktopSelectionWorkflowCallbacks,
+    DesktopShankRenderPorts,
     DesktopWorkbench,
+    DesktopWorkbenchPorts,
 )
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.workflow import Ok
@@ -196,6 +194,34 @@ class FakeFolderDialog:
         return "/selected"
 
 
+class FakeSaveWorkflowPresenter:
+    def __init__(self) -> None:
+        self.saved_count = 0
+        self.qc_display_count = 0
+        self.qc_clicked_count = 0
+
+    def save_alignment_outputs(self) -> bool:
+        self.saved_count += 1
+        return True
+
+    def display_qc_options(self) -> bool:
+        self.qc_display_count += 1
+        return True
+
+    def qc_button_clicked(self) -> bool:
+        self.qc_clicked_count += 1
+        return True
+
+
+class FakePreviousAlignmentLoadPresenter:
+    def __init__(self) -> None:
+        self.load_count = 0
+
+    def load_existing_alignments(self) -> bool:
+        self.load_count += 1
+        return True
+
+
 def _workbench(
     alignment: Any,
     shank: Any,
@@ -209,6 +235,8 @@ def _workbench(
     load_workflow: Any | None = None,
     output_folder_prompt: Any | None = None,
     folder_dialog: Any | None = None,
+    save_workflow: Any | None = None,
+    previous_alignment_load: Any | None = None,
 ) -> DesktopWorkbench:
     return DesktopWorkbench(
         app=object(),
@@ -226,6 +254,10 @@ def _workbench(
         load_workflow_presenter=load_workflow or FakeLoadWorkflowPresenter(),
         output_folder_prompt=output_folder_prompt or FakeOutputFolderPrompt(),
         folder_dialog=folder_dialog or FakeFolderDialog(),
+        save_workflow_presenter=save_workflow or FakeSaveWorkflowPresenter(),
+        previous_alignment_load_presenter=(
+            previous_alignment_load or FakePreviousAlignmentLoadPresenter()
+        ),
     )
 
 
@@ -283,6 +315,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     load_workflow = FakeLoadWorkflowPresenter()
     output_folder_prompt = FakeOutputFolderPrompt()
     folder_dialog = FakeFolderDialog()
+    save_workflow = FakeSaveWorkflowPresenter()
+    previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     workbench = _workbench(
         FakeAlignmentPresenter([]),
         FakeShankPresenter([]),
@@ -296,6 +330,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         load_workflow=load_workflow,
         output_folder_prompt=output_folder_prompt,
         folder_dialog=folder_dialog,
+        save_workflow=save_workflow,
+        previous_alignment_load=previous_alignment_load,
     )
 
     assert workbench.load_heavy_data()
@@ -311,6 +347,10 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.ensure_output_directory_for_save("requirement")
     workbench.log_load_requirement("log-me")
     assert workbench.select_existing_directory_text("Choose") == "/selected"
+    assert workbench.save_alignment_outputs()
+    assert workbench.display_qc_options()
+    assert workbench.qc_button_clicked()
+    assert workbench.load_existing_alignments()
 
     assert load_data.load_count == 1
     assert mouse_root.set_roots == ["root"]
@@ -325,40 +365,48 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert path_dialog.output_root_count == 1
     assert output_folder_prompt.requirements == ["requirement"]
     assert folder_dialog.titles == ["Choose"]
+    assert save_workflow.saved_count == 1
+    assert save_workflow.qc_display_count == 1
+    assert save_workflow.qc_clicked_count == 1
+    assert previous_alignment_load.load_count == 1
 
 
-def _alignment_callbacks(histology: DesktopHistologyPresenter):
-    return DesktopAlignmentRenderCallbacks(
-        restore_lin_fit=lambda _lin_fit: None,
-        clear_reference_lines=lambda: None,
-        capture_depth_plot_y_ranges=lambda: None,
-        restore_depth_plot_y_ranges=lambda _ranges: None,
-        reattach_reference_lines=lambda: None,
-        render_histology_alignment=histology.render_alignment_edit,
-        plot_channels=lambda _projection: None,
-        refresh_perpendicular_histology=lambda: None,
-        update_reference_lines_to_alignment=lambda: None,
-        create_reference_lines_for_previous_alignment=lambda: None,
-        set_default_feature_y_range=lambda: None,
-        update_status=lambda: None,
-    )
-
-
-def _shank_callbacks() -> DesktopShankRenderCallbacks:
-    return DesktopShankRenderCallbacks(
-        capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
-        clear_reference_lines=lambda: None,
-        prepare_runtime=lambda _shank_idx: None,
-        prepare_histology=lambda _shank_idx: True,
-        apply_plot_data_state=lambda _state: None,
-        raw_image_payloads=dict,
-        render_plot_menus=lambda _state: None,
-        render_ephys_plots=lambda _state: None,
-        render_histology_plots=lambda _shank_idx: None,
-        restore_slice_selection=lambda _state, _selection, _label: None,
-        configure_view=lambda _preserve: None,
-        histology_available=lambda: True,
-        offline=lambda: True,
+def _render_ports() -> DesktopRenderPorts:
+    return DesktopRenderPorts(
+        alignment=DesktopAlignmentRenderPorts(
+            restore_lin_fit=lambda _lin_fit: None,
+            clear_reference_lines=lambda: None,
+            capture_depth_plot_y_ranges=lambda: None,
+            restore_depth_plot_y_ranges=lambda _ranges: None,
+            reattach_reference_lines=lambda: None,
+            plot_channels=lambda _projection: None,
+            refresh_perpendicular_histology=lambda: None,
+            update_reference_lines_to_alignment=lambda: None,
+            create_reference_lines_for_previous_alignment=lambda: None,
+            set_default_feature_y_range=lambda: None,
+            update_status=lambda: None,
+        ),
+        histology=DesktopHistologyRenderPorts(
+            probe_extent_query_kwargs=dict,
+            fit_depth_um=lambda: [],
+            lin_fit_enabled=lambda: False,
+            scale_factor_y_range=lambda: (0.0, 1.0),
+        ),
+        shank=DesktopShankRenderPorts(
+            capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
+            clear_reference_lines=lambda: None,
+            prepare_runtime=lambda _shank_idx: None,
+            prepare_histology=lambda _shank_idx: True,
+            apply_plot_data_state=lambda _state: None,
+            raw_image_payloads=dict,
+            render_plot_menus=lambda _state: None,
+            render_ephys_plots=lambda _state: None,
+            render_histology_plots=lambda _shank_idx: None,
+            restore_slice_selection=lambda _state, _selection, _label: None,
+            configure_view=lambda _preserve: None,
+            histology_available=lambda: True,
+            offline=lambda: True,
+        ),
     )
 
 
@@ -386,21 +434,40 @@ def _selection_workflow_callbacks() -> DesktopSelectionWorkflowCallbacks:
     )
 
 
-def test_workbench_factory_configures_focused_presenters() -> None:
-    callbacks_seen: list[DesktopHistologyPresenter] = []
-
-    def alignment_callbacks_factory(
-        histology: DesktopHistologyPresenter,
-    ) -> DesktopAlignmentRenderCallbacks:
-        callbacks_seen.append(histology)
-        return _alignment_callbacks(histology)
-
-    histology_callbacks = DesktopHistologyRenderCallbacks(
-        probe_extent_query_kwargs=dict,
-        fit_depth_um=lambda: [],
-        lin_fit_enabled=lambda: False,
-        scale_factor_y_range=lambda: (0.0, 1.0),
+def _workbench_ports() -> DesktopWorkbenchPorts:
+    return DesktopWorkbenchPorts(
+        render=_render_ports(),
+        selection=_selection_workflow_callbacks(),
+        save_workflow=DesktopSaveWorkflowPorts(
+            use_docdb=lambda: False,
+            render_alignment_choices=lambda _choices: None,
+            busy_context=lambda *args, **kwargs: SimpleNamespace(
+                __enter__=lambda: None,
+                __exit__=lambda *_args: None,
+            ),
+            complete_button=lambda: object(),
+            histology_available=lambda: True,
+            open_qc_dialog=lambda: None,
+            ephys_qc=lambda: "Pass",
+            selected_qc_descriptions=list,
+            warning=lambda _title, _message: None,
+        ),
+        previous_alignment_load=DesktopPreviousAlignmentLoadPorts(
+            use_docdb=lambda: False,
+            set_reload_folder_text=lambda _text: None,
+            render_alignment_choices=lambda _choices: None,
+            select_alignment=lambda _idx: None,
+            busy_context=lambda *args, **kwargs: SimpleNamespace(
+                __enter__=lambda: None,
+                __exit__=lambda *_args: None,
+            ),
+            reload_button=lambda: object(),
+        ),
     )
+
+
+def test_workbench_factory_configures_focused_presenters() -> None:
+    ports = _workbench_ports()
     queries = SimpleNamespace(
         active_mouse_root_path=lambda: None,
         active_output_root=lambda: None,
@@ -416,15 +483,11 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         path_view=object(),
         parent=object(),
         histology_panel=panel,
-        histology_callbacks=histology_callbacks,
-        alignment_callbacks_factory=alignment_callbacks_factory,
-        shank_callbacks=_shank_callbacks(),
-        selection_callbacks=_selection_workflow_callbacks(),
+        ports=ports,
     )
 
     assert isinstance(workbench.histology_presenter, DesktopHistologyPresenter)
     assert workbench.histology_presenter.panel is panel
-    assert callbacks_seen == [workbench.histology_presenter]
     assert workbench.alignment_presenter.callbacks is not None
     assert workbench.shank_presenter.callbacks is not None
     assert workbench.load_data_presenter.callbacks is not None
@@ -439,3 +502,21 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         queries.has_output_directory
     )
     assert workbench.load_workflow_presenter.can_load_data is commands.can_load_data
+    assert workbench.histology_presenter.callbacks.fit_depth_um is (
+        ports.render.histology.fit_depth_um
+    )
+    assert workbench.alignment_presenter.callbacks.plot_channels is (
+        ports.render.alignment.plot_channels
+    )
+    assert workbench.alignment_presenter.callbacks.render_histology_alignment == (
+        workbench.histology_presenter.render_alignment_edit
+    )
+    assert workbench.shank_presenter.callbacks.prepare_runtime is (
+        ports.render.shank.prepare_runtime
+    )
+    assert workbench.save_workflow_presenter.callbacks.use_docdb is (
+        ports.save_workflow.use_docdb
+    )
+    assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
+        ports.previous_alignment_load.use_docdb
+    )
