@@ -26,6 +26,7 @@ from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
     AlignmentController,
     Failed,
+    PreviousAlignmentSelected,
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.session_runtime import SessionRuntime
@@ -81,6 +82,18 @@ class AlignmentPersistenceCommandHandler:
         return self.controller.set_previous_alignments(
             loaded.alignments,
             shank_idx=target_shank,
+        )
+
+    def select_previous_alignment(
+        self,
+        idx: int,
+        *,
+        shank_idx: int | None = None,
+    ) -> PreviousAlignmentSelected | Failed:
+        """Select a previous/original alignment on a document-selected shank."""
+        return self.controller.select_previous_alignment(
+            idx,
+            shank_idx=self._active_or_given_shank(shank_idx),
         )
 
     def can_save_alignment_output(self) -> Ok | Blocked:

@@ -9,9 +9,13 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.alignment_edit_commands import AlignmentEditCommandHandler
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
+from ephys_alignment_gui.alignment_persistence_commands import (
+    AlignmentPersistenceCommandHandler,
+)
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.app import AlignmentApp, AlignmentCommands, AlignmentQueries
@@ -25,11 +29,18 @@ from ephys_alignment_gui.histology_data_service import (
     HistologyDataService,
 )
 from ephys_alignment_gui.histology_runtime_loader import HistologyRuntimeLoader
+from ephys_alignment_gui.load_data_commands import LoadDataCommandHandler
 from ephys_alignment_gui.load_data_job import LoadDataJob
+from ephys_alignment_gui.loaded_shank_commands import LoadedShankCommandHandler
+from ephys_alignment_gui.metadata_selection_commands import (
+    MetadataSelectionCommandHandler,
+)
+from ephys_alignment_gui.path_commands import PathCommandHandler
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.shank_selection_commands import ShankSelectionCommandHandler
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
@@ -88,6 +99,13 @@ class AlignmentWorkspace:
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
     load_data_job: LoadDataJob = field(init=False)
     controller: AlignmentController = field(init=False)
+    path_commands: PathCommandHandler = field(init=False)
+    metadata_commands: MetadataSelectionCommandHandler = field(init=False)
+    shank_selection_commands: ShankSelectionCommandHandler = field(init=False)
+    load_data_commands: LoadDataCommandHandler = field(init=False)
+    loaded_shank_commands: LoadedShankCommandHandler = field(init=False)
+    persistence_commands: AlignmentPersistenceCommandHandler = field(init=False)
+    edit_commands: AlignmentEditCommandHandler = field(init=False)
     app: AlignmentApp = field(init=False)
 
     def __post_init__(self) -> None:
@@ -115,21 +133,60 @@ class AlignmentWorkspace:
             alignment_edit_service=self.alignment_edit_service,
             alignment_runtime_service=self.alignment_runtime_service,
         )
+        self.path_commands = PathCommandHandler(
+            controller=self.controller,
+            data_context=self.data_context,
+        )
+        self.metadata_commands = MetadataSelectionCommandHandler(
+            controller=self.controller,
+            data_context=self.data_context,
+            ephys_data_service=self.ephys_data_service,
+            path_commands=self.path_commands,
+            histology_context=self.histology_context,
+        )
+        self.shank_selection_commands = ShankSelectionCommandHandler(
+            controller=self.controller,
+            events=self.events,
+        )
+        self.load_data_commands = LoadDataCommandHandler(
+            controller=self.controller,
+            data_context=self.data_context,
+            display_state=self.display_state,
+            runtime=self.runtime,
+            load_data_job=self.load_data_job,
+            plot_data_factory=self.plot_data_factory,
+            metadata_commands=self.metadata_commands,
+        )
+        self.loaded_shank_commands = LoadedShankCommandHandler(
+            controller=self.controller,
+            data_context=self.data_context,
+            runtime=self.runtime,
+            histology_context=self.histology_context,
+            probe_track_service=self.probe_track_service,
+        )
+        self.persistence_commands = AlignmentPersistenceCommandHandler(
+            controller=self.controller,
+            data_context=self.data_context,
+            runtime=self.runtime,
+            derived_data_service=self.alignment_derived_data_service,
+            alignment_repository=self.alignment_repository,
+            output_builder=self.alignment_output_service,
+        )
+        self.edit_commands = AlignmentEditCommandHandler(
+            controller=self.controller,
+            events=self.events,
+            display_state=self.display_state,
+            runtime=self.runtime,
+        )
         self.app = AlignmentApp(
             commands=AlignmentCommands(
-                self.controller,
-                self.data_context,
-                self.ephys_data_service,
-                self.events,
-                self.display_state,
-                self.runtime,
-                self.load_data_job,
-                self.histology_context,
-                self.probe_track_service,
-                self.plot_data_factory,
-                self.alignment_derived_data_service,
-                self.alignment_repository,
-                self.alignment_output_service,
+                shank_selection_commands=self.shank_selection_commands,
+                load_data_commands=self.load_data_commands,
+                loaded_shank_commands=self.loaded_shank_commands,
+                path_commands=self.path_commands,
+                metadata_commands=self.metadata_commands,
+                persistence_commands=self.persistence_commands,
+                edit_commands=self.edit_commands,
             ),
             queries=AlignmentQueries(
                 document=self.document,

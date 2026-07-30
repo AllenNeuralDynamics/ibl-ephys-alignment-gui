@@ -12,12 +12,14 @@ from ephys_alignment_gui.controller import (
     Failed,
 )
 from ephys_alignment_gui.ephys_data_service import EphysDataService
+from ephys_alignment_gui.histology_data_service import HistologyDataContext
 from ephys_alignment_gui.metadata_results import (
     MouseRootLoaded,
     ProbeSelected,
     RecordingSelected,
 )
 from ephys_alignment_gui.path_commands import PathCommandHandler
+from ephys_alignment_gui.workflow import Ok
 
 
 @dataclass
@@ -28,6 +30,13 @@ class MetadataSelectionCommandHandler:
     data_context: AlignmentDataContext
     ephys_data_service: EphysDataService
     path_commands: PathCommandHandler
+    histology_context: HistologyDataContext | None = None
+
+    def clear_histology_context(self) -> Ok:
+        """Clear loaded histology runtime data after a mouse-root change."""
+        if self.histology_context is not None:
+            self.histology_context.clear()
+        return Ok()
 
     def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
         """Load a mouse root and update document metadata."""

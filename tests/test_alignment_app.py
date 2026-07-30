@@ -367,7 +367,7 @@ def _workspace_with_probe_state(
 ) -> AlignmentWorkspace:
     workspace = AlignmentWorkspace()
     if repo is not None:
-        workspace.app.commands._alignment_repository = repo
+        workspace.persistence_commands.alignment_repository = repo
     workspace.data_context.probe_info = SimpleNamespace(
         recording_id="rec",
         probe_name="probeA",
@@ -695,7 +695,7 @@ def test_commands_begin_load_data_prepares_fresh_load_and_captures_lines() -> No
 def test_commands_complete_fresh_load_data_returns_typed_transaction_result() -> None:
     workspace = _workspace_with_probe_state(shank_idx=0)
     load_data_job = FakeLoadDataJob()
-    workspace.app.commands._load_data_job = load_data_job
+    workspace.load_data_commands.load_data_job = load_data_job
     prepared = LoadDataFreshPrepared(
         stream_key=("rec", "stream"),
         shank_idx=1,
@@ -784,7 +784,8 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
         probe_info=probe,
         set_mouse_root=lambda path: loaded_root,
     )
-    workspace.app.commands._data_context = data_context
+    workspace.metadata_commands.data_context = data_context
+    workspace.path_commands.data_context = data_context
 
     mouse_result = workspace.app.commands.set_mouse_root(loaded_root.root)
     workspace.document.select_probe(probe.recording_id, probe.probe_name)
@@ -945,9 +946,9 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
     output_builder = FakeBatchOutputBuilder()
     derived = FakeDerivedDataService()
     workspace = AlignmentWorkspace()
-    workspace.app.commands._alignment_repository = repo
-    workspace.app.commands._alignment_output_service = output_builder
-    workspace.app.commands._derived_data_service = derived
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
     workspace.data_context.probe_info = SimpleNamespace(
         recording_id="rec",
