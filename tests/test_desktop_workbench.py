@@ -18,7 +18,7 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopLoadDataPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
-    DesktopSaveWorkflowPorts,
+    DesktopSavePorts,
     DesktopShankRenderPorts,
     DesktopWorkbench,
     DesktopWorkbenchPorts,
@@ -223,7 +223,7 @@ class FakePathDialogPresenter:
         return True
 
 
-class FakeLoadWorkflowPresenter:
+class FakeLoadPreflightPresenter:
     def __init__(self) -> None:
         self.load_count = 0
         self.logged: list[Any] = []
@@ -254,7 +254,7 @@ class FakeFolderDialog:
         return "/selected"
 
 
-class FakeSaveWorkflowPresenter:
+class FakeSavePresenter:
     def __init__(self) -> None:
         self.saved_count = 0
         self.qc_display_count = 0
@@ -422,10 +422,10 @@ def _workbench(
     probe_selection: Any | None = None,
     output_path: Any | None = None,
     path_dialog: Any | None = None,
-    load_workflow: Any | None = None,
+    load_preflight: Any | None = None,
     output_folder_prompt: Any | None = None,
     folder_dialog: Any | None = None,
-    save_workflow: Any | None = None,
+    save: Any | None = None,
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
     interaction: Any | None = None,
@@ -458,10 +458,10 @@ def _workbench(
         mouse_root_presenter=mouse_root or FakeMouseRootPresenter(),
         output_path_presenter=output_path or FakeOutputPathPresenter(),
         path_dialog_presenter=path_dialog or FakePathDialogPresenter(),
-        load_workflow_presenter=load_workflow or FakeLoadWorkflowPresenter(),
+        load_preflight_presenter=load_preflight or FakeLoadPreflightPresenter(),
         output_folder_prompt=output_folder_prompt or FakeOutputFolderPrompt(),
         folder_dialog=folder_dialog or FakeFolderDialog(),
-        save_workflow_presenter=save_workflow or FakeSaveWorkflowPresenter(),
+        save_presenter=save or FakeSavePresenter(),
         previous_alignment_load_presenter=(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
         ),
@@ -531,10 +531,10 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     probe_selection = FakeProbeSelectionPresenter()
     output_path = FakeOutputPathPresenter()
     path_dialog = FakePathDialogPresenter()
-    load_workflow = FakeLoadWorkflowPresenter()
+    load_preflight = FakeLoadPreflightPresenter()
     output_folder_prompt = FakeOutputFolderPrompt()
     folder_dialog = FakeFolderDialog()
-    save_workflow = FakeSaveWorkflowPresenter()
+    save = FakeSavePresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     plot_exporter = FakePlotExporter()
     interaction = FakeInteractionPresenter()
@@ -551,10 +551,10 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         probe_selection=probe_selection,
         output_path=output_path,
         path_dialog=path_dialog,
-        load_workflow=load_workflow,
+        load_preflight=load_preflight,
         output_folder_prompt=output_folder_prompt,
         folder_dialog=folder_dialog,
-        save_workflow=save_workflow,
+        save=save,
         previous_alignment_load=previous_alignment_load,
         plot_exporter=plot_exporter,
         interaction=interaction,
@@ -608,17 +608,17 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert mouse_root.edited_count == 1
     assert session_selection.selected_count == 1
     assert probe_selection.selected_count == 1
-    assert load_workflow.load_count == 1
-    assert load_workflow.logged == ["log-me"]
+    assert load_preflight.load_count == 1
+    assert load_preflight.logged == ["log-me"]
     assert output_path.save_roots == ["save-root"]
     assert output_path.edited_count == 1
     assert path_dialog.mouse_root_count == 1
     assert path_dialog.output_root_count == 1
     assert output_folder_prompt.requirements == ["requirement"]
     assert folder_dialog.titles == ["Choose"]
-    assert save_workflow.saved_count == 1
-    assert save_workflow.qc_display_count == 1
-    assert save_workflow.qc_clicked_count == 1
+    assert save.saved_count == 1
+    assert save.qc_display_count == 1
+    assert save.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
     assert alignment_edit_actions.calls == [
@@ -693,7 +693,7 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
             show_empty_state=lambda: None,
             collect_garbage=lambda: None,
         ),
-        save_workflow=DesktopSaveWorkflowPorts(
+        save=DesktopSavePorts(
             use_docdb=lambda: False,
             render_alignment_choices=lambda _choices: None,
             busy_context=lambda *args, **kwargs: SimpleNamespace(
@@ -813,7 +813,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.output_folder_prompt.callbacks.has_output_directory is (
         queries.has_output_directory
     )
-    assert workbench.load_workflow_presenter.can_load_data is commands.can_load_data
+    assert workbench.load_preflight_presenter.can_load_data is commands.can_load_data
     assert workbench.alignment_edit_actions.commands is commands
     assert workbench.alignment_edit_actions.callbacks.tip_position_um() == 42.0
     assert workbench.shank_selection_actions.app is app
@@ -828,8 +828,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.shank_presenter.callbacks.render_alignment_choices is (
         ports.render.shank.render_alignment_choices
     )
-    assert workbench.save_workflow_presenter.callbacks.use_docdb is (
-        ports.save_workflow.use_docdb
+    assert workbench.save_presenter.callbacks.use_docdb is (
+        ports.save.use_docdb
     )
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb

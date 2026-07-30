@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app import (
+from ephys_alignment_gui.app_results import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
     LoadDataAlreadyActiveResult,
@@ -20,7 +20,7 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
-from ephys_alignment_gui.histology_data_workflow import (
+from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )

@@ -1,4 +1,4 @@
-"""Tests for desktop save/QC workflow presentation."""
+"""Tests for desktop save/QC presentation."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.alignment_repository import SavedAlignmentOutputs
-from ephys_alignment_gui.app import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
 from ephys_alignment_gui.controller import AlignmentOutputsSaved
-from ephys_alignment_gui.desktop_save_workflow_presenter import (
-    DesktopSaveWorkflowCallbacks,
-    DesktopSaveWorkflowPresenter,
+from ephys_alignment_gui.desktop_save_presenter import (
+    DesktopSaveCallbacks,
+    DesktopSavePresenter,
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.workflow import (
@@ -104,12 +104,12 @@ def _presenter(
     histology_available: bool = True,
     ephys_qc: str = "Pass",
     selected_descriptions: list[str] | None = None,
-) -> tuple[DesktopSaveWorkflowPresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopSavePresenter, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
     commands = commands or FakeCommands()
-    presenter = DesktopSaveWorkflowPresenter(
+    presenter = DesktopSavePresenter(
         commands=commands,
-        callbacks=DesktopSaveWorkflowCallbacks(
+        callbacks=DesktopSaveCallbacks(
             ensure_output_directory=lambda requirement: calls.append(
                 ("ensure-output", requirement)
             )

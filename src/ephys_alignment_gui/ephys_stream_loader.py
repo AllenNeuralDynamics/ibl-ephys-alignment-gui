@@ -1,4 +1,4 @@
-"""Qt-free workflow for loading selected probe runtime data."""
+"""Qt-free loader for selected ephys stream runtime data."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ephys_alignment_gui.ephys_data_service import (
 
 
 @dataclass(frozen=True)
-class LoadedProbeData:
+class LoadedEphysSelection:
     """Runtime ephys data for one loaded stream and active shank."""
 
     stream: EphysStreamData
@@ -44,10 +44,10 @@ class LoadedProbeData:
         return self.stream.alf_data
 
 
-class ProbeDataWorkflow:
+class EphysStreamLoader:
     """Load runtime ephys data for the currently selected probe.
 
-    The workflow owns the Qt-free part of "Load Data": resolving the selected
+    This loader owns the Qt-free IO part of "Load Data": resolving the selected
     probe, loading stream-level ALF data, and selecting the active shank view.
     UI teardown, progress messages, histology rendering, and plot updates stay
     in the Qt layer for now.
@@ -61,7 +61,7 @@ class ProbeDataWorkflow:
         self.data_context = data_context
         self.ephys_data_service = ephys_data_service
 
-    def load(self, shank_idx: int) -> LoadedProbeData:
+    def load(self, shank_idx: int) -> LoadedEphysSelection:
         """Load stream data for the selected probe and return an active shank view."""
         probe = self.data_context.probe_info
         if probe is None:
@@ -80,11 +80,11 @@ class ProbeDataWorkflow:
         self,
         stream: EphysStreamData,
         shank_idx: int,
-    ) -> LoadedProbeData:
+    ) -> LoadedEphysSelection:
         """Build an active shank view from an already-loaded stream."""
         self.data_context.validate_cached_stream(stream)
         self.data_context.attach_channel_table(stream.channel_table)
-        return LoadedProbeData(
+        return LoadedEphysSelection(
             stream=stream,
             channel_collection=stream.channel_collection(shank_idx),
         )

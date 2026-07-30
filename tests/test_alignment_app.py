@@ -16,14 +16,14 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
+from ephys_alignment_gui.alignment_read_models import ActiveReferenceLineRenderState
 from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
     SavedAlignmentOutputs,
 )
-from ephys_alignment_gui.app import (
-    ActiveReferenceLineRenderState,
+from ephys_alignment_gui.app import AlignmentQueries
+from ephys_alignment_gui.app_results import (
     ActiveStreamDetached,
-    AlignmentQueries,
     CachedEphysDataActivated,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
@@ -53,7 +53,7 @@ from ephys_alignment_gui.controller import (
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.histology_data_workflow import HistologyDataLoaded
+from ephys_alignment_gui.histology_runtime_loader import HistologyDataLoaded
 from ephys_alignment_gui.load_data_job import LoadDataJobCompleted, LoadDataJobRequest
 from ephys_alignment_gui.session_runtime import (
     LoadDataAlreadyActive,

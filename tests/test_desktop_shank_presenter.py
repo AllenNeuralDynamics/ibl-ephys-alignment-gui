@@ -12,7 +12,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ActiveShankScreenState,
 )
-from ephys_alignment_gui.app import LoadedShankPrepared
+from ephys_alignment_gui.app_results import LoadedShankPrepared
 from ephys_alignment_gui.desktop_shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,

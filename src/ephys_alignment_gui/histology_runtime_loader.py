@@ -1,4 +1,4 @@
-"""Qt-free workflow for loading subject-level histology runtime data."""
+"""Qt-free loader for subject-level histology runtime data."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ HistologyLoadResult = (
 )
 
 
-class HistologyDataWorkflow:
+class HistologyRuntimeLoader:
     """Load and cache subject-level histology runtime data."""
 
     def __init__(

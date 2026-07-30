@@ -17,15 +17,15 @@ from ephys_alignment_gui.app import AlignmentApp, AlignmentCommands, AlignmentQu
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
+from ephys_alignment_gui.ephys_stream_loader import EphysStreamLoader
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.histology_data_service import (
     HistologyDataContext,
     HistologyDataService,
 )
-from ephys_alignment_gui.histology_data_workflow import HistologyDataWorkflow
+from ephys_alignment_gui.histology_runtime_loader import HistologyRuntimeLoader
 from ephys_alignment_gui.load_data_job import LoadDataJob
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
-from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.session_runtime import SessionRuntime
@@ -80,25 +80,25 @@ class AlignmentWorkspace:
     plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
     events: EventBus = field(default_factory=EventBus)
-    probe_data_workflow: ProbeDataWorkflow = field(init=False)
-    histology_data_workflow: HistologyDataWorkflow = field(init=False)
+    ephys_stream_loader: EphysStreamLoader = field(init=False)
+    histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
     load_data_job: LoadDataJob = field(init=False)
     controller: AlignmentController = field(init=False)
     app: AlignmentApp = field(init=False)
 
     def __post_init__(self) -> None:
-        self.probe_data_workflow = ProbeDataWorkflow(
+        self.ephys_stream_loader = EphysStreamLoader(
             self.data_context,
             self.ephys_data_service,
         )
-        self.histology_data_workflow = HistologyDataWorkflow(
+        self.histology_runtime_loader = HistologyRuntimeLoader(
             self.data_context,
             self.histology_data_service,
             self.histology_context,
         )
         self.load_data_job = LoadDataJob(
-            probe_data_workflow=self.probe_data_workflow,
-            histology_data_workflow=self.histology_data_workflow,
+            ephys_stream_loader=self.ephys_stream_loader,
+            histology_runtime_loader=self.histology_runtime_loader,
         )
         self.alignment_output_service = AlignmentOutputService(
             self.data_context,

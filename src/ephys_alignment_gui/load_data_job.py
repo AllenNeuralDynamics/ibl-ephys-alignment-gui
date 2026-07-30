@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ephys_alignment_gui.histology_data_workflow import (
-    HistologyDataWorkflow,
-    HistologyLoadResult,
+from ephys_alignment_gui.ephys_stream_loader import (
+    EphysStreamLoader,
+    LoadedEphysSelection,
 )
-from ephys_alignment_gui.probe_data_workflow import LoadedProbeData, ProbeDataWorkflow
+from ephys_alignment_gui.histology_runtime_loader import (
+    HistologyLoadResult,
+    HistologyRuntimeLoader,
+)
 from ephys_alignment_gui.workflow import Failed
 
 
@@ -23,7 +26,7 @@ class LoadDataJobRequest:
 class LoadDataJobCompleted:
     """Heavy fresh ephys/histology load work completed."""
 
-    ephys: LoadedProbeData
+    ephys: LoadedEphysSelection
     histology: HistologyLoadResult
 
 
@@ -31,8 +34,8 @@ class LoadDataJobCompleted:
 class LoadDataJob:
     """Run heavy fresh-load services without depending on Qt."""
 
-    probe_data_workflow: ProbeDataWorkflow
-    histology_data_workflow: HistologyDataWorkflow
+    ephys_stream_loader: EphysStreamLoader
+    histology_runtime_loader: HistologyRuntimeLoader
 
     def run(
         self,
@@ -45,12 +48,12 @@ class LoadDataJob:
 
         return LoadDataJobCompleted(
             ephys=ephys_result,
-            histology=self.histology_data_workflow.load_if_needed(),
+            histology=self.histology_runtime_loader.load_if_needed(),
         )
 
-    def _load_ephys(self, shank_idx: int) -> LoadedProbeData | Failed:
+    def _load_ephys(self, shank_idx: int) -> LoadedEphysSelection | Failed:
         try:
-            loaded = self.probe_data_workflow.load(shank_idx)
+            loaded = self.ephys_stream_loader.load(shank_idx)
             if not loaded.stream.ephys_dir:
                 return Failed("Failed to load ephys data")
         except Exception as exc:

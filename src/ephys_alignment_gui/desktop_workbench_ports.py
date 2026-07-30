@@ -17,7 +17,7 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopLoadDataPorts,
     DesktopPreviousAlignmentLoadPorts,
     DesktopRenderPorts,
-    DesktopSaveWorkflowPorts,
+    DesktopSavePorts,
     DesktopShankRenderPorts,
     DesktopWorkbenchPorts,
 )
@@ -81,7 +81,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 offline=lambda: window.offline,
             ),
         ),
-        save_workflow=DesktopSaveWorkflowPorts(
+        save=DesktopSavePorts(
             use_docdb=lambda: window.use_docdb,
             render_alignment_choices=render_alignment_choices,
             busy_context=busy_context,

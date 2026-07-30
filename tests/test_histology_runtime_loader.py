@@ -1,14 +1,14 @@
-"""Tests for subject-level histology load workflow."""
+"""Tests for subject-level histology runtime loading."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ephys_alignment_gui.histology_data_workflow import (
+from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataAlreadyLoaded,
     HistologyDataLoaded,
     HistologyDataUnavailable,
-    HistologyDataWorkflow,
+    HistologyRuntimeLoader,
 )
 
 
@@ -40,9 +40,9 @@ def test_load_if_needed_skips_when_histology_is_already_loaded() -> None:
         set=lambda _data: None,
     )
     service = FakeHistologyService()
-    workflow = HistologyDataWorkflow(data_context, service, histology_context)
+    loader = HistologyRuntimeLoader(data_context, service, histology_context)
 
-    result = workflow.load_if_needed()
+    result = loader.load_if_needed()
 
     assert isinstance(result, HistologyDataAlreadyLoaded)
     assert service.calls == []
@@ -57,13 +57,13 @@ def test_load_if_needed_loads_and_stores_histology_data() -> None:
         set=stored.append,
     )
     service = FakeHistologyService(data=histology_data)
-    workflow = HistologyDataWorkflow(
+    loader = HistologyRuntimeLoader(
         SimpleNamespace(mouse_root=mouse_root),
         service,
         histology_context,
     )
 
-    result = workflow.load_if_needed()
+    result = loader.load_if_needed()
 
     assert isinstance(result, HistologyDataLoaded)
     assert service.calls == [mouse_root]
@@ -76,13 +76,13 @@ def test_load_if_needed_reports_missing_mouse_root_as_non_fatal() -> None:
         set=lambda _data: None,
     )
     service = FakeHistologyService()
-    workflow = HistologyDataWorkflow(
+    loader = HistologyRuntimeLoader(
         SimpleNamespace(mouse_root=None),
         service,
         histology_context,
     )
 
-    result = workflow.load_if_needed()
+    result = loader.load_if_needed()
 
     assert isinstance(result, HistologyDataUnavailable)
     assert result.message == "Failed to load atlas/histology: No mouse root loaded"
@@ -95,13 +95,13 @@ def test_load_if_needed_reports_service_exception_as_non_fatal() -> None:
         set=lambda _data: None,
     )
     service = FakeHistologyService(exc=RuntimeError("boom"))
-    workflow = HistologyDataWorkflow(
+    loader = HistologyRuntimeLoader(
         SimpleNamespace(mouse_root=object()),
         service,
         histology_context,
     )
 
-    result = workflow.load_if_needed()
+    result = loader.load_if_needed()
 
     assert isinstance(result, HistologyDataUnavailable)
     assert result.message == "Failed to load atlas/histology: boom"

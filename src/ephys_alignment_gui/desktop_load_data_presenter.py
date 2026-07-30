@@ -9,14 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.app import (
+from ephys_alignment_gui.app_results import (
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
 )
-from ephys_alignment_gui.histology_data_workflow import (
+from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )

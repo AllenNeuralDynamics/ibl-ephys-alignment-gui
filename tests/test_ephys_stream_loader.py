@@ -1,4 +1,4 @@
-"""Tests for Qt-free probe data loading workflow."""
+"""Tests for Qt-free ephys stream loading."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.datapackage_loader import ProbeInfo
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.probe_data_workflow import ProbeDataWorkflow
+from ephys_alignment_gui.ephys_stream_loader import EphysStreamLoader
 
 
 def _channel_table() -> ChannelTable:
@@ -48,7 +48,7 @@ def _stream(tmp_path: Path, table: ChannelTable) -> EphysStreamData:
     )
 
 
-def test_probe_data_workflow_loads_stream_and_active_collection(tmp_path) -> None:
+def test_ephys_stream_loader_loads_stream_and_active_collection(tmp_path) -> None:
     probe = _probe(tmp_path)
     table = _channel_table()
     stream = _stream(tmp_path, table)
@@ -65,9 +65,9 @@ def test_probe_data_workflow_loads_stream_and_active_collection(tmp_path) -> Non
             return stream
 
     service = FakeEphysDataService()
-    workflow = ProbeDataWorkflow(context, service)
+    loader = EphysStreamLoader(context, service)
 
-    loaded = workflow.load(1)
+    loaded = loader.load(1)
 
     assert loaded.stream is stream
     assert loaded.channel_collection.rows.tolist() == [2, 3]
@@ -79,15 +79,15 @@ def test_probe_data_workflow_loads_stream_and_active_collection(tmp_path) -> Non
     assert service.loaded_table is table
 
 
-def test_probe_data_workflow_requires_channel_table(tmp_path) -> None:
+def test_ephys_stream_loader_requires_channel_table(tmp_path) -> None:
     context = AlignmentDataContext(probe_info=_probe(tmp_path))
-    workflow = ProbeDataWorkflow(context, ephys_data_service=object())
+    loader = EphysStreamLoader(context, ephys_data_service=object())
 
     with pytest.raises(RuntimeError, match="Channel info"):
-        workflow.load(0)
+        loader.load(0)
 
 
-def test_probe_data_workflow_validates_cached_stream(tmp_path) -> None:
+def test_ephys_stream_loader_validates_cached_stream(tmp_path) -> None:
     probe = _probe(tmp_path)
     table = _channel_table()
     stream = EphysStreamData(
@@ -99,7 +99,7 @@ def test_probe_data_workflow_validates_cached_stream(tmp_path) -> None:
         session_notes="notes",
     )
     context = AlignmentDataContext(probe_info=probe)
-    workflow = ProbeDataWorkflow(context, ephys_data_service=object())
+    loader = EphysStreamLoader(context, ephys_data_service=object())
 
     with pytest.raises(ValueError, match="collection"):
-        workflow.from_stream(stream, 0)
+        loader.from_stream(stream, 0)

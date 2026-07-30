@@ -1,4 +1,4 @@
-"""Desktop presentation shell for save and QC workflows."""
+"""Desktop presentation shell for save and QC commands."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.app import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
 from ephys_alignment_gui.workflow import Blocked, Failed, Ok, Requirement
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class DesktopSaveWorkflowCallbacks:
+class DesktopSaveCallbacks:
     """Desktop side effects for saving alignment outputs."""
 
     ensure_output_directory: Callable[[Requirement], bool]
@@ -32,11 +32,11 @@ class DesktopSaveWorkflowCallbacks:
 
 
 @dataclass
-class DesktopSaveWorkflowPresenter:
+class DesktopSavePresenter:
     """Coordinate desktop save and QC button behavior."""
 
     commands: Any
-    callbacks: DesktopSaveWorkflowCallbacks
+    callbacks: DesktopSaveCallbacks
 
     def save_alignment_outputs(self) -> bool:
         """Save visited alignment outputs, prompting for output if needed."""

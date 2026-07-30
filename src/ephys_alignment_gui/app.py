@@ -14,7 +14,6 @@ from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
-    AlignmentHistologyData,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import (
@@ -22,6 +21,7 @@ from ephys_alignment_gui.alignment_events import (
     AlignmentEditKind,
     ShankChanged,
 )
+from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
     ActiveReferenceLineRenderState,
@@ -37,6 +37,23 @@ from ephys_alignment_gui.alignment_read_models import (
     PerpendicularSliceRenderState,
     ProbeExtentRenderState,
     ScaleFactorRenderState,
+)
+from ephys_alignment_gui.alignment_render_queries import AlignmentRenderQueries
+from ephys_alignment_gui.app_results import (
+    ActiveStreamDetached,
+    CachedEphysDataActivated,
+    FreshEphysDataLoaded,
+    LoadDataAlreadyActiveResult,
+    LoadDataBeginResult,
+    LoadDataCachedActivated,
+    LoadDataFreshCompleted,
+    LoadDataFreshPrepared,
+    LoadDataFreshRequiredResult,
+    LoadedShankPrepared,
+    ProbeSelectionCacheResult,
+    ShankSelectionState,
+    StreamCacheEvicted,
+    VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.controller import (
     AlignmentChoicesUpdated,
@@ -58,20 +75,15 @@ from ephys_alignment_gui.controller import (
     ShankSelected,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.ephys_plot_queries import EphysPlotQueries
+from ephys_alignment_gui.ephys_stream_loader import LoadedEphysSelection
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.histology_data_service import HistologyDataContext
-from ephys_alignment_gui.histology_data_workflow import HistologyLoadResult
 from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
-from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
-from ephys_alignment_gui.plot_registry import (
-    PlotMenu,
-    PlotSpec,
-    resolve_plot_bounds,
-    resolve_plot_payload,
-)
-from ephys_alignment_gui.probe_data_workflow import LoadedProbeData
+from ephys_alignment_gui.plot_menu_state import PlotMenuState
+from ephys_alignment_gui.plot_registry import PlotMenu, PlotSpec
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.session_runtime import (
     LoadDataAlreadyActive,
@@ -83,6 +95,7 @@ from ephys_alignment_gui.session_runtime import (
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
+from ephys_alignment_gui.slice_queries import SliceQueries
 from ephys_alignment_gui.workflow import Blocked, Ok, PolicyResult
 
 logger = logging.getLogger(__name__)
@@ -94,118 +107,6 @@ class _ReferenceLinesNotProvided:
 
 _REFERENCE_LINES_NOT_PROVIDED = _ReferenceLinesNotProvided()
 ReferenceLineCapture = tuple[Any, Any] | None | _ReferenceLinesNotProvided
-
-
-@dataclass(frozen=True)
-class ShankSelectionState:
-    """Read model for the active shank selection."""
-
-    shank_idx: int
-    shank_id: int
-    alignment_key: AlignmentKey | None
-    data_loaded: bool
-
-
-@dataclass(frozen=True)
-class FreshEphysDataLoaded:
-    """Fresh ephys stream data was loaded and cached."""
-
-    stream_runtime: Any
-    shank_idx: int
-
-
-@dataclass(frozen=True)
-class CachedEphysDataActivated:
-    """Cached ephys stream runtime was activated."""
-
-    stream_runtime: Any
-    shank_idx: int
-    probe: ProbeSelected
-
-
-@dataclass(frozen=True)
-class ActiveStreamDetached:
-    """The active stream was detached while cached runtimes were preserved."""
-
-    cached_stream_count: int
-
-
-@dataclass(frozen=True)
-class StreamCacheEvicted:
-    """Cached stream runtimes were evicted for a recording/session transition."""
-
-    evicted_stream_count: int
-
-
-@dataclass(frozen=True)
-class LoadedShankPrepared:
-    """Runtime state for one loaded shank is ready for rendering."""
-
-    shank_idx: int
-    n_channels: int
-    histology_available: bool
-    alignment_choices: list[str] | None = None
-
-
-@dataclass(frozen=True)
-class VisitedAlignmentOutputsSaved:
-    """Visited alignment outputs were persisted."""
-
-    saved_count: int
-    saved_outputs: Mapping[AlignmentKey, AlignmentOutputsSaved]
-    active_choices: list[str] | None
-
-
-@dataclass(frozen=True)
-class LoadDataAlreadyActiveResult:
-    """The requested stream/shank is already active; no load work ran."""
-
-    stream_key: StreamKey | None
-    shank_idx: int
-
-
-@dataclass(frozen=True)
-class LoadDataCachedActivated:
-    """A cached stream was activated for desktop presentation."""
-
-    stream_key: StreamKey
-    activated: CachedEphysDataActivated
-
-
-@dataclass(frozen=True)
-class LoadDataFreshPrepared:
-    """Fresh load state was prepared and is ready for heavy IO."""
-
-    stream_key: StreamKey | None
-    shank_idx: int
-    preserve_plot_selection: bool
-
-
-@dataclass(frozen=True)
-class LoadDataFreshRequiredResult:
-    """The requested stream is not cached and requires an explicit fresh load."""
-
-    stream_key: StreamKey | None
-    shank_idx: int
-
-
-@dataclass(frozen=True)
-class LoadDataFreshCompleted:
-    """Fresh ephys data and subject histology load steps completed."""
-
-    stream_key: StreamKey | None
-    ephys: FreshEphysDataLoaded
-    histology: HistologyLoadResult
-    preserve_plot_selection: bool
-
-
-LoadDataBeginResult = (
-    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshPrepared
-)
-
-ProbeSelectionCacheResult = (
-    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshRequiredResult
-)
 
 
 @dataclass
@@ -534,7 +435,7 @@ class AlignmentCommands:
 
     def _cache_loaded_probe_data(
         self,
-        loaded: LoadedProbeData,
+        loaded: LoadedEphysSelection,
         *,
         shank_idx: int,
     ) -> FreshEphysDataLoaded:
@@ -1104,7 +1005,7 @@ class AlignmentQueries:
 
     def active_unit_filter(self) -> str:
         """Return the selected unit subset for active ephys plot data."""
-        return self.display_state.unit_filter
+        return self._ephys_plot_queries().active_unit_filter()
 
     def resolve_shank_preserve_plot_selection(
         self,
@@ -1115,30 +1016,46 @@ class AlignmentQueries:
             return self.document.data_loaded
         return preserve_plot_selection
 
+    def _query_context(self) -> AlignmentQueryContext:
+        return AlignmentQueryContext(
+            document=self.document,
+            runtime=self.runtime,
+        )
+
+    def _ephys_plot_queries(self) -> EphysPlotQueries:
+        return EphysPlotQueries(
+            context=self._query_context(),
+            display_state=self.display_state,
+            derived_data_service=self.derived_data_service,
+            histology_context=self.histology_context,
+        )
+
+    def _alignment_render_queries(self) -> AlignmentRenderQueries:
+        return AlignmentRenderQueries(
+            context=self._query_context(),
+            display_state=self.display_state,
+            derived_data_service=self.derived_data_service,
+        )
+
+    def _slice_queries(self) -> SliceQueries:
+        return SliceQueries(
+            context=self._query_context(),
+            render_queries=self._alignment_render_queries(),
+            derived_data_service=self.derived_data_service,
+            slice_data_runtime_service=self.slice_data_runtime_service,
+            histology_context=self.histology_context,
+            slice_service=self.slice_service,
+            slice_display_policy=self.slice_display_policy,
+        )
+
     def prepare_active_shank_plot_data_state(
         self,
         *,
         unit_filter: str | None = None,
     ) -> ActiveShankPlotDataState | None:
         """Materialize active shank PlotData and return frontend-safe bounds."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return None
-        shank_idx = self._active_shank_idx()
-        unit_filter = self.active_unit_filter() if unit_filter is None else unit_filter
-        plotdata = stream_runtime.filtered_plot_data_for_shank(
-            shank_idx,
+        return self._ephys_plot_queries().prepare_active_shank_plot_data_state(
             unit_filter=unit_filter,
-        )
-        in_brain_depths_um = self.active_in_brain_depths_for_alignment()
-        plotdata.in_brain_depths_um = in_brain_depths_um
-        return ActiveShankPlotDataState(
-            key=self.document.selected_alignment_key,
-            shank_idx=shank_idx,
-            unit_filter=unit_filter,
-            channel_min_um=float(getattr(plotdata, "chn_min", 0.0)),
-            channel_max_um=float(getattr(plotdata, "chn_max", 0.0)),
-            in_brain_depths_um=in_brain_depths_um,
         )
 
     def active_shank_screen_state(
@@ -1180,9 +1097,7 @@ class AlignmentQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> PlotMenuState:
         """Return available plot menu entries for the active shank."""
-        plotdata = self._active_plotdata()
-        return self._plot_menu_state_for_plotdata(
-            plotdata,
+        return self._ephys_plot_queries().active_plot_menu_state(
             previous_selected_keys=previous_selected_keys,
             raw_image_payloads=raw_image_payloads,
         )
@@ -1194,12 +1109,10 @@ class AlignmentQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> PlotSpec | None:
         """Return an available plot spec for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        return self._ephys_plot_queries().active_plot_spec(
+            spec_key,
             raw_image_payloads=raw_image_payloads,
         )
-        return self._find_plot_spec(state, spec_key)
 
     def active_plot_payload(
         self,
@@ -1208,15 +1121,10 @@ class AlignmentQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> Any:
         """Resolve a plot payload for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        return self._ephys_plot_queries().active_plot_payload(
+            spec_key,
             raw_image_payloads=raw_image_payloads,
         )
-        spec = self._find_plot_spec(state, spec_key)
-        if spec is None:
-            return None
-        return resolve_plot_payload(plotdata, spec)
 
     def active_plot_bounds(
         self,
@@ -1225,110 +1133,41 @@ class AlignmentQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> Any:
         """Resolve optional plot bounds for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        return self._ephys_plot_queries().active_plot_bounds(
+            spec_key,
             raw_image_payloads=raw_image_payloads,
         )
-        spec = self._find_plot_spec(state, spec_key)
-        if spec is None:
-            return None
-        return resolve_plot_bounds(plotdata, spec)
 
     def active_in_brain_depths_um(self) -> Any:
         """Return active PlotData in-brain depths, if available."""
-        plotdata = self._active_plotdata()
-        if plotdata is None:
-            return None
-        return getattr(plotdata, "in_brain_depths_um", None)
+        return self._ephys_plot_queries().active_in_brain_depths_um()
 
     def active_in_brain_depths_for_alignment(self) -> Any:
         """Return active channel depths whose aligned CCF annotation is not root."""
-        context = self._active_alignment_context()
-        if (
-            context is None
-            or self.histology_context is None
-            or self.histology_context.brain_atlas is None
-        ):
-            return None
-        _key, active_alignment, shank_runtime = context
-        try:
-            channel_locations_ras = self.derived_data_service.compute_channel_locations(
-                ephysalign=shank_runtime.ephysalign,
-                feature=active_alignment.feature,
-                track=active_alignment.track,
-            )
-            region_ids = self.histology_context.brain_atlas.get_labels(
-                channel_locations_ras
-            )
-        except Exception:
-            logger.warning(
-                "Could not determine in-brain channels for probe cmap",
-                exc_info=True,
-            )
-            return None
-        in_brain = np.asarray(region_ids) != 0
-        if not in_brain.any():
-            return None
-        return np.asarray(shank_runtime.chn_depths)[in_brain]
+        return self._ephys_plot_queries().active_in_brain_depths_for_alignment()
 
     def prepare_active_slice_screen_data(self) -> ActiveSliceDataState | None:
         """Materialize active slice data when histology runtime is available."""
-        if not self._histology_slices_available():
-            return None
-        return self.ensure_active_slice_data_state()
+        return self._slice_queries().prepare_active_slice_screen_data()
 
     def active_cluster_detail(
         self,
         cluster_idx: int,
     ) -> ClusterDetailRenderState | None:
         """Return autocorrelogram/template detail for one active cluster."""
-        plotdata = self._active_plotdata()
-        if plotdata is None:
-            return None
-        autocorr, cluster_no = plotdata.get_autocorr(cluster_idx)
-        template_waveform = plotdata.get_template_wf(cluster_idx)
-        return ClusterDetailRenderState(
-            cluster_no=cluster_no,
-            autocorr=np.asarray(autocorr),
-            t_autocorr=np.asarray(plotdata.t_autocorr),
-            template_waveform=np.asarray(template_waveform),
-            t_template=np.asarray(plotdata.t_template),
-        )
+        return self._ephys_plot_queries().active_cluster_detail(cluster_idx)
 
     def active_session_notes(self) -> str:
         """Return notes for the active ephys stream, if any."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return ""
-        return stream_runtime.stream.session_notes
+        return self._ephys_plot_queries().active_session_notes()
 
     def active_histology_region_id(self, region_idx: int) -> int | None:
         """Return an active histology region id by plotted region index."""
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None or shank_runtime.ephysalign is None:
-            return None
-        try:
-            return int(shank_runtime.ephysalign.region_id[region_idx][0])
-        except (IndexError, TypeError, ValueError):
-            return None
+        return self._alignment_render_queries().active_histology_region_id(region_idx)
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         """Return derived render data for the active alignment, if available."""
-        context = self._active_alignment_context()
-        if context is None:
-            return None
-        key, active_alignment, shank_runtime = context
-        return ActiveAlignmentRenderState(
-            key=key,
-            active_alignment=active_alignment,
-            histology=self._compute_active_histology(active_alignment, shank_runtime),
-            projection=self.derived_data_service.compute_channel_projection(
-                ephysalign=shank_runtime.ephysalign,
-                feature=active_alignment.feature,
-                track=active_alignment.track,
-            ),
-        )
+        return self._alignment_render_queries().active_alignment_render_state()
 
     def active_histology_panel_state(
         self,
@@ -1338,25 +1177,10 @@ class AlignmentQueries:
         probe_extra_um: float,
     ) -> HistologyPanelRenderState | None:
         """Return histology-region render data for the active alignment."""
-        context = self._active_alignment_context()
-        if context is None:
-            return None
-        key, active_alignment, shank_runtime = context
-        probe_extent = self._probe_extent_render_state(
-            active_alignment,
+        return self._alignment_render_queries().active_histology_panel_state(
             probe_tip_um=probe_tip_um,
             probe_top_um=probe_top_um,
             probe_extra_um=probe_extra_um,
-        )
-        if probe_extent is None:
-            return None
-        return HistologyPanelRenderState(
-            key=key,
-            histology=self._compute_active_histology(
-                active_alignment,
-                shank_runtime,
-            ),
-            probe_extent=probe_extent,
         )
 
     def probe_extent_render_state(
@@ -1368,7 +1192,7 @@ class AlignmentQueries:
         probe_extra_um: float,
     ) -> ProbeExtentRenderState | None:
         """Return probe-extent render data for an alignment."""
-        return self._probe_extent_render_state(
+        return self._alignment_render_queries().probe_extent_render_state(
             active_alignment,
             probe_tip_um=probe_tip_um,
             probe_top_um=probe_top_um,
@@ -1383,18 +1207,10 @@ class AlignmentQueries:
         probe_extra_um: float,
     ) -> ScaleFactorRenderState | None:
         """Return scale-factor render data for the active alignment."""
-        histology_state = self.active_histology_panel_state(
+        return self._alignment_render_queries().active_scale_factor_state(
             probe_tip_um=probe_tip_um,
             probe_top_um=probe_top_um,
             probe_extra_um=probe_extra_um,
-        )
-        if histology_state is None:
-            return None
-        return ScaleFactorRenderState(
-            key=histology_state.key,
-            region=histology_state.histology.scale.region,
-            scale=histology_state.histology.scale.scale,
-            probe_extent=histology_state.probe_extent,
         )
 
     def active_nearby_boundary_state(
@@ -1408,36 +1224,13 @@ class AlignmentQueries:
         steps: int = 6,
     ) -> NearbyBoundaryRenderState | None:
         """Return nearby-boundary curves for the active alignment track."""
-        context = self._active_alignment_context()
-        if context is None:
-            return None
-        key, active_alignment, shank_runtime = context
-        probe_extent = self._probe_extent_render_state(
-            active_alignment,
+        return self._alignment_render_queries().active_nearby_boundary_state(
             probe_tip_um=probe_tip_um,
             probe_top_um=probe_top_um,
             probe_extra_um=probe_extra_um,
-        )
-        if probe_extent is None:
-            return None
-        nearby_boundaries = shank_runtime.nearby_boundaries
-        if nearby_boundaries is None:
-            nearby_boundaries = self.derived_data_service.compute_nearby_boundaries(
-                ephysalign=shank_runtime.ephysalign,
-                allen=allen,
-                brain_atlas=brain_atlas,
-                steps=steps,
-            )
-            shank_runtime.nearby_boundaries = nearby_boundaries
-        return NearbyBoundaryRenderState(
-            key=key,
-            x=nearby_boundaries.x,
-            y=nearby_boundaries.y,
-            colours=nearby_boundaries.colours,
-            parent_x=nearby_boundaries.parent_x,
-            parent_y=nearby_boundaries.parent_y,
-            parent_colours=nearby_boundaries.parent_colours,
-            probe_extent=probe_extent,
+            allen=allen,
+            brain_atlas=brain_atlas,
+            steps=steps,
         )
 
     def active_fit_plot_state(
@@ -1447,64 +1240,22 @@ class AlignmentQueries:
         lin_fit: bool,
     ) -> FitPlotRenderState | None:
         """Return feature/track fit curve render data for the active alignment."""
-        context = self._active_alignment_context()
-        if context is None:
-            return None
-        key, active_alignment, shank_runtime = context
-        feature = np.asarray(active_alignment.feature, dtype=float)
-        track = np.asarray(active_alignment.track, dtype=float)
-        feature_um = feature * 1e6
-        track_um = track * 1e6
-        linear_feature_um = None
-        linear_track_um = None
-        depth_um = np.asarray(depth_um, dtype=float)
-        if lin_fit and feature.size >= 5 and depth_um.size > 0:
-            depth_lin = shank_runtime.ephysalign.feature2track_lin(
-                depth_um / 1e6,
-                feature,
-                track,
-            )
-            if np.any(depth_lin):
-                linear_feature_um = depth_um
-                linear_track_um = np.asarray(depth_lin, dtype=float) * 1e6
-        return FitPlotRenderState(
-            key=key,
-            feature_um=feature_um,
-            track_um=track_um,
-            linear_feature_um=linear_feature_um,
-            linear_track_um=linear_track_um,
+        return self._alignment_render_queries().active_fit_plot_state(
+            depth_um=depth_um,
+            lin_fit=lin_fit,
         )
 
     def ensure_active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Build/cache and return coronal slice data for the active alignment."""
-        context = self._active_alignment_context()
-        if context is None or not self._histology_slices_available():
-            return None
-        key, _active_alignment, shank_runtime = context
-        return self.slice_data_runtime_service.ensure_coronal_slice_state(
-            key=key,
-            shank_runtime=shank_runtime,
-            histology_context=self.histology_context,
-            slice_service=self.slice_service,
-        )
+        return self._slice_queries().ensure_active_slice_data_state()
 
     def active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Return currently active coronal slice data without building it."""
-        context = self._active_alignment_context()
-        if context is None or not self._histology_slices_available():
-            return None
-        key, _active_alignment, shank_runtime = context
-        return self.slice_data_runtime_service.cached_coronal_slice_state(
-            key=key,
-            shank_runtime=shank_runtime,
-        )
+        return self._slice_queries().active_slice_data_state()
 
     def active_slice_data_by_attr(self) -> dict[str, Any]:
         """Return active slice data keyed by menu payload data-attr names."""
-        state = self.active_slice_data_state()
-        if state is None:
-            return {"slice_data": None, "fp_slice_data": None}
-        return state.data_by_attr
+        return self._slice_queries().active_slice_data_by_attr()
 
     def active_slice_menu_state(
         self,
@@ -1513,31 +1264,9 @@ class AlignmentQueries:
         previous_selection: SliceSelection | None = None,
     ) -> ActiveSliceMenuState | None:
         """Return menu and fallback-selection state for active slice data."""
-        state = self.active_slice_data_state()
-        if state is None:
-            return None
-        slice_data = state.slice_data or {}
-        if not isinstance(slice_data, Mapping):
-            return None
-        fp_slice_data = (
-            state.fp_slice_data if isinstance(state.fp_slice_data, Mapping) else None
-        )
-        items = self.slice_display_policy.menu_items(
-            slice_data=slice_data,
-            fp_slice_data=fp_slice_data,
+        return self._slice_queries().active_slice_menu_state(
             offline=offline,
-        )
-        default_selection = self.slice_display_policy.default_selection(slice_data)
-        selection = self.slice_display_policy.choose_selection(
-            previous=previous_selection,
-            default=default_selection,
-            data_by_attr=state.data_by_attr,
-        )
-        return ActiveSliceMenuState(
-            key=state.key,
-            items=tuple(items),
-            default_selection=default_selection,
-            selection=selection,
+            previous_selection=previous_selection,
         )
 
     def active_slice_render_state(
@@ -1545,45 +1274,7 @@ class AlignmentQueries:
         selection: SliceSelection,
     ) -> ActiveSliceRenderState | None:
         """Return a render payload for one active coronal slice selection."""
-        slice_state = self.active_slice_data_state()
-        context = self._active_alignment_context()
-        if slice_state is None or context is None:
-            return None
-        _key, active_alignment, shank_runtime = context
-        data = slice_state.data_by_attr.get(selection.data_attr)
-        if not isinstance(data, Mapping) or selection.key not in data:
-            return None
-        image = data[selection.key]
-        decision = self.slice_display_policy.render_decision(data, selection.key)
-        base_slice_data = slice_state.slice_data
-        if not isinstance(base_slice_data, Mapping):
-            base_slice_data = {}
-        scale = np.asarray(data.get("scale", base_slice_data.get("scale")))
-        offset = np.asarray(data.get("offset", base_slice_data.get("offset")))
-        if scale.size < 2 or offset.size < 2:
-            logger.warning(
-                "Cannot render slice %s: missing scale/offset metadata",
-                selection,
-            )
-            return None
-        track_annos_and_ends_ras = shank_runtime.track_annos_and_ends_ras
-        if track_annos_and_ends_ras is None:
-            return None
-        projection = self.derived_data_service.compute_channel_projection(
-            ephysalign=shank_runtime.ephysalign,
-            feature=active_alignment.feature,
-            track=active_alignment.track,
-        )
-        return ActiveSliceRenderState(
-            key=slice_state.key,
-            selection=selection,
-            image=image,
-            scale=scale,
-            offset=offset,
-            decision=decision,
-            track_annos_and_ends_ras=track_annos_and_ends_ras,
-            projection=projection,
-        )
+        return self._slice_queries().active_slice_render_state(selection)
 
     def active_perpendicular_slice_state(
         self,
@@ -1593,144 +1284,14 @@ class AlignmentQueries:
         probe_margin_um: float = 100.0,
     ) -> PerpendicularSliceRenderState | None:
         """Build/cache and return a perpendicular slice render payload."""
-        context = self._active_alignment_context()
-        if context is None or not self._histology_slices_available():
-            return None
-        key, active_alignment, shank_runtime = context
-        histology = self._compute_active_histology(active_alignment, shank_runtime)
-        return self.slice_data_runtime_service.perpendicular_slice_state(
-            key=key,
-            active_alignment=active_alignment,
-            shank_runtime=shank_runtime,
-            histology=histology,
-            histology_context=self.histology_context,
-            slice_service=self.slice_service,
+        return self._slice_queries().active_perpendicular_slice_state(
             channel_name=channel_name,
             extent_m=extent_m,
             probe_margin_um=probe_margin_um,
         )
 
-    def _histology_slices_available(self) -> bool:
-        return (
-            self.histology_context is not None
-            and getattr(self.histology_context, "brain_atlas", None) is not None
-            and self.slice_service is not None
-        )
-
-    def _plot_menu_state_for_plotdata(
-        self,
-        plotdata: Any,
-        *,
-        previous_selected_keys: Mapping[PlotMenu, str | None] | None = None,
-        raw_image_payloads: Mapping[Any, Any] | None = None,
-    ) -> PlotMenuState:
-        return build_plot_menu_state(
-            plotdata,
-            previous_selected_keys=previous_selected_keys,
-            raw_image_payloads=raw_image_payloads,
-        )
-
-    def _find_plot_spec(
-        self,
-        state: PlotMenuState,
-        spec_key: str,
-    ) -> PlotSpec | None:
-        for spec in state.specs:
-            if spec.key == spec_key:
-                return spec
-        logger.warning("Ignoring unavailable plot spec %s", spec_key)
-        return None
-
-    def _active_plotdata(self) -> Any:
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return None
-        return stream_runtime.plot_data_for_shank(self._active_shank_idx())
-
-    def _active_shank_runtime(self) -> ShankRuntime | None:
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return None
-        return stream_runtime.shank_runtime_by_idx.get(self._active_shank_idx())
-
-    def _active_alignment_context(
-        self,
-    ) -> tuple[AlignmentKey, ActiveAlignment, ShankRuntime] | None:
-        key = self.document.selected_alignment_key
-        state = self.document.active_alignment_state
-        if key is None or state is None:
-            return None
-        active_alignment = state.active_alignment
-        if active_alignment is None:
-            return None
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None or shank_runtime.ephysalign is None:
-            return None
-        return key, active_alignment, shank_runtime
-
-    def _compute_active_histology(
-        self,
-        active_alignment: ActiveAlignment,
-        shank_runtime: ShankRuntime,
-    ) -> AlignmentHistologyData:
-        return self.derived_data_service.compute_histology(
-            ephysalign=shank_runtime.ephysalign,
-            feature=active_alignment.feature,
-            track=active_alignment.track,
-            region_annotation_source=self.display_state.region_annotation_source,
-            region_fp=shank_runtime.region_fp,
-            region_label_fp=shank_runtime.region_label_fp,
-            region_colour_fp=shank_runtime.region_colour_fp,
-        )
-
-    def _probe_extent_render_state(
-        self,
-        active_alignment: ActiveAlignment,
-        *,
-        probe_tip_um: float,
-        probe_top_um: float,
-        probe_extra_um: float,
-    ) -> ProbeExtentRenderState | None:
-        feature = np.asarray(active_alignment.feature, dtype=float)
-        if feature.size == 0:
-            return None
-
-        offset_um = 1.0
-        feature_min_um = float(feature[0] * 1e6)
-        feature_max_um = float(feature[-1] * 1e6)
-        feature_top_um = feature_max_um - offset_um
-        if probe_top_um > feature_top_um:
-            fallback_bounds = (
-                feature_min_um + offset_um,
-                feature_max_um - offset_um,
-            )
-            tip_bounds_um = fallback_bounds
-            top_bounds_um = fallback_bounds
-        else:
-            tip_bounds_um = (
-                feature_min_um + offset_um,
-                feature_max_um - (probe_top_um + offset_um),
-            )
-            top_bounds_um = (
-                feature_min_um + (probe_top_um + offset_um),
-                feature_max_um - offset_um,
-            )
-
-        return ProbeExtentRenderState(
-            probe_tip_um=float(probe_tip_um),
-            probe_top_um=float(probe_top_um),
-            probe_extra_um=float(probe_extra_um),
-            feature_min_um=feature_min_um,
-            feature_max_um=feature_max_um,
-            tip_bounds_um=tip_bounds_um,
-            top_bounds_um=top_bounds_um,
-        )
-
     def _active_shank_idx(self) -> int:
-        key = self.document.selected_alignment_key
-        if key is not None:
-            return key.shank_idx
-        return self.document.selected_shank
+        return self._query_context().active_shank_idx()
 
 
 @dataclass

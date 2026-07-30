@@ -37,8 +37,8 @@ from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
-from ephys_alignment_gui.desktop_load_workflow_presenter import (
-    DesktopLoadWorkflowPresenter,
+from ephys_alignment_gui.desktop_load_preflight_presenter import (
+    DesktopLoadPreflightPresenter,
     DesktopOutputFolderPrompt,
     OutputFolderPromptCallbacks,
 )
@@ -70,9 +70,9 @@ from ephys_alignment_gui.desktop_render_composition import (
     DesktopRenderCluster,
     build_desktop_render_cluster,
 )
-from ephys_alignment_gui.desktop_save_workflow_presenter import (
-    DesktopSaveWorkflowCallbacks,
-    DesktopSaveWorkflowPresenter,
+from ephys_alignment_gui.desktop_save_presenter import (
+    DesktopSaveCallbacks,
+    DesktopSavePresenter,
 )
 from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
@@ -129,7 +129,7 @@ class DesktopRenderPorts:
 
 @dataclass(frozen=True)
 class DesktopBusyPorts:
-    """Desktop busy-state operations shared by workflow presenters."""
+    """Desktop busy-state operations shared by command presenters."""
 
     busy_context: Callable[..., AbstractContextManager[Any]]
 
@@ -143,8 +143,8 @@ class DesktopLoadDataPorts:
 
 
 @dataclass(frozen=True)
-class DesktopSaveWorkflowPorts:
-    """Desktop operations needed by save and QC workflows."""
+class DesktopSavePorts:
+    """Desktop operations needed by save and QC presentation."""
 
     use_docdb: Callable[[], bool]
     render_alignment_choices: Callable[[list[str]], None]
@@ -207,7 +207,7 @@ class DesktopWorkbenchPorts:
     busy: DesktopBusyPorts
     load_data: DesktopLoadDataPorts
     lifecycle: DesktopLifecyclePorts
-    save_workflow: DesktopSaveWorkflowPorts
+    save: DesktopSavePorts
     previous_alignment_load: DesktopPreviousAlignmentLoadPorts
     export: DesktopExportView
     interaction: DesktopInteractionPorts
@@ -227,10 +227,10 @@ class DesktopWorkbench:
     mouse_root_presenter: DesktopMouseRootPresenter
     output_path_presenter: DesktopOutputPathPresenter
     path_dialog_presenter: DesktopPathDialogPresenter
-    load_workflow_presenter: DesktopLoadWorkflowPresenter
+    load_preflight_presenter: DesktopLoadPreflightPresenter
     output_folder_prompt: DesktopOutputFolderPrompt
     folder_dialog: DesktopFolderDialog
-    save_workflow_presenter: DesktopSaveWorkflowPresenter
+    save_presenter: DesktopSavePresenter
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
     interaction_presenter: DesktopInteractionPresenter
@@ -330,17 +330,17 @@ class DesktopWorkbench:
                 select_output_folder=path_dialog_presenter.select_output_root,
             ),
         )
-        load_workflow_presenter = DesktopLoadWorkflowPresenter(
+        load_preflight_presenter = DesktopLoadPreflightPresenter(
             can_load_data=app.commands.can_load_data,
             load_heavy_data=load_data_presenter.load_heavy_data,
             output_folder_prompt=output_folder_prompt,
         )
-        save_workflow_presenter = DesktopSaveWorkflowPresenter(
+        save_presenter = DesktopSavePresenter(
             commands=app.commands,
-            callbacks=cls._save_workflow_callbacks(
-                ports.save_workflow,
+            callbacks=cls._save_callbacks(
+                ports.save,
                 output_folder_prompt,
-                load_workflow_presenter,
+                load_preflight_presenter,
             ),
         )
         previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
@@ -372,10 +372,10 @@ class DesktopWorkbench:
             mouse_root_presenter=mouse_root_presenter,
             output_path_presenter=output_path_presenter,
             path_dialog_presenter=path_dialog_presenter,
-            load_workflow_presenter=load_workflow_presenter,
+            load_preflight_presenter=load_preflight_presenter,
             output_folder_prompt=output_folder_prompt,
             folder_dialog=folder_dialog,
-            save_workflow_presenter=save_workflow_presenter,
+            save_presenter=save_presenter,
             previous_alignment_load_presenter=previous_alignment_load_presenter,
             plot_exporter=plot_exporter,
             interaction_presenter=interaction_presenter,
@@ -390,15 +390,15 @@ class DesktopWorkbench:
         )
 
     @staticmethod
-    def _save_workflow_callbacks(
-        ports: DesktopSaveWorkflowPorts,
+    def _save_callbacks(
+        ports: DesktopSavePorts,
         output_folder_prompt: DesktopOutputFolderPrompt,
-        load_workflow_presenter: DesktopLoadWorkflowPresenter,
-    ) -> DesktopSaveWorkflowCallbacks:
-        """Build callbacks for save/QC workflows."""
-        return DesktopSaveWorkflowCallbacks(
+        load_preflight_presenter: DesktopLoadPreflightPresenter,
+    ) -> DesktopSaveCallbacks:
+        """Build callbacks for save/QC presentation."""
+        return DesktopSaveCallbacks(
             ensure_output_directory=output_folder_prompt.ensure_for_save,
-            log_requirement=load_workflow_presenter.log_requirement,
+            log_requirement=load_preflight_presenter.log_requirement,
             use_docdb=ports.use_docdb,
             render_alignment_choices=ports.render_alignment_choices,
             busy_context=ports.busy_context,
@@ -681,8 +681,8 @@ class DesktopWorkbench:
         return self.alignment_selection_actions.alignment_selected(idx)
 
     def load_data_button_pressed(self) -> bool:
-        """Run desktop load workflow policy and load data when allowed."""
-        return self.load_workflow_presenter.load_data_button_pressed()
+        """Run desktop load preflight policy and load data when allowed."""
+        return self.load_preflight_presenter.load_data_button_pressed()
 
     def fit_button_pressed(self) -> bool:
         """Fit the active alignment from current desktop reference lines."""
@@ -735,8 +735,8 @@ class DesktopWorkbench:
         return self.output_path_presenter.output_folder_edited()
 
     def log_load_requirement(self, requirement: Any) -> None:
-        """Log a load workflow requirement that has no desktop prompt action."""
-        self.load_workflow_presenter.log_requirement(requirement)
+        """Log a load policy requirement that has no desktop prompt action."""
+        self.load_preflight_presenter.log_requirement(requirement)
 
     def select_existing_directory_text(self, title: str) -> str:
         """Prompt for an existing directory and return Qt-style text."""
@@ -748,15 +748,15 @@ class DesktopWorkbench:
 
     def save_alignment_outputs(self) -> bool:
         """Save visited alignment outputs."""
-        return self.save_workflow_presenter.save_alignment_outputs()
+        return self.save_presenter.save_alignment_outputs()
 
     def display_qc_options(self) -> bool:
         """Display alignment QC choices."""
-        return self.save_workflow_presenter.display_qc_options()
+        return self.save_presenter.display_qc_options()
 
     def qc_button_clicked(self) -> bool:
         """Handle the QC save button."""
-        return self.save_workflow_presenter.qc_button_clicked()
+        return self.save_presenter.qc_button_clicked()
 
     def export_plots(self, output_dir: Path, *, sess_info: str = "") -> None:
         """Export all desktop plot panels for the active shank."""

@@ -1,4 +1,4 @@
-"""Desktop load workflow prompts and command gating."""
+"""Desktop load preflight prompts and command gating."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class OutputFolderPromptCallbacks:
 
 @dataclass
 class DesktopOutputFolderPrompt:
-    """Render desktop output-folder requirements for load/save workflows."""
+    """Render desktop output-folder requirements for load/save commands."""
 
     callbacks: OutputFolderPromptCallbacks
     parent: Any = None
@@ -110,7 +110,7 @@ class DesktopOutputFolderPrompt:
 
 
 @dataclass
-class DesktopLoadWorkflowPresenter:
+class DesktopLoadPreflightPresenter:
     """Own desktop preflight handling for the Load Data button."""
 
     can_load_data: Callable[[], PolicyResult]
@@ -143,5 +143,5 @@ class DesktopLoadWorkflowPresenter:
 
     @staticmethod
     def log_requirement(requirement: Requirement) -> None:
-        """Log a workflow requirement that has no desktop prompt action."""
+        """Log a policy requirement that has no desktop prompt action."""
         logger.error(requirement.message)

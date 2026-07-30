@@ -13,7 +13,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankScreenState,
     ActiveSliceMenuState,
 )
-from ephys_alignment_gui.app import LoadedShankPrepared
+from ephys_alignment_gui.app_results import LoadedShankPrepared
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.plot_menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import SliceSelection

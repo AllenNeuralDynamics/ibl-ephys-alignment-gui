@@ -1,0 +1,124 @@
+"""Qt-free app port DTOs and command results."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from ephys_alignment_gui.controller import AlignmentOutputsSaved, ProbeSelected
+from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.ephys_stream_runtime import StreamKey
+from ephys_alignment_gui.histology_runtime_loader import HistologyLoadResult
+
+
+@dataclass(frozen=True)
+class ShankSelectionState:
+    """Read model for the active shank selection."""
+
+    shank_idx: int
+    shank_id: int
+    alignment_key: AlignmentKey | None
+    data_loaded: bool
+
+
+@dataclass(frozen=True)
+class FreshEphysDataLoaded:
+    """Fresh ephys stream data was loaded and cached."""
+
+    stream_runtime: Any
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class CachedEphysDataActivated:
+    """Cached ephys stream runtime was activated."""
+
+    stream_runtime: Any
+    shank_idx: int
+    probe: ProbeSelected
+
+
+@dataclass(frozen=True)
+class ActiveStreamDetached:
+    """The active stream was detached while cached runtimes were preserved."""
+
+    cached_stream_count: int
+
+
+@dataclass(frozen=True)
+class StreamCacheEvicted:
+    """Cached stream runtimes were evicted for a recording/session transition."""
+
+    evicted_stream_count: int
+
+
+@dataclass(frozen=True)
+class LoadedShankPrepared:
+    """Runtime state for one loaded shank is ready for rendering."""
+
+    shank_idx: int
+    n_channels: int
+    histology_available: bool
+    alignment_choices: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class VisitedAlignmentOutputsSaved:
+    """Visited alignment outputs were persisted."""
+
+    saved_count: int
+    saved_outputs: Mapping[AlignmentKey, AlignmentOutputsSaved]
+    active_choices: list[str] | None
+
+
+@dataclass(frozen=True)
+class LoadDataAlreadyActiveResult:
+    """The requested stream/shank is already active; no load work ran."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class LoadDataCachedActivated:
+    """A cached stream was activated for desktop presentation."""
+
+    stream_key: StreamKey
+    activated: CachedEphysDataActivated
+
+
+@dataclass(frozen=True)
+class LoadDataFreshPrepared:
+    """Fresh load state was prepared and is ready for heavy IO."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+    preserve_plot_selection: bool
+
+
+@dataclass(frozen=True)
+class LoadDataFreshRequiredResult:
+    """The requested stream is not cached and requires an explicit fresh load."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class LoadDataFreshCompleted:
+    """Fresh ephys data and subject histology load steps completed."""
+
+    stream_key: StreamKey | None
+    ephys: FreshEphysDataLoaded
+    histology: HistologyLoadResult
+    preserve_plot_selection: bool
+
+
+LoadDataBeginResult = (
+    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshPrepared
+)
+
+ProbeSelectionCacheResult = (
+    LoadDataAlreadyActiveResult | LoadDataCachedActivated | LoadDataFreshRequiredResult
+)
