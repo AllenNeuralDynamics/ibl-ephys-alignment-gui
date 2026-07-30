@@ -16,6 +16,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
+from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
 from ephys_alignment_gui.alignment_read_models import ActiveReferenceLineRenderState
 from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
@@ -40,14 +41,8 @@ from ephys_alignment_gui.controller import (
     AlignmentEditNoop,
     Failed,
     LoadDataPrepared,
-    MouseRootLoaded,
-    NoPreviousAlignments,
-    OutputDirectoryDerived,
-    OutputRootSet,
     PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
-    ProbeSelected,
-    RecordingSelected,
     ShankSelected,
 )
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
@@ -55,6 +50,12 @@ from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.histology_runtime_loader import HistologyDataLoaded
 from ephys_alignment_gui.load_data_job import LoadDataJobCompleted, LoadDataJobRequest
+from ephys_alignment_gui.metadata_results import (
+    MouseRootLoaded,
+    ProbeSelected,
+    RecordingSelected,
+)
+from ephys_alignment_gui.path_results import OutputDirectoryDerived, OutputRootSet
 from ephys_alignment_gui.session_runtime import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
@@ -175,28 +176,6 @@ class FakeBatchOutputBuilder:
             )
             for key in alignments
         }
-
-
-class FakePathController:
-    def __init__(self) -> None:
-        self.mouse_root_calls: list[Path] = []
-        self.output_root_calls: list[Path] = []
-        self.derive_calls = 0
-
-    def set_mouse_root(self, mouse_root: Path):
-        self.mouse_root_calls.append(mouse_root)
-        return MouseRootLoaded(
-            SimpleNamespace(root=mouse_root, mouse_id="mouse"),
-            root_changed=False,
-        )
-
-    def set_output_root(self, output_root: Path):
-        self.output_root_calls.append(output_root)
-        return OutputRootSet(output_root, output_root / "rec" / "probe")
-
-    def derive_output_directory(self):
-        self.derive_calls += 1
-        return OutputDirectoryDerived(Path("/results/rec/probe"))
 
 
 class FakeRuntimeInitializer:
@@ -388,13 +367,17 @@ def _workspace_with_probe_state(
 ) -> AlignmentWorkspace:
     workspace = AlignmentWorkspace()
     if repo is not None:
-        workspace.controller.alignment_repository = repo
+        workspace.app.commands._alignment_repository = repo
     workspace.data_context.probe_info = SimpleNamespace(
         recording_id="rec",
         probe_name="probeA",
         ephys_collection="stream",
     )
     workspace.data_context.channel_table = SimpleNamespace(n_shanks=2)
+    workspace.alignment_key_context.set_from_probe(
+        workspace.data_context.probe_info,
+        n_shanks=2,
+    )
     workspace.document.select_alignment_key(AlignmentKey("rec", "stream", shank_idx))
     return workspace
 
@@ -791,24 +774,31 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
     assert workspace.display_state.unit_filter == "all"
 
 
-def test_commands_path_operations_delegate_to_controller() -> None:
+def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     workspace = AlignmentWorkspace()
-    controller = FakePathController()
-    workspace.app.commands._controller = controller
+    loaded_root = SimpleNamespace(root=tmp_path / "mouse", mouse_id="mouse")
+    loaded_root.root.mkdir()
+    probe = _probe_info()
+    data_context = SimpleNamespace(
+        mouse_root=None,
+        probe_info=probe,
+        set_mouse_root=lambda path: loaded_root,
+    )
+    workspace.app.commands._data_context = data_context
 
-    mouse_result = workspace.app.commands.set_mouse_root(Path("/data/mouse"))
-    root_result = workspace.app.commands.set_output_root(Path("/results"))
+    mouse_result = workspace.app.commands.set_mouse_root(loaded_root.root)
+    workspace.document.select_probe(probe.recording_id, probe.probe_name)
+    root_result = workspace.app.commands.set_output_root(tmp_path / "results")
     derived_result = workspace.app.commands.derive_output_directory()
 
     assert isinstance(mouse_result, MouseRootLoaded)
-    assert mouse_result.mouse_root.root == Path("/data/mouse")
+    assert mouse_result.mouse_root.root == loaded_root.root
+    assert workspace.document.mouse_root == loaded_root.root
     assert isinstance(root_result, OutputRootSet)
-    assert root_result.output_directory == Path("/results/rec/probe")
+    assert root_result.output_directory == tmp_path / "results" / "rec" / "probeA"
     assert isinstance(derived_result, OutputDirectoryDerived)
-    assert derived_result.output_directory == Path("/results/rec/probe")
-    assert controller.mouse_root_calls == [Path("/data/mouse")]
-    assert controller.output_root_calls == [Path("/results")]
-    assert controller.derive_calls == 1
+    assert derived_result.output_directory == tmp_path / "results" / "rec" / "probeA"
+    assert workspace.document.output_directory == derived_result.output_directory
 
 
 def test_commands_can_load_data_delegates_to_workflow_policy() -> None:
@@ -852,7 +842,7 @@ def test_commands_clear_histology_context() -> None:
     assert workspace.histology_context.runtime_data is None
 
 
-def test_commands_select_probe_metadata_delegates_to_controller() -> None:
+def test_commands_select_probe_metadata_loads_channel_info() -> None:
     ephys_data_service = FakeEphysDataService()
     workspace = AlignmentWorkspace(ephys_data_service=ephys_data_service)
     workspace.data_context.mouse_root = _mouse_root_with_probe()
@@ -867,7 +857,7 @@ def test_commands_select_probe_metadata_delegates_to_controller() -> None:
     assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
 
 
-def test_commands_select_recording_metadata_delegates_to_controller() -> None:
+def test_commands_select_recording_metadata_clears_probe_selection() -> None:
     workspace = AlignmentWorkspace()
     workspace.data_context.mouse_root = _mouse_root_with_probe()
 
@@ -955,8 +945,8 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
     output_builder = FakeBatchOutputBuilder()
     derived = FakeDerivedDataService()
     workspace = AlignmentWorkspace()
-    workspace.controller.alignment_repository = repo
-    workspace.controller.output_builder = output_builder
+    workspace.app.commands._alignment_repository = repo
+    workspace.app.commands._alignment_output_service = output_builder
     workspace.app.commands._derived_data_service = derived
     workspace.document.output_directory = tmp_path
     workspace.data_context.probe_info = SimpleNamespace(

@@ -10,6 +10,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
+from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
@@ -47,6 +48,9 @@ class AlignmentWorkspace:
     document: AlignmentDocument = field(default_factory=AlignmentDocument)
     display_state: AlignmentDisplayState = field(default_factory=AlignmentDisplayState)
     data_context: AlignmentDataContext = field(default_factory=AlignmentDataContext)
+    alignment_key_context: AlignmentKeyContext = field(
+        default_factory=AlignmentKeyContext
+    )
     ephys_data_service: EphysDataService = field(default_factory=EphysDataService)
     histology_data_service: HistologyDataService = field(
         default_factory=HistologyDataService
@@ -106,17 +110,16 @@ class AlignmentWorkspace:
         )
         self.controller = AlignmentController(
             self.document,
-            self.data_context,
-            self.ephys_data_service,
+            self.alignment_key_context,
             self.workflow_policy,
-            alignment_repository=self.alignment_repository,
             alignment_edit_service=self.alignment_edit_service,
             alignment_runtime_service=self.alignment_runtime_service,
-            output_builder=self.alignment_output_service,
         )
         self.app = AlignmentApp(
             commands=AlignmentCommands(
                 self.controller,
+                self.data_context,
+                self.ephys_data_service,
                 self.events,
                 self.display_state,
                 self.runtime,
@@ -125,6 +128,8 @@ class AlignmentWorkspace:
                 self.probe_track_service,
                 self.plot_data_factory,
                 self.alignment_derived_data_service,
+                self.alignment_repository,
+                self.alignment_output_service,
             ),
             queries=AlignmentQueries(
                 document=self.document,

@@ -2,71 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
-from ephys_alignment_gui.alignment_repository import (
-    AlignmentHistory,
-    AlignmentRepository,
-    SavedAlignmentOutputs,
-)
+from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
+from ephys_alignment_gui.alignment_repository import AlignmentHistory
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.alignment_state import (
-    LEGACY_AUTO_ALIGNMENT_LABEL,
     AlignmentState,
     PendingReferenceLines,
 )
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
-from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.shank_runtime import ShankRuntime
 from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
-
-
-@dataclass(frozen=True)
-class MouseRootLoaded:
-    """A mouse root was loaded and the document was updated."""
-
-    mouse_root: Any
-    root_changed: bool
-
-
-@dataclass(frozen=True)
-class RecordingSelected:
-    """A recording was selected and its probe choices are available."""
-
-    recording_id: str
-    probes: list[str]
-
-
-@dataclass(frozen=True)
-class ProbeSelected:
-    """A probe was selected and channel metadata is ready."""
-
-    recording_id: str
-    probe_name: str
-    shanks: list[str]
-    n_shanks: int
-    output_directory: Path | None
-
-
-@dataclass(frozen=True)
-class OutputRootSet:
-    """The output root was stored and the per-probe output was refreshed."""
-
-    output_root: Path
-    output_directory: Path | None
-
-
-@dataclass(frozen=True)
-class OutputDirectoryDerived:
-    """The per-probe output directory was refreshed."""
-
-    output_directory: Path | None
 
 
 @dataclass(frozen=True)
@@ -85,18 +36,6 @@ class ShankSelected:
     previous_shank_idx: int
     shank_idx: int
     data_loaded: bool
-
-
-@dataclass(frozen=True)
-class PreviousAlignmentsLoaded:
-    """Previous alignments were loaded for the active probe/shank."""
-
-    alignments: AlignmentHistory
-
-
-@dataclass(frozen=True)
-class NoPreviousAlignments:
-    """No previous alignments were available."""
 
 
 @dataclass(frozen=True)
@@ -124,23 +63,6 @@ class PendingReferenceLinesUpdated:
 
 
 @dataclass(frozen=True)
-class AlignmentOutputBuilt:
-    """Output dictionaries computed from the current alignment."""
-
-    channel_results: dict
-    ccf_channel_results: dict
-    multi_shank: bool
-
-
-@dataclass(frozen=True)
-class AlignmentOutputsSaved:
-    """Alignment output files were persisted."""
-
-    saved: SavedAlignmentOutputs
-    previous_alignments: AlignmentHistory
-
-
-@dataclass(frozen=True)
 class AlignmentEditApplied:
     """An editable alignment command changed the active alignment."""
 
@@ -164,162 +86,89 @@ class ShankRuntimeInitialized:
 
 
 class AlignmentController:
-    """Coordinates workflow commands across document and Qt-free services.
+    """Apply validated document and alignment-domain state transitions.
 
-    The controller owns command ordering and document mutations. It deliberately
-    stays Qt-free; callers render returned results in the UI layer.
+    The controller is intentionally Qt-free. App command handlers own use-case
+    sequencing, IO, runtime-cache lifecycle, and event publication; the
+    controller owns document mutation authority and pure alignment-domain
+    service calls.
     """
 
     def __init__(
         self,
         document: AlignmentDocument,
-        data_context: AlignmentDataContext,
-        ephys_data_service: EphysDataService,
+        alignment_key_context: AlignmentKeyContext | None = None,
         workflow_policy: WorkflowPolicy | None = None,
-        alignment_repository: AlignmentRepository | None = None,
         alignment_edit_service: AlignmentEditService | None = None,
         alignment_runtime_service: AlignmentRuntimeService | None = None,
-        output_builder: Any | None = None,
     ) -> None:
         self.document = document
-        self.data_context = data_context
-        self.ephys_data_service = ephys_data_service
+        self.alignment_key_context = alignment_key_context or AlignmentKeyContext()
         self.workflow_policy = workflow_policy or WorkflowPolicy()
-        self.alignment_repository = alignment_repository or AlignmentRepository()
         self.alignment_edit_service = alignment_edit_service or AlignmentEditService()
         self.alignment_runtime_service = (
             alignment_runtime_service or AlignmentRuntimeService()
         )
-        self.output_builder = output_builder
 
     def can_load_data(self) -> PolicyResult:
         """Return whether the Load Data command can proceed."""
         return self.workflow_policy.can_load_data(self.document)
 
-    def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
-        """Load a mouse root through the data context and update document state."""
-        if not mouse_root or str(mouse_root).strip() == "":
-            return Failed("Empty mouse-root path provided")
-        mouse_root = Path(mouse_root)
-        if not mouse_root.is_dir():
-            return Failed(f"Mouse-root is not a directory: {mouse_root}")
-
-        old_root = (
-            self.data_context.mouse_root.root
-            if self.data_context.mouse_root is not None
-            else None
-        )
-        try:
-            loaded_root = self.data_context.set_mouse_root(mouse_root)
-        except Exception as exc:
-            return Failed(f"Failed to load mouse root {mouse_root}: {exc}")
-
-        root_changed = old_root is not None and old_root != loaded_root.root
+    def record_mouse_root_loaded(
+        self,
+        loaded_root: Any,
+        *,
+        root_changed: bool,
+    ) -> None:
+        """Record an already loaded mouse root in the document."""
         self.document.set_mouse_root(
-            mouse_root,
+            loaded_root.root,
             mouse_id=loaded_root.mouse_id,
             clear_alignment_states=root_changed,
         )
-        return MouseRootLoaded(loaded_root, root_changed=root_changed)
+        self.alignment_key_context.clear()
 
-    def select_recording(self, recording_id: str) -> RecordingSelected | Failed:
-        """Select a recording and return its available probes."""
-        if self.data_context.mouse_root is None:
-            return Failed("No mouse root loaded. Please select a mouse root first.")
-        if not recording_id:
-            return Failed("No recording selected.")
-
+    def clear_probe_selection(self) -> None:
+        """Clear selected probe and dependent document state."""
         self.document.clear_probe()
-        try:
-            probes = self.data_context.list_probes(recording_id)
-        except Exception as exc:
-            return Failed(f"Failed to list probes for {recording_id}: {exc}")
-        return RecordingSelected(recording_id, probes=list(probes))
+        self.alignment_key_context.clear()
 
-    def select_probe(
+    def record_probe_selected(
         self,
         recording_id: str,
         probe_name: str,
-        ephys_stream: Any | None = None,
-    ) -> ProbeSelected | Failed:
-        """Select a probe, load channel metadata, and refresh output state."""
-        if self.data_context.mouse_root is None:
-            return Failed("No mouse root loaded. Please select a mouse root first.")
-        if not recording_id:
-            return Failed("No recording selected.")
-        if not probe_name:
-            return Failed("No probe selected.")
-
+    ) -> None:
+        """Record the active recording/probe choice in the document."""
         self.document.select_probe(recording_id, probe_name)
-        try:
-            self.data_context.select_probe(recording_id, probe_name)
-            probe = self.data_context.probe_info
-            assert probe is not None
-            if ephys_stream is None:
-                channel_table = self.ephys_data_service.load_channel_table(probe)
-            else:
-                self.data_context.validate_cached_stream(ephys_stream)
-                channel_table = ephys_stream.channel_table
-            self.data_context.attach_channel_table(channel_table)
-            self.document.set_channel_info_loaded(True)
-            self.document.select_alignment_key(self._alignment_key_for_probe(0))
-            shanks = self.data_context.shank_labels()
-            output_result = self.derive_output_directory()
-        except Exception as exc:
-            self.document.set_channel_info_loaded(False)
-            return Failed(f"Failed to select probe {probe_name}: {exc}")
+        self.alignment_key_context.clear()
 
-        if isinstance(output_result, Failed):
-            return output_result
+    def record_channel_info_loaded(self, loaded: bool = True) -> None:
+        """Record whether selected-probe channel metadata is ready."""
+        self.document.set_channel_info_loaded(loaded)
+        if not loaded:
+            self.alignment_key_context.clear()
 
-        return ProbeSelected(
-            recording_id=recording_id,
-            probe_name=probe_name,
-            shanks=list(shanks),
-            n_shanks=self.data_context.n_shanks,
-            output_directory=output_result.output_directory,
+    def record_probe_channel_info(
+        self,
+        probe: Any,
+        *,
+        n_shanks: int,
+        shank_idx: int,
+    ) -> None:
+        """Record selected-probe channel metadata and select an alignment key."""
+        self.alignment_key_context.set_from_probe(probe, n_shanks=n_shanks)
+        self.document.set_channel_info_loaded(True)
+        self.document.select_alignment_key(
+            self.alignment_key_context.key_for_shank(shank_idx)
         )
 
-    def set_output_root(self, output_root: Path) -> OutputRootSet | Failed:
-        """Set the output root and derive the active probe output directory."""
-        if not output_root or str(output_root).strip() == "":
-            return Failed("Empty save-root path provided")
-        output_root = Path(output_root)
-        try:
-            output_root.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return Failed(f"Failed to create save-root directory {output_root}: {exc}")
-        if not output_root.is_dir():
-            return Failed(f"Save-root is not a directory: {output_root}")
-
+    def record_output_root(self, output_root: Path) -> None:
+        """Record the output root in the document."""
         self.document.set_output_root(output_root)
-        output_result = self.derive_output_directory()
-        if isinstance(output_result, Failed):
-            return output_result
-        return OutputRootSet(output_root, output_result.output_directory)
 
-    def derive_output_directory(self) -> OutputDirectoryDerived | Failed:
-        """Derive the per-probe output directory from document + probe metadata."""
-        probe = self.data_context.probe_info
-        output_root = self.document.output_root
-        if (
-            output_root is None
-            or probe is None
-            or probe.recording_id != self.document.selected_recording
-            or probe.probe_name != self.document.selected_probe
-        ):
-            self.document.set_output_directory(None)
-            return OutputDirectoryDerived(None)
-
-        output_directory = output_root / probe.recording_id / probe.probe_name
-        try:
-            output_directory.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return Failed(
-                f"Failed to create probe output directory {output_directory}: {exc}"
-            )
+    def record_output_directory(self, output_directory: Any) -> None:
+        """Record the derived per-probe output directory in the document."""
         self.document.set_output_directory(output_directory)
-        return OutputDirectoryDerived(output_directory)
 
     def prepare_load_data(self) -> LoadDataPrepared:
         """Mark data unloaded and return render state for the upcoming load."""
@@ -334,22 +183,21 @@ class AlignmentController:
 
     def set_selected_shank(self, shank_idx: int) -> None:
         """Record the active shank selected by the user."""
-        if self.data_context.probe_info is None:
+        if not self.alignment_key_context.is_ready:
             self.document.set_selected_shank(shank_idx)
             return
-        self.document.select_alignment_key(self._alignment_key_for_probe(shank_idx))
+        self.document.select_alignment_key(
+            self.alignment_key_context.key_for_shank(shank_idx)
+        )
 
     def select_shank(self, shank_idx: int) -> ShankSelected | Failed:
         """Select a shank and return the before/after document keys."""
-        n_shanks = self.data_context.n_shanks
-        if n_shanks > 0 and not 0 <= shank_idx < n_shanks:
-            return Failed(
-                f"Shank index {shank_idx} is outside valid range 0..{n_shanks - 1}"
-            )
         previous_key = self.document.selected_alignment_key
         previous_shank_idx = self.document.selected_shank
         try:
             self.set_selected_shank(shank_idx)
+        except ValueError as exc:
+            return Failed(str(exc))
         except Exception as exc:
             return Failed(f"Failed to select shank {shank_idx + 1}: {exc}")
         return ShankSelected(
@@ -360,56 +208,17 @@ class AlignmentController:
             data_loaded=self.document.data_loaded,
         )
 
-    def _alignment_key_for_probe(self, shank_idx: int) -> AlignmentKey:
-        probe = self.data_context.probe_info
-        if probe is None:
-            raise RuntimeError("No probe selected. Please select a probe first.")
-        return AlignmentKey(
-            recording_id=probe.recording_id,
-            ephys_collection=probe.ephys_collection,
-            shank_idx=shank_idx,
-        )
-
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
-        if self.data_context.n_shanks == 0:
+        if self.alignment_key_context.n_shanks == 0:
             return Failed("Channel info not loaded. Please select a probe first.")
-        if self.data_context.probe_info is None:
+        if not self.alignment_key_context.is_ready:
             return Failed("No probe selected. Please select a probe first.")
         return Ok()
 
     def can_save_alignment_output(self) -> PolicyResult:
         """Return whether the current alignment output can be saved."""
         return self.workflow_policy.can_save_alignment_output(self.document)
-
-    def load_previous_alignments(
-        self,
-        folder: Path | None,
-        shank_idx: int,
-        use_docdb: bool,
-    ) -> PreviousAlignmentsLoaded | NoPreviousAlignments | Failed:
-        """Load previous alignments for the selected probe/shank."""
-        ready = self.can_load_previous_alignments()
-        if isinstance(ready, Failed):
-            return ready
-        probe = self.data_context.probe_info
-        assert probe is not None
-
-        try:
-            loaded = self.alignment_repository.load_previous_alignments(
-                folder=folder,
-                recording_id=probe.recording_id,
-                probe_name=probe.probe_name,
-                shank_idx=shank_idx,
-                n_shanks=self.data_context.n_shanks,
-                use_docdb=use_docdb,
-            )
-        except Exception as exc:
-            return Failed(f"Failed to load previous alignments: {exc}")
-
-        if loaded is None:
-            return NoPreviousAlignments()
-        return PreviousAlignmentsLoaded(loaded.alignments)
 
     def active_alignment_choices(
         self,
@@ -684,101 +493,4 @@ class AlignmentController:
         return AlignmentEditApplied(
             alignment=result.alignment,
             lin_fit=result.lin_fit,
-        )
-
-    def build_alignment_output(
-        self,
-        channel_locations_ras: Any,
-        channel_coordinates: Any,
-    ) -> AlignmentOutputBuilt | Failed:
-        """Compute output dictionaries for the current alignment."""
-        if self.output_builder is None:
-            return Failed("No alignment output builder is configured.")
-        try:
-            channel_results, ccf_channel_results, multi_shank = (
-                self.output_builder.get_alignment_results(
-                    channel_locations_ras,
-                    channel_coordinates,
-                )
-            )
-        except Exception as exc:
-            return Failed(f"Failed to build alignment output: {exc}")
-        return AlignmentOutputBuilt(
-            channel_results=channel_results,
-            ccf_channel_results=ccf_channel_results,
-            multi_shank=multi_shank,
-        )
-
-    def build_alignment_outputs(
-        self,
-        alignments: Mapping[AlignmentKey, tuple[Any, Any]],
-    ) -> dict[AlignmentKey, AlignmentOutputBuilt] | Failed:
-        """Compute output dictionaries for multiple visited alignments."""
-        if self.output_builder is None:
-            return Failed("No alignment output builder is configured.")
-        try:
-            if hasattr(self.output_builder, "get_alignment_results_batch"):
-                batch_results = self.output_builder.get_alignment_results_batch(
-                    alignments
-                )
-            else:
-                batch_results = {
-                    key: self.output_builder.get_alignment_results(
-                        channel_locations_ras,
-                        channel_coordinates,
-                    )
-                    for key, (
-                        channel_locations_ras,
-                        channel_coordinates,
-                    ) in alignments.items()
-                }
-        except Exception as exc:
-            return Failed(f"Failed to build alignment outputs: {exc}")
-
-        return {
-            key: AlignmentOutputBuilt(
-                channel_results=channel_results,
-                ccf_channel_results=ccf_channel_results,
-                multi_shank=multi_shank,
-            )
-            for key, (
-                channel_results,
-                ccf_channel_results,
-                multi_shank,
-            ) in batch_results.items()
-        }
-
-    def save_alignment_output(
-        self,
-        output: AlignmentOutputBuilt,
-        alignments: AlignmentHistory,
-        shank_idx: int,
-        use_docdb: bool,
-    ) -> AlignmentOutputsSaved | Failed:
-        """Persist output dictionaries and alignment history."""
-        output_directory = self.document.output_directory
-        if output_directory is None:
-            return Failed("Choose an output folder before saving.")
-
-        persistable_alignments = {
-            key: value
-            for key, value in alignments.items()
-            if key != LEGACY_AUTO_ALIGNMENT_LABEL
-        }
-        try:
-            saved = self.alignment_repository.save_alignment_outputs(
-                output_directory=output_directory,
-                shank_idx=shank_idx,
-                multi_shank=output.multi_shank,
-                channel_results=output.channel_results,
-                previous_alignments=persistable_alignments,
-                ccf_channel_results=output.ccf_channel_results,
-                use_docdb=use_docdb,
-            )
-        except Exception as exc:
-            return Failed(f"Failed to save alignment output: {exc}")
-
-        return AlignmentOutputsSaved(
-            saved=saved,
-            previous_alignments=persistable_alignments,
         )

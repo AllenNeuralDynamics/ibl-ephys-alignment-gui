@@ -6,11 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.controller import ProbeSelected, ShankSelected
+from ephys_alignment_gui.controller import ShankSelected
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
 )
+from ephys_alignment_gui.metadata_results import ProbeSelected
 from ephys_alignment_gui.workflow import Failed
 
 

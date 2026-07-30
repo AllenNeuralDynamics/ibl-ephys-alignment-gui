@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.controller import RecordingSelected
+from ephys_alignment_gui.metadata_results import RecordingSelected
 from ephys_alignment_gui.workflow import Failed
 
 logger = logging.getLogger(__name__)

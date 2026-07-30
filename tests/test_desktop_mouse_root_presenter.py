@@ -6,11 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.controller import MouseRootLoaded
 from ephys_alignment_gui.desktop_mouse_root_presenter import (
     DesktopMouseRootCallbacks,
     DesktopMouseRootPresenter,
 )
+from ephys_alignment_gui.metadata_results import MouseRootLoaded
 from ephys_alignment_gui.workflow import Failed
 
 

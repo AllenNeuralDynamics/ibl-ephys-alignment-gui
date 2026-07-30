@@ -5,11 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.controller import RecordingSelected
 from ephys_alignment_gui.desktop_session_selection_presenter import (
     DesktopSessionSelectionCallbacks,
     DesktopSessionSelectionPresenter,
 )
+from ephys_alignment_gui.metadata_results import RecordingSelected
 from ephys_alignment_gui.workflow import Failed
 
 

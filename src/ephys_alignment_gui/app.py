@@ -16,11 +16,11 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_events import (
-    AlignmentEdited,
-    AlignmentEditKind,
-    ShankChanged,
+from ephys_alignment_gui.alignment_edit_commands import AlignmentEditCommandHandler
+from ephys_alignment_gui.alignment_persistence_commands import (
+    AlignmentPersistenceCommandHandler,
 )
+from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
 from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
@@ -39,16 +39,13 @@ from ephys_alignment_gui.alignment_read_models import (
     ScaleFactorRenderState,
 )
 from ephys_alignment_gui.alignment_render_queries import AlignmentRenderQueries
+from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.app_results import (
     ActiveStreamDetached,
     CachedEphysDataActivated,
-    FreshEphysDataLoaded,
-    LoadDataAlreadyActiveResult,
     LoadDataBeginResult,
-    LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
-    LoadDataFreshRequiredResult,
     LoadedShankPrepared,
     ProbeSelectionCacheResult,
     ShankSelectionState,
@@ -60,39 +57,44 @@ from ephys_alignment_gui.controller import (
     AlignmentController,
     AlignmentEditApplied,
     AlignmentEditNoop,
-    AlignmentOutputsSaved,
     Failed,
     LoadDataPrepared,
-    MouseRootLoaded,
-    NoPreviousAlignments,
-    OutputDirectoryDerived,
-    OutputRootSet,
     PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
-    PreviousAlignmentsLoaded,
-    ProbeSelected,
-    RecordingSelected,
     ShankSelected,
 )
-from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.ephys_plot_queries import EphysPlotQueries
-from ephys_alignment_gui.ephys_stream_loader import LoadedEphysSelection
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.histology_data_service import HistologyDataContext
-from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
+from ephys_alignment_gui.load_data_commands import LoadDataCommandHandler
+from ephys_alignment_gui.load_data_job import LoadDataJob
+from ephys_alignment_gui.metadata_results import (
+    MouseRootLoaded,
+    ProbeSelected,
+    RecordingSelected,
+)
+from ephys_alignment_gui.metadata_selection_commands import (
+    MetadataSelectionCommandHandler,
+)
+from ephys_alignment_gui.path_commands import PathCommandHandler
+from ephys_alignment_gui.path_results import OutputDirectoryDerived, OutputRootSet
 from ephys_alignment_gui.plot_data_factory import PlotDataFactory
 from ephys_alignment_gui.plot_menu_state import PlotMenuState
 from ephys_alignment_gui.plot_registry import PlotMenu, PlotSpec
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
+from ephys_alignment_gui.reference_line_capture import (
+    REFERENCE_LINES_NOT_PROVIDED,
+    ReferenceLineCapture,
+)
 from ephys_alignment_gui.session_runtime import (
-    LoadDataAlreadyActive,
-    LoadDataCachedStreamAvailable,
     LoadDataPlan,
     LoadDataTarget,
     SessionRuntime,
 )
-from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.shank_selection_commands import ShankSelectionCommandHandler
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 from ephys_alignment_gui.slice_queries import SliceQueries
@@ -101,23 +103,18 @@ from ephys_alignment_gui.workflow import Blocked, Ok, PolicyResult
 logger = logging.getLogger(__name__)
 
 
-class _ReferenceLinesNotProvided:
-    pass
-
-
-_REFERENCE_LINES_NOT_PROVIDED = _ReferenceLinesNotProvided()
-ReferenceLineCapture = tuple[Any, Any] | None | _ReferenceLinesNotProvided
-
-
 @dataclass
 class AlignmentCommands:
     """Command-side app port.
 
-    Methods should be added here as UI call sites migrate. The controller
-    remains the command implementation; this object is the UI boundary.
+    This object is the stable UI-facing command surface. Non-trivial commands
+    delegate to focused command handlers, which coordinate runtime services,
+    controller document mutations, and semantic events.
     """
 
     _controller: AlignmentController
+    _data_context: AlignmentDataContext
+    _ephys_data_service: EphysDataService
     _events: EventBus
     _display_state: AlignmentDisplayState
     _runtime: SessionRuntime
@@ -126,57 +123,74 @@ class AlignmentCommands:
     _probe_track_service: ProbeTrackService
     _plot_data_factory: PlotDataFactory
     _derived_data_service: AlignmentDerivedDataService
+    _alignment_repository: AlignmentRepository
+    _alignment_output_service: Any
+
+    def _shank_selection_commands(self) -> ShankSelectionCommandHandler:
+        return ShankSelectionCommandHandler(
+            controller=self._controller,
+            events=self._events,
+        )
+
+    def _load_data_commands(self) -> LoadDataCommandHandler:
+        return LoadDataCommandHandler(
+            controller=self._controller,
+            data_context=self._data_context,
+            display_state=self._display_state,
+            runtime=self._runtime,
+            load_data_job=self._load_data_job,
+            histology_context=self._histology_context,
+            probe_track_service=self._probe_track_service,
+            plot_data_factory=self._plot_data_factory,
+            metadata_commands=self._metadata_commands(),
+        )
+
+    def _path_commands(self) -> PathCommandHandler:
+        return PathCommandHandler(
+            controller=self._controller,
+            data_context=self._data_context,
+        )
+
+    def _metadata_commands(self) -> MetadataSelectionCommandHandler:
+        return MetadataSelectionCommandHandler(
+            controller=self._controller,
+            data_context=self._data_context,
+            ephys_data_service=self._ephys_data_service,
+            path_commands=self._path_commands(),
+        )
+
+    def _persistence_commands(self) -> AlignmentPersistenceCommandHandler:
+        return AlignmentPersistenceCommandHandler(
+            controller=self._controller,
+            data_context=self._data_context,
+            runtime=self._runtime,
+            derived_data_service=self._derived_data_service,
+            alignment_repository=self._alignment_repository,
+            output_builder=self._alignment_output_service,
+        )
+
+    def _edit_commands(self) -> AlignmentEditCommandHandler:
+        return AlignmentEditCommandHandler(
+            controller=self._controller,
+            events=self._events,
+            display_state=self._display_state,
+            runtime=self._runtime,
+        )
 
     def select_shank(
         self,
         shank_idx: int,
         *,
-        outgoing_reference_lines: ReferenceLineCapture = _REFERENCE_LINES_NOT_PROVIDED,
+        outgoing_reference_lines: ReferenceLineCapture = REFERENCE_LINES_NOT_PROVIDED,
         source: str = "command",
         preserve_plot_selection: bool | None = None,
     ) -> ShankSelected | Failed:
         """Select a shank as a complete app-level transaction."""
-        if (
-            self._controller.document.data_loaded
-            and outgoing_reference_lines is not _REFERENCE_LINES_NOT_PROVIDED
-        ):
-            capture_result = self._capture_outgoing_reference_lines(
-                outgoing_reference_lines
-            )
-            if isinstance(capture_result, Failed):
-                return capture_result
-
-        result = self._controller.select_shank(shank_idx)
-        if isinstance(result, ShankSelected):
-            self._events.emit(
-                ShankChanged(
-                    source=source,
-                    previous_shank_idx=result.previous_shank_idx,
-                    shank_idx=result.shank_idx,
-                    previous_key=result.previous_key,
-                    active_key=result.selected_key,
-                    data_loaded=result.data_loaded,
-                    preserve_plot_selection=preserve_plot_selection,
-                )
-            )
-        return result
-
-    def _capture_outgoing_reference_lines(
-        self,
-        outgoing_reference_lines: ReferenceLineCapture,
-    ) -> Any:
-        outgoing_shank_idx = self._controller.document.selected_shank
-        if outgoing_reference_lines is None:
-            return self._controller.clear_pending_reference_lines(outgoing_shank_idx)
-
-        if outgoing_reference_lines is _REFERENCE_LINES_NOT_PROVIDED:
-            return None
-
-        feature_positions_um, track_positions_um = outgoing_reference_lines
-        return self._controller.set_pending_reference_lines(
-            feature_positions_um=feature_positions_um,
-            track_positions_um=track_positions_um,
-            shank_idx=outgoing_shank_idx,
+        return self._shank_selection_commands().select_shank(
+            shank_idx,
+            outgoing_reference_lines=outgoing_reference_lines,
+            source=source,
+            preserve_plot_selection=preserve_plot_selection,
         )
 
     def capture_active_reference_lines(
@@ -184,16 +198,13 @@ class AlignmentCommands:
         reference_lines: tuple[Any, Any] | None,
     ) -> PendingReferenceLinesUpdated | Ok | Failed:
         """Capture active reference-line coordinates as document state."""
-        if not self._controller.document.data_loaded:
-            return Ok()
-        result = self._capture_outgoing_reference_lines(reference_lines)
-        if result is None:
-            return Ok()
-        return result
+        return self._shank_selection_commands().capture_active_reference_lines(
+            reference_lines
+        )
 
     def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:
         """Load a mouse root and update document metadata."""
-        return self._controller.set_mouse_root(mouse_root)
+        return self._metadata_commands().set_mouse_root(mouse_root)
 
     def clear_histology_context(self) -> Ok:
         """Clear loaded histology runtime data after a mouse-root change."""
@@ -202,11 +213,11 @@ class AlignmentCommands:
 
     def set_output_root(self, output_root: Path) -> OutputRootSet | Failed:
         """Set the output root and derive the active probe output directory."""
-        return self._controller.set_output_root(output_root)
+        return self._path_commands().set_output_root(output_root)
 
     def derive_output_directory(self) -> OutputDirectoryDerived | Failed:
         """Derive the active per-probe output directory from document state."""
-        return self._controller.derive_output_directory()
+        return self._path_commands().derive_output_directory()
 
     def load_previous_alignments(
         self,
@@ -216,18 +227,10 @@ class AlignmentCommands:
         shank_idx: int | None = None,
     ) -> AlignmentChoicesUpdated | NoPreviousAlignments | Failed:
         """Load and store previous alignments for a document-selected shank."""
-        target_shank = self._active_or_given_shank(shank_idx)
-        loaded = self._controller.load_previous_alignments(
+        return self._persistence_commands().load_previous_alignments(
             folder=folder,
-            shank_idx=target_shank,
             use_docdb=use_docdb,
-        )
-        if isinstance(loaded, Failed | NoPreviousAlignments):
-            return loaded
-        assert isinstance(loaded, PreviousAlignmentsLoaded)
-        return self._controller.set_previous_alignments(
-            loaded.alignments,
-            shank_idx=target_shank,
+            shank_idx=shank_idx,
         )
 
     def select_recording_metadata(
@@ -235,7 +238,7 @@ class AlignmentCommands:
         recording_id: str,
     ) -> RecordingSelected | Failed:
         """Select a recording and return its probe choices."""
-        return self._controller.select_recording(recording_id)
+        return self._metadata_commands().select_recording_metadata(recording_id)
 
     def select_probe_metadata(
         self,
@@ -243,7 +246,10 @@ class AlignmentCommands:
         probe_name: str,
     ) -> ProbeSelected | Failed:
         """Select a probe and load lightweight channel metadata."""
-        return self._controller.select_probe(recording_id, probe_name)
+        return self._metadata_commands().select_probe_metadata(
+            recording_id,
+            probe_name,
+        )
 
     def select_previous_alignment(
         self,
@@ -262,38 +268,9 @@ class AlignmentCommands:
             return shank_idx
         return self._controller.document.selected_shank
 
-    def _stream_key_for_selection(
-        self,
-        recording_id: str,
-        probe_name: str,
-    ) -> StreamKey | None:
-        if self._controller.data_context is None:
-            return None
-        try:
-            return self._controller.data_context.stream_key_for_selection(
-                recording_id,
-                probe_name,
-            )
-        except Exception:
-            logger.warning(
-                "Could not resolve stream key for %s/%s",
-                recording_id,
-                probe_name,
-                exc_info=True,
-            )
-            return None
-
-    def _capture_active_reference_lines_if_provided(
-        self,
-        reference_lines: ReferenceLineCapture,
-    ) -> Ok | PendingReferenceLinesUpdated | Failed:
-        if reference_lines is _REFERENCE_LINES_NOT_PROVIDED:
-            return Ok()
-        return self.capture_active_reference_lines(reference_lines)
-
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
-        return self._controller.can_load_previous_alignments()
+        return self._persistence_commands().can_load_previous_alignments()
 
     def begin_load_data(
         self,
@@ -301,54 +278,14 @@ class AlignmentCommands:
         recording_id: str,
         probe_name: str,
         target_shank: int,
-        outgoing_reference_lines: ReferenceLineCapture = _REFERENCE_LINES_NOT_PROVIDED,
+        outgoing_reference_lines: ReferenceLineCapture = REFERENCE_LINES_NOT_PROVIDED,
     ) -> LoadDataBeginResult | Failed:
         """Prepare or activate the selected stream/shank load transaction."""
-        stream_key = self._stream_key_for_selection(recording_id, probe_name)
-        load_plan = self._runtime.plan_load_data(
-            LoadDataTarget(stream_key=stream_key, shank_idx=target_shank),
-            data_loaded=self._controller.document.data_loaded,
-        )
-
-        if isinstance(load_plan, LoadDataAlreadyActive):
-            logger.info(
-                "Data already loaded for stream %s shank %s; skipping load",
-                stream_key,
-                target_shank,
-            )
-            return LoadDataAlreadyActiveResult(
-                stream_key=stream_key,
-                shank_idx=target_shank,
-            )
-
-        capture_result = self._capture_active_reference_lines_if_provided(
-            outgoing_reference_lines
-        )
-        if isinstance(capture_result, Failed):
-            return capture_result
-
-        if isinstance(load_plan, LoadDataCachedStreamAvailable):
-            if stream_key is None:
-                return Failed("Cached stream activation requires a stream key.")
-            self.detach_active_stream()
-            result = self.activate_cached_ephys_data(
-                recording_id=recording_id,
-                probe_name=probe_name,
-                stream_key=stream_key,
-                shank_idx=load_plan.target.shank_idx,
-            )
-            if isinstance(result, Failed):
-                return result
-            return LoadDataCachedActivated(stream_key=stream_key, activated=result)
-
-        prepared = self.prepare_fresh_ephys_load(stream_key)
-        selected = self._controller.select_shank(target_shank)
-        if isinstance(selected, Failed):
-            return selected
-        return LoadDataFreshPrepared(
-            stream_key=stream_key,
-            shank_idx=selected.shank_idx,
-            preserve_plot_selection=prepared.preserve_plot_selection,
+        return self._load_data_commands().begin_load_data(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            target_shank=target_shank,
+            outgoing_reference_lines=outgoing_reference_lines,
         )
 
     def activate_cached_probe_selection(
@@ -359,97 +296,33 @@ class AlignmentCommands:
         target_shank: int,
     ) -> ProbeSelectionCacheResult | Failed:
         """Activate a cached probe selection or report that fresh loading is needed."""
-        stream_key = self._stream_key_for_selection(recording_id, probe_name)
-        load_plan = self._runtime.plan_load_data(
-            LoadDataTarget(stream_key=stream_key, shank_idx=target_shank),
-            data_loaded=self._controller.document.data_loaded,
-        )
-
-        if isinstance(load_plan, LoadDataAlreadyActive):
-            return LoadDataAlreadyActiveResult(
-                stream_key=stream_key,
-                shank_idx=target_shank,
-            )
-        if not isinstance(load_plan, LoadDataCachedStreamAvailable):
-            return LoadDataFreshRequiredResult(
-                stream_key=stream_key,
-                shank_idx=target_shank,
-            )
-        if stream_key is None:
-            return Failed("Cached stream activation requires a stream key.")
-
-        self.detach_active_stream()
-        result = self.activate_cached_ephys_data(
+        return self._load_data_commands().activate_cached_probe_selection(
             recording_id=recording_id,
             probe_name=probe_name,
-            stream_key=stream_key,
-            shank_idx=load_plan.cached_shank_idx,
+            target_shank=target_shank,
         )
-        if isinstance(result, Failed):
-            return result
-        return LoadDataCachedActivated(stream_key=stream_key, activated=result)
 
     def complete_fresh_load_data(
         self,
         prepared: LoadDataFreshPrepared,
     ) -> LoadDataFreshCompleted | Failed:
         """Run fresh ephys and histology load steps for a prepared transaction."""
-        job_result = self._load_data_job.run(LoadDataJobRequest(prepared.shank_idx))
-        if isinstance(job_result, Failed):
-            return job_result
-        ephys_result = self._cache_loaded_probe_data(
-            job_result.ephys,
-            shank_idx=prepared.shank_idx,
-        )
-        return LoadDataFreshCompleted(
-            stream_key=prepared.stream_key,
-            ephys=ephys_result,
-            histology=job_result.histology,
-            preserve_plot_selection=prepared.preserve_plot_selection,
-        )
+        return self._load_data_commands().complete_fresh_load_data(prepared)
 
     def prepare_fresh_ephys_load(
         self,
         stream_key: StreamKey | None,
     ) -> LoadDataPrepared:
         """Mark data unloaded and discard stale active/cache state."""
-        prepared = self._controller.prepare_load_data()
-        self._runtime.prepare_fresh_load(stream_key)
-        self._display_state.reset_for_active_stream()
-        return prepared
+        return self._load_data_commands().prepare_fresh_ephys_load(stream_key)
 
     def detach_active_stream(self) -> ActiveStreamDetached:
         """Detach the active stream while preserving cached runtimes."""
-        self._runtime.clear_active_stream()
-        self._display_state.reset_for_active_stream()
-        return ActiveStreamDetached(
-            cached_stream_count=len(self._runtime.stream_cache),
-        )
+        return self._load_data_commands().detach_active_stream()
 
     def evict_stream_cache(self) -> StreamCacheEvicted:
         """Evict cached stream runtimes for a recording/session transition."""
-        evicted_stream_count = len(self._runtime.stream_cache)
-        self._runtime.clear_stream_cache()
-        self._display_state.reset_for_active_stream()
-        return StreamCacheEvicted(evicted_stream_count=evicted_stream_count)
-
-    def _cache_loaded_probe_data(
-        self,
-        loaded: LoadedEphysSelection,
-        *,
-        shank_idx: int,
-    ) -> FreshEphysDataLoaded:
-        """Insert loaded ephys data into runtime cache and mark document loaded."""
-        stream_runtime = self._runtime.cache_loaded_stream_data(
-            loaded.stream,
-            self._plot_data_factory,
-            shank_idx=shank_idx,
-        )
-        self._controller.finish_load_data(shank_idx)
-        return FreshEphysDataLoaded(
-            stream_runtime=stream_runtime,
-            shank_idx=shank_idx,
-        )
+        return self._load_data_commands().evict_stream_cache()
 
     def activate_cached_ephys_data(
         self,
@@ -460,31 +333,11 @@ class AlignmentCommands:
         shank_idx: int,
     ) -> CachedEphysDataActivated | Failed:
         """Activate cached ephys runtime data for one explicit shank."""
-        cached_runtime = self._runtime.cached_stream(stream_key)
-        if cached_runtime is None:
-            return Failed(f"Cached stream not found: {stream_key}")
-
-        probe = self._controller.select_probe(
-            recording_id,
-            probe_name,
-            ephys_stream=cached_runtime.stream,
-        )
-        if isinstance(probe, Failed):
-            return probe
-
-        try:
-            stream_runtime = self._runtime.activate_cached_stream_for_shank(
-                stream_key,
-                shank_idx=shank_idx,
-            )
-        except Exception as exc:
-            return Failed(f"Failed to restore cached stream runtime: {exc}")
-
-        self._controller.finish_load_data(shank_idx)
-        return CachedEphysDataActivated(
-            stream_runtime=stream_runtime,
+        return self._load_data_commands().activate_cached_ephys_data(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=stream_key,
             shank_idx=shank_idx,
-            probe=probe,
         )
 
     def prepare_loaded_shank(
@@ -494,71 +347,9 @@ class AlignmentCommands:
         select_default_alignment_if_empty: bool = True,
     ) -> LoadedShankPrepared | Failed:
         """Prepare Qt-free runtime state for a loaded active shank."""
-        stream_runtime = self._runtime.active_stream_runtime
-        if stream_runtime is None:
-            return Failed("No active stream runtime for shank preparation")
-
-        try:
-            shank_runtime = stream_runtime.shank_runtime_for(shank_idx)
-        except Exception as exc:
-            return Failed(f"Failed to prepare shank runtime: {exc}")
-
-        n_channels = len(shank_runtime.collection.depths)
-        brain_atlas = self._histology_context.brain_atlas
-        if brain_atlas is None:
-            return LoadedShankPrepared(
-                shank_idx=shank_idx,
-                n_channels=n_channels,
-                histology_available=False,
-            )
-
-        probe = self._controller.data_context.probe_info
-        if probe is None:
-            return Failed("No probe selected. Please select a probe first.")
-
-        try:
-            track_annotations_ras = shank_runtime.track_annotations_ras
-            if track_annotations_ras is None:
-                track_annotations_ras = (
-                    self._probe_track_service.load_track_annotations(
-                        probe=probe,
-                        shank_idx=shank_idx,
-                        brain_atlas=brain_atlas,
-                    )
-                )
-        except Exception as exc:
-            return Failed(f"Failed to load shank track annotations: {exc}")
-
-        choices = self._controller.active_alignment_choices(shank_idx)
-        if isinstance(choices, Failed):
-            return choices
-
-        active_state = self._controller.document.active_alignment_state
-        if (
-            select_default_alignment_if_empty
-            and active_state is not None
-            and active_state.active_alignment is None
-        ):
-            selected = self._controller.select_previous_alignment(
-                0,
-                shank_idx=shank_idx,
-            )
-            if isinstance(selected, Failed):
-                return selected
-
-        initialized = self._controller.initialize_shank_runtime(
-            shank_runtime,
-            track_annotations_ras=track_annotations_ras,
-            brain_atlas=brain_atlas,
-        )
-        if isinstance(initialized, Failed):
-            return initialized
-
-        return LoadedShankPrepared(
-            shank_idx=shank_idx,
-            n_channels=n_channels,
-            histology_available=True,
-            alignment_choices=choices.choices,
+        return self._load_data_commands().prepare_loaded_shank(
+            shank_idx,
+            select_default_alignment_if_empty=select_default_alignment_if_empty,
         )
 
     def can_load_data(self) -> PolicyResult:
@@ -567,7 +358,7 @@ class AlignmentCommands:
 
     def can_save_alignment_output(self) -> Ok | Blocked:
         """Return whether visited alignment outputs can be saved."""
-        return self._controller.can_save_alignment_output()
+        return self._persistence_commands().can_save_alignment_output()
 
     def save_visited_alignment_outputs(
         self,
@@ -575,108 +366,13 @@ class AlignmentCommands:
         use_docdb: bool,
     ) -> VisitedAlignmentOutputsSaved | Blocked | Failed:
         """Persist outputs for every visited alignment in the active stream."""
-        ready = self._controller.can_save_alignment_output()
-        if isinstance(ready, Blocked):
-            return ready
-
-        output_inputs, states_by_key = self._visited_alignment_output_inputs()
-        if not output_inputs:
-            return Failed("No visited alignments are ready to save")
-
-        outputs = self._controller.build_alignment_outputs(output_inputs)
-        if isinstance(outputs, Failed):
-            return outputs
-
-        for key, state in states_by_key.items():
-            alignment = state.active_alignment
-            if alignment is not None:
-                state.add_alignment(alignment.feature, alignment.track)
-
-        logger.info("Saving output files to results folder...")
-        saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
-        for key, output in outputs.items():
-            state = states_by_key[key]
-            saved = self._controller.save_alignment_output(
-                output,
-                state.alignments,
-                key.shank_idx,
-                use_docdb,
-            )
-            if isinstance(saved, Failed):
-                return saved
-            saved_outputs[key] = saved
-
-        active_choices: list[str] | None = None
-        choices = self._controller.active_alignment_choices(
-            self._active_or_given_shank(None)
+        return self._persistence_commands().save_visited_alignment_outputs(
+            use_docdb=use_docdb
         )
-        if isinstance(choices, AlignmentChoicesUpdated):
-            active_choices = choices.choices
-        elif isinstance(choices, Failed):
-            logger.error(choices.message)
-
-        return VisitedAlignmentOutputsSaved(
-            saved_count=len(saved_outputs),
-            saved_outputs=saved_outputs,
-            active_choices=active_choices,
-        )
-
-    def _visited_alignment_output_inputs(
-        self,
-    ) -> tuple[
-        dict[AlignmentKey, tuple[Any, Any]],
-        dict[AlignmentKey, Any],
-    ]:
-        """Collect channel-location save inputs for visited shanks."""
-        stream_runtime = self._runtime.active_stream_runtime
-        if stream_runtime is None:
-            return {}, {}
-        probe = self._controller.data_context.probe_info
-        if probe is None:
-            return {}, {}
-
-        states_for_probe = (
-            self._controller.document.alignment_states_for_current_probe()
-        )
-        output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
-        states_by_key: dict[AlignmentKey, Any] = {}
-        for shank_idx, shank_runtime in stream_runtime.visited_shank_runtimes().items():
-            key = AlignmentKey(
-                recording_id=probe.recording_id,
-                ephys_collection=probe.ephys_collection,
-                shank_idx=shank_idx,
-            )
-            state = states_for_probe.get(key)
-            if state is None or state.active_alignment is None:
-                continue
-            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
-                logger.info(
-                    "Skipping shank %d during save because it has not been rendered",
-                    shank_idx + 1,
-                )
-                continue
-            alignment = state.active_alignment
-            channel_locations_ras = (
-                self._derived_data_service.compute_channel_locations(
-                    ephysalign=shank_runtime.ephysalign,
-                    feature=alignment.feature,
-                    track=alignment.track,
-                )
-            )
-            output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
-            states_by_key[key] = state
-        return output_inputs, states_by_key
 
     def set_unit_filter(self, unit_filter: str) -> Ok:
         """Select the unit subset used when preparing ephys plot data."""
-        self._display_state.set_unit_filter(unit_filter)
-        stream_runtime = self._runtime.active_stream_runtime
-        if stream_runtime is not None:
-            stream_runtime.filtered_plot_data_for_shank(
-                self._active_or_given_shank(None),
-                unit_filter=unit_filter,
-            )
-        return Ok()
+        return self._edit_commands().set_unit_filter(unit_filter)
 
     def offset_alignment_from_tip(
         self,
@@ -688,15 +384,13 @@ class AlignmentCommands:
         shank_idx: int | None = None,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply an offset edit on a document-selected shank."""
-        result = self._controller.offset_alignment_from_tip(
+        return self._edit_commands().offset_alignment_from_tip(
             tip_position_um=tip_position_um,
             probe_tip_um=probe_tip_um,
             lin_fit=lin_fit,
             track_shift_m=track_shift_m,
-            shank_idx=self._active_or_given_shank(shank_idx),
+            shank_idx=shank_idx,
         )
-        self._emit_alignment_edited("offset", result)
-        return result
 
     def offset_active_alignment_from_tip(
         self,
@@ -705,10 +399,8 @@ class AlignmentCommands:
         track_shift_m: float = 0.0,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply a tip-offset edit using app-owned display settings."""
-        return self.offset_alignment_from_tip(
+        return self._edit_commands().offset_active_alignment_from_tip(
             tip_position_um=tip_position_um,
-            probe_tip_um=self._display_state.depth_view.probe_tip_um,
-            lin_fit=self._display_state.edit_settings.lin_fit,
             track_shift_m=track_shift_m,
         )
 
@@ -719,9 +411,7 @@ class AlignmentCommands:
         track_shift_m: float,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply a bounded tip-offset nudge for the active alignment."""
-        if not self._active_alignment_can_shift(track_shift_m):
-            return AlignmentEditNoop()
-        return self.offset_active_alignment_from_tip(
+        return self._edit_commands().nudge_active_alignment_from_tip(
             tip_position_um=tip_position_um,
             track_shift_m=track_shift_m,
         )
@@ -736,65 +426,33 @@ class AlignmentCommands:
         extend_feature: int,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply a reference-line fit for a document-selected shank runtime."""
-        result = self._controller.fit_alignment_to_reference_lines(
+        return self._edit_commands().fit_alignment_to_reference_lines(
             shank_runtime,
             line_features_um=line_features_um,
             line_tracks_um=line_tracks_um,
             lin_fit=lin_fit,
             extend_feature=extend_feature,
         )
-        self._emit_alignment_edited("fit", result)
-        return result
 
     def fit_active_alignment_from_pending_reference_lines(
         self,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply a fit edit from document-owned pending reference lines."""
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None:
-            return Failed("Cannot fit alignment: active shank runtime is not loaded")
-
-        pending_lines = self._controller.active_pending_reference_lines(
-            shank_runtime.shank_idx
-        )
-        if isinstance(pending_lines, Failed):
-            return pending_lines
-        if pending_lines is None:
-            line_features_um = np.array([], dtype=float)
-            line_tracks_um = np.array([], dtype=float)
-        else:
-            line_features_um = pending_lines.feature_positions_um
-            line_tracks_um = pending_lines.track_positions_um
-
-        return self.fit_alignment_to_reference_lines(
-            shank_runtime,
-            line_features_um=line_features_um,
-            line_tracks_um=line_tracks_um,
-            lin_fit=self._display_state.edit_settings.lin_fit,
-            extend_feature=self._display_state.edit_settings.extend_feature,
-        )
+        return self._edit_commands().fit_active_alignment_from_pending_reference_lines()
 
     def go_next_alignment(
         self,
         shank_idx: int | None = None,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Move the active alignment edit cursor forward."""
-        result = self._controller.go_next_alignment(
-            self._active_or_given_shank(shank_idx)
-        )
-        self._emit_alignment_edited("next", result)
-        return result
+        return self._edit_commands().go_next_alignment(shank_idx)
 
     def go_previous_alignment(
         self,
         shank_idx: int | None = None,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Move the active alignment edit cursor backward."""
-        result = self._controller.go_previous_alignment(
-            self._active_or_given_shank(shank_idx)
-        )
-        self._emit_alignment_edited("previous", result)
-        return result
+        return self._edit_commands().go_previous_alignment(shank_idx)
 
     def reset_alignment_to_initial(
         self,
@@ -803,82 +461,16 @@ class AlignmentCommands:
         lin_fit: bool,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Reset active alignment state to the loaded runtime's initial geometry."""
-        result = self._controller.reset_alignment_to_initial(
+        return self._edit_commands().reset_alignment_to_initial(
             shank_runtime,
             lin_fit=lin_fit,
         )
-        if isinstance(result, AlignmentEditApplied):
-            clear_result = self._controller.clear_pending_reference_lines(
-                shank_runtime.shank_idx
-            )
-            if isinstance(clear_result, Failed):
-                logger.error(clear_result.message)
-            self._emit_alignment_edited("reset", result)
-        return result
 
     def reset_active_alignment_to_initial(
         self,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Reset active alignment using the active runtime and display settings."""
-        shank_runtime = self._active_shank_runtime()
-        if shank_runtime is None:
-            return Failed("Cannot reset alignment: active shank runtime is not loaded")
-        return self.reset_alignment_to_initial(
-            shank_runtime,
-            lin_fit=self._display_state.edit_settings.lin_fit,
-        )
-
-    def _active_alignment_can_shift(self, track_shift_m: float) -> bool:
-        """Return whether a bounded nudge keeps the alignment inside channel depths."""
-        if track_shift_m == 0:
-            return True
-        state = self._controller.document.active_alignment_state
-        alignment = None if state is None else state.active_alignment
-        shank_runtime = self._active_shank_runtime()
-        if (
-            alignment is None
-            or shank_runtime is None
-            or shank_runtime.chn_depths is None
-        ):
-            return False
-
-        channel_depths_m = np.asarray(shank_runtime.chn_depths, dtype=float) / 1e6
-        if channel_depths_m.size == 0:
-            return False
-        if track_shift_m < 0:
-            return alignment.track[-1] + track_shift_m >= float(
-                np.max(channel_depths_m)
-            )
-        return alignment.track[0] + track_shift_m <= float(np.min(channel_depths_m))
-
-    def _active_shank_runtime(self) -> ShankRuntime | None:
-        """Return active shank runtime data for command-side alignment edits."""
-        stream_runtime = self._runtime.active_stream_runtime
-        if stream_runtime is None:
-            return None
-        return stream_runtime.shank_runtime_by_idx.get(
-            self._controller.document.selected_shank
-        )
-
-    def _emit_alignment_edited(
-        self,
-        edit_kind: AlignmentEditKind,
-        result: AlignmentEditApplied | AlignmentEditNoop | Failed,
-    ) -> None:
-        if not isinstance(result, AlignmentEditApplied):
-            return
-        active_key = self._controller.document.selected_alignment_key
-        if active_key is None:
-            logger.error("Cannot emit alignment edit event without an active key")
-            return
-        self._events.emit(
-            AlignmentEdited(
-                edit_kind=edit_kind,
-                active_key=active_key,
-                active_alignment=result.alignment,
-                lin_fit=result.lin_fit,
-            )
-        )
+        return self._edit_commands().reset_active_alignment_to_initial()
 
 
 @dataclass

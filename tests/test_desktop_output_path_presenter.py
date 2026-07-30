@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.controller import OutputDirectoryDerived, OutputRootSet
 from ephys_alignment_gui.desktop_output_path_presenter import (
     DesktopOutputPathPresenter,
 )
+from ephys_alignment_gui.path_results import OutputDirectoryDerived, OutputRootSet
 from ephys_alignment_gui.workflow import Failed
 
 

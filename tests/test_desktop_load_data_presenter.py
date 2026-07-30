@@ -15,7 +15,6 @@ from ephys_alignment_gui.app_results import (
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
 )
-from ephys_alignment_gui.controller import ProbeSelected
 from ephys_alignment_gui.desktop_load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -24,6 +23,7 @@ from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )
+from ephys_alignment_gui.metadata_results import ProbeSelected
 from ephys_alignment_gui.workflow import Failed
 
 

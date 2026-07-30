@@ -6,10 +6,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.controller import AlignmentOutputsSaved, ProbeSelected
+from ephys_alignment_gui.alignment_persistence_results import AlignmentOutputsSaved
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.histology_runtime_loader import HistologyLoadResult
+from ephys_alignment_gui.metadata_results import ProbeSelected
 
 
 @dataclass(frozen=True)

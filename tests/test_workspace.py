@@ -9,11 +9,21 @@ def test_workspace_wires_shared_services() -> None:
     workspace = AlignmentWorkspace()
 
     assert workspace.controller.document is workspace.document
-    assert workspace.controller.data_context is workspace.data_context
-    assert workspace.controller.ephys_data_service is workspace.ephys_data_service
+    assert (
+        workspace.controller.alignment_key_context
+        is workspace.alignment_key_context
+    )
     assert workspace.controller.workflow_policy is workspace.workflow_policy
-    assert workspace.controller.alignment_repository is workspace.alignment_repository
-    assert workspace.controller.output_builder is workspace.alignment_output_service
+    assert workspace.app.commands._data_context is workspace.data_context
+    assert workspace.app.commands._ephys_data_service is workspace.ephys_data_service
+    assert (
+        workspace.app.commands._alignment_repository
+        is workspace.alignment_repository
+    )
+    assert (
+        workspace.app.commands._alignment_output_service
+        is workspace.alignment_output_service
+    )
     assert workspace.ephys_stream_loader.data_context is workspace.data_context
     assert (
         workspace.ephys_stream_loader.ephys_data_service

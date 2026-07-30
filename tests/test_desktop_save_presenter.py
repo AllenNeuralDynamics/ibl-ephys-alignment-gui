@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.alignment_persistence_results import AlignmentOutputsSaved
 from ephys_alignment_gui.alignment_repository import SavedAlignmentOutputs
 from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
-from ephys_alignment_gui.controller import AlignmentOutputsSaved
 from ephys_alignment_gui.desktop_save_presenter import (
     DesktopSaveCallbacks,
     DesktopSavePresenter,
