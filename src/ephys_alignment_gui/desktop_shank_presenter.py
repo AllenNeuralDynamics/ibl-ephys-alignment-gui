@@ -12,6 +12,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ActiveShankScreenState,
     ActiveSliceMenuState,
+    PreparedActiveShankScreenState,
 )
 from ephys_alignment_gui.app_results import LoadedShankPrepared
 from ephys_alignment_gui.event_bus import EventSubscription
@@ -107,22 +108,21 @@ class DesktopShankPresenter:
 
         if not preserve:
             self.app.commands.set_unit_filter("all")
-        plot_data_state = self.app.queries.prepare_active_shank_plot_data_state()
-        if plot_data_state is None:
-            raise RuntimeError("No active stream runtime for shank plot data")
-        callbacks.apply_plot_data_state(plot_data_state)
-
-        slice_data_state = self.app.queries.prepare_active_slice_screen_data()
-        if prepared.histology_available and slice_data_state is None:
-            raise RuntimeError("Could not build active slice data")
-
-        screen_state = self.app.queries.active_shank_screen_state(
+        screen_preparation = self.app.queries.prepare_active_shank_screen_state(
+            histology_available=prepared.histology_available,
             preserve_plot_selection=preserve,
             previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
             raw_image_payloads=callbacks.raw_image_payloads(),
             previous_slice_selection=selections.previous_slice_selection,
             offline=callbacks.offline(),
         )
+        if screen_preparation.missing_plot_data:
+            raise RuntimeError("No active stream runtime for shank plot data")
+        assert screen_preparation.plot_data is not None
+        callbacks.apply_plot_data_state(screen_preparation.plot_data)
+        if screen_preparation.missing_required_slice_data:
+            raise RuntimeError("Could not build active slice data")
+        screen_state = self._require_screen_state(screen_preparation)
         callbacks.render_plot_menus(screen_state.plot_menu)
         callbacks.render_ephys_plots(screen_state)
         if prepared.histology_available:
@@ -139,3 +139,11 @@ class DesktopShankPresenter:
         if self.callbacks is None:
             raise RuntimeError("DesktopShankPresenter callbacks are not configured")
         return self.callbacks
+
+    @staticmethod
+    def _require_screen_state(
+        screen_preparation: PreparedActiveShankScreenState,
+    ) -> ActiveShankScreenState:
+        if screen_preparation.screen is None:
+            raise RuntimeError("Could not build active shank screen state")
+        return screen_preparation.screen

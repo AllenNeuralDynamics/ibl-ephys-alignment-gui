@@ -35,6 +35,7 @@ from ephys_alignment_gui.alignment_read_models import (
     HistologyPanelRenderState,
     NearbyBoundaryRenderState,
     PerpendicularSliceRenderState,
+    PreparedActiveShankScreenState,
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
@@ -609,6 +610,50 @@ class AlignmentQueries:
                     previous_slice_selection if preserve_plot_selection else None
                 ),
             ),
+        )
+
+    def prepare_active_shank_screen_state(
+        self,
+        *,
+        histology_available: bool,
+        preserve_plot_selection: bool,
+        previous_ephys_plot_keys: Mapping[PlotMenu, str | None] | None = None,
+        raw_image_payloads: Mapping[Any, Any] | None = None,
+        previous_slice_selection: SliceSelection | None = None,
+        offline: bool,
+    ) -> PreparedActiveShankScreenState:
+        """Materialize active shank runtime state and return its screen DTO."""
+        plot_data_state = self.prepare_active_shank_plot_data_state()
+        if plot_data_state is None:
+            return PreparedActiveShankScreenState(
+                plot_data=None,
+                screen=None,
+                histology_available=histology_available,
+                slice_data_available=False,
+            )
+
+        slice_data_state = self.prepare_active_slice_screen_data()
+        slice_data_available = slice_data_state is not None
+        if histology_available and not slice_data_available:
+            return PreparedActiveShankScreenState(
+                plot_data=plot_data_state,
+                screen=None,
+                histology_available=histology_available,
+                slice_data_available=False,
+            )
+
+        screen_state = self.active_shank_screen_state(
+            preserve_plot_selection=preserve_plot_selection,
+            previous_ephys_plot_keys=previous_ephys_plot_keys,
+            raw_image_payloads=raw_image_payloads,
+            previous_slice_selection=previous_slice_selection,
+            offline=offline,
+        )
+        return PreparedActiveShankScreenState(
+            plot_data=plot_data_state,
+            screen=screen_state,
+            histology_available=histology_available,
+            slice_data_available=slice_data_available,
         )
 
     def active_plot_menu_state(

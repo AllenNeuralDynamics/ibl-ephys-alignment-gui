@@ -1685,6 +1685,57 @@ def test_queries_build_active_shank_screen_state_from_runtime_menus() -> None:
     assert state.slice_menu is None
 
 
+def test_queries_prepare_active_shank_screen_state_materializes_runtime() -> None:
+    document = AlignmentDocument(data_loaded=True)
+    document.select_alignment_key(AlignmentKey("rec", "stream", 2))
+    stream_runtime = FakeStreamRuntime()
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(active_stream_runtime=stream_runtime),
+        display_state=AlignmentDisplayState(unit_filter="KS good"),
+    )
+
+    prepared = queries.prepare_active_shank_screen_state(
+        histology_available=False,
+        preserve_plot_selection=True,
+        previous_ephys_plot_keys={"image": "image.raw.raw_ap"},
+        raw_image_payloads={"raw_ap": "raw"},
+        previous_slice_selection=SliceSelection("slice_data", "missing"),
+        offline=True,
+    )
+
+    assert not prepared.missing_plot_data
+    assert not prepared.missing_required_slice_data
+    assert prepared.plot_data is not None
+    assert prepared.plot_data.shank_idx == 2
+    assert prepared.screen is not None
+    assert prepared.screen.plot_menu.group("image").selected_key == "image.raw.raw_ap"
+    assert stream_runtime.plotdata_by_shank[2].filtered_subsets == ["KS good"]
+
+
+def test_queries_prepare_active_shank_screen_state_reports_required_slice_gap() -> None:
+    document = AlignmentDocument(data_loaded=True)
+    document.select_alignment_key(AlignmentKey("rec", "stream", 2))
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
+        display_state=AlignmentDisplayState(unit_filter="KS good"),
+    )
+
+    prepared = queries.prepare_active_shank_screen_state(
+        histology_available=True,
+        preserve_plot_selection=True,
+        previous_ephys_plot_keys=None,
+        raw_image_payloads=None,
+        previous_slice_selection=None,
+        offline=True,
+    )
+
+    assert not prepared.missing_plot_data
+    assert prepared.missing_required_slice_data
+    assert prepared.screen is None
+
+
 def test_queries_build_cluster_detail_from_runtime_plotdata() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(selected_shank=1),

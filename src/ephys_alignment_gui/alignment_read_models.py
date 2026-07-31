@@ -207,3 +207,23 @@ class ActiveShankScreenState:
     unit_filter: str
     plot_menu: PlotMenuState
     slice_menu: ActiveSliceMenuState | None
+
+
+@dataclass(frozen=True)
+class PreparedActiveShankScreenState:
+    """Materialized active-shank runtime state and screen DTO."""
+
+    plot_data: ActiveShankPlotDataState | None
+    screen: ActiveShankScreenState | None
+    histology_available: bool
+    slice_data_available: bool
+
+    @property
+    def missing_plot_data(self) -> bool:
+        """Whether active stream plot data was unavailable."""
+        return self.plot_data is None
+
+    @property
+    def missing_required_slice_data(self) -> bool:
+        """Whether histology was available but slice runtime data could not build."""
+        return self.histology_available and not self.slice_data_available

@@ -11,6 +11,7 @@ from ephys_alignment_gui.alignment_events import ShankChanged
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ActiveShankScreenState,
+    PreparedActiveShankScreenState,
 )
 from ephys_alignment_gui.app_results import LoadedShankPrepared
 from ephys_alignment_gui.desktop_shank_presenter import (
@@ -71,10 +72,12 @@ class FakeQueries:
         *,
         resolved_preserve: bool = True,
         slice_ready: bool = True,
+        plot_ready: bool = True,
     ) -> None:
         self.calls = calls
         self.resolved_preserve = resolved_preserve
         self.slice_ready = slice_ready
+        self.plot_ready = plot_ready
         self.plot_data_state = ActiveShankPlotDataState(
             key=AlignmentKey("rec", "stream", 1),
             shank_idx=1,
@@ -98,17 +101,21 @@ class FakeQueries:
         self.calls.append(("resolve", preserve_plot_selection))
         return self.resolved_preserve
 
-    def prepare_active_shank_plot_data_state(self):
-        self.calls.append("prepare_plot_data")
-        return self.plot_data_state
-
-    def prepare_active_slice_screen_data(self):
-        self.calls.append("prepare_slice_data")
-        return object() if self.slice_ready else None
-
-    def active_shank_screen_state(self, **kwargs):
-        self.calls.append(("screen_state", kwargs))
-        return self.screen_state
+    def prepare_active_shank_screen_state(self, **kwargs):
+        self.calls.append(("prepared_screen", kwargs))
+        plot_data = self.plot_data_state if self.plot_ready else None
+        screen = (
+            self.screen_state
+            if plot_data is not None
+            and (not kwargs["histology_available"] or self.slice_ready)
+            else None
+        )
+        return PreparedActiveShankScreenState(
+            plot_data=plot_data,
+            screen=screen,
+            histology_available=kwargs["histology_available"],
+            slice_data_available=self.slice_ready,
+        )
 
 
 def _app(
@@ -116,6 +123,7 @@ def _app(
     *,
     resolved_preserve: bool = True,
     slice_ready: bool = True,
+    plot_ready: bool = True,
     prepared: Any | None = None,
 ):
     events = EventBus()
@@ -125,6 +133,7 @@ def _app(
             calls,
             resolved_preserve=resolved_preserve,
             slice_ready=slice_ready,
+            plot_ready=plot_ready,
         ),
         events=events,
     )
@@ -185,13 +194,11 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
         "clear_lines",
         ("prepare_shank", 2),
         ("alignment_choices", ["original"]),
-        "prepare_plot_data",
-        ("apply_plot_data", app.queries.plot_data_state),
-        "prepare_slice_data",
         "raw_payloads",
         (
-            "screen_state",
+            "prepared_screen",
             {
+                "histology_available": True,
                 "preserve_plot_selection": True,
                 "previous_ephys_plot_keys": {
                     "image": "image.rms_ap",
@@ -203,6 +210,7 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
                 "offline": True,
             },
         ),
+        ("apply_plot_data", app.queries.plot_data_state),
         ("menus", "plot-menu"),
         ("ephys", app.queries.screen_state),
         ("render_histology", 2),
@@ -262,9 +270,23 @@ def test_shank_presenter_raises_when_required_slice_preparation_fails() -> None:
         "clear_lines",
         ("prepare_shank", 1),
         ("alignment_choices", ["original"]),
-        "prepare_plot_data",
+        "raw_payloads",
+        (
+            "prepared_screen",
+            {
+                "histology_available": True,
+                "preserve_plot_selection": True,
+                "previous_ephys_plot_keys": {
+                    "image": "image.rms_ap",
+                    "line": "line.spikes",
+                    "probe": "probe.rms_ap",
+                },
+                "raw_image_payloads": {"raw": "payload"},
+                "previous_slice_selection": SliceSelection("slice_data", "ccf"),
+                "offline": True,
+            },
+        ),
         ("apply_plot_data", app.queries.plot_data_state),
-        "prepare_slice_data",
     ]
 
 
