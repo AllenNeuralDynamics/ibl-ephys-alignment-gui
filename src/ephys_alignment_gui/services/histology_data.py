@@ -9,17 +9,17 @@ from pathlib import Path
 import numpy as np
 import SimpleITK as sitk
 
-from ephys_alignment_gui.anatomical_atlas import (
+from ephys_alignment_gui.geometry.anatomical_atlas import (
     _BLESSED_DIRECTION,
     BrainAtlasAnatomical,
 )
-from ephys_alignment_gui.datapackage_loader import MouseRoot
-from ephys_alignment_gui.rigid_rotation import (
+from ephys_alignment_gui.geometry.rigid_rotation import (
     image_center_physical,
     load_affine_matrix,
     polar_rotation,
     rotate_image,
 )
+from ephys_alignment_gui.io.datapackage_loader import MouseRoot
 
 logger = logging.getLogger(__name__)
 

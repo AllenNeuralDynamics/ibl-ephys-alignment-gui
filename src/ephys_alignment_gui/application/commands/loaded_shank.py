@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.application.results import LoadedShankPrepared
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.controller import AlignmentController
+from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 from ephys_alignment_gui.services.probe_track import ProbeTrackService

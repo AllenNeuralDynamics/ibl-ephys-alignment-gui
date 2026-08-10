@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import SimpleITK as sitk
 
-from ephys_alignment_gui.anatomical_atlas import _BLESSED_DIRECTION
+from ephys_alignment_gui.geometry.anatomical_atlas import _BLESSED_DIRECTION
 from ephys_alignment_gui.services.slice import (
     SliceService,
     SliceSet,

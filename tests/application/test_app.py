@@ -8,13 +8,6 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
-from ephys_alignment_gui.alignment_read_models import (
-    ActiveAlignmentEditScreenState,
-    ActiveReferenceLineRenderState,
-)
 from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.results import (
     ActiveStreamDetached,
@@ -48,9 +41,21 @@ from ephys_alignment_gui.application.results.path import (
     OutputRootSet,
 )
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
-from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
-from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
-from ephys_alignment_gui.load_data_job import LoadDataJobCompleted, LoadDataJobRequest
+from ephys_alignment_gui.application.workspace import AlignmentWorkspace
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_events import AlignmentEdited, ShankChanged
+from ephys_alignment_gui.core.alignment_read_models import (
+    ActiveAlignmentEditScreenState,
+    ActiveReferenceLineRenderState,
+)
+from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
+from ephys_alignment_gui.io.datapackage_loader import MouseRoot, ProbeInfo
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataJobCompleted,
+    LoadDataJobRequest,
+)
 from ephys_alignment_gui.runtime.histology_loader import HistologyDataLoaded
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
@@ -69,8 +74,6 @@ from ephys_alignment_gui.services.alignment_repository import (
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
-from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
-from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 
 class FakePlotPayloadCache:

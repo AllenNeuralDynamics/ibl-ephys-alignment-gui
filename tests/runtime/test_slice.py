@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.runtime.slice import SliceRuntime
 
 

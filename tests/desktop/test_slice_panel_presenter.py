@@ -7,9 +7,11 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.core.alignment_read_models import (
     PerpendicularSliceRenderState,
 )
+from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.core.slice_display_policy import SliceSelection
 from ephys_alignment_gui.desktop.slice_panel_presenter import (
     SlicePanelPlots,
     SlicePanelPresenter,
@@ -17,8 +19,6 @@ from ephys_alignment_gui.desktop.slice_panel_presenter import (
     SlicePanelView,
     SlicePanelViewState,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.slice_display_policy import SliceSelection
 
 
 class FakeAction:

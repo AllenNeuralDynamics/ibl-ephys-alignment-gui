@@ -11,7 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtWidgets
 
-import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+import ephys_alignment_gui.desktop.setup as ephys_gui
 
 logger = logging.getLogger(__name__)
 

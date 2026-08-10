@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 
 
 @dataclass(frozen=True)

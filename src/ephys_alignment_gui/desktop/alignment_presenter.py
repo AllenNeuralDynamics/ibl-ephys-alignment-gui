@@ -7,12 +7,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from ephys_alignment_gui.alignment_events import (
+from ephys_alignment_gui.core.alignment_events import (
     AlignmentEdited,
     AlignmentEditKind,
 )
-from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
-from ephys_alignment_gui.event_bus import EventBus, EventSubscription
+from ephys_alignment_gui.core.alignment_read_models import ActiveAlignmentRenderState
+from ephys_alignment_gui.core.event_bus import EventBus, EventSubscription
 
 logger = logging.getLogger(__name__)
 

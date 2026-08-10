@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_edit_history import AlignmentEditHistory
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_edit_history import AlignmentEditHistory
 
 
 @dataclass(frozen=True)

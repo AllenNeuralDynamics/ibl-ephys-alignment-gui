@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentRenderState,
     HistologyPanelRenderState,
     ScaleFactorRenderState,

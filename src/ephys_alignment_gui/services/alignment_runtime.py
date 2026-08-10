@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.ephys_alignment import EphysAlignment
+from ephys_alignment_gui.geometry.ephys_alignment import EphysAlignment
 from ephys_alignment_gui.runtime.shank import ShankRuntime
 
 

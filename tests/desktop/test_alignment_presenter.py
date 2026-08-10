@@ -7,16 +7,16 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_events import AlignmentEdited, AlignmentEditKind
-from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_events import AlignmentEdited, AlignmentEditKind
+from ephys_alignment_gui.core.alignment_read_models import ActiveAlignmentRenderState
+from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.alignment_presenter import (
     DesktopAlignmentPresenter,
     DesktopAlignmentRenderCallbacks,
     desktop_presentation_options_for_edit,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.event_bus import EventBus
 
 
 class FakeQueries:

@@ -10,7 +10,7 @@ import pytest
 from iblutil.util import Bunch
 
 import ephys_alignment_gui.services.alignment_output as alignment_output_service
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 

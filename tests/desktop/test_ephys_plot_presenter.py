@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import ActiveShankScreenState
+from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
 from ephys_alignment_gui.desktop.ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,

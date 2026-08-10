@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.alignment_display_state import RegionAnnotationSource
+from ephys_alignment_gui.core.alignment_display_state import RegionAnnotationSource
 
 
 @dataclass(frozen=True)

@@ -9,14 +9,14 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.application.results import ShankSelectionState
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
 )
-from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
-from ephys_alignment_gui.application.results import ShankSelectionState
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.session import LoadDataPlan, LoadDataTarget
 

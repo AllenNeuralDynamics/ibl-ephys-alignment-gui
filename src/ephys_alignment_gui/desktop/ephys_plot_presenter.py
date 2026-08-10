@@ -9,7 +9,7 @@ from typing import Any
 
 from PyQt5 import QtWidgets
 
-from ephys_alignment_gui.alignment_read_models import ActiveShankScreenState
+from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
 from ephys_alignment_gui.plotting.menu_state import (
     EPHYS_PLOT_MENUS,
     PlotMenuGroupState,

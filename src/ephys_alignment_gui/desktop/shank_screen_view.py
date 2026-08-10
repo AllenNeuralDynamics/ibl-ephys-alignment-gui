@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import ActiveShankPlotDataState
+from ephys_alignment_gui.core.alignment_read_models import ActiveShankPlotDataState
 from ephys_alignment_gui.desktop.depth_plot_view import DesktopDepthPlotView
 from ephys_alignment_gui.desktop.shank_presenter import DesktopShankSelectionState
 

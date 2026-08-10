@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.application.commands.metadata_selection import (
     MetadataSelectionCommandHandler,
 )
@@ -25,16 +23,18 @@ from ephys_alignment_gui.application.results import (
     StreamCacheEvicted,
 )
 from ephys_alignment_gui.application.workflow import Failed, PolicyResult
-from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.ephys_stream_loader import LoadedEphysSelection
-from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
-from ephys_alignment_gui.plotting.payload_cache_factory import (
-    EphysPlotPayloadCacheFactory,
-)
-from ephys_alignment_gui.reference_line_capture import (
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.reference_line_capture import (
     REFERENCE_LINES_NOT_PROVIDED,
     ReferenceLineCapture,
     capture_active_reference_lines_if_provided,
+)
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.io.ephys_stream_loader import LoadedEphysSelection
+from ephys_alignment_gui.io.load_data_job import LoadDataJob, LoadDataJobRequest
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.session import (

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 
-from ephys_alignment_gui.docdb import (
+from ephys_alignment_gui.io.docdb import (
     _default_doc_db_api_client,
     query_docdb_id,
     write_output_to_docdb,

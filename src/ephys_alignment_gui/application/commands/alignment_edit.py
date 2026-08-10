@@ -8,15 +8,15 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_events import AlignmentEdited, AlignmentEditKind
 from ephys_alignment_gui.application.results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
 )
 from ephys_alignment_gui.application.workflow import Failed, Ok
-from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.event_bus import EventBus
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_events import AlignmentEdited, AlignmentEditKind
+from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.runtime.shank import ShankRuntime
 

@@ -8,12 +8,12 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveSliceDataState,
     PerpendicularSliceRenderState,
 )
-from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.runtime.shank import ShankRuntime
 from ephys_alignment_gui.runtime.slice import SliceCacheEntry
 from ephys_alignment_gui.services.alignment_derived_data import AlignmentHistologyData

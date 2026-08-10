@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.view_limits import default_feature_y_limits
+from ephys_alignment_gui.core.view_limits import default_feature_y_limits
 
 
 @dataclass(frozen=True)

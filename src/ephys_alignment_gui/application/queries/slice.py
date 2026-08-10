@@ -9,21 +9,24 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.application.queries.alignment_render import (
+    AlignmentRenderQueries,
+)
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveSliceDataState,
     ActiveSliceMenuState,
     ActiveSliceRenderState,
     PerpendicularSliceRenderState,
 )
-from ephys_alignment_gui.application.queries.alignment_render import (
-    AlignmentRenderQueries,
+from ephys_alignment_gui.core.slice_display_policy import (
+    SliceDisplayPolicy,
+    SliceSelection,
 )
-from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
 from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
 )
-from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 
 logger = logging.getLogger(__name__)
 

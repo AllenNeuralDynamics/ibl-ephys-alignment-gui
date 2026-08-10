@@ -14,7 +14,7 @@ import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
-import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+import ephys_alignment_gui.desktop.setup as ephys_gui
 from ephys_alignment_gui.desktop.display_ports import (
     desktop_display_ports_from_main_window,
 )
@@ -25,13 +25,13 @@ from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop.workbench_ports import (
     desktop_workbench_ports_from_main_window,
 )
-from ephys_alignment_gui.settings import (
+from ephys_alignment_gui.core.settings import (
     OUTPUT_ROOT_ENV_VAR,
     output_root_from_environment,
 )
-from ephys_alignment_gui.thread_worker import Worker
+from ephys_alignment_gui.desktop.thread_worker import Worker
 from ephys_alignment_gui.application.workflow import Requirement
-from ephys_alignment_gui.workspace import AlignmentWorkspace
+from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 
 logger = logging.getLogger(__name__)
 

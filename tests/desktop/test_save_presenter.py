@@ -17,11 +17,11 @@ from ephys_alignment_gui.application.workflow import (
     Ok,
     Requirement,
 )
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.save_presenter import (
     DesktopSaveCallbacks,
     DesktopSavePresenter,
 )
-from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.services.alignment_repository import SavedAlignmentOutputs
 
 

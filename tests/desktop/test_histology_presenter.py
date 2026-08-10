@@ -7,13 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_read_models import ActiveAlignmentRenderState
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.histology_presenter import (
     DesktopHistologyPresenter,
     DesktopHistologyRenderCallbacks,
 )
-from ephys_alignment_gui.document import AlignmentKey
 
 
 class FakeQueries:

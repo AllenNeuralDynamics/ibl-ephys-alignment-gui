@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.datapackage_loader import ProbeInfo
+from ephys_alignment_gui.io.datapackage_loader import ProbeInfo
 
 
 class ProbeTrackService:

@@ -11,7 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
 
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.core.alignment_read_models import (
     FitPlotRenderState,
     HistologyPanelRenderState,
     NearbyBoundaryRenderState,

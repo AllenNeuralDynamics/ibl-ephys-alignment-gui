@@ -6,12 +6,12 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.application.results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
 )
 from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.desktop.alignment_edit_actions import (
     NUDGE_STEP_M,
     DesktopAlignmentEditActionCallbacks,

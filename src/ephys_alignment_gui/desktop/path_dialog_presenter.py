@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.settings import (
+from ephys_alignment_gui.core.settings import (
     INPUT_ROOT_ENV_VAR,
     input_root_from_environment,
 )

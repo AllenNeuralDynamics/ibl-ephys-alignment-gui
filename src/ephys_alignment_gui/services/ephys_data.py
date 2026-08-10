@@ -12,12 +12,12 @@ import one.alf.io as alfio
 from numpy.typing import NDArray
 from one import alf
 
-from ephys_alignment_gui.channel_geometry import (
+from ephys_alignment_gui.geometry.channel_geometry import (
     n_shanks_from_geometry,
     rows_for_shank,
     valid_shank_indices,
 )
-from ephys_alignment_gui.datapackage_loader import (
+from ephys_alignment_gui.io.datapackage_loader import (
     ChannelTablePaths,
     DataPackageError,
     ProbeInfo,

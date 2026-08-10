@@ -8,9 +8,9 @@ import numpy as np
 import scipy
 from matplotlib import cm
 
+from ephys_alignment_gui.geometry.numeric import bincount2D
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
 from ephys_alignment_gui.plotting.level_policy import in_brain_depth_mask
-from ephys_alignment_gui.utils import bincount2D
 
 logger = logging.getLogger(__name__)
 

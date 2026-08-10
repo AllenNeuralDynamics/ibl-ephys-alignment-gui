@@ -13,7 +13,7 @@ from ephys_alignment_gui.application.workflow import (
     Ok,
     WorkflowPolicy,
 )
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.core.document import AlignmentDocument
 
 
 def _check_load_data(

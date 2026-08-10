@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ephys_alignment_gui.datapackage_loader import ChannelTablePaths, ProbeInfo
+from ephys_alignment_gui.io.datapackage_loader import ChannelTablePaths, ProbeInfo
 from ephys_alignment_gui.services.ephys_data import (
     ChannelTable,
     EphysDataService,

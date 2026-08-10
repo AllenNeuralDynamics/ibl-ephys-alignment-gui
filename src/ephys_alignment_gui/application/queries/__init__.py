@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.application.queries.active_shank_screen import (
     ActiveShankScreenQueries,
 )
@@ -19,13 +17,15 @@ from ephys_alignment_gui.application.queries.slice import SliceQueries
 from ephys_alignment_gui.application.queries.workspace_state import (
     WorkspaceStateQueries,
 )
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.document import AlignmentDocument
+from ephys_alignment_gui.core.slice_display_policy import SliceDisplayPolicy
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
 )
-from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 
 
 @dataclass

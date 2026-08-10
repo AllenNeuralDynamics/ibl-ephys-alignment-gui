@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_read_models import ActiveShankPlotDataState
+from ephys_alignment_gui.core.alignment_read_models import ActiveShankPlotDataState
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.shank_screen_view import DesktopShankScreenView
 

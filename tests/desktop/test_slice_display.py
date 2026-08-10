@@ -6,16 +6,16 @@ import logging
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import ActiveSliceMenuState
-from ephys_alignment_gui.desktop.slice_display import (
-    DesktopSliceDisplay,
-    DesktopSliceDisplayPorts,
-)
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.slice_display_policy import (
+from ephys_alignment_gui.core.alignment_read_models import ActiveSliceMenuState
+from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.core.slice_display_policy import (
     SliceMenuItem,
     SliceSelection,
     SliceSelectionDecision,
+)
+from ephys_alignment_gui.desktop.slice_display import (
+    DesktopSliceDisplay,
+    DesktopSliceDisplayPorts,
 )
 
 

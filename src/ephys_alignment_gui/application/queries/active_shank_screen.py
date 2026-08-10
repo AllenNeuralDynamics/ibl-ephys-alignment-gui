@@ -6,17 +6,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import (
-    ActiveShankScreenState,
-    PreparedActiveShankScreenState,
-)
 from ephys_alignment_gui.application.queries.ephys_plot import EphysPlotQueries
 from ephys_alignment_gui.application.queries.slice import SliceQueries
 from ephys_alignment_gui.application.queries.workspace_state import (
     WorkspaceStateQueries,
 )
+from ephys_alignment_gui.core.alignment_read_models import (
+    ActiveShankScreenState,
+    PreparedActiveShankScreenState,
+)
+from ephys_alignment_gui.core.slice_display_policy import SliceSelection
 from ephys_alignment_gui.plotting.registry import PlotMenu
-from ephys_alignment_gui.slice_display_policy import SliceSelection
 
 
 @dataclass(frozen=True)

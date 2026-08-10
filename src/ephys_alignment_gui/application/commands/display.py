@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 
 
 @dataclass(frozen=True)

@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
 from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
     PreviousAlignmentSelected,
@@ -20,10 +18,12 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
 )
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
-from ephys_alignment_gui.controller import (
+from ephys_alignment_gui.core.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
+from ephys_alignment_gui.core.controller import (
     AlignmentController,
 )
-from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,

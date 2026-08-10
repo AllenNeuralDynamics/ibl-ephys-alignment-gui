@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.channel_geometry import (
+from ephys_alignment_gui.geometry.channel_geometry import (
     n_shanks_from_geometry,
     rows_for_shank,
     valid_shank_indices,

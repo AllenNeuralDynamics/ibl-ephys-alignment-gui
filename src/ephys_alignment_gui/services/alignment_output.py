@@ -13,7 +13,7 @@ from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 logger = logging.getLogger(__name__)

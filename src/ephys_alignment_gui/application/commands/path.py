@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
 )
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.controller import AlignmentController
+from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 
 
 @dataclass

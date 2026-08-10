@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.render_composition import (
     DesktopRenderCluster,
@@ -19,7 +20,6 @@ from ephys_alignment_gui.desktop.workbench_composition import (
 from ephys_alignment_gui.desktop.workbench_port_types import (
     DesktopWorkbenchPorts,
 )
-from ephys_alignment_gui.event_bus import EventSubscription
 
 
 @dataclass

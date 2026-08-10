@@ -11,13 +11,13 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
 
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveSliceRenderState,
     PerpendicularSliceRenderState,
 )
+from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.desktop.plot_elements import ColorBar
-from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM
-from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
+from ephys_alignment_gui.geometry.ephys_alignment import TIP_SIZE_UM
 
 logger = logging.getLogger(__name__)
 

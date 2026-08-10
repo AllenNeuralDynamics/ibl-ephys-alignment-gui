@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.application.workflow import Ok
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.export_view import DesktopExportView
 from ephys_alignment_gui.desktop.render_composition import DesktopRenderCluster
@@ -28,7 +29,6 @@ from ephys_alignment_gui.desktop.workbench_port_types import (
     DesktopShankRenderPorts,
     DesktopWorkbenchPorts,
 )
-from ephys_alignment_gui.event_bus import EventBus
 
 
 class FakeSubscription:

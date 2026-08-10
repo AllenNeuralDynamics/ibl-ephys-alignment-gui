@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from ephys_alignment_gui.application.commands import AlignmentCommands
 from ephys_alignment_gui.application.queries import AlignmentQueries
-from ephys_alignment_gui.event_bus import EventBus
+from ephys_alignment_gui.core.event_bus import EventBus
 
 
 @dataclass

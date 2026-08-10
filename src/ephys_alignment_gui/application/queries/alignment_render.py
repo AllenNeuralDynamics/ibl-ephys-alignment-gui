@@ -7,9 +7,10 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentRenderState,
     FitPlotRenderState,
     HistologyPanelRenderState,
@@ -17,7 +18,6 @@ from ephys_alignment_gui.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
     AlignmentHistologyData,

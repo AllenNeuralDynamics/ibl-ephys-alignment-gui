@@ -11,10 +11,10 @@ from typing import Any
 import numpy as np
 import pyqtgraph.exporters as pg_exporters
 
-from ephys_alignment_gui.create_overview_plots import make_overview_plot
 from ephys_alignment_gui.desktop.ephys_plot_exporter import (
     DesktopEphysPlotExporter,
 )
+from ephys_alignment_gui.plotting.overview import make_overview_plot
 
 logger = logging.getLogger(__name__)
 

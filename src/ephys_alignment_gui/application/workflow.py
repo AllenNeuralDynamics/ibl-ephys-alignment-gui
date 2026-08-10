@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ephys_alignment_gui.document import AlignmentDocument
+from ephys_alignment_gui.core.document import AlignmentDocument
 
 PROBE_REQUIRED = "probe_required"
 CHANNEL_INFO_REQUIRED = "channel_info_required"

@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.alignment_read_models import ActiveShankScreenState
+from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
 from ephys_alignment_gui.desktop.ephys_panel_layout import (
     DesktopEphysPanelLayout,
     EphysPanelLayoutCallbacks,

@@ -6,13 +6,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_state import PendingReferenceLines
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
 )
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
-from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_state import PendingReferenceLines
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.histology_loader import HistologyLoadResult
 

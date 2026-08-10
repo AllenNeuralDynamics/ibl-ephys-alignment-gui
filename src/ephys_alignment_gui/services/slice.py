@@ -11,9 +11,9 @@ import numpy as np
 import SimpleITK as sitk
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.anatomical_atlas import _BLESSED_DIRECTION
-from ephys_alignment_gui.perpendicular_slice import build_perpendicular_slice
-from ephys_alignment_gui.rigid_rotation import rotate_image
+from ephys_alignment_gui.geometry.anatomical_atlas import _BLESSED_DIRECTION
+from ephys_alignment_gui.geometry.perpendicular_slice import build_perpendicular_slice
+from ephys_alignment_gui.geometry.rigid_rotation import rotate_image
 
 logger = logging.getLogger(__name__)
 

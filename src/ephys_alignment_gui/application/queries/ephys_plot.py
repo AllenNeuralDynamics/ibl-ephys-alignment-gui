@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_read_models import (
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_read_models import (
     ActiveShankPlotDataState,
     ClusterDetailRenderState,
 )
-from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plotting.registry import (
     PlotMenu,

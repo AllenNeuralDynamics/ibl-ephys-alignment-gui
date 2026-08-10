@@ -6,7 +6,9 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_read_models import ActiveAlignmentEditScreenState
+from ephys_alignment_gui.core.alignment_read_models import (
+    ActiveAlignmentEditScreenState,
+)
 from ephys_alignment_gui.desktop.alignment_screen_view import (
     DesktopAlignmentScreenView,
 )
