@@ -34,7 +34,6 @@ class DesktopLoadDataCallbacks:
     display_output_directory: Callable[[Path | None], None]
     render_loaded_shank: Callable[[int, bool | None], None]
     clear_empty_state: Callable[[], None]
-    set_histology_available: Callable[[bool], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
 
 
@@ -97,7 +96,6 @@ class DesktopLoadDataPresenter:
                 logger.info("Atlas and histology loaded successfully")
             elif isinstance(histology_result, HistologyDataUnavailable):
                 logger.error(histology_result.message)
-                callbacks.set_histology_available(False)
 
             ctx.update_message("Setting up visualization...")
             callbacks.render_loaded_shank(

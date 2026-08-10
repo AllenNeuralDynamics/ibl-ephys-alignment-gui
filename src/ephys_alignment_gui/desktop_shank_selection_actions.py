@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.controller import ShankSelected
+from ephys_alignment_gui.app_results import ShankSelected
 from ephys_alignment_gui.workflow import Failed
 
 logger = logging.getLogger(__name__)

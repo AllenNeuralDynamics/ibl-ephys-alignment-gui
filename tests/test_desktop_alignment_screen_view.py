@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -24,8 +23,13 @@ class FakeDepthPlots:
     def restore_y_ranges(self, ranges: dict[str, tuple[float, float]]) -> None:
         self.calls.append(("restore", ranges))
 
-    def set_default_feature_y_range(self) -> None:
-        self.calls.append("default-range")
+    def set_default_feature_y_range(
+        self,
+        *,
+        depth_view: Any,
+        in_brain_depths_um: Any,
+    ) -> None:
+        self.calls.append(("default-range", depth_view, in_brain_depths_um))
 
 
 class FakeCheckbox:
@@ -55,10 +59,7 @@ class FakeLabel:
         self.text = text
 
 
-def _view(
-    *,
-    active_state: ActiveAlignmentEditScreenState | None = None,
-) -> tuple[
+def _view() -> tuple[
     DesktopAlignmentScreenView,
     FakeDepthPlots,
     FakeCheckbox,
@@ -71,15 +72,9 @@ def _view(
     reference_lines = FakeReferenceLines()
     current_label = FakeLabel()
     total_label = FakeLabel()
-    lin_fit_state = SimpleNamespace(enabled=True)
     view = DesktopAlignmentScreenView(
         depth_plots=depth_plots,
-        set_lin_fit=lambda enabled: setattr(lin_fit_state, "enabled", bool(enabled)),
-        lin_fit_enabled=lambda: lin_fit_state.enabled,
         reference_lines=reference_lines,
-        active_edit_screen_state=lambda: (
-            active_state or ActiveAlignmentEditScreenState(current_idx=0, total_idx=0)
-        ),
         lin_fit_checkbox=checkbox,
         current_index_label=current_label,
         total_index_label=total_label,
@@ -87,13 +82,11 @@ def _view(
     return view, depth_plots, checkbox, reference_lines, current_label, total_label
 
 
-def test_restore_lin_fit_updates_display_state_and_checkbox() -> None:
+def test_set_linear_fit_checked_blocks_checkbox_signals() -> None:
     view, _depth, checkbox, _lines, _current, _total = _view()
 
-    view.restore_lin_fit_from_edit(False)
-    view.restore_lin_fit_from_edit(None)
+    view.set_linear_fit_checked(False)
 
-    assert view.lin_fit_enabled() is False
     assert checkbox.calls == [
         ("block", True),
         ("checked", False),
@@ -103,16 +96,23 @@ def test_restore_lin_fit_updates_display_state_and_checkbox() -> None:
 
 def test_depth_range_methods_delegate_to_depth_plot_view() -> None:
     view, depth_plots, _checkbox, _lines, _current, _total = _view()
+    depth_view = object()
+    in_brain_depths_um = np.array([100.0])
 
     assert view.capture_depth_plot_y_ranges() == {"image": (1.0, 2.0)}
     view.restore_depth_plot_y_ranges({"image": (3.0, 4.0)})
-    view.set_default_feature_y_range()
+    view.set_default_feature_y_range(
+        depth_view=depth_view,
+        in_brain_depths_um=in_brain_depths_um,
+    )
 
-    assert depth_plots.calls == [
+    assert depth_plots.calls[:2] == [
         "capture",
         ("restore", {"image": (3.0, 4.0)}),
-        "default-range",
     ]
+    assert depth_plots.calls[2][0] == "default-range"
+    assert depth_plots.calls[2][1] is depth_view
+    assert depth_plots.calls[2][2] is in_brain_depths_um
 
 
 def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> None:
@@ -121,11 +121,9 @@ def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> N
         total_idx=0,
         previous_feature_positions_um=np.array([1000.0, 2000.0]),
     )
-    view, _depth, _checkbox, reference_lines, _current, _total = _view(
-        active_state=active_state
-    )
+    view, _depth, _checkbox, reference_lines, _current, _total = _view()
 
-    view.create_reference_lines_for_previous_alignment()
+    view.create_reference_lines_for_previous_alignment(active_state)
 
     assert len(reference_lines.previous_features) == 1
     np.testing.assert_allclose(reference_lines.previous_features[0], [1000.0, 2000.0])
@@ -133,11 +131,9 @@ def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> N
 
 def test_update_status_uses_active_edit_history() -> None:
     active_state = ActiveAlignmentEditScreenState(current_idx=2, total_idx=5)
-    view, _depth, _checkbox, _lines, current_label, total_label = _view(
-        active_state=active_state
-    )
+    view, _depth, _checkbox, _lines, current_label, total_label = _view()
 
-    view.update_status()
+    view.update_status(active_state)
 
     assert current_label.text == "Current Index = 2"
     assert total_label.text == "Total Index = 5"

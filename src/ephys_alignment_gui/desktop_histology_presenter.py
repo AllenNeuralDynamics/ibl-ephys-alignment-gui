@@ -12,7 +12,7 @@ from ephys_alignment_gui.alignment_read_models import (
     HistologyPanelRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.histology_panel_presenter import HistologyPanelPresenter
+from ephys_alignment_gui.histology_panel_presenter import HistologyPanelView
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class DesktopHistologyPresenter:
     """Coordinate desktop histology/scale/fit rendering from app read models."""
 
     app: Any
-    panel: HistologyPanelPresenter
+    panel: HistologyPanelView
     callbacks: DesktopHistologyRenderCallbacks
 
     def render_active_aligned(
@@ -76,6 +76,30 @@ class DesktopHistologyPresenter:
     def render_active_fit(self) -> bool:
         """Render the active feature/track fit panel."""
         return self.render_fit()
+
+    def render_active_nearby(
+        self,
+        fig: Any | None = None,
+        *,
+        movable: bool = False,
+    ) -> bool:
+        """Render nearby histology boundary distances in the reference panel."""
+        brain_atlas = self.app.queries.workspace.active_brain_atlas()
+        if brain_atlas is None:
+            logger.error("Cannot render nearby boundaries: brain atlas is not loaded")
+            return False
+        state = self.app.queries.alignment_render.active_nearby_boundary_state(
+            **self.callbacks.probe_extent_query_kwargs(),
+            allen=self.app.queries.workspace.allen_structure_tree(),
+            brain_atlas=brain_atlas,
+        )
+        if state is None:
+            logger.error(
+                "Cannot render nearby boundaries: active alignment data is not loaded"
+            )
+            return False
+        self.panel.render_nearby(state, fig, movable=movable)
+        return True
 
     def render_active_panels(self, *, labels_visible: bool = True) -> bool:
         """Render reference histology, aligned histology, scale, and fit panels."""

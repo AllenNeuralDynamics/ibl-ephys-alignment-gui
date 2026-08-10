@@ -21,16 +21,17 @@ from ephys_alignment_gui.alignment_repository import (
     AlignmentRepository,
 )
 from ephys_alignment_gui.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
-from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
-from ephys_alignment_gui.controller import (
+from ephys_alignment_gui.app_results import (
     AlignmentChoicesUpdated,
-    AlignmentController,
-    Failed,
     PreviousAlignmentSelected,
+    VisitedAlignmentOutputsSaved,
+)
+from ephys_alignment_gui.controller import (
+    AlignmentController,
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.workflow import Blocked, Ok
+from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 
 logger = logging.getLogger(__name__)
 

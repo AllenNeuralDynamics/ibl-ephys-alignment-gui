@@ -16,8 +16,8 @@ from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
     HistologyPanelAxes,
     HistologyPanelPlots,
-    HistologyPanelPresenter,
     HistologyPanelStyle,
+    HistologyPanelView,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,20 +41,15 @@ class DesktopHistologyDisplayPorts:
     linear_fit_curve: Any
     set_axis: Callable[..., Any]
     padding_provider: Callable[[], float]
-    probe_extent_query_kwargs: Callable[[], dict[str, float]]
-    fit_depth_um: Callable[[], Any]
-    lin_fit_enabled: Callable[[], bool]
     scale_factor_y_range: Callable[[], tuple[float, float]]
     histology_available: Callable[[], bool]
-    brain_atlas: Callable[[], Any]
-    allen: Callable[[], Any]
 
 
 @dataclass(frozen=True)
 class DesktopHistologyDisplay:
     """Own the histology panel and app-querying histology presenter."""
 
-    panel: HistologyPanelPresenter
+    panel: HistologyPanelView
     presenter: DesktopHistologyPresenter
     ports: DesktopHistologyDisplayPorts
 
@@ -66,7 +61,7 @@ class DesktopHistologyDisplay:
         ports: DesktopHistologyDisplayPorts,
     ) -> DesktopHistologyDisplay:
         """Build the histology display cluster from desktop ports."""
-        panel = HistologyPanelPresenter(
+        panel = HistologyPanelView(
             plots=HistologyPanelPlots(
                 aligned=ports.aligned_plot,
                 reference=ports.reference_plot,
@@ -90,9 +85,9 @@ class DesktopHistologyDisplay:
             app=app,
             panel=panel,
             callbacks=DesktopHistologyRenderCallbacks(
-                probe_extent_query_kwargs=ports.probe_extent_query_kwargs,
-                fit_depth_um=ports.fit_depth_um,
-                lin_fit_enabled=ports.lin_fit_enabled,
+                probe_extent_query_kwargs=lambda: _probe_extent_query_kwargs(app),
+                fit_depth_um=app.queries.workspace.fit_depth_um,
+                lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
                 scale_factor_y_range=ports.scale_factor_y_range,
             ),
         )
@@ -162,26 +157,7 @@ class DesktopHistologyDisplay:
         movable: bool = False,
     ) -> bool:
         """Render nearby histology boundary distances."""
-        if not self.ports.histology_available():
-            return False
-        brain_atlas = self.ports.brain_atlas()
-        if brain_atlas is None:
-            logger.error("Cannot render nearby boundaries: brain atlas is not loaded")
-            return False
-        state = (
-            self.presenter.app.queries.alignment_render.active_nearby_boundary_state(
-                **self.ports.probe_extent_query_kwargs(),
-                allen=self.ports.allen(),
-                brain_atlas=brain_atlas,
-            )
-        )
-        if state is None:
-            logger.error(
-                "Cannot render nearby boundaries: active alignment data is not loaded"
-            )
-            return False
-        self.panel.render_nearby(state, fig, movable=movable)
-        return True
+        return self.presenter.render_active_nearby(fig, movable=movable)
 
     def toggle_labels(self) -> None:
         """Toggle atlas label axis visibility for both histology panels."""
@@ -210,3 +186,13 @@ class DesktopHistologyDisplay:
     def scale_factor_for_region_item(self, item: Any) -> float | None:
         """Return the scale factor associated with a rendered scale-region item."""
         return self.panel.scale_factor_for_region_item(item)
+
+
+def _probe_extent_query_kwargs(app: Any) -> dict[str, float]:
+    """Return probe extent settings needed for histology-panel queries."""
+    depth_view = app.queries.workspace.depth_view_settings()
+    return {
+        "probe_tip_um": depth_view.probe_tip_um,
+        "probe_top_um": depth_view.probe_top_um,
+        "probe_extra_um": depth_view.probe_extra_um,
+    }

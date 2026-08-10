@@ -121,6 +121,10 @@ class DesktopShankPresenter:
         if screen_preparation.missing_plot_data:
             raise RuntimeError("No active stream runtime for shank plot data")
         assert screen_preparation.plot_data is not None
+        self.app.commands.display.set_probe_limits(
+            min(0.0, float(screen_preparation.plot_data.channel_min_um)),
+            float(screen_preparation.plot_data.channel_max_um),
+        )
         callbacks.apply_plot_data_state(screen_preparation.plot_data)
         if screen_preparation.missing_required_slice_data:
             raise RuntimeError("Could not build active slice data")

@@ -1,4 +1,4 @@
-"""Tests for the desktop histology panel presenter."""
+"""Tests for the desktop histology panel view."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from ephys_alignment_gui.histology_panel_presenter import (
     FitPanelItems,
     HistologyPanelAxes,
     HistologyPanelPlots,
-    HistologyPanelPresenter,
     HistologyPanelStyle,
+    HistologyPanelView,
 )
 
 
@@ -60,13 +60,12 @@ class FakeLine:
         self.sigPositionChanged = FakeSignal()
 
 
-def _presenter(
-) -> tuple[HistologyPanelPresenter, FakeAxis, FakeAxis, FakePlot, FakePlot]:
+def _view() -> tuple[HistologyPanelView, FakeAxis, FakeAxis, FakePlot, FakePlot]:
     aligned_axis = FakeAxis()
     reference_axis = FakeAxis()
     aligned_plot = FakePlot()
     reference_plot = FakePlot()
-    presenter = HistologyPanelPresenter(
+    view = HistologyPanelView(
         plots=HistologyPanelPlots(
             aligned=aligned_plot,
             reference=reference_plot,
@@ -79,15 +78,15 @@ def _presenter(
         set_axis=lambda *args, **kwargs: None,
         padding_provider=lambda: 0.0,
     )
-    return presenter, aligned_axis, reference_axis, aligned_plot, reference_plot
+    return view, aligned_axis, reference_axis, aligned_plot, reference_plot
 
 
 def test_histology_panel_toggles_label_axis_visibility() -> None:
-    presenter, aligned_axis, reference_axis, aligned_plot, reference_plot = _presenter()
+    view, aligned_axis, reference_axis, aligned_plot, reference_plot = _view()
 
-    presenter.toggle_labels()
+    view.toggle_labels()
 
-    assert presenter.label_status is False
+    assert view.label_status is False
     assert aligned_axis.pen is None
     assert aligned_axis.text_pen is None
     assert reference_axis.pen is None
@@ -95,9 +94,9 @@ def test_histology_panel_toggles_label_axis_visibility() -> None:
     assert aligned_plot.update_count == 1
     assert reference_plot.update_count == 1
 
-    presenter.toggle_labels()
+    view.toggle_labels()
 
-    assert presenter.label_status is True
+    assert view.label_status is True
     assert aligned_axis.pen == "k"
     assert aligned_axis.text_pen == "k"
     assert reference_axis.pen == "k"
@@ -107,24 +106,24 @@ def test_histology_panel_toggles_label_axis_visibility() -> None:
 
 
 def test_histology_panel_owns_selected_region_lookup() -> None:
-    presenter, *_ = _presenter()
+    view, *_ = _view()
     selected = object()
     other = object()
-    presenter.hist_regions = np.array([[other], [selected]], dtype=object)
-    presenter.hist_ref_regions = np.array([[object()]], dtype=object)
+    view.hist_regions = np.array([[other], [selected]], dtype=object)
+    view.hist_ref_regions = np.array([[object()]], dtype=object)
 
-    presenter.select_region(selected)
+    view.select_region(selected)
 
-    assert presenter.selected_region_index() == 1
+    assert view.selected_region_index() == 1
 
 
 def test_histology_panel_owns_scale_factor_lookup() -> None:
-    presenter, *_ = _presenter()
+    view, *_ = _view()
     selected = object()
-    presenter.scale_regions = np.array([[object()], [selected]], dtype=object)
-    presenter.scale_factor = np.array([0.75, 1.25])
+    view.scale_regions = np.array([[object()], [selected]], dtype=object)
+    view.scale_factor = np.array([0.75, 1.25])
 
-    assert presenter.scale_factor_for_region_item(selected) == 1.25
+    assert view.scale_factor_for_region_item(selected) == 1.25
 
 
 def test_histology_panel_clear_resets_owned_plots_and_handles() -> None:
@@ -139,7 +138,7 @@ def test_histology_panel_clear_resets_owned_plots_and_handles() -> None:
     linear_fit_curve = FakeFitItem()
     tip_line = FakeLine()
     top_line = FakeLine()
-    presenter = HistologyPanelPresenter(
+    view = HistologyPanelView(
         plots=HistologyPanelPlots(
             aligned=aligned_plot,
             reference=reference_plot,
@@ -159,18 +158,18 @@ def test_histology_panel_clear_resets_owned_plots_and_handles() -> None:
             linear_fit_curve=linear_fit_curve,
         ),
     )
-    presenter.tip_pos = tip_line
-    presenter.top_pos = top_line
-    presenter.hist_regions = np.array([[object()]], dtype=object)
-    presenter.hist_ref_regions = np.array([[object()]], dtype=object)
-    presenter.scale_regions = np.array([[object()]], dtype=object)
-    presenter.scale_factor = np.array([1.0])
-    presenter.selected_region = object()
-    presenter.hist_label_items = [object()]
-    presenter.hist_ref_label_items = [object()]
-    presenter._probe_extent = object()
+    view.tip_pos = tip_line
+    view.top_pos = top_line
+    view.hist_regions = np.array([[object()]], dtype=object)
+    view.hist_ref_regions = np.array([[object()]], dtype=object)
+    view.scale_regions = np.array([[object()]], dtype=object)
+    view.scale_factor = np.array([1.0])
+    view.selected_region = object()
+    view.hist_label_items = [object()]
+    view.hist_ref_label_items = [object()]
+    view._probe_extent = object()
 
-    presenter.clear()
+    view.clear()
 
     assert aligned_plot.clear_count == 1
     assert reference_plot.clear_count == 1
@@ -181,13 +180,13 @@ def test_histology_panel_clear_resets_owned_plots_and_handles() -> None:
     assert linear_fit_curve.calls == [{}]
     assert tip_line.sigPositionChanged.disconnect_count == 1
     assert top_line.sigPositionChanged.disconnect_count == 1
-    assert presenter.tip_pos is None
-    assert presenter.top_pos is None
-    assert presenter.hist_regions.size == 0
-    assert presenter.hist_ref_regions.size == 0
-    assert presenter.scale_regions.size == 0
-    assert presenter.scale_factor is None
-    assert presenter.selected_region is None
-    assert presenter.hist_label_items == []
-    assert presenter.hist_ref_label_items == []
-    assert presenter._probe_extent is None
+    assert view.tip_pos is None
+    assert view.top_pos is None
+    assert view.hist_regions.size == 0
+    assert view.hist_ref_regions.size == 0
+    assert view.scale_regions.size == 0
+    assert view.scale_factor is None
+    assert view.selected_region is None
+    assert view.hist_label_items == []
+    assert view.hist_ref_label_items == []
+    assert view._probe_extent is None

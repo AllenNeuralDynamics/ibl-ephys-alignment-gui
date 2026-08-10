@@ -40,19 +40,21 @@ class DesktopWorkbench:
         app: Any,
         parent: Any,
         views: DesktopViews,
+        displays: DesktopDisplays,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
         """Build and configure the focused desktop presenters."""
-        displays = views.displays
         render_cluster = build_desktop_render_cluster(
             app=app,
             views=views,
+            displays=displays,
             ports=ports,
         )
         presenter_cluster = build_desktop_workbench_presenter_cluster(
             app=app,
             parent=parent,
             views=views,
+            displays=displays,
             ports=ports,
             render_cluster=render_cluster,
         )
@@ -81,6 +83,16 @@ class DesktopWorkbench:
         for subscription in self._event_subscriptions:
             subscription.disconnect()
         self._event_subscriptions.clear()
+
+    def initialize_startup_stream_state(self) -> None:
+        """Initialize stream-dependent app and desktop state at startup."""
+        self.presenter_cluster.lifecycle_presenter.initialize_startup_stream_state()
+
+    def initialize_region_lookup(self, init_region_lookup: Any) -> None:
+        """Populate desktop region lookup widgets from app atlas metadata."""
+        self.presenter_cluster.interaction_presenter.initialize_region_lookup(
+            init_region_lookup
+        )
 
     def render_loaded_shank(
         self,
@@ -111,6 +123,15 @@ class DesktopWorkbench:
     ) -> bool:
         """Render the active reference histology panel."""
         return self.displays.histology.render_active_reference(fig, movable=movable)
+
+    def render_active_nearby_histology(
+        self,
+        fig: Any | None = None,
+        *,
+        movable: bool = False,
+    ) -> bool:
+        """Render the active nearby-boundary histology panel."""
+        return self.displays.histology.render_active_nearby(fig, movable=movable)
 
     def render_active_scale_factor(self) -> bool:
         """Render the active scale-factor panel."""
@@ -193,6 +214,46 @@ class DesktopWorkbench:
         """Reset the active alignment to initialized geometry."""
         return self.render_cluster.alignment_edit_actions.reset_button_pressed()
 
+    def toggle_histology_boundaries(self) -> bool:
+        """Toggle nearby/reference histology boundary display."""
+        return self.render_cluster.display_actions.toggle_histology_boundaries()
+
+    def toggle_region_annotation_source(self) -> None:
+        """Toggle region annotation source and refresh histology panels."""
+        self.render_cluster.display_actions.toggle_region_annotation_source()
+
+    def toggle_labels(self) -> None:
+        """Toggle atlas label visibility on histology panels."""
+        self.render_cluster.display_actions.toggle_labels()
+
+    def toggle_reference_lines(self) -> None:
+        """Toggle reference-line visibility on desktop plots."""
+        self.render_cluster.display_actions.toggle_reference_lines()
+
+    def toggle_channels(self) -> None:
+        """Toggle channel overlays on slice panels."""
+        self.render_cluster.display_actions.toggle_channels()
+
+    def delete_selected_reference_line(self) -> None:
+        """Delete the currently selected reference line."""
+        self.render_cluster.display_actions.delete_selected_reference_line()
+
+    def reset_axis(self) -> None:
+        """Reset feature-depth y-range and feature image x-range."""
+        self.render_cluster.display_actions.reset_axis()
+
+    def set_linear_fit_enabled(self, enabled: bool) -> bool:
+        """Set linear-fit option and recompute when reference lines exist."""
+        return self.render_cluster.display_actions.set_linear_fit_enabled(enabled)
+
+    def sync_histology_top_to_tip(self) -> None:
+        """Keep histology top line synchronized to the current tip line."""
+        self.render_cluster.display_actions.sync_histology_top_to_tip()
+
+    def sync_histology_tip_to_top(self) -> None:
+        """Keep histology tip line synchronized to the current top line."""
+        self.render_cluster.display_actions.sync_histology_tip_to_top()
+
     def ensure_output_directory_for_save(self, requirement: Any | None = None) -> bool:
         """Require a save location before writing alignment outputs."""
         return self.presenter_cluster.output_folder_prompt.ensure_for_save(requirement)
@@ -243,6 +304,10 @@ class DesktopWorkbench:
     def export_plots(self, output_dir: Path, *, sess_info: str = "") -> None:
         """Export all desktop plot panels for the active shank."""
         self.presenter_cluster.plot_exporter.export(output_dir, sess_info=sess_info)
+
+    def save_plots(self, save_path: Any = None) -> bool:
+        """Save all desktop plot panels to an explicit or app-derived folder."""
+        return self.presenter_cluster.plot_export_presenter.save_plots(save_path)
 
     def display_session_notes(self) -> None:
         """Show session notes for the active stream."""

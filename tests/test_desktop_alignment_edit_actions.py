@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.controller import AlignmentEditApplied, AlignmentEditNoop
+from ephys_alignment_gui.app_results import AlignmentEditApplied, AlignmentEditNoop
 from ephys_alignment_gui.desktop_alignment_edit_actions import (
     NUDGE_STEP_M,
     DesktopAlignmentEditActionCallbacks,

@@ -28,25 +28,22 @@ from ephys_alignment_gui.alignment_repository import (
 from ephys_alignment_gui.app_queries import AlignmentQueries
 from ephys_alignment_gui.app_results import (
     ActiveStreamDetached,
+    AlignmentChoicesUpdated,
+    AlignmentEditApplied,
+    AlignmentEditNoop,
     CachedEphysDataActivated,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
-    LoadedShankPrepared,
-    StreamCacheEvicted,
-    VisitedAlignmentOutputsSaved,
-)
-from ephys_alignment_gui.controller import (
-    AlignmentChoicesUpdated,
-    AlignmentEditApplied,
-    AlignmentEditNoop,
-    Failed,
     LoadDataPrepared,
+    LoadedShankPrepared,
     PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
     ShankSelected,
+    StreamCacheEvicted,
+    VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
@@ -67,7 +64,7 @@ from ephys_alignment_gui.session_runtime import (
 )
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceRuntime
-from ephys_alignment_gui.workflow import Blocked, Ok
+from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 

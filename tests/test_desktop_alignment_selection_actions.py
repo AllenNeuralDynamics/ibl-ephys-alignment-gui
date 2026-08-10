@@ -5,8 +5,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app_results import LoadedShankPrepared
-from ephys_alignment_gui.controller import PreviousAlignmentSelected
+from ephys_alignment_gui.app_results import (
+    LoadedShankPrepared,
+    PreviousAlignmentSelected,
+)
 from ephys_alignment_gui.desktop_alignment_selection_actions import (
     DesktopAlignmentSelectionActions,
     DesktopAlignmentSelectionCallbacks,

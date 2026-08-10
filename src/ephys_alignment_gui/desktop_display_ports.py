@@ -34,10 +34,9 @@ def desktop_ephys_display_ports_from_main_window(
 
 def desktop_histology_display_ports_from_main_window(
     window: Any,
-    *,
-    app: Any,
 ) -> DesktopHistologyDisplayPorts:
     """Adapt MainWindow plot handles to histology display ports."""
+    histology_available = window.app.queries.workspace.histology_data_loaded
     return DesktopHistologyDisplayPorts(
         aligned_plot=window.fig_hist,
         reference_plot=window.fig_hist_ref,
@@ -53,13 +52,8 @@ def desktop_histology_display_ports_from_main_window(
         linear_fit_curve=window.fit_plot_lin,
         set_axis=window.set_axis,
         padding_provider=lambda: window.pad,
-        probe_extent_query_kwargs=window._probe_extent_query_kwargs,
-        fit_depth_um=app.queries.workspace.fit_depth_um,
-        lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
         scale_factor_y_range=window._scale_factor_y_range,
-        histology_available=lambda: window.histology_exists,
-        brain_atlas=app.queries.workspace.active_brain_atlas,
-        allen=app.queries.workspace.allen_structure_tree,
+        histology_available=histology_available,
     )
 
 
@@ -81,6 +75,7 @@ def desktop_slice_display_ports_from_main_window(
     window: Any,
 ) -> DesktopSliceDisplayPorts:
     """Adapt MainWindow plot handles to slice display ports."""
+    histology_available = window.app.queries.workspace.histology_data_loaded
     return DesktopSliceDisplayPorts(
         coronal_plot=window.fig_slice,
         coronal_layout=window.fig_slice_layout,
@@ -89,18 +84,16 @@ def desktop_slice_display_ports_from_main_window(
         dotted_pen=window.kpen_dot,
         solid_pen=window.kpen_solid,
         reference_line_pen=window.reference_line_kpen,
-        histology_exists=lambda: getattr(window, "histology_exists", False),
+        histology_exists=histology_available,
         slice_item=window.slice_item,
     )
 
 
-def desktop_display_ports_from_main_window(
-    window: Any, *, app: Any
-) -> DesktopDisplayPorts:
+def desktop_display_ports_from_main_window(window: Any) -> DesktopDisplayPorts:
     """Adapt MainWindow plot handles to desktop display-region ports."""
     return DesktopDisplayPorts(
         ephys=desktop_ephys_display_ports_from_main_window(window),
-        histology=desktop_histology_display_ports_from_main_window(window, app=app),
+        histology=desktop_histology_display_ports_from_main_window(window),
         reference_lines=desktop_reference_line_display_ports_from_main_window(window),
         slice=desktop_slice_display_ports_from_main_window(window),
     )

@@ -29,6 +29,12 @@ class DesktopLifecyclePresenter:
         """Reset desktop-owned per-stream state that is not in the app model."""
         self.callbacks.reset_raw_image_payloads()
 
+    def initialize_startup_stream_state(self) -> None:
+        """Initialize stream-dependent app and desktop state at startup."""
+        self.callbacks.close_popups()
+        self.callbacks.reset_raw_image_payloads()
+        self.app.commands.load.detach_active_stream()
+
     def clear_active_stream_presentation(self) -> None:
         """Clear plot handles and popups for the active stream presentation."""
         self.displays.reference_lines.clear()

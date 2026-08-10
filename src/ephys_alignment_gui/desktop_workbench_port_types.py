@@ -14,12 +14,8 @@ from ephys_alignment_gui.desktop_export_view import DesktopExportView
 class DesktopAlignmentRenderPorts:
     """Desktop operations needed to render alignment edits."""
 
-    restore_lin_fit: Callable[[bool | None], None]
     capture_depth_plot_y_ranges: Callable[[], Any]
     restore_depth_plot_y_ranges: Callable[[Any], None]
-    create_reference_lines_for_previous_alignment: Callable[[], None]
-    set_default_feature_y_range: Callable[[], None]
-    update_status: Callable[[], None]
 
 
 @dataclass(frozen=True)
@@ -63,7 +59,6 @@ class DesktopLoadDataPorts:
     """Desktop operations needed by heavy data load presentation."""
 
     clear_empty_state: Callable[[], None]
-    set_histology_available: Callable[[bool], None]
 
 
 @dataclass(frozen=True)

@@ -60,6 +60,16 @@ class DesktopInteractionPresenter:
     infinite_line_type: type = pg.InfiniteLine
     linear_region_type: type = pg.LinearRegionItem
 
+    def initialize_region_lookup(
+        self,
+        init_region_lookup: Callable[[Any], None],
+    ) -> None:
+        """Populate desktop region lookup widgets from app atlas metadata."""
+        allen = self.app.queries.workspace.allen_structure_tree()
+        if allen is None:
+            raise RuntimeError("Allen structure metadata is unavailable")
+        init_region_lookup(allen)
+
     def display_session_notes(self) -> None:
         """Show session notes for the active stream."""
         notes_window = self.popup_window_factory(

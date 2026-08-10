@@ -1,4 +1,4 @@
-"""Desktop presenter/view adapter for histology region panels."""
+"""Desktop pyqtgraph view/layer for histology region panels."""
 
 from __future__ import annotations
 
@@ -58,8 +58,8 @@ class HistologyPanelStyle:
 
 
 @dataclass
-class HistologyPanelPresenter:
-    """Render histology region state into the desktop pyqtgraph panels."""
+class HistologyPanelView:
+    """Render histology region state into desktop pyqtgraph panels."""
 
     plots: HistologyPanelPlots
     axes: HistologyPanelAxes

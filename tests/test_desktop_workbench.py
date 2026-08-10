@@ -90,6 +90,15 @@ class FakeHistologyDisplay:
         self.calls.append(("reference", fig, movable))
         return True
 
+    def render_active_nearby(
+        self,
+        fig: Any | None = None,
+        *,
+        movable: bool = False,
+    ) -> bool:
+        self.calls.append(("nearby", fig, movable))
+        return True
+
     def render_active_scale_factor(self) -> bool:
         self.calls.append("scale")
         return True
@@ -165,6 +174,43 @@ class FakeAlignmentSelectionActions:
     def alignment_selected(self, idx: int) -> bool:
         self.calls.append(("alignment", idx))
         return True
+
+
+class FakeDisplayActions:
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    def toggle_histology_boundaries(self) -> bool:
+        self.calls.append("toggle-histology-boundaries")
+        return True
+
+    def toggle_region_annotation_source(self) -> None:
+        self.calls.append("toggle-region-annotation-source")
+
+    def toggle_labels(self) -> None:
+        self.calls.append("toggle-labels")
+
+    def toggle_reference_lines(self) -> None:
+        self.calls.append("toggle-reference-lines")
+
+    def toggle_channels(self) -> None:
+        self.calls.append("toggle-channels")
+
+    def delete_selected_reference_line(self) -> None:
+        self.calls.append("delete-selected-reference-line")
+
+    def reset_axis(self) -> None:
+        self.calls.append("reset-axis")
+
+    def set_linear_fit_enabled(self, enabled: bool) -> bool:
+        self.calls.append(("set-linear-fit", enabled))
+        return True
+
+    def sync_histology_top_to_tip(self) -> None:
+        self.calls.append("sync-histology-top-to-tip")
+
+    def sync_histology_tip_to_top(self) -> None:
+        self.calls.append("sync-histology-tip-to-top")
 
 
 class FakeMouseRootPresenter:
@@ -292,6 +338,15 @@ class FakePlotExporter:
 
     def export(self, output_dir: Any, *, sess_info: str = "") -> None:
         self.exports.append((output_dir, sess_info))
+
+
+class FakePlotExportPresenter:
+    def __init__(self) -> None:
+        self.saved_paths: list[Any] = []
+
+    def save_plots(self, save_path: Any = None) -> bool:
+        self.saved_paths.append(save_path)
+        return True
 
 
 class FakeEphysDisplay:
@@ -432,11 +487,13 @@ def _workbench(
     save: Any | None = None,
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
+    plot_export_presenter: Any | None = None,
     interaction: Any | None = None,
     lifecycle: Any | None = None,
     reference_line_presenter: Any | None = None,
     histology_refresh_presenter: Any | None = None,
     alignment_edit_actions: Any | None = None,
+    display_actions: Any | None = None,
     shank_selection_actions: Any | None = None,
     alignment_selection_actions: Any | None = None,
     ephys_display: Any | None = None,
@@ -455,6 +512,7 @@ def _workbench(
         reference_line_presenter=reference_line_presenter or object(),
         histology_refresh_presenter=histology_refresh_presenter or object(),
         alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
+        display_actions=display_actions or FakeDisplayActions(),
         shank_selection_actions=(
             shank_selection_actions or FakeShankSelectionActions()
         ),
@@ -479,6 +537,7 @@ def _workbench(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
+        plot_export_presenter=plot_export_presenter or FakePlotExportPresenter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
         lifecycle_presenter=lifecycle or object(),
     )
@@ -521,6 +580,7 @@ def test_workbench_delegates_focused_presenter_entry_points() -> None:
     workbench.render_loaded_shank(shank_idx=2, preserve_plot_selection=True)
     workbench.render_active_aligned_histology("fig", movable=False)
     workbench.render_active_reference_histology("ref", movable=True)
+    workbench.render_active_nearby_histology("nearby", movable=True)
     workbench.render_active_scale_factor()
     workbench.render_active_fit()
     workbench.render_active_histology_panels()
@@ -529,6 +589,7 @@ def test_workbench_delegates_focused_presenter_entry_points() -> None:
     assert histology.calls == [
         ("aligned", "fig", False),
         ("reference", "ref", True),
+        ("nearby", "nearby", True),
         "scale",
         "fit",
         "panels",
@@ -548,8 +609,10 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     save = FakeSavePresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     plot_exporter = FakePlotExporter()
+    plot_export_presenter = FakePlotExportPresenter()
     interaction = FakeInteractionPresenter()
     alignment_edit_actions = FakeAlignmentEditActions()
+    display_actions = FakeDisplayActions()
     shank_selection_actions = FakeShankSelectionActions()
     alignment_selection_actions = FakeAlignmentSelectionActions()
     workbench = _workbench(
@@ -568,8 +631,10 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         save=save,
         previous_alignment_load=previous_alignment_load,
         plot_exporter=plot_exporter,
+        plot_export_presenter=plot_export_presenter,
         interaction=interaction,
         alignment_edit_actions=alignment_edit_actions,
+        display_actions=display_actions,
         shank_selection_actions=shank_selection_actions,
         alignment_selection_actions=alignment_selection_actions,
     )
@@ -601,6 +666,17 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.qc_button_clicked()
     assert workbench.load_existing_alignments()
     workbench.export_plots("plots", sess_info="session-")
+    assert workbench.save_plots("save-plots")
+    assert workbench.toggle_histology_boundaries()
+    workbench.toggle_region_annotation_source()
+    workbench.toggle_labels()
+    workbench.toggle_reference_lines()
+    workbench.toggle_channels()
+    workbench.delete_selected_reference_line()
+    workbench.reset_axis()
+    assert workbench.set_linear_fit_enabled(True)
+    workbench.sync_histology_top_to_tip()
+    workbench.sync_histology_tip_to_top()
     workbench.display_session_notes()
     workbench.popup_closed("popup")
     workbench.popup_moved()
@@ -632,6 +708,19 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
+    assert plot_export_presenter.saved_paths == ["save-plots"]
+    assert display_actions.calls == [
+        "toggle-histology-boundaries",
+        "toggle-region-annotation-source",
+        "toggle-labels",
+        "toggle-reference-lines",
+        "toggle-channels",
+        "delete-selected-reference-line",
+        "reset-axis",
+        ("set-linear-fit", True),
+        "sync-histology-top-to-tip",
+        "sync-histology-tip-to-top",
+    ]
     assert alignment_edit_actions.calls == [
         "fit",
         ("offset", 0.5),
@@ -662,12 +751,8 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
 def _render_ports() -> DesktopRenderPorts:
     return DesktopRenderPorts(
         alignment=DesktopAlignmentRenderPorts(
-            restore_lin_fit=lambda _lin_fit: None,
             capture_depth_plot_y_ranges=lambda: None,
             restore_depth_plot_y_ranges=lambda _ranges: None,
-            create_reference_lines_for_previous_alignment=lambda: None,
-            set_default_feature_y_range=lambda: None,
-            update_status=lambda: None,
         ),
         shank=DesktopShankRenderPorts(
             capture_plot_selection=lambda _preserve: DesktopShankSelectionState(),
@@ -696,7 +781,6 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
         ),
         load_data=DesktopLoadDataPorts(
             clear_empty_state=lambda: None,
-            set_histology_available=lambda _available: None,
         ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=lambda: None,
@@ -804,7 +888,6 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     views = DesktopViews(
         selection=object(),
         path=object(),
-        displays=displays,
         depth=object(),
         shank_screen=object(),
         alignment_screen=object(),
@@ -815,6 +898,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         app=app,
         parent=object(),
         views=views,
+        displays=displays,
         ports=ports,
     )
 

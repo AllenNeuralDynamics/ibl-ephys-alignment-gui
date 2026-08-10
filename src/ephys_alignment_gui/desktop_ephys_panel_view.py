@@ -96,7 +96,7 @@ class DesktopEphysPanelView:
             y=data["y"],
             symbol=data["symbol"].tolist(),
             size=data["size"].tolist(),
-            brush=data["colours"].tolist(),
+            brush=self._qt_colours(data["colours"]),
             pen=data["pen"],
         )
 
@@ -265,6 +265,22 @@ class DesktopEphysPanelView:
             offset[1],
             1.0,
         ]
+
+    @staticmethod
+    def _qt_colours(colours: Any) -> list[Any]:
+        """Convert plain color payloads into Qt colors for pyqtgraph brushes."""
+        values = np.asarray(colours, dtype=object).tolist()
+        converted = []
+        for value in values:
+            if isinstance(value, QtGui.QColor):
+                converted.append(value)
+            elif isinstance(value, str):
+                converted.append(QtGui.QColor(value))
+            elif isinstance(value, (tuple, list)):
+                converted.append(QtGui.QColor(*[int(channel) for channel in value]))
+            else:
+                converted.append(value)
+        return converted
 
     @staticmethod
     def _phase_legend_item() -> Any:

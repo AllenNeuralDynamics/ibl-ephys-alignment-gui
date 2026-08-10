@@ -9,15 +9,15 @@ import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
 from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
-from ephys_alignment_gui.controller import (
+from ephys_alignment_gui.app_results import (
     AlignmentChoicesUpdated,
-    AlignmentController,
     AlignmentEditApplied,
     PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
     ShankRuntimeInitialized,
     ShankSelected,
 )
+from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 

@@ -6,10 +6,11 @@ from dataclasses import dataclass
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.app_results import LoadedShankPrepared
-from ephys_alignment_gui.controller import AlignmentController, Failed
+from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.histology_data_service import HistologyDataContext
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.workflow import Failed
 
 
 @dataclass

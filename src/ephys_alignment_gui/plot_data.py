@@ -1,6 +1,4 @@
-import json
 import logging
-import re
 
 import numpy as np
 
@@ -14,14 +12,19 @@ from matplotlib import cm
 from numpy.typing import NDArray
 from one.alf.io import AlfBunch
 from pandas import DataFrame
-from PyQt5 import QtGui
 
-from ephys_alignment_gui.channel_geometry import (
-    n_shanks_from_geometry,
-    rows_for_shank,
-    valid_shank_indices,
-)
 from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
+from ephys_alignment_gui.lfp_correlation_plot_data import (
+    LfpCorrelationPlotDataBuilder,
+)
+from ephys_alignment_gui.plot_channel_geometry import (
+    PlotChannelGeometry,
+    build_plot_channel_geometry,
+)
+from ephys_alignment_gui.plot_level_policy import (
+    in_brain_depth_mask,
+    probe_colour_levels,
+)
 from ephys_alignment_gui.utils import bincount2D
 
 logger = logging.getLogger(__name__)
@@ -72,36 +75,12 @@ class PlotData:
         self.shank_idx = shank_idx
         self.channel_collection = channel_collection
 
-        if channel_collection is None:
-            self._init_channel_geometry_from_alf_data(shank_idx)
-        else:
-            self._init_channel_geometry_from_collection(channel_collection)
-
-        # Remove duplicate (x, y) coordinates (e.g. overlapping surface-finding
-        # channels on multi-shank probes), keeping the first occurrence.
-        _, unique_idx = np.unique(self.chn_coords, axis=0, return_index=True)
-        unique_idx = np.sort(unique_idx)
-        self.chn_coords = self.chn_coords[unique_idx]
-        self.chn_ind = self.chn_ind[unique_idx]
-        self.chn_rows = self.chn_rows[unique_idx]
-
-        self.chn_min = np.min(self.chn_coords[:, 1])
-        self.chn_max = np.max(self.chn_coords[:, 1])
-        unique_depths = np.unique(self.chn_coords[:, 1])
-        self.chn_diff = (
-            np.min(np.abs(np.diff(unique_depths))) if unique_depths.size > 1 else 1.0
+        self.channel_geometry = build_plot_channel_geometry(
+            data,
+            shank_idx,
+            channel_collection=channel_collection,
         )
-        self.chn_full = np.arange(
-            self.chn_min, self.chn_max + self.chn_diff, self.chn_diff
-        )
-
-        chn_sort = np.argsort(self.chn_coords[:, 1])
-        self.chn_coords = self.chn_coords[chn_sort]
-        self.chn_ind = self.chn_ind[chn_sort]
-        self.chn_rows = self.chn_rows[chn_sort]
-
-        self.N_BNK = len(np.unique(self.chn_coords[:, 0]))
-        self.idx_full = np.where(np.isin(self.chn_full, self.chn_coords[:, 1]))[0]
+        self._apply_channel_geometry(self.channel_geometry)
 
         # Depths (um) of channels currently inside the brain, per the active
         # alignment (set by the GUI after this PlotData is built). None means
@@ -132,57 +111,22 @@ class PlotData:
         logger.debug(f"Spike idx: {self.spike_idx}")
         logger.debug(f"Keep idx: {self.kp_idx}")
 
-    def _init_channel_geometry_from_collection(
-        self, channel_collection: ChannelCollectionView
-    ) -> None:
-        """Initialize channel geometry from a runtime channel-collection view."""
-        channel_table = channel_collection.channel_table
-        self.chn_coords_all = channel_table.local_coordinates
-        self.chn_raw_ind_all = (
-            channel_table.raw_ind
-            if channel_table.raw_ind is not None
-            else np.arange(self.chn_coords_all.shape[0])
-        ).astype(int)
-        self.chn_contact_id_all = channel_table.contact_ids
-        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
-        self.chn_shank_ind_all = channel_table.shank_indices
-        self.chn_rows = channel_collection.rows.copy()
-        if self.chn_rows.size == 0:
-            logger.warning(
-                "No channels found for shank %d; falling back to all channels",
-                channel_collection.shank_idx,
-            )
-            self.chn_rows = self.chn_ind_all
-        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
-        self.chn_ind = self.chn_rows.copy()
-
-    def _init_channel_geometry_from_alf_data(self, shank_idx) -> None:
-        """Initialize channel geometry from legacy ALF channel metadata."""
-        self.chn_coords_all = self.data["channels"]["localCoordinates"]
-        self.chn_raw_ind_all = (
-            self.data["channels"]
-            .get("rawInd", np.arange(self.chn_coords_all.shape[0]))
-            .astype(int)
-        )
-        self.chn_contact_id_all = self.data["channels"].get("contactId")
-        self.chn_ind_all = np.arange(self.chn_coords_all.shape[0], dtype=int)
-        self.chn_shank_ind_all = valid_shank_indices(
-            self.data["channels"].get("shankInd"),
-            self.chn_coords_all.shape[0],
-        )
-
-        n_shanks = n_shanks_from_geometry(self.chn_coords_all, self.chn_shank_ind_all)
-        self.chn_rows = rows_for_shank(
-            self.chn_coords_all, self.chn_shank_ind_all, shank_idx, n_shanks
-        )
-        if self.chn_rows.size == 0:
-            logger.warning(
-                "No channels found for shank %d; falling back to all channels",
-                shank_idx,
-            )
-            self.chn_rows = self.chn_ind_all
-        self.chn_coords = self.chn_coords_all[self.chn_rows, :]
-        self.chn_ind = self.chn_rows.copy()
+    def _apply_channel_geometry(self, geometry: PlotChannelGeometry) -> None:
+        """Expose derived channel geometry on the legacy PlotData attributes."""
+        self.chn_coords_all = geometry.chn_coords_all
+        self.chn_raw_ind_all = geometry.chn_raw_ind_all
+        self.chn_contact_id_all = geometry.chn_contact_id_all
+        self.chn_ind_all = geometry.chn_ind_all
+        self.chn_shank_ind_all = geometry.chn_shank_ind_all
+        self.chn_rows = geometry.chn_rows
+        self.chn_coords = geometry.chn_coords
+        self.chn_ind = geometry.chn_ind
+        self.chn_min = geometry.chn_min
+        self.chn_max = geometry.chn_max
+        self.chn_diff = geometry.chn_diff
+        self.chn_full = geometry.chn_full
+        self.N_BNK = geometry.n_banks
+        self.idx_full = geometry.idx_full
 
     def cached(self, method: str, args: tuple = ()):
         """Return ``self.<method>(*args)``, memoized per PlotData instance.
@@ -294,7 +238,7 @@ class PlotData:
                         > amp_bins[iA]
                     )[0]
                     # Make saturated spikes a very dark purple
-                    spikes_colours[idx] = QtGui.QColor("#400080")
+                    spikes_colours[idx] = (64, 0, 128)
                 else:
                     idx = np.where(
                         (
@@ -306,7 +250,7 @@ class PlotData:
                             <= amp_bins[iA + 1]
                         )
                     )[0]
-                    spikes_colours[idx] = QtGui.QColor(*colours[iA])
+                    spikes_colours[idx] = tuple(int(channel) for channel in colours[iA])
 
                 spikes_size[idx] = iA / (A_BIN / 4)
 
@@ -449,7 +393,11 @@ class PlotData:
 
             # img columns are D_BIN-wide depth bins; constrain the colour range
             # to bins containing in-brain channels (emitted img unchanged).
-            col = self._in_brain_col_mask(depths, bin_width=D_BIN)
+            col = in_brain_depth_mask(
+                depths,
+                self.in_brain_depths_um,
+                bin_width=D_BIN,
+            )
             fr_by_depth = np.mean(img if col is None else img[:, col], axis=0)
 
             data_img = {
@@ -555,7 +503,11 @@ class PlotData:
             scale = (np.max(depths) - np.min(depths)) / corr.shape[0]
             # corr is (depth-bin x depth-bin); constrain the colour range to the
             # in-brain x in-brain sub-block (emitted matrix unchanged).
-            col = self._in_brain_col_mask(depths, bin_width=D_BIN)
+            col = in_brain_depth_mask(
+                depths,
+                self.in_brain_depths_um,
+                bin_width=D_BIN,
+            )
             corr_lvl = corr if col is None else corr[np.ix_(col, col)]
             data_img = {
                 "img": corr,
@@ -568,47 +520,6 @@ class PlotData:
                 "xaxis": "Distance from probe tip (um)",
             }
             return data_img
-
-    def _in_brain_col_mask(self, depth_axis_um, bin_width=None):
-        """Boolean mask over an image depth axis selecting in-brain columns.
-
-        Returns ``None`` (caller should use the full array — today's behavior)
-        when ``in_brain_depths_um`` is unset/empty or nothing maps in-brain.
-        ``depth_axis_um`` is the per-column depth coordinate of the target
-        array. With ``bin_width`` given the axis is treated as bincount bin
-        centers and each in-brain channel marks the bin it falls in; otherwise
-        the axis is matched to channel depths exactly (``np.isin``).
-        """
-        if self.in_brain_depths_um is None:
-            return None
-        axis = np.asarray(depth_axis_um, dtype=float)
-        in_brain = np.asarray(self.in_brain_depths_um, dtype=float)
-        if axis.size == 0 or in_brain.size == 0:
-            return None
-        if bin_width is None:
-            mask = np.isin(axis, in_brain)
-        else:
-            idx = np.round((in_brain - axis[0]) / bin_width).astype(int)
-            idx = idx[(idx >= 0) & (idx < axis.size)]
-            mask = np.zeros(axis.size, dtype=bool)
-            mask[idx] = True
-        if not mask.any():
-            return None
-        return mask
-
-    def _probe_levels(self, values, quantiles=(0.1, 0.9)):
-        """Colour levels from in-brain channels when known, else all channels.
-
-        ``values`` is a per-channel array ordered like ``self.chn_coords``.
-        When the GUI has set ``self.in_brain_depths_um`` (via the aligned CCF
-        annotation, excluding void), channels outside the brain are dropped so
-        their extremes don't blow out the probe colour range.
-        """
-        vals = np.asarray(values, dtype=float)
-        mask = self._in_brain_col_mask(self.chn_coords[:, 1])
-        if mask is not None and mask.shape[0] == vals.shape[0]:
-            vals = vals[mask]
-        return np.nanquantile(vals, list(quantiles))
 
     def get_rms_data_img_probe(self, format):
         # Finds channels that are at equivalent depth on probe and averages rms values for each
@@ -651,7 +562,7 @@ class PlotData:
         # the colour levels to in-brain depths so out-of-brain channels don't
         # blow out the range. Emitted img is unchanged; only levels narrow.
         unique_depths = np.unique(self.chn_coords[:, 1])
-        col = self._in_brain_col_mask(unique_depths)
+        col = in_brain_depth_mask(unique_depths, self.in_brain_depths_um)
         levels = np.nanquantile(img if col is None else img[:, col], [0.1, 0.9])
         xscale = (
             self.data[f"rms_{format}"]["timestamps"][-1]
@@ -687,7 +598,11 @@ class PlotData:
                 indices=self.chn_ind,
             )
         ) * 1e6
-        probe_levels = self._probe_levels(rms_avg)
+        probe_levels = probe_colour_levels(
+            rms_avg,
+            channel_depths_um=self.chn_coords[:, 1],
+            in_brain_depths_um=self.in_brain_depths_um,
+        )
         probe_img, probe_scale, probe_offset = self.arrange_channels2banks(rms_avg)
 
         data_probe = {
@@ -814,7 +729,7 @@ class PlotData:
             # img_log columns are the unique channel depths; constrain the
             # symmetric colour range to in-brain depths (emitted img unchanged).
             unique_depths = np.unique(self.chn_coords[:, 1])
-            col = self._in_brain_col_mask(unique_depths)
+            col = in_brain_depth_mask(unique_depths, self.in_brain_depths_um)
             level_src = img_log if col is None else img_log[:, col]
             finite_vals = level_src[np.isfinite(level_src)]
             if len(finite_vals) > 0:
@@ -854,7 +769,11 @@ class PlotData:
                 probe_img, probe_scale, probe_offset = self.arrange_channels2banks(
                     lfp_avg_dB
                 )
-                probe_levels = self._probe_levels(lfp_avg_dB)
+                probe_levels = probe_colour_levels(
+                    lfp_avg_dB,
+                    channel_depths_um=self.chn_coords[:, 1],
+                    in_brain_depths_um=self.in_brain_depths_um,
+                )
 
                 lfp_band_data = {
                     f"{freq[0]} - {freq[1]} Hz": {
@@ -872,303 +791,14 @@ class PlotData:
 
             return data_img, data_probe
 
-    def _load_row_channels(self, lfp_corr_folder):
-        """Load producer row-to-channel metadata for LFP band matrices."""
-        path = lfp_corr_folder / "row_channels.json"
-        if not path.exists():
-            return None
-        try:
-            with open(path) as f:
-                return json.load(f)
-        except Exception:
-            logger.warning("Failed to load row_channels.json", exc_info=True)
-            return None
-
-    def _matrix_rows_for_current_shank(self, row_channels):
-        """Return channel-table rows for the active shank matrix."""
-        if not row_channels:
-            return None
-        shanks = row_channels.get("shanks", {})
-        entry = shanks.get(str(self.shank_idx))
-        if entry is None:
-            # Legacy draft row maps used 1-based shank keys.
-            entry = shanks.get(str(self.shank_idx + 1))
-        if entry is None:
-            logger.warning(
-                "row_channels.json has no entry for shank %d",
-                self.shank_idx,
-            )
-            return None
-        rows = np.asarray(entry.get("rows", []), dtype=int)
-        if rows.size == 0:
-            logger.warning(
-                "row_channels.json entry for shank %d has no rows",
-                self.shank_idx,
-            )
-            return None
-        return rows
-
-    def _slice_band_matrix(self, matrix, rows):
-        """Slice a full channel-table matrix to active-shank rows if needed."""
-        if rows is None:
-            return matrix, None
-        if matrix.shape[0] == len(self.chn_coords_all):
-            return matrix[np.ix_(rows, rows)], rows
-        if matrix.shape[0] == len(rows):
-            return matrix, rows
-        logger.warning(
-            "Skipping LFP matrix with shape %s; expected full channel count %d "
-            "or shank row count %d",
-            matrix.shape,
-            len(self.chn_coords_all),
-            len(rows),
-        )
-        return None, None
-
-    def _matrix_row_depths(self, rows, n_matrix):
-        """Per-row channel depths (um) for a band matrix, or None if unknown.
-
-        Used both for display geometry and for the in-brain colour mask. None
-        signals the fallback geometry (no per-row depth), in which case callers
-        should not attempt in-brain masking.
-        """
-        if rows is not None and len(rows) == n_matrix:
-            return self.chn_coords_all[rows, 1]
-        if n_matrix == len(self.chn_coords):
-            return self.chn_coords[:, 1]
-        return None
-
-    def _matrix_depth_geometry(self, rows, n_matrix):
-        """Affine display geometry derived from matrix channel rows."""
-        depths = self._matrix_row_depths(rows, n_matrix)
-        if depths is None:
-            depths = np.array([self.chn_min, self.chn_max], dtype=float)
-
-        unique_depths = np.unique(depths)
-        if unique_depths.size > 1:
-            pitch = np.min(np.diff(unique_depths))
-            scale = (unique_depths[-1] - unique_depths[0] + pitch) / n_matrix
-            offset = unique_depths[0]
-        else:
-            scale = 1.0
-            offset = float(unique_depths[0]) if unique_depths.size else 0.0
-        return scale, offset, np.array([offset, offset + scale * n_matrix])
-
-    def _full_band_files(self, folder, suffix):
-        """Band files excluding legacy ``_shank<N>`` compatibility views."""
-        shank_suffix = re.compile(r"_shank\d+$")
-        files = []
-        for file in folder.glob(f"*{suffix}.npy"):
-            stem = file.stem.replace(suffix, "")
-            if not shank_suffix.search(stem):
-                files.append(file)
-        return sorted(files)
-
-    def _get_lfp_correlation_folder(self):
-        # ---- Temporary workground for locating LFP correlation data ----
-        # Sue generated LFP correlation for all her sessions manually and put them in a data asset.
-        # Here I assume that this data asset is attached to the current capsule together with the ephys data:
-        # |- {CO data folder}
-        #    |- {data asset for LFP correlation of ALL sessions}
-        #       |- behavior_{subject_id}_{date}_{time'}
-        #          |- {Probe name}
-        #             |- band_corr
-        #                |- spont_theta_mean_corr.npy
-        #                |- spont_gamma_mean_corr.npy
-        #                ....
-        #       |- behavior_{subject_id}_{date}_{time'}
-        #           |- band_corr
-        #              ....
-        #    |- {data asset for extracted ephys data by IBL pipeline}
-        #       |- {subject_id}
-        #          |- behavior_{subject_id}_{date}_{time}
-        #              |- {Probe name}        <----- self.probe_path
-        #
-        # TODO: Generate LFP correlation data, together with other custom metrics like spike waveform statistics,
-        #   automatically in the IBL pipeline, and use a json file to specify what we want to add as plugins to the GUI.
-
-        lfp_corr_folder = self.probe_path / "band_corr"
-        logger.debug(f"LFP corr search: {lfp_corr_folder}")
-        if lfp_corr_folder.exists():
-            return lfp_corr_folder
-
     def get_lfp_correlation_data_img(self):
         """Load LFP correlation data from the band_corr folder."""
-
-        # Locate the LFP correlation folder
-        lfp_corr_folder = self._get_lfp_correlation_folder()
-        if lfp_corr_folder is None:
-            return {}
-
-        row_channels = self._load_row_channels(lfp_corr_folder)
-        matrix_rows = self._matrix_rows_for_current_shank(row_channels)
-
-        # Load only real-valued correlation files for the current shank
-        if matrix_rows is not None:
-            lfp_corr_files = self._full_band_files(lfp_corr_folder, "_mean_corr")
-        else:
-            lfp_corr_files = []
-        shank_glob = f"*_shank{self.shank_idx + 1}_mean_corr.npy"
-        if not lfp_corr_files:
-            lfp_corr_files = list(lfp_corr_folder.glob(shank_glob))
-        if not lfp_corr_files:
-            # Legacy single-shank fallback.
-            lfp_corr_files = self._full_band_files(lfp_corr_folder, "_mean_corr")
-        if not lfp_corr_files:
-            logger.warning(f"No LFP correlation files found in {lfp_corr_folder}")
-            return {}
-
-        all_data = {}
-        _shank_suffix = re.compile(r"_shank\d+$")
-        for file in lfp_corr_files:
-            # Extract the band name from the file name
-            band_name = _shank_suffix.sub("", file.stem.replace("_mean_corr", ""))
-            this_corr, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
-            if this_corr is None:
-                continue
-
-            logger.debug(
-                f"LFP corr file: {file.name}, shape: {this_corr.shape}, "
-                f"range: [{this_corr.min():.4f}, {this_corr.max():.4f}]"
-            )
-
-            # Zero out diagonal (self-correlation is trivially 1)
-            np.fill_diagonal(this_corr, 0.0)
-
-            n_matrix = this_corr.shape[0]
-            scale, offset_y, x_range = self._matrix_depth_geometry(depth_rows, n_matrix)
-
-            # Set color range from 95th percentile of off-diagonal values,
-            # restricted to the in-brain x in-brain sub-block when known so
-            # out-of-brain channels don't blow out the range.
-            mask = ~np.eye(n_matrix, dtype=bool)
-            inb = self._in_brain_col_mask(self._matrix_row_depths(depth_rows, n_matrix))
-            if inb is not None and inb.shape[0] == n_matrix:
-                mask &= np.outer(inb, inb)
-            max_corr = (
-                np.quantile(np.abs(this_corr[mask]), 0.95) if np.any(mask) else 1.0
-            )
-            logger.debug(
-                f"LFP corr {band_name}: n={n_matrix}, "
-                f"off-diag q95={max_corr:.4f}, scale={scale:.4f}"
-            )
-            all_data[band_name] = {
-                "img": this_corr,
-                "scale": np.array([scale, scale]),
-                "levels": np.array([-max_corr, max_corr]),
-                "offset": np.array([offset_y, offset_y]),
-                "xrange": x_range,
-                "cmap": "RdBu_r",
-                "title": f"LFP correlation ({band_name})",
-                "xaxis": "Distance from probe tip (um)",
-            }
-
-        # Load complex coherency files and render as HSV phase images
-        if matrix_rows is not None:
-            coherency_files = self._full_band_files(lfp_corr_folder, "_coherency")
-        else:
-            coherency_files = []
-        coh_glob = f"*_shank{self.shank_idx + 1}_coherency.npy"
-        if not coherency_files:
-            coherency_files = list(lfp_corr_folder.glob(coh_glob))
-        if not coherency_files:
-            coherency_files = self._full_band_files(lfp_corr_folder, "_coherency")
-        for file in coherency_files:
-            try:
-                band_name = _shank_suffix.sub("", file.stem.replace("_coherency", ""))
-                coh, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
-                if coh is None:
-                    continue
-
-                magnitude = np.abs(coh)
-                phase = np.angle(coh)  # radians, [-pi, pi]
-
-                # Scale saturation: map 95th percentile of off-diagonal
-                # magnitude to full saturation, restricted to the in-brain
-                # sub-block when known.
-                off_diag = ~np.eye(coh.shape[0], dtype=bool)
-                inb = self._in_brain_col_mask(
-                    self._matrix_row_depths(depth_rows, coh.shape[0])
-                )
-                if inb is not None and inb.shape[0] == coh.shape[0]:
-                    off_diag &= np.outer(inb, inb)
-                max_mag = (
-                    np.quantile(magnitude[off_diag], 0.95) if np.any(off_diag) else 1.0
-                )
-                if max_mag > 0:
-                    magnitude = magnitude / max_mag
-
-                # HSV: hue = phase (0 rad → red),
-                # saturation = scaled magnitude, value = 1.
-                hue = (phase / (2 * np.pi)) % 1.0
-                sat = np.clip(magnitude, 0, 1)
-                val = np.ones_like(hue)
-
-                hsv = np.stack([hue, sat, val], axis=-1)
-                from matplotlib.colors import hsv_to_rgb
-
-                rgb = hsv_to_rgb(hsv)
-                rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
-                rgba[:, :, :3] = rgb.astype(np.float32)
-
-                # Zero out diagonal (self-coherency is trivially 1)
-                np.fill_diagonal(rgba[:, :, 3], 0.0)
-
-                n_coh = coh.shape[0]
-                coh_scale, coh_offset, coh_x_range = self._matrix_depth_geometry(
-                    depth_rows, n_coh
-                )
-
-                all_data[f"{band_name}_phase"] = {
-                    "img": (rgba * 255).astype(np.uint8),
-                    "scale": np.array([coh_scale, coh_scale]),
-                    "levels": None,
-                    "offset": np.array([coh_offset, coh_offset]),
-                    "xrange": coh_x_range,
-                    "cmap": None,
-                    "title": f"LFP coherency phase ({band_name})",
-                    "xaxis": "Distance from probe tip (um)",
-                }
-            except Exception:
-                logger.warning(
-                    f"Failed to load coherency file: {file}",
-                    exc_info=True,
-                )
-
-        def _sort_lfp_correlation_keys(all_data):
-            """Sort LFP correlation data keys by epoch and frequency band."""
-            # Sort keys by [from and band]
-            epoch_order = ["spont", "opto", "diff"]
-            band_order = ["delta", "theta", "alpha", "beta", "gamma"]
-
-            # Sort keys according to expected sequence
-            expected_keys = []
-            other_keys = []
-
-            for epoch in epoch_order:
-                for band in band_order:
-                    expected_key = f"{epoch}_{band}"
-                    if expected_key in all_data:
-                        expected_keys.append(expected_key)
-
-            # Add remaining keys that don't match the expected pattern
-            for key in all_data.keys():
-                if key not in expected_keys:
-                    other_keys.append(key)
-
-            # Combine in order: expected sequence first, then others unsorted
-            sorted_keys = expected_keys + other_keys
-            lfp_dict = {key: all_data[key] for key in sorted_keys}
-            # Sort by key and create a new dictionary
-            sorted_dict = dict(sorted(lfp_dict.items()))
-
-            return sorted_dict
-
-        data_img_lfp_corr = _sort_lfp_correlation_keys(all_data)
-        logger.debug(
-            f"LFP correlation data loaded: {len(data_img_lfp_corr)} epoch_bands"
-        )
-        return data_img_lfp_corr
+        return LfpCorrelationPlotDataBuilder(
+            probe_path=self.probe_path,
+            shank_idx=self.shank_idx,
+            geometry=self.channel_geometry,
+            in_brain_depths_um=self.in_brain_depths_um,
+        ).build()
 
     def get_rfmap_data(self):
         data_img = dict()

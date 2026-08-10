@@ -48,7 +48,7 @@ class FakeDepthPlotView:
 def _view(
     *,
     has_menus: bool = True,
-) -> tuple[DesktopShankScreenView, FakeEphysDisplay, list[Any]]:
+) -> tuple[DesktopShankScreenView, FakeEphysDisplay, list[Any], DesktopDisplays]:
     calls: list[Any] = []
     ephys = FakeEphysDisplay(has_menus=has_menus)
     displays = DesktopDisplays(
@@ -58,21 +58,25 @@ def _view(
         slice=FakeSliceDisplay(),
     )
     view = DesktopShankScreenView(
-        displays=displays,
         depth_plots=FakeDepthPlotView(calls),
         init_menubar=lambda: calls.append("init-menubar"),
         set_view=lambda **kwargs: calls.append(("view", kwargs)),
     )
     view.raw_image_payloads = {"raw": "payload"}
-    return view, ephys, calls
+    return view, ephys, calls, displays
 
 
 def test_capture_plot_selection_preserves_ephys_keys_only_when_requested() -> None:
-    preserve_view, preserve_ephys, _calls = _view(has_menus=True)
-    no_preserve_view, no_preserve_ephys, _calls = _view(has_menus=True)
+    preserve_view, preserve_ephys, _calls, preserve_displays = _view(has_menus=True)
+    no_preserve_view, no_preserve_ephys, _calls, no_preserve_displays = _view(
+        has_menus=True
+    )
 
-    preserved = preserve_view.capture_plot_selection(True)
-    not_preserved = no_preserve_view.capture_plot_selection(False)
+    preserved = preserve_view.capture_plot_selection(True, displays=preserve_displays)
+    not_preserved = no_preserve_view.capture_plot_selection(
+        False,
+        displays=no_preserve_displays,
+    )
 
     assert preserved.previous_slice_selection == "slice-selection"
     assert preserved.previous_slice_label == "slice"
@@ -84,7 +88,7 @@ def test_capture_plot_selection_preserves_ephys_keys_only_when_requested() -> No
 
 
 def test_apply_plot_data_state_sets_depth_limits_and_clears_raw_payloads() -> None:
-    view, _ephys, calls = _view()
+    view, _ephys, calls, _displays = _view()
     state = ActiveShankPlotDataState(
         key=None,
         shank_idx=0,
@@ -101,16 +105,16 @@ def test_apply_plot_data_state_sets_depth_limits_and_clears_raw_payloads() -> No
 
 
 def test_render_plot_menus_initializes_menubar_when_needed() -> None:
-    view, ephys, calls = _view(has_menus=False)
+    view, ephys, calls, displays = _view(has_menus=False)
 
-    view.render_plot_menus("menu-state")
+    view.render_plot_menus("menu-state", displays=displays)
 
     assert calls == ["init-menubar"]
     assert ephys.rendered_menus == ["menu-state"]
 
 
 def test_configure_view_after_render_only_configures_first_unpreserved_view() -> None:
-    view, _ephys, calls = _view()
+    view, _ephys, calls, _displays = _view()
 
     view.configure_view_after_render(False)
     view.configure_view_after_render(False)

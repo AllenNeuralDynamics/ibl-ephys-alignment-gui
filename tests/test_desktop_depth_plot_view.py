@@ -31,16 +31,7 @@ class FakeLine:
 
 
 def _depth_view(
-    *,
-    depth_settings: Any | None = None,
-    in_brain_depths_um: Any = None,
 ) -> tuple[DesktopDepthPlotView, dict[str, FakePlot], FakeLine, FakeLine]:
-    depth_settings = depth_settings or SimpleNamespace(
-        probe_tip_um=0.0,
-        probe_top_um=1000.0,
-        probe_extra_um=100.0,
-        set_probe_limits=lambda low, high: None,
-    )
     plots = {
         "image": FakePlot((10.0, 20.0)),
         "histology": FakePlot((30.0, 40.0)),
@@ -49,8 +40,6 @@ def _depth_view(
     top_line = FakeLine()
     return (
         DesktopDepthPlotView(
-            depth_view=lambda: depth_settings,
-            in_brain_depths_um=lambda: in_brain_depths_um,
             default_range_plots=tuple(plots.values()),
             range_plots=plots,
             probe_tip_lines=[tip_line],
@@ -63,29 +52,27 @@ def _depth_view(
     )
 
 
-def test_set_probe_limits_updates_depth_settings_and_guide_lines() -> None:
-    calls: list[Any] = []
-    depth_settings = SimpleNamespace(
-        probe_tip_um=0.0,
-        probe_top_um=1000.0,
-        probe_extra_um=100.0,
-        set_probe_limits=lambda low, high: calls.append(("settings", low, high)),
-    )
-    view, _plots, tip_line, top_line = _depth_view(depth_settings=depth_settings)
+def test_set_probe_limits_updates_guide_lines() -> None:
+    view, _plots, tip_line, top_line = _depth_view()
 
     view.set_probe_limits(-50.0, 500.0)
 
-    assert calls == [("settings", -50.0, 500.0)]
     assert tip_line.y_values == [-50.0]
     assert top_line.y_values == [500.0]
 
 
 def test_default_feature_y_range_uses_brain_limited_depth_policy() -> None:
-    view, plots, _tip_line, _top_line = _depth_view(
-        in_brain_depths_um=np.array([100.0, 300.0])
+    depth_settings = SimpleNamespace(
+        probe_tip_um=0.0,
+        probe_top_um=1000.0,
+        probe_extra_um=100.0,
     )
+    view, plots, _tip_line, _top_line = _depth_view()
 
-    view.set_default_feature_y_range()
+    view.set_default_feature_y_range(
+        depth_view=depth_settings,
+        in_brain_depths_um=np.array([100.0, 300.0]),
+    )
 
     assert plots["image"].set_ranges == [
         {"min": -100.0, "max": 800.0, "padding": 0.05}

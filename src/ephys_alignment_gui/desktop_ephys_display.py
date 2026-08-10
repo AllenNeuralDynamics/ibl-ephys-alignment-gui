@@ -150,3 +150,14 @@ class DesktopEphysDisplay:
     def render_shank_ephys_plots(self, state: ActiveShankScreenState) -> None:
         """Render selected ephys plots for the active shank."""
         self.plot_presenter.render_shank_ephys_plots(state)
+
+    def reset_feature_image_x_range(self) -> None:
+        """Reset the feature image plot x-range to the active payload range."""
+        feature_xrange = self.feature_xrange
+        if feature_xrange is None:
+            return
+        self.panel.plots.image.setXRange(
+            min=feature_xrange[0],
+            max=feature_xrange[1],
+            padding=0,
+        )

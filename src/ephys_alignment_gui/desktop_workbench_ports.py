@@ -36,15 +36,29 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             window.align_combobox,
         )
 
+    def open_qc_dialog() -> None:
+        if qc_dialog := getattr(window, "qc_dialog", None):
+            qc_dialog.open()
+
+    def ephys_qc() -> str:
+        if qc_widget := getattr(window, "ephys_qc", None):
+            return qc_widget.currentText()
+        return "Pass"
+
+    def histology_available() -> bool:
+        return window.app.queries.workspace.histology_data_loaded()
+
+    def use_docdb() -> bool:
+        return window.use_docdb_checkbox.isChecked()
+
     return DesktopWorkbenchPorts(
         alignment_edit_actions=DesktopAlignmentEditActionPorts(
-            histology_available=lambda: window.histology_exists,
+            histology_available=histology_available,
             tip_position_um=window.displays.histology.tip_position_um,
         ),
         busy=DesktopBusyPorts(busy_context=busy_context),
         load_data=DesktopLoadDataPorts(
             clear_empty_state=window._clear_empty_state,
-            set_histology_available=window._set_histology_available,
         ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=window.popup_manager.close_all,
@@ -54,39 +68,41 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         ),
         render=DesktopRenderPorts(
             alignment=DesktopAlignmentRenderPorts(
-                restore_lin_fit=window.alignment_screen_view.restore_lin_fit_from_edit,
                 capture_depth_plot_y_ranges=(
                     window.alignment_screen_view.capture_depth_plot_y_ranges
                 ),
                 restore_depth_plot_y_ranges=(
                     window.alignment_screen_view.restore_depth_plot_y_ranges
                 ),
-                create_reference_lines_for_previous_alignment=(
-                    window.alignment_screen_view.create_reference_lines_for_previous_alignment
-                ),
-                set_default_feature_y_range=(
-                    window.alignment_screen_view.set_default_feature_y_range
-                ),
-                update_status=window.alignment_screen_view.update_status,
             ),
             shank=DesktopShankRenderPorts(
-                capture_plot_selection=window.shank_screen_view.capture_plot_selection,
+                capture_plot_selection=lambda preserve: (
+                    window.shank_screen_view.capture_plot_selection(
+                        preserve,
+                        displays=window.displays,
+                    )
+                ),
                 render_alignment_choices=render_alignment_choices,
                 apply_plot_data_state=window.shank_screen_view.apply_plot_data_state,
                 raw_image_payloads=window.shank_screen_view.raw_image_payload_mapping,
-                render_plot_menus=window.shank_screen_view.render_plot_menus,
+                render_plot_menus=lambda state: (
+                    window.shank_screen_view.render_plot_menus(
+                        state,
+                        displays=window.displays,
+                    )
+                ),
                 configure_view=(window.shank_screen_view.configure_view_after_render),
                 offline=lambda: window.offline,
             ),
         ),
         save=DesktopSavePorts(
-            use_docdb=lambda: window.use_docdb,
+            use_docdb=use_docdb,
             render_alignment_choices=render_alignment_choices,
             busy_context=busy_context,
             complete_button=lambda: window.complete_button,
-            histology_available=lambda: window.histology_exists,
-            open_qc_dialog=window.qc_dialog.open,
-            ephys_qc=window.ephys_qc.currentText,
+            histology_available=histology_available,
+            open_qc_dialog=open_qc_dialog,
+            ephys_qc=ephys_qc,
             selected_qc_descriptions=window._selected_qc_descriptions,
             warning=lambda title, message: QtWidgets.QMessageBox.warning(
                 window,
@@ -95,7 +111,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             ),
         ),
         previous_alignment_load=DesktopPreviousAlignmentLoadPorts(
-            use_docdb=lambda: window.use_docdb,
+            use_docdb=use_docdb,
             set_reload_folder_text=window.reload_folder_line.setText,
             render_alignment_choices=render_alignment_choices,
             busy_context=busy_context,
@@ -113,7 +129,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             scale_axis=window.fig_scale_ax,
             bar_colour=window.bar_colour,
             line_pen=window.kpen_solid,
-            histology_available=lambda: window.histology_exists,
+            histology_available=histology_available,
             activate_window=window.activateWindow,
             set_axis=window.set_axis,
         ),

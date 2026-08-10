@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.alignment_read_models import (
-    ActiveSliceDataState,
     PerpendicularSliceRenderState,
 )
 from ephys_alignment_gui.document import AlignmentKey
@@ -17,6 +16,7 @@ from ephys_alignment_gui.slice_panel_presenter import (
     SlicePanelPlots,
     SlicePanelPresenter,
     SlicePanelStyle,
+    SlicePanelView,
     SlicePanelViewState,
 )
 
@@ -42,20 +42,15 @@ class FakeActionGroup:
 
 
 class FakeQueries:
-    def __init__(self, slice_state: ActiveSliceDataState | None = None) -> None:
-        self.slice_state = slice_state
+    def __init__(self) -> None:
         self.rendered_selections: list[SliceSelection] = []
         self.slices = SimpleNamespace(
             active_slice_render_state=self.active_slice_render_state,
-            active_slice_data_state=self.active_slice_data_state,
         )
 
     def active_slice_render_state(self, selection: SliceSelection) -> Any:
         self.rendered_selections.append(selection)
         return SimpleNamespace(scalar_channel=selection.key)
-
-    def active_slice_data_state(self) -> ActiveSliceDataState | None:
-        return self.slice_state
 
 
 class FakePlot:
@@ -150,8 +145,7 @@ def _presenter(
     queries: FakeQueries,
     action_group: FakeActionGroup | None = None,
 ) -> SlicePanelPresenter:
-    return SlicePanelPresenter(
-        app=SimpleNamespace(queries=queries),
+    view = SlicePanelView(
         plots=SlicePanelPlots(
             coronal=None,
             coronal_layout=None,
@@ -164,12 +158,17 @@ def _presenter(
             reference_line_pen=None,
         ),
         histology_exists=lambda: True,
+    )
+    return SlicePanelPresenter(
+        app=SimpleNamespace(queries=queries),
+        view=view,
         action_group_provider=lambda: action_group,
     )
 
 
 def _presenter_with_plots() -> tuple[
     SlicePanelPresenter,
+    SlicePanelView,
     FakePlot,
     FakePlot,
     FakeLayout,
@@ -177,24 +176,28 @@ def _presenter_with_plots() -> tuple[
     coronal = FakePlot()
     perpendicular = FakePlot()
     layout = FakeLayout()
+    view = SlicePanelView(
+        plots=SlicePanelPlots(
+            coronal=coronal,
+            coronal_layout=layout,
+            histogram_alt=None,
+            perpendicular=perpendicular,
+        ),
+        style=SlicePanelStyle(
+            dotted_pen="dot",
+            solid_pen="solid",
+            reference_line_pen="ref",
+        ),
+        histology_exists=lambda: True,
+        view_state=SlicePanelViewState(),
+    )
     return (
         SlicePanelPresenter(
             app=SimpleNamespace(queries=FakeQueries()),
-            plots=SlicePanelPlots(
-                coronal=coronal,
-                coronal_layout=layout,
-                histogram_alt=None,
-                perpendicular=perpendicular,
-            ),
-            style=SlicePanelStyle(
-                dotted_pen="dot",
-                solid_pen="solid",
-                reference_line_pen="ref",
-            ),
-            histology_exists=lambda: True,
+            view=view,
             action_group_provider=lambda: None,
-            view_state=SlicePanelViewState(),
         ),
+        view,
         coronal,
         perpendicular,
         layout,
@@ -215,28 +218,17 @@ def test_slice_panel_reads_current_selection_from_action_group() -> None:
     assert queries.rendered_selections == [selection]
 
 
-def test_slice_panel_maps_legacy_slice_payload_by_identity() -> None:
-    slice_data = {"ccf": np.array([[1.0]])}
-    fp_slice_data = {"label": np.zeros((1, 1, 3))}
-    queries = FakeQueries(
-        ActiveSliceDataState(
-            key=AlignmentKey("rec", "stream", 0),
-            slice_data=slice_data,
-            fp_slice_data=fp_slice_data,
-        )
-    )
+def test_slice_panel_plot_selection_queries_render_state() -> None:
+    selection = SliceSelection("slice_data", "ccf")
+    queries = FakeQueries()
     presenter = _presenter(queries)
-    calls: list[SliceSelection] = []
-    presenter.plot_slice_selection = calls.append
+    calls: list[Any] = []
+    presenter.render_slice = calls.append
 
-    presenter.plot_slice(slice_data, "ccf")
-    presenter.plot_slice(fp_slice_data, "label")
-    presenter.plot_slice({"ccf": np.array([[1.0]])}, "ccf")
+    presenter.plot_slice_selection(selection)
 
-    assert calls == [
-        SliceSelection("slice_data", "ccf"),
-        SliceSelection("fp_slice_data", "label"),
-    ]
+    assert queries.rendered_selections == [selection]
+    assert calls == [SimpleNamespace(scalar_channel="ccf")]
 
 
 def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
@@ -248,12 +240,12 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    presenter, coronal, perpendicular, _layout = _presenter_with_plots()
+    _presenter, view, coronal, perpendicular, _layout = _presenter_with_plots()
     projection = _projection()
 
-    presenter.plot_channels(projection)
+    view.plot_channels(projection)
 
-    state = presenter.view_state
+    state = view.view_state
     assert state.channel_projection is projection
     assert state.channel_status
     assert isinstance(state.slice_chns, FakePlotItem)
@@ -263,7 +255,7 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
     assert state.slice_tip in coronal.added
     assert state.slice_lines[0] in coronal.added
 
-    presenter.toggle_channel_visibility()
+    view.toggle_channel_visibility()
 
     assert not state.channel_status
     assert state.slice_chns in coronal.removed
@@ -271,7 +263,7 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
     assert state.slice_lines[0] in coronal.removed
     assert perpendicular.removed == []
 
-    presenter.toggle_channel_visibility()
+    view.toggle_channel_visibility()
 
     assert state.channel_status
     assert state.slice_chns in coronal.added
@@ -284,12 +276,12 @@ def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
-    presenter, coronal, _perpendicular, _layout = _presenter_with_plots()
-    presenter.view_state.channel_projection = _projection()
+    _presenter, view, coronal, _perpendicular, _layout = _presenter_with_plots()
+    view.view_state.channel_projection = _projection()
 
-    presenter.render_export_trajectory_overlay("export-pen")
+    view.render_export_trajectory_overlay("export-pen")
 
-    state = presenter.view_state
+    state = view.view_state
     assert isinstance(state.traj_line, FakePlotItem)
     assert state.traj_line in coronal.added
     assert state.traj_line.data is not None
@@ -315,10 +307,10 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
         "ephys_alignment_gui.slice_panel_presenter.ColorBar",
         FakeColorBar,
     )
-    presenter, _coronal, perpendicular, _layout = _presenter_with_plots()
-    presenter.view_state.slice_hist_levels = (5.0, 95.0)
+    _presenter, view, _coronal, perpendicular, _layout = _presenter_with_plots()
+    view.view_state.slice_hist_levels = (5.0, 95.0)
 
-    presenter.render_perpendicular_histology(
+    view.render_perpendicular_histology(
         PerpendicularSliceRenderState(
             key=AlignmentKey("rec", "stream", 0),
             channel_name="histology_registration",
@@ -332,7 +324,7 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
         )
     )
 
-    state = presenter.view_state
+    state = view.view_state
     assert isinstance(state.perp_image_item, FakeImageItem)
     assert state.perp_image_item in perpendicular.added
     assert state.perp_image_item.lookup_table == "fake-lookup-table"
@@ -347,8 +339,8 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
 
 
 def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
-    presenter, coronal, perpendicular, layout = _presenter_with_plots()
-    state = presenter.view_state
+    _presenter, view, coronal, perpendicular, layout = _presenter_with_plots()
+    state = view.view_state
     slice_item = object()
     state.channel_projection = object()
     state.slice_lines = [object()]
@@ -364,7 +356,7 @@ def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
     state.slice_item = slice_item
     state.histogram_item = object()
 
-    presenter.clear()
+    view.clear()
 
     assert coronal.clear_count == 1
     assert perpendicular.clear_count == 1

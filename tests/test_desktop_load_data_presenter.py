@@ -181,9 +181,6 @@ def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
             ("render-shank", shank_idx, preserve)
         ),
         clear_empty_state=lambda: calls.append(("clear-empty",)),
-        set_histology_available=lambda available: calls.append(
-            ("histology", available)
-        ),
         busy_context=lambda *args, **kwargs: FakeBusyContext(calls, *args, **kwargs),
     )
 
@@ -320,7 +317,6 @@ def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
 
     assert presenter.load_heavy_data()
 
-    assert ("histology", False) in calls
     assert ("render-shank", 0, True) in calls
 
 

@@ -13,8 +13,6 @@ from ephys_alignment_gui.view_limits import default_feature_y_limits
 class DesktopDepthPlotView:
     """Own desktop-only depth-limit and y-range operations."""
 
-    depth_view: Callable[[], Any]
-    in_brain_depths_um: Callable[[], Any]
     default_range_plots: Sequence[Any]
     range_plots: Mapping[str, Any]
     probe_tip_lines: Sequence[Any]
@@ -22,26 +20,37 @@ class DesktopDepthPlotView:
     padding: Callable[[], float]
 
     def set_probe_limits(self, min_um: float, max_um: float) -> None:
-        """Apply probe tip/top limits to display state and guide lines."""
-        self.depth_view().set_probe_limits(min_um, max_um)
+        """Apply probe tip/top guide lines to desktop plots."""
         for top_line in self.probe_top_lines:
             top_line.setY(max_um)
         for tip_line in self.probe_tip_lines:
             tip_line.setY(min_um)
 
-    def default_feature_y_limits(self) -> tuple[float, float]:
+    def default_feature_y_limits(
+        self,
+        *,
+        depth_view: Any,
+        in_brain_depths_um: Any,
+    ) -> tuple[float, float]:
         """Return the current default feature-depth display limits."""
-        depth_view = self.depth_view()
         return default_feature_y_limits(
             probe_tip_um=depth_view.probe_tip_um,
             probe_top_um=depth_view.probe_top_um,
             probe_extra_um=depth_view.probe_extra_um,
-            in_brain_depths_um=self.in_brain_depths_um(),
+            in_brain_depths_um=in_brain_depths_um,
         )
 
-    def set_default_feature_y_range(self) -> None:
+    def set_default_feature_y_range(
+        self,
+        *,
+        depth_view: Any,
+        in_brain_depths_um: Any,
+    ) -> None:
         """Apply the default feature-depth range to linked depth plots."""
-        y_min, y_max = self.default_feature_y_limits()
+        y_min, y_max = self.default_feature_y_limits(
+            depth_view=depth_view,
+            in_brain_depths_um=in_brain_depths_um,
+        )
         for plot in self.default_range_plots:
             plot.setYRange(min=y_min, max=y_max, padding=self.padding())
 

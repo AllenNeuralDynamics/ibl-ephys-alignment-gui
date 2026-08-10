@@ -10,16 +10,15 @@ import numpy as np
 
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, AlignmentEditKind
-from ephys_alignment_gui.controller import (
-    AlignmentController,
+from ephys_alignment_gui.app_results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
-    Failed,
 )
+from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.session_runtime import SessionRuntime
 from ephys_alignment_gui.shank_runtime import ShankRuntime
-from ephys_alignment_gui.workflow import Ok
+from ephys_alignment_gui.workflow import Failed, Ok
 
 logger = logging.getLogger(__name__)
 

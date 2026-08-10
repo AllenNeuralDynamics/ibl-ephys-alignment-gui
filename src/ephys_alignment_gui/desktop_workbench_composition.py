@@ -35,6 +35,9 @@ from ephys_alignment_gui.desktop_path_dialog_presenter import (
     DesktopPathDialogCallbacks,
     DesktopPathDialogPresenter,
 )
+from ephys_alignment_gui.desktop_plot_export_presenter import (
+    DesktopPlotExportPresenter,
+)
 from ephys_alignment_gui.desktop_plot_exporter import (
     DesktopPlotExporter,
     HistologyExportHandles,
@@ -84,6 +87,7 @@ class DesktopWorkbenchPresenterCluster:
     save_presenter: DesktopSavePresenter
     previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
     plot_exporter: DesktopPlotExporter
+    plot_export_presenter: DesktopPlotExportPresenter
     interaction_presenter: DesktopInteractionPresenter
     lifecycle_presenter: DesktopLifecyclePresenter
 
@@ -93,11 +97,11 @@ def build_desktop_workbench_presenter_cluster(
     app: Any,
     parent: Any,
     views: DesktopViews,
+    displays: DesktopDisplays,
     ports: DesktopWorkbenchPorts,
     render_cluster: DesktopRenderCluster,
 ) -> DesktopWorkbenchPresenterCluster:
     """Build desktop Workbench presenters outside the Workbench class."""
-    displays = views.displays
     output_path_presenter = DesktopOutputPathPresenter(
         commands=app.commands.paths,
         path_view=views.path,
@@ -199,6 +203,11 @@ def build_desktop_workbench_presenter_cluster(
         ports.export,
         displays=displays,
     )
+    plot_export_presenter = DesktopPlotExportPresenter(
+        app=app,
+        plot_exporter=plot_exporter,
+        output_folder_prompt=output_folder_prompt,
+    )
     return DesktopWorkbenchPresenterCluster(
         load_data_presenter=load_data_presenter,
         probe_selection_presenter=probe_selection_presenter,
@@ -212,6 +221,7 @@ def build_desktop_workbench_presenter_cluster(
         save_presenter=save_presenter,
         previous_alignment_load_presenter=previous_alignment_load_presenter,
         plot_exporter=plot_exporter,
+        plot_export_presenter=plot_export_presenter,
         interaction_presenter=interaction_presenter,
         lifecycle_presenter=lifecycle_presenter,
     )
@@ -355,7 +365,6 @@ def _load_data_callbacks(
             )
         ),
         clear_empty_state=load_data_ports.clear_empty_state,
-        set_histology_available=load_data_ports.set_histology_available,
         busy_context=busy_ports.busy_context,
     )
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.controller import ShankSelected
+from ephys_alignment_gui.app_results import ShankSelected
 from ephys_alignment_gui.desktop_probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,

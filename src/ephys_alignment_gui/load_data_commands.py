@@ -17,14 +17,11 @@ from ephys_alignment_gui.app_results import (
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
+    LoadDataPrepared,
     ProbeSelectionCacheResult,
     StreamCacheEvicted,
 )
-from ephys_alignment_gui.controller import (
-    AlignmentController,
-    Failed,
-    LoadDataPrepared,
-)
+from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.ephys_stream_loader import LoadedEphysSelection
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
@@ -43,7 +40,7 @@ from ephys_alignment_gui.session_runtime import (
     LoadDataTarget,
     SessionRuntime,
 )
-from ephys_alignment_gui.workflow import PolicyResult
+from ephys_alignment_gui.workflow import Failed, PolicyResult
 
 logger = logging.getLogger(__name__)
 

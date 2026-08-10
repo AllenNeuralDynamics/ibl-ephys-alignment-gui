@@ -15,6 +15,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
+from ephys_alignment_gui.desktop_display_ports import (
+    desktop_display_ports_from_main_window,
+)
+from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop_views import DesktopViews
 from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
@@ -78,33 +82,31 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.popup_manager = DesktopPopupManager()
         self.init_variables()
         self.offline: bool = offline
+        self._empty_state_item: Any = None
         self.init_layout(self, offline=offline)
-        self.views = DesktopViews.from_main_window(self, app=self.app)
+        self.displays = DesktopDisplays.create(
+            app=self.app,
+            ports=desktop_display_ports_from_main_window(self),
+        )
+        self.views = DesktopViews.from_main_window(self, displays=self.displays)
         self.selection_view = self.views.selection
         self.path_view = self.views.path
-        self.displays = self.views.displays
         self.depth_plot_view = self.views.depth
         self.shank_screen_view = self.views.shank_screen
         self.alignment_screen_view = self.views.alignment_screen
         self.export_view = self.views.export
-        self._initialize_startup_stream_state()
         self.desktop_workbench = DesktopWorkbench.create(
             app=self.app,
             parent=self,
             views=self.views,
+            displays=self.displays,
             ports=desktop_workbench_ports_from_main_window(self),
         )
+        self.desktop_workbench.initialize_startup_stream_state()
         self.desktop_workbench.connect_events()
         self._set_default_output_root_from_environment()
 
-        self.histology_exists: bool = True
-        self.use_docdb: bool = True
-        self._empty_state_item: Any = None
-
-        allen = self.app.queries.workspace.allen_structure_tree()
-        if allen is None:
-            raise RuntimeError("Allen structure metadata is unavailable")
-        self.init_region_lookup(allen)
+        self.desktop_workbench.initialize_region_lookup(self.init_region_lookup)
 
     def closeEvent(self, event) -> None:
         """Disconnect desktop event subscriptions before the Qt window closes."""
@@ -161,12 +163,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         # Guide the user before any data is loaded / after clearing.
         if hasattr(self, "fig_img"):
             self._show_empty_state()
-
-    def _initialize_startup_stream_state(self) -> None:
-        """Initialise startup state for stream-dependent app and desktop data."""
-        self.popup_manager.close_all()
-        self.shank_screen_view.reset_raw_image_payloads()
-        self.app.commands.load.detach_active_stream()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -279,35 +275,25 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
         Saves all plots from the GUI into folder
         """
-        # make folder to save plots to
-        sess_info = ""
-
-        if save_path:
-            image_path_overview = Path(save_path)
-        else:
-            if not self.app.queries.workspace.has_output_directory():
-                self.on_output_folder_selected()
-            image_path = self.app.queries.workspace.active_plot_export_directory()
-            if image_path is None:
-                return
-            image_path_overview = Path(image_path)
-
-        image_path_overview.mkdir(exist_ok=True)
-        self.desktop_workbench.export_plots(image_path_overview, sess_info=sess_info)
+        self.desktop_workbench.save_plots(save_path)
 
     """
     Plot functions
     """
 
+    def _histology_available(self) -> bool:
+        """Return whether histology runtime data is loaded."""
+        return self.app.queries.workspace.histology_data_loaded()
+
     def plot_histology(self, fig=None, ax="left", movable=True) -> None:
         """Compatibility wrapper for aligned histology rendering."""
-        if not self.histology_exists:
+        if not self._histology_available():
             return
         self.desktop_workbench.render_active_aligned_histology(fig, movable=movable)
 
     def plot_histology_ref(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for reference histology rendering."""
-        if not self.histology_exists:
+        if not self._histology_available():
             return
         self.desktop_workbench.render_active_reference_histology(
             fig,
@@ -316,15 +302,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
 
     def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
         """Compatibility wrapper for nearby histology boundary rendering."""
-        self.displays.histology.render_active_nearby(fig, movable=movable)
-
-    def _probe_extent_query_kwargs(self) -> dict[str, float]:
-        depth_view = self.app.queries.workspace.depth_view_settings()
-        return {
-            "probe_tip_um": depth_view.probe_tip_um,
-            "probe_top_um": depth_view.probe_top_um,
-            "probe_extra_um": depth_view.probe_extra_um,
-        }
+        self.desktop_workbench.render_active_nearby_histology(fig, movable=movable)
 
     def _scale_factor_y_range(self) -> tuple[float, float]:
         y_min, y_max = self.fig_img.viewRange()[1]
@@ -337,7 +315,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
 
         # If no histology we can't do alignment
-        if not self.histology_exists:
+        if not self._histology_available():
             return
 
         self.desktop_workbench.render_active_scale_factor()
@@ -349,7 +327,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """
 
         # If no histology we can't do alignment
-        if not self.histology_exists:
+        if not self._histology_available():
             return
 
         self.desktop_workbench.render_active_fit()
@@ -420,14 +398,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Select a probe: load channel info, populate shank list, derive output dir."""
         self.desktop_workbench.probe_selected()
 
-    def _set_histology_available(self, available: bool) -> None:
-        """Set the desktop histology availability flag."""
-        self.histology_exists = available
-
     def on_use_docdb_changed(self, state) -> None:
         """Handler for Use DocDB checkbox state changes"""
-        self.use_docdb = state == QtCore.Qt.Checked
-        logger.info(f"Use DocDB: {self.use_docdb}")
+        use_docdb = state == QtCore.Qt.Checked
+        logger.info(f"Use DocDB: {use_docdb}")
 
     def on_load_data_button_pressed(self) -> None:
         """Triggered when user clicks 'Load Data' button"""
@@ -460,21 +434,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.alignment_selected(idx)
 
     def toggle_histology_button_pressed(self) -> None:
-        boundaries_visible = (
-            self.app.commands.display.toggle_histology_boundaries_visible()
-        )
-        if not boundaries_visible:
-            self.plot_histology_nearby()
-        else:
-            self.plot_histology_ref()
+        self.desktop_workbench.toggle_histology_boundaries()
 
     def toggle_histology_map_button_pressed(self) -> None:
-        self.app.commands.display.toggle_region_annotation_source()
-
-        self.plot_histology()
-        self.plot_histology_ref()
-        self.plot_scale_factor()
-        self.displays.reference_lines.reattach()
+        self.desktop_workbench.toggle_region_annotation_source()
 
     def fit_button_pressed(self) -> None:
         """
@@ -511,25 +474,21 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+A key pressed. Shows/hides labels Allen atlas labels on brain regions
         in histology plots
         """
-        self.displays.histology.toggle_labels()
+        self.desktop_workbench.toggle_labels()
 
     def toggle_line_button_pressed(self) -> None:
         """
         Triggered when Shift+L key pressed. Shows/hides reference lines on ephys and histology
         plots
         """
-        lines_visible = self.app.commands.display.toggle_reference_lines_visible()
-        if not lines_visible:
-            self.displays.reference_lines.remove_from_plots()
-        else:
-            self.displays.reference_lines.add_to_plots()
+        self.desktop_workbench.toggle_reference_lines()
 
     def toggle_channel_button_pressed(self) -> None:
         """
         Triggered when Shift+C key pressed. Shows/hides channels, tip, and trajectory on slice image
         and perpendicular slice image
         """
-        self.displays.slice.toggle_channel_visibility()
+        self.desktop_workbench.toggle_channels()
 
     def delete_line_button_pressed(self) -> None:
         """
@@ -537,7 +496,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Deletes a reference line from the ephys and histology plots
         """
 
-        self.displays.reference_lines.delete_selected()
+        self.desktop_workbench.delete_selected_reference_line()
 
     def describe_labels_pressed(self) -> None:
         self.desktop_workbench.describe_labels_pressed()
@@ -598,20 +557,15 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def _selected_qc_descriptions(self) -> list[str]:
         """Return selected QC description labels."""
         ephys_desc = []
+        if not hasattr(self, "desc_buttons"):
+            return ephys_desc
         for button in self.desc_buttons.buttons():
             if button.isChecked():
                 ephys_desc.append(button.text())
         return ephys_desc
 
     def reset_axis_button_pressed(self) -> None:
-        self.alignment_screen_view.set_default_feature_y_range()
-        feature_xrange = self.displays.ephys.feature_xrange
-        if feature_xrange is not None:
-            self.fig_img.setXRange(
-                min=feature_xrange[0],
-                max=feature_xrange[1],
-                padding=0,
-            )
+        self.desktop_workbench.reset_axis()
 
     def display_session_notes(self) -> None:
         self.desktop_workbench.display_session_notes()
@@ -637,16 +591,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Updates the flag and recomputes alignment by calling
         fit_button_pressed.
         """
-        # Update the flag
-        self.app.commands.display.set_linear_fit_enabled(state != 0)
-
-        # Only recompute if we have reference lines and histology
-        # If no lines yet, just update the flag for future use
-        if not self.histology_exists or not self.displays.reference_lines.has_lines():
-            return
-
-        # Recompute alignment with new setting using existing fit logic
-        self.fit_button_pressed()
+        self.desktop_workbench.set_linear_fit_enabled(state != 0)
 
     def cluster_clicked(self, item, point):
         return self.desktop_workbench.cluster_clicked(item, point)
@@ -679,19 +624,19 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
-        self.displays.histology.sync_top_to_tip()
+        self.desktop_workbench.sync_histology_top_to_tip()
 
     def top_line_moved(self) -> None:
         """
         Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
-        self.displays.histology.sync_tip_to_top()
+        self.desktop_workbench.sync_histology_tip_to_top()
 
 
 def viewer(probe_id, one=None, histology=False, spike_collection=None, title=None):
     """ """
-    qt.create_app()
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     av = MainWindow._get_or_create(
         probe_id=probe_id,
         one=one,

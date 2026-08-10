@@ -28,3 +28,7 @@ class DisplayCommandHandler:
     def set_linear_fit_enabled(self, enabled: bool) -> bool:
         """Set whether fit commands should use linear fitting."""
         return self.display_state.edit_settings.set_lin_fit(enabled)
+
+    def set_probe_limits(self, min_um: float, max_um: float) -> None:
+        """Set the active probe depth limits used by desktop render queries."""
+        self.display_state.depth_view.set_probe_limits(min_um, max_um)

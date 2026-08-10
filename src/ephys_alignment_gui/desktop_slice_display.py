@@ -15,6 +15,7 @@ from ephys_alignment_gui.slice_panel_presenter import (
     SlicePanelPlots,
     SlicePanelPresenter,
     SlicePanelStyle,
+    SlicePanelView,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,8 +194,7 @@ class DesktopSliceDisplay:
     ) -> DesktopSliceDisplay:
         """Build the slice display cluster from desktop ports."""
         handles = _SliceMenuHandles()
-        panel = SlicePanelPresenter(
-            app=app,
+        view = SlicePanelView(
             plots=SlicePanelPlots(
                 coronal=ports.coronal_plot,
                 coronal_layout=ports.coronal_layout,
@@ -207,8 +207,12 @@ class DesktopSliceDisplay:
                 reference_line_pen=ports.reference_line_pen,
             ),
             histology_exists=ports.histology_exists,
-            action_group_provider=lambda: handles.action_group,
             slice_item=ports.slice_item,
+        )
+        panel = SlicePanelPresenter(
+            app=app,
+            view=view,
+            action_group_provider=lambda: handles.action_group,
         )
         menu_presenter = DesktopSliceMenuPresenter(
             app=app,

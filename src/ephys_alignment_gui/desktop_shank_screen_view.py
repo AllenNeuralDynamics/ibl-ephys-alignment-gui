@@ -15,7 +15,6 @@ from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionSta
 class DesktopShankScreenView:
     """Own desktop-only shank screen state and view refresh helpers."""
 
-    displays: Any
     depth_plots: DesktopDepthPlotView
     init_menubar: Callable[[], None]
     set_view: Callable[..., None]
@@ -33,12 +32,14 @@ class DesktopShankScreenView:
     def capture_plot_selection(
         self,
         preserve_plot_selection: bool,
+        *,
+        displays: Any,
     ) -> DesktopShankSelectionState:
         """Capture desktop plot selections to preserve across shank redraw."""
-        prev_slice = self.displays.slice.capture_selection()
+        prev_slice = displays.slice.capture_selection()
         prev_ephys_plot_keys = (
-            self.displays.ephys.current_plot_keys()
-            if preserve_plot_selection and self.displays.ephys.has_plot_menus()
+            displays.ephys.current_plot_keys()
+            if preserve_plot_selection and displays.ephys.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -55,11 +56,11 @@ class DesktopShankScreenView:
         )
         self.reset_raw_image_payloads()
 
-    def render_plot_menus(self, plot_menu_state: Any) -> None:
+    def render_plot_menus(self, plot_menu_state: Any, *, displays: Any) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not self.displays.ephys.has_plot_menus():
+        if not displays.ephys.has_plot_menus():
             self.init_menubar()
-        self.displays.ephys.render_menus(plot_menu_state)
+        displays.ephys.render_menus(plot_menu_state)
 
     def configure_view_after_render(self, preserve_plot_selection: bool) -> None:
         """Apply one-time view configuration after shank rendering."""
