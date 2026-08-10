@@ -92,9 +92,9 @@ class DesktopInteractionPorts:
     """Desktop operations and handles needed by interaction presentation."""
 
     popup_manager: Any
-    struct_list: Any
-    struct_view: Any
-    struct_description: Any
+    struct_list: Callable[[], Any]
+    struct_view: Callable[[], Any]
+    struct_description: Callable[[], Any]
     scale_plot: Any
     histology_plot: Any
     histology_reference_plot: Any

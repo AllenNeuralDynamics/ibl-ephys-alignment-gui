@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 
 from ephys_alignment_gui.ephys_data_service import EphysStreamData
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
-from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
+)
 
 
 @dataclass(frozen=True)
@@ -138,14 +140,14 @@ class SessionRuntime:
     def cache_loaded_stream_data(
         self,
         stream: EphysStreamData,
-        plot_data_factory: PlotDataFactory,
+        plot_payload_cache_factory: EphysPlotPayloadCacheFactory,
         *,
         shank_idx: int,
     ) -> EphysStreamRuntime:
         """Build, cache, and initialize runtime ownership for a loaded stream."""
         runtime = EphysStreamRuntime(
             stream=stream,
-            plot_data_factory=plot_data_factory,
+            plot_payload_cache_factory=plot_payload_cache_factory,
         )
         runtime.shank_runtime_for(shank_idx)
         self.cache_loaded_stream(runtime)

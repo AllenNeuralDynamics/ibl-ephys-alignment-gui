@@ -13,7 +13,7 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     ChannelProjectionData,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.plot_menu_state import PlotMenuState
+from ephys_alignment_gui.plotting.menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import (
     SliceMenuItem,
     SliceRenderDecision,

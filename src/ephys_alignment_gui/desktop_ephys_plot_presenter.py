@@ -10,12 +10,12 @@ from typing import Any
 from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.alignment_read_models import ActiveShankScreenState
-from ephys_alignment_gui.plot_menu_state import (
+from ephys_alignment_gui.plotting.menu_state import (
     EPHYS_PLOT_MENUS,
     PlotMenuGroupState,
     PlotMenuState,
 )
-from ephys_alignment_gui.plot_registry import PlotMenu, PlotSpec, plot_spec
+from ephys_alignment_gui.plotting.registry import PlotMenu, PlotSpec, plot_spec
 
 logger = logging.getLogger(__name__)
 

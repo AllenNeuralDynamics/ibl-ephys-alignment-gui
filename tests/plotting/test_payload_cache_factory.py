@@ -1,4 +1,4 @@
-"""Tests for building PlotData from runtime channel-collection views."""
+"""Tests for building payload caches from runtime channel-collection views."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ from pathlib import Path
 import numpy as np
 
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
+)
 
 
 def _minimal_stream() -> EphysStreamData:
@@ -32,7 +34,7 @@ def _minimal_stream() -> EphysStreamData:
         alf_data={
             "channels": {
                 "exists": True,
-                # Deliberately omit shankInd: factory-built PlotData should
+                # Deliberately omit shankInd: factory-built payload cache should
                 # use ChannelCollectionView.rows, not rediscover rows here.
                 "localCoordinates": channel_table.local_coordinates,
                 "rawInd": np.array([100, 101, 102, 103]),
@@ -49,7 +51,7 @@ def test_factory_builds_plot_data_from_channel_collection_rows():
     stream = _minimal_stream()
     collection = stream.channel_collection(1)
 
-    plot_data = PlotDataFactory().build(collection)
+    plot_data = EphysPlotPayloadCacheFactory().build(collection)
 
     assert plot_data.channel_collection is collection
     np.testing.assert_array_equal(plot_data.chn_rows, np.array([1, 3]))
@@ -65,6 +67,9 @@ def test_factory_builds_plot_data_from_channel_collection_rows():
 
 
 def test_factory_can_build_from_stream_and_shank_index():
-    plot_data = PlotDataFactory().build_for_stream(_minimal_stream(), shank_idx=0)
+    plot_data = EphysPlotPayloadCacheFactory().build_for_stream(
+        _minimal_stream(),
+        shank_idx=0,
+    )
 
     np.testing.assert_array_equal(plot_data.chn_rows, np.array([0, 2]))

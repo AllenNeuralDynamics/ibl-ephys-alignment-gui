@@ -39,7 +39,9 @@ from ephys_alignment_gui.metadata_selection_commands import (
     MetadataSelectionCommandHandler,
 )
 from ephys_alignment_gui.path_commands import PathCommandHandler
-from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
+)
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.session_runtime import SessionRuntime
@@ -95,7 +97,9 @@ class AlignmentWorkspace:
         default_factory=AlignmentDerivedDataService
     )
     alignment_output_service: AlignmentOutputService = field(init=False)
-    plot_data_factory: PlotDataFactory = field(default_factory=PlotDataFactory)
+    plot_payload_cache_factory: EphysPlotPayloadCacheFactory = field(
+        default_factory=EphysPlotPayloadCacheFactory
+    )
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
     events: EventBus = field(default_factory=EventBus)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
@@ -158,7 +162,7 @@ class AlignmentWorkspace:
             display_state=self.display_state,
             runtime=self.runtime,
             load_data_job=self.load_data_job,
-            plot_data_factory=self.plot_data_factory,
+            plot_payload_cache_factory=self.plot_payload_cache_factory,
             metadata_commands=self.metadata_commands,
         )
         self.loaded_shank_commands = LoadedShankCommandHandler(

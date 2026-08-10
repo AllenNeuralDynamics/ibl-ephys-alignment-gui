@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ephys_alignment_gui.plot_menu_state import build_plot_menu_state
+from ephys_alignment_gui.plotting.menu_state import build_plot_menu_state
 
 
-class FakePlotData:
+class FakePayloadCache:
     def __init__(self, *, spikes: bool = True, rms_ap: bool = True) -> None:
         self.data = {
             "spikes": {"exists": spikes},
@@ -34,7 +34,7 @@ class FakePlotData:
 
 def test_preserves_previous_selected_key_when_available() -> None:
     state = build_plot_menu_state(
-        FakePlotData(),
+        FakePayloadCache(),
         previous_selected_keys={"image": "image.rms_ap"},
     )
 
@@ -43,7 +43,7 @@ def test_preserves_previous_selected_key_when_available() -> None:
 
 def test_falls_back_to_default_when_previous_key_is_unavailable() -> None:
     state = build_plot_menu_state(
-        FakePlotData(),
+        FakePayloadCache(),
         previous_selected_keys={"image": "image.no_longer_available"},
     )
 
@@ -52,7 +52,7 @@ def test_falls_back_to_default_when_previous_key_is_unavailable() -> None:
 
 def test_raw_image_payloads_are_available_and_selectable() -> None:
     state = build_plot_menu_state(
-        FakePlotData(),
+        FakePayloadCache(),
         previous_selected_keys={"image": "image.raw.raw_ap"},
         raw_image_payloads={"raw_ap": "raw-image"},
     )
@@ -63,7 +63,7 @@ def test_raw_image_payloads_are_available_and_selectable() -> None:
 
 
 def test_empty_plot_group_is_disabled_without_selection() -> None:
-    state = build_plot_menu_state(FakePlotData(spikes=False, rms_ap=False))
+    state = build_plot_menu_state(FakePayloadCache(spikes=False, rms_ap=False))
 
     line = state.group("line")
     assert not line.enabled

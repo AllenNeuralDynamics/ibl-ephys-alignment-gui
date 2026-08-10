@@ -37,7 +37,7 @@ class AlignmentEditCommandHandler:
         self.display_state.set_unit_filter(unit_filter)
         stream_runtime = self.runtime.active_stream_runtime
         if stream_runtime is not None:
-            stream_runtime.filtered_plot_data_for_shank(
+            stream_runtime.filtered_plot_payload_cache_for_shank(
                 self._active_or_given_shank(None),
                 unit_filter=unit_filter,
             )

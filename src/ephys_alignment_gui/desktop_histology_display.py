@@ -157,6 +157,8 @@ class DesktopHistologyDisplay:
         movable: bool = False,
     ) -> bool:
         """Render nearby histology boundary distances."""
+        if not self.ports.histology_available():
+            return False
         return self.presenter.render_active_nearby(fig, movable=movable)
 
     def toggle_labels(self) -> None:

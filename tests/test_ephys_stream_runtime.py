@@ -11,7 +11,7 @@ from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime
 
 
-class FakePlotDataFactory:
+class FakePlotPayloadCacheFactory:
     def __init__(self) -> None:
         self.calls = []
 
@@ -20,7 +20,7 @@ class FakePlotDataFactory:
         return {"rows": collection.rows.copy()}
 
 
-class FakeRegistryPlotData:
+class FakeRegistryPlotPayloadCache:
     def __init__(self, rows) -> None:
         self.rows = rows
         self.calls = []
@@ -32,7 +32,7 @@ class FakeRegistryPlotData:
         return None
 
 
-class FakeFilterPlotData:
+class FakeFilterPlotPayloadCache:
     def __init__(self, rows) -> None:
         self.rows = rows
         self.filtered_subsets = []
@@ -41,22 +41,22 @@ class FakeFilterPlotData:
         self.filtered_subsets.append(subset)
 
 
-class FakeFilterPlotDataFactory:
+class FakeFilterPlotPayloadCacheFactory:
     def __init__(self) -> None:
-        self.plotdata = None
+        self.payload_cache = None
 
     def build(self, collection):
-        self.plotdata = FakeFilterPlotData(collection.rows.copy())
-        return self.plotdata
+        self.payload_cache = FakeFilterPlotPayloadCache(collection.rows.copy())
+        return self.payload_cache
 
 
-class FakeRegistryPlotDataFactory:
+class FakeRegistryPlotPayloadCacheFactory:
     def __init__(self) -> None:
-        self.plotdata = None
+        self.payload_cache = None
 
     def build(self, collection):
-        self.plotdata = FakeRegistryPlotData(collection.rows.copy())
-        return self.plotdata
+        self.payload_cache = FakeRegistryPlotPayloadCache(collection.rows.copy())
+        return self.payload_cache
 
 
 def _stream() -> EphysStreamData:
@@ -77,7 +77,7 @@ def _stream() -> EphysStreamData:
 
 
 def test_collection_for_shank_returns_view_and_records_current_shank() -> None:
-    runtime = EphysStreamRuntime(_stream(), FakePlotDataFactory())
+    runtime = EphysStreamRuntime(_stream(), FakePlotPayloadCacheFactory())
 
     collection = runtime.collection_for_shank(1)
 
@@ -87,7 +87,7 @@ def test_collection_for_shank_returns_view_and_records_current_shank() -> None:
 
 
 def test_shank_runtime_for_shank_is_cached() -> None:
-    runtime = EphysStreamRuntime(_stream(), FakePlotDataFactory())
+    runtime = EphysStreamRuntime(_stream(), FakePlotPayloadCacheFactory())
 
     first = runtime.shank_runtime_for(1)
     second = runtime.shank_runtime_for(1)
@@ -98,12 +98,12 @@ def test_shank_runtime_for_shank_is_cached() -> None:
     assert runtime.visited_shank_runtimes() == {1: first}
 
 
-def test_plot_data_for_shank_is_cached_per_shank() -> None:
-    factory = FakePlotDataFactory()
+def test_plot_payload_cache_for_shank_is_cached_per_shank() -> None:
+    factory = FakePlotPayloadCacheFactory()
     runtime = EphysStreamRuntime(_stream(), factory)
 
-    first = runtime.plot_data_for_shank(1)
-    second = runtime.plot_data_for_shank(1)
+    first = runtime.plot_payload_cache_for_shank(1)
+    second = runtime.plot_payload_cache_for_shank(1)
 
     assert first is second
     assert first["rows"].tolist() == [2, 3]
@@ -111,37 +111,40 @@ def test_plot_data_for_shank_is_cached_per_shank() -> None:
 
 
 def test_plot_payload_for_shank_resolves_registered_plot_spec() -> None:
-    factory = FakeRegistryPlotDataFactory()
+    factory = FakeRegistryPlotPayloadCacheFactory()
     runtime = EphysStreamRuntime(_stream(), factory)
 
     payload = runtime.plot_payload_for_shank(1, "image.fr")
 
     assert payload["rows"].tolist() == [2, 3]
-    assert factory.plotdata.calls == [("get_fr_img", ())]
+    assert factory.payload_cache.calls == [("get_fr_img", ())]
 
 
-def test_filtered_plot_data_for_shank_applies_unit_filter() -> None:
-    factory = FakeFilterPlotDataFactory()
+def test_filtered_plot_payload_cache_for_shank_applies_unit_filter() -> None:
+    factory = FakeFilterPlotPayloadCacheFactory()
     runtime = EphysStreamRuntime(_stream(), factory)
 
-    plotdata = runtime.filtered_plot_data_for_shank(1, unit_filter="KS good")
+    payload_cache = runtime.filtered_plot_payload_cache_for_shank(
+        1,
+        unit_filter="KS good",
+    )
 
-    assert plotdata is factory.plotdata
-    assert plotdata.rows.tolist() == [2, 3]
-    assert plotdata.filtered_subsets == ["KS good"]
+    assert payload_cache is factory.payload_cache
+    assert payload_cache.rows.tolist() == [2, 3]
+    assert payload_cache.filtered_subsets == ["KS good"]
 
 
-def test_invalidate_plot_data_clears_one_or_all_shanks() -> None:
-    runtime = EphysStreamRuntime(_stream(), FakePlotDataFactory())
-    runtime.plot_data_for_shank(0)
-    runtime.plot_data_for_shank(1)
+def test_invalidate_plot_payload_cache_clears_one_or_all_shanks() -> None:
+    runtime = EphysStreamRuntime(_stream(), FakePlotPayloadCacheFactory())
+    runtime.plot_payload_cache_for_shank(0)
+    runtime.plot_payload_cache_for_shank(1)
 
-    runtime.invalidate_plot_data(0)
+    runtime.invalidate_plot_payload_cache(0)
 
-    assert runtime.shank_runtime_for(0).plotdata is None
-    assert runtime.shank_runtime_for(1).plotdata is not None
+    assert runtime.shank_runtime_for(0).plot_payload_cache is None
+    assert runtime.shank_runtime_for(1).plot_payload_cache is not None
 
-    runtime.invalidate_plot_data()
+    runtime.invalidate_plot_payload_cache()
 
-    assert runtime.shank_runtime_for(0).plotdata is None
-    assert runtime.shank_runtime_for(1).plotdata is None
+    assert runtime.shank_runtime_for(0).plot_payload_cache is None
+    assert runtime.shank_runtime_for(1).plot_payload_cache is None

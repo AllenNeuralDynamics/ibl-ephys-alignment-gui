@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.plot_level_policy import (
+from ephys_alignment_gui.plotting.level_policy import (
     in_brain_depth_mask,
     probe_colour_levels,
 )

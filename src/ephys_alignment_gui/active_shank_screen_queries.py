@@ -11,7 +11,7 @@ from ephys_alignment_gui.alignment_read_models import (
     PreparedActiveShankScreenState,
 )
 from ephys_alignment_gui.ephys_plot_queries import EphysPlotQueries
-from ephys_alignment_gui.plot_registry import PlotMenu
+from ephys_alignment_gui.plotting.registry import PlotMenu
 from ephys_alignment_gui.slice_display_policy import SliceSelection
 from ephys_alignment_gui.slice_queries import SliceQueries
 from ephys_alignment_gui.workspace_state_queries import WorkspaceStateQueries

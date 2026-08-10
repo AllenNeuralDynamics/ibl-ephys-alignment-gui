@@ -1,14 +1,14 @@
-"""Tests for PlotData memoization and unit filtering."""
+"""Tests for ephys plot payload cache memoization and unit filtering."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.plot_data import PlotData
+from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
 
-def _minimal_plotdata() -> PlotData:
-    """A PlotData over a trivial single-shank geometry, no spikes/clusters.
+def _minimal_payload_cache() -> EphysPlotPayloadCache:
+    """A payload cache over a trivial single-shank geometry, no spikes/clusters.
 
     Enough to exercise ``cached``/``filter_units``/the masking helpers without
     synthesizing full ALF spike + rms + psd payloads.
@@ -26,11 +26,11 @@ def _minimal_plotdata() -> PlotData:
         },
         "clusters": {"exists": False},
     }
-    return PlotData("dummy_probe_path", data, 0)
+    return EphysPlotPayloadCache("dummy_probe_path", data, 0)
 
 
 def test_cached_memoizes_per_method():
-    pd = _minimal_plotdata()
+    pd = _minimal_payload_cache()
     calls = []
 
     def _counting():
@@ -45,7 +45,7 @@ def test_cached_memoizes_per_method():
 
 
 def test_cached_keys_on_args():
-    pd = _minimal_plotdata()
+    pd = _minimal_payload_cache()
     pd._echo = lambda x: (x,)  # type: ignore[attr-defined]
     a = pd.cached("_echo", ("AP",))
     b = pd.cached("_echo", ("LF",))
@@ -55,7 +55,7 @@ def test_cached_keys_on_args():
 
 
 def test_filter_units_idempotent_keeps_cache_warm():
-    pd = _minimal_plotdata()
+    pd = _minimal_payload_cache()
     pd._current_filter = "all"
     pd._img_cache[("marker", ())] = "warm"
     # Same subset -> no-op, cache preserved.
@@ -64,7 +64,7 @@ def test_filter_units_idempotent_keeps_cache_warm():
 
 
 def test_filter_units_change_clears_cache():
-    pd = _minimal_plotdata()
+    pd = _minimal_payload_cache()
     pd._current_filter = "all"
     pd._img_cache[("marker", ())] = "warm"
     # Genuine change -> cache cleared before recompute.

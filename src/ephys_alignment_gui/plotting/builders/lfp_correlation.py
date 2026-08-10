@@ -11,8 +11,8 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.plot_channel_geometry import PlotChannelGeometry
-from ephys_alignment_gui.plot_level_policy import in_brain_depth_mask
+from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
+from ephys_alignment_gui.plotting.level_policy import in_brain_depth_mask
 
 logger = logging.getLogger(__name__)
 

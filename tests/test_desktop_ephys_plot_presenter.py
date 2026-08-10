@@ -10,8 +10,8 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
-from ephys_alignment_gui.plot_menu_state import PlotMenuGroupState, PlotMenuState
-from ephys_alignment_gui.plot_registry import PlotSpec
+from ephys_alignment_gui.plotting.menu_state import PlotMenuGroupState, PlotMenuState
+from ephys_alignment_gui.plotting.registry import PlotSpec
 
 
 class FakeSignal:
@@ -143,7 +143,7 @@ def _spec(
         label=label or key,
         menu=menu,
         renderer=renderer,
-        source=lambda _plotdata: None,
+        source=lambda _payload_cache: None,
         default=default,
     )
 

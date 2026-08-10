@@ -38,8 +38,8 @@ class ShankRuntime:
     region_colour_fp: Any = None
     nearby_boundaries: Any = None
 
-    # -- Cached PlotData and atlas/histology slices for this shank --
-    plotdata: Any = None
+    # -- Cached ephys plot payloads and atlas/histology slices for this shank --
+    plot_payload_cache: Any = None
     slice_runtime: SliceRuntime = field(default_factory=SliceRuntime)
 
     def __post_init__(self) -> None:

@@ -21,8 +21,8 @@ from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
     EphysPlotRenderCallbacks,
 )
-from ephys_alignment_gui.plot_menu_state import PlotMenuState
-from ephys_alignment_gui.plot_registry import PlotMenu
+from ephys_alignment_gui.plotting.menu_state import PlotMenuState
+from ephys_alignment_gui.plotting.registry import PlotMenu
 
 
 @dataclass(frozen=True)

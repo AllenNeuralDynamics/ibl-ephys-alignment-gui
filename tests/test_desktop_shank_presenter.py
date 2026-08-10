@@ -58,6 +58,7 @@ class FakeCommands:
         )
         self.loaded_shank = self
         self.edit = self
+        self.display = self
 
     def set_unit_filter(self, unit_filter: str) -> None:
         self.calls.append(("set_unit_filter", unit_filter))
@@ -65,6 +66,9 @@ class FakeCommands:
     def prepare_loaded_shank(self, shank_idx: int):
         self.calls.append(("prepare_shank", shank_idx))
         return self.prepared
+
+    def set_probe_limits(self, min_um: float, max_um: float) -> None:
+        self.calls.append(("set_probe_limits", min_um, max_um))
 
 
 class FakeQueries:
@@ -216,6 +220,7 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
                 "offline": True,
             },
         ),
+        ("set_probe_limits", 0.0, 100.0),
         ("apply_plot_data", app.queries.plot_data_state),
         ("menus", "plot-menu"),
         ("ephys", app.queries.screen_state),
@@ -292,6 +297,7 @@ def test_shank_presenter_raises_when_required_slice_preparation_fails() -> None:
                 "offline": True,
             },
         ),
+        ("set_probe_limits", 0.0, 100.0),
         ("apply_plot_data", app.queries.plot_data_state),
     ]
 

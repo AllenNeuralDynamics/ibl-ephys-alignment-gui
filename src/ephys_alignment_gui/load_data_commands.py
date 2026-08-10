@@ -28,7 +28,9 @@ from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
 from ephys_alignment_gui.metadata_selection_commands import (
     MetadataSelectionCommandHandler,
 )
-from ephys_alignment_gui.plot_data_factory import PlotDataFactory
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
+)
 from ephys_alignment_gui.reference_line_capture import (
     REFERENCE_LINES_NOT_PROVIDED,
     ReferenceLineCapture,
@@ -54,7 +56,7 @@ class LoadDataCommandHandler:
     display_state: AlignmentDisplayState
     runtime: SessionRuntime
     load_data_job: LoadDataJob
-    plot_data_factory: PlotDataFactory
+    plot_payload_cache_factory: EphysPlotPayloadCacheFactory
     metadata_commands: MetadataSelectionCommandHandler
 
     def can_load_data(self) -> PolicyResult:
@@ -245,7 +247,7 @@ class LoadDataCommandHandler:
         """Insert loaded ephys data into runtime cache and mark document loaded."""
         stream_runtime = self.runtime.cache_loaded_stream_data(
             loaded.stream,
-            self.plot_data_factory,
+            self.plot_payload_cache_factory,
             shank_idx=shank_idx,
         )
         self.controller.finish_load_data(shank_idx)

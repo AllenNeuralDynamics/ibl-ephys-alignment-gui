@@ -13,7 +13,7 @@ from ephys_alignment_gui.desktop_ephys_panel_view import DesktopEphysPanelView
 from ephys_alignment_gui.desktop_ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
 )
-from ephys_alignment_gui.plot_registry import PlotMenu
+from ephys_alignment_gui.plotting.registry import PlotMenu
 
 
 @dataclass(frozen=True)

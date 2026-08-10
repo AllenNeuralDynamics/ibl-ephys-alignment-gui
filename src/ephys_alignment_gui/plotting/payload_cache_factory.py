@@ -10,17 +10,17 @@ from ephys_alignment_gui.ephys_data_service import (
     ChannelCollectionView,
     EphysStreamData,
 )
-from ephys_alignment_gui.plot_data import PlotData
+from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
 
 @dataclass(frozen=True)
-class PlotDataFactory:
-    """Build :class:`PlotData` from stream-owned runtime data."""
+class EphysPlotPayloadCacheFactory:
+    """Build ephys plot payload caches from stream-owned runtime data."""
 
-    def build(self, collection: ChannelCollectionView) -> PlotData:
-        """Build plot data for a shank/channel-collection view."""
+    def build(self, collection: ChannelCollectionView) -> EphysPlotPayloadCache:
+        """Build plot payload cache for a shank/channel-collection view."""
         stream = collection.stream
-        return PlotData(
+        return EphysPlotPayloadCache(
             stream.ephys_dir,
             stream.alf_data,
             collection.shank_idx,
@@ -31,12 +31,12 @@ class PlotDataFactory:
         self,
         stream: EphysStreamData,
         shank_idx: int,
-    ) -> PlotData:
-        """Build plot data for one shank in a stream."""
+    ) -> EphysPlotPayloadCache:
+        """Build plot payload cache for one shank in a stream."""
         return self.build(stream.channel_collection(shank_idx))
 
     def build_legacy(
         self, probe_path: Path, data: dict[str, Any], shank_idx: int
-    ) -> PlotData:
-        """Build plot data from the legacy constructor inputs."""
-        return PlotData(probe_path, data, shank_idx)
+    ) -> EphysPlotPayloadCache:
+        """Build plot payload cache from the legacy constructor inputs."""
+        return EphysPlotPayloadCache(probe_path, data, shank_idx)

@@ -33,7 +33,7 @@ def test_rows_for_shank_uses_explicit_shank_ind():
 
 def test_plot_data_uses_channel_table_rows_not_raw_ind():
     pytest.importorskip("PyQt5")
-    from ephys_alignment_gui.plot_data import PlotData
+    from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
     data = {
         "channels": {
@@ -52,7 +52,7 @@ def test_plot_data_uses_channel_table_rows_not_raw_ind():
         "clusters": {"exists": False},
     }
 
-    plot_data = PlotData(Path("."), data, shank_idx=1)
+    plot_data = EphysPlotPayloadCache(Path("."), data, shank_idx=1)
 
     np.testing.assert_array_equal(plot_data.chn_ind, np.array([1, 3]))
     np.testing.assert_array_equal(plot_data.chn_rows, np.array([1, 3]))

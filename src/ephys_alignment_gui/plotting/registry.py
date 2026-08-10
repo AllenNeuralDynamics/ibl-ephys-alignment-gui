@@ -29,7 +29,7 @@ class PlotSpec:
 
 @dataclass(frozen=True)
 class DynamicPlotSpec:
-    """Description of plot menu entries discovered from PlotData."""
+    """Description of plot menu entries discovered from payload caches."""
 
     key: str
     menu: PlotMenu
@@ -41,10 +41,10 @@ def _cached(
     args: tuple[Any, ...] = (),
     index: int | None = None,
 ) -> Callable[[Any], Any]:
-    """Return a PlotData source function backed by PlotData.cached()."""
+    """Return a source function backed by payload-cache memoization."""
 
-    def source(plotdata: Any) -> Any:
-        value = plotdata.cached(method, args)
+    def source(payload_cache: Any) -> Any:
+        value = payload_cache.cached(method, args)
         return value if index is None else value[index]
 
     return source
@@ -64,8 +64,8 @@ def _data_exists(*keys: str) -> Callable[[Any], bool]:
         except Exception:
             return False
 
-    def available(plotdata: Any) -> bool:
-        data = getattr(plotdata, "data", None)
+    def available(payload_cache: Any) -> bool:
+        data = getattr(payload_cache, "data", None)
         if data is None:
             return True
         for key in keys:
@@ -76,11 +76,11 @@ def _data_exists(*keys: str) -> Callable[[Any], bool]:
     return available
 
 
-def _plot_spec_available(plotdata: Any, spec: PlotSpec) -> bool:
+def _plot_spec_available(payload_cache: Any, spec: PlotSpec) -> bool:
     if spec.available is None:
         return True
     try:
-        return spec.available(plotdata)
+        return spec.available(payload_cache)
     except Exception:
         logger.warning(
             "Skipping unavailable plot menu entry for %s",
@@ -105,7 +105,7 @@ def _mapping_child_specs(
     source: Callable[[Any], Mapping[Any, Any]],
     bounds_source: Callable[[Any], Any] | None = None,
 ) -> tuple[PlotSpec, ...]:
-    """Build child specs for a mapping-valued PlotData payload."""
+    """Build child specs for a mapping-valued plot payload."""
     specs = []
     for child_key, child_payload in payload.items():
         if child_payload is None:
@@ -116,15 +116,15 @@ def _mapping_child_specs(
                 label=label(child_key),
                 menu=menu,
                 renderer=renderer,
-                source=lambda plotdata, key=child_key: source(plotdata)[key],
+                source=lambda payload_cache, key=child_key: source(payload_cache)[key],
                 bounds_source=bounds_source,
             )
         )
     return tuple(specs)
 
 
-def _lfp_correlation_children(plotdata: Any) -> tuple[PlotSpec, ...]:
-    payload = plotdata.cached("get_lfp_correlation_data_img")
+def _lfp_correlation_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
+    payload = payload_cache.cached("get_lfp_correlation_data_img")
     if not isinstance(payload, Mapping) or not payload:
         return ()
     return _mapping_child_specs(
@@ -133,12 +133,14 @@ def _lfp_correlation_children(plotdata: Any) -> tuple[PlotSpec, ...]:
         renderer="image",
         payload=payload,
         label=lambda key: f"LFP Correlation ({key})",
-        source=lambda pd: pd.cached("get_lfp_correlation_data_img"),
+        source=lambda payload_cache: payload_cache.cached(
+            "get_lfp_correlation_data_img"
+        ),
     )
 
 
-def _passive_event_children(plotdata: Any) -> tuple[PlotSpec, ...]:
-    payload = plotdata.cached("get_passive_events")
+def _passive_event_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
+    payload = payload_cache.cached("get_passive_events")
     if not isinstance(payload, Mapping) or not payload:
         return ()
     return _mapping_child_specs(
@@ -147,12 +149,12 @@ def _passive_event_children(plotdata: Any) -> tuple[PlotSpec, ...]:
         renderer="image",
         payload=payload,
         label=str,
-        source=lambda pd: pd.cached("get_passive_events"),
+        source=lambda payload_cache: payload_cache.cached("get_passive_events"),
     )
 
 
-def _probe_lfp_children(plotdata: Any) -> tuple[PlotSpec, ...]:
-    value = plotdata.cached("get_lfp_spectrum_data", ("lf",))
+def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
+    value = payload_cache.cached("get_lfp_spectrum_data", ("lf",))
     if not isinstance(value, tuple) or len(value) < 2:
         return ()
     payload = value[1]
@@ -164,12 +166,15 @@ def _probe_lfp_children(plotdata: Any) -> tuple[PlotSpec, ...]:
         renderer="probe",
         payload=payload,
         label=str,
-        source=lambda pd: pd.cached("get_lfp_spectrum_data", ("lf",))[1],
+        source=lambda payload_cache: payload_cache.cached(
+            "get_lfp_spectrum_data",
+            ("lf",),
+        )[1],
     )
 
 
-def _rfmap_children(plotdata: Any) -> tuple[PlotSpec, ...]:
-    value = plotdata.cached("get_rfmap_data")
+def _rfmap_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
+    value = payload_cache.cached("get_rfmap_data")
     if not isinstance(value, tuple) or len(value) < 2:
         return ()
     payload, _bounds = value
@@ -181,8 +186,8 @@ def _rfmap_children(plotdata: Any) -> tuple[PlotSpec, ...]:
         renderer="probe",
         payload=payload,
         label=lambda key: f"RF Map - {key}",
-        source=lambda pd: pd.cached("get_rfmap_data")[0],
-        bounds_source=lambda pd: pd.cached("get_rfmap_data")[1],
+        source=lambda payload_cache: payload_cache.cached("get_rfmap_data")[0],
+        bounds_source=lambda payload_cache: payload_cache.cached("get_rfmap_data")[1],
     )
 
 
@@ -358,20 +363,20 @@ def plot_specs_for_menu(menu: PlotMenu) -> tuple[PlotSpec, ...]:
 
 
 def available_plot_specs_for_menu(
-    plotdata: Any,
+    payload_cache: Any,
     menu: PlotMenu,
 ) -> tuple[PlotSpec, ...]:
-    """Return menu specs available for the current PlotData."""
+    """Return menu specs available for the current plot payload cache."""
     specs: list[PlotSpec] = []
     for entry in PLOT_MENU_ENTRIES:
         if entry.menu != menu:
             continue
         if isinstance(entry, PlotSpec):
-            if _plot_spec_available(plotdata, entry):
+            if _plot_spec_available(payload_cache, entry):
                 specs.append(entry)
             continue
         try:
-            specs.extend(entry.children(plotdata))
+            specs.extend(entry.children(payload_cache))
         except Exception:
             logger.warning(
                 "Skipping unavailable dynamic plot menu entries for %s",
@@ -395,23 +400,23 @@ def _coerce_spec(spec_or_key: PlotSpec | str) -> PlotSpec:
     return plot_spec(spec_or_key)
 
 
-def resolve_plot_payload(plotdata: Any, spec_or_key: PlotSpec | str) -> Any:
-    """Resolve a plot payload from PlotData using a plot spec key."""
+def resolve_plot_payload(payload_cache: Any, spec_or_key: PlotSpec | str) -> Any:
+    """Resolve a plot payload from a cache using a plot spec key."""
     spec = _coerce_spec(spec_or_key)
     try:
-        return spec.source(plotdata)
+        return spec.source(payload_cache)
     except Exception:
         logger.warning("Plot payload %s is unavailable", spec.key, exc_info=True)
         return None
 
 
-def resolve_plot_bounds(plotdata: Any, spec_or_key: PlotSpec | str) -> Any:
-    """Resolve optional plot bounds from PlotData using a plot spec key."""
+def resolve_plot_bounds(payload_cache: Any, spec_or_key: PlotSpec | str) -> Any:
+    """Resolve optional plot bounds from a cache using a plot spec key."""
     spec = _coerce_spec(spec_or_key)
     if spec.bounds_source is None:
         return None
     try:
-        return spec.bounds_source(plotdata)
+        return spec.bounds_source(payload_cache)
     except Exception:
         logger.warning("Plot bounds %s are unavailable", spec.key, exc_info=True)
         return None
@@ -432,5 +437,5 @@ def mapping_plot_specs(
         renderer=renderer,
         payload=payloads,
         label=label,
-        source=lambda _plotdata: payloads,
+        source=lambda _payload_cache: payloads,
     )

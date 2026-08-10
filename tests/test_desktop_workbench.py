@@ -826,9 +826,9 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
         ),
         interaction=DesktopInteractionPorts(
             popup_manager=object(),
-            struct_list=object(),
-            struct_view=object(),
-            struct_description=object(),
+            struct_list=object,
+            struct_view=object,
+            struct_description=object,
             scale_plot=object(),
             histology_plot=object(),
             histology_reference_plot=object(),

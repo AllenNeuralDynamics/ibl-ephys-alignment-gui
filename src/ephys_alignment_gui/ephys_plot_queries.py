@@ -18,8 +18,8 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
     ClusterDetailRenderState,
 )
-from ephys_alignment_gui.plot_menu_state import PlotMenuState, build_plot_menu_state
-from ephys_alignment_gui.plot_registry import (
+from ephys_alignment_gui.plotting.menu_state import PlotMenuState, build_plot_menu_state
+from ephys_alignment_gui.plotting.registry import (
     PlotMenu,
     PlotSpec,
     resolve_plot_bounds,
@@ -47,24 +47,24 @@ class EphysPlotQueries:
         *,
         unit_filter: str | None = None,
     ) -> ActiveShankPlotDataState | None:
-        """Materialize active shank PlotData and return frontend-safe bounds."""
+        """Materialize active shank plot payload cache and return bounds."""
         stream_runtime = getattr(self.context.runtime, "active_stream_runtime", None)
         if stream_runtime is None:
             return None
         shank_idx = self.context.active_shank_idx()
         unit_filter = self.active_unit_filter() if unit_filter is None else unit_filter
-        plotdata = stream_runtime.filtered_plot_data_for_shank(
+        payload_cache = stream_runtime.filtered_plot_payload_cache_for_shank(
             shank_idx,
             unit_filter=unit_filter,
         )
         in_brain_depths_um = self.active_in_brain_depths_for_alignment()
-        plotdata.in_brain_depths_um = in_brain_depths_um
+        payload_cache.in_brain_depths_um = in_brain_depths_um
         return ActiveShankPlotDataState(
             key=self.context.document.selected_alignment_key,
             shank_idx=shank_idx,
             unit_filter=unit_filter,
-            channel_min_um=float(getattr(plotdata, "chn_min", 0.0)),
-            channel_max_um=float(getattr(plotdata, "chn_max", 0.0)),
+            channel_min_um=float(getattr(payload_cache, "chn_min", 0.0)),
+            channel_max_um=float(getattr(payload_cache, "chn_max", 0.0)),
             in_brain_depths_um=in_brain_depths_um,
         )
 
@@ -75,9 +75,9 @@ class EphysPlotQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> PlotMenuState:
         """Return available plot menu entries for the active shank."""
-        plotdata = self._active_plotdata()
-        return self._plot_menu_state_for_plotdata(
-            plotdata,
+        payload_cache = self._active_payload_cache()
+        return self._plot_menu_state_for_payload_cache(
+            payload_cache,
             previous_selected_keys=previous_selected_keys,
             raw_image_payloads=raw_image_payloads,
         )
@@ -89,9 +89,9 @@ class EphysPlotQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> PlotSpec | None:
         """Return an available plot spec for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        payload_cache = self._active_payload_cache()
+        state = self._plot_menu_state_for_payload_cache(
+            payload_cache,
             raw_image_payloads=raw_image_payloads,
         )
         return self._find_plot_spec(state, spec_key)
@@ -103,15 +103,15 @@ class EphysPlotQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> Any:
         """Resolve a plot payload for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        payload_cache = self._active_payload_cache()
+        state = self._plot_menu_state_for_payload_cache(
+            payload_cache,
             raw_image_payloads=raw_image_payloads,
         )
         spec = self._find_plot_spec(state, spec_key)
         if spec is None:
             return None
-        return resolve_plot_payload(plotdata, spec)
+        return resolve_plot_payload(payload_cache, spec)
 
     def active_plot_bounds(
         self,
@@ -120,22 +120,22 @@ class EphysPlotQueries:
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> Any:
         """Resolve optional plot bounds for the active shank."""
-        plotdata = self._active_plotdata()
-        state = self._plot_menu_state_for_plotdata(
-            plotdata,
+        payload_cache = self._active_payload_cache()
+        state = self._plot_menu_state_for_payload_cache(
+            payload_cache,
             raw_image_payloads=raw_image_payloads,
         )
         spec = self._find_plot_spec(state, spec_key)
         if spec is None:
             return None
-        return resolve_plot_bounds(plotdata, spec)
+        return resolve_plot_bounds(payload_cache, spec)
 
     def active_in_brain_depths_um(self) -> Any:
-        """Return active PlotData in-brain depths, if available."""
-        plotdata = self._active_plotdata()
-        if plotdata is None:
+        """Return active plot payload cache in-brain depths, if available."""
+        payload_cache = self._active_payload_cache()
+        if payload_cache is None:
             return None
-        return getattr(plotdata, "in_brain_depths_um", None)
+        return getattr(payload_cache, "in_brain_depths_um", None)
 
     def active_in_brain_depths_for_alignment(self) -> Any:
         """Return active channel depths whose aligned CCF annotation is not root."""
@@ -171,17 +171,17 @@ class EphysPlotQueries:
         cluster_idx: int,
     ) -> ClusterDetailRenderState | None:
         """Return autocorrelogram/template detail for one active cluster."""
-        plotdata = self._active_plotdata()
-        if plotdata is None:
+        payload_cache = self._active_payload_cache()
+        if payload_cache is None:
             return None
-        autocorr, cluster_no = plotdata.get_autocorr(cluster_idx)
-        template_waveform = plotdata.get_template_wf(cluster_idx)
+        autocorr, cluster_no = payload_cache.get_autocorr(cluster_idx)
+        template_waveform = payload_cache.get_template_wf(cluster_idx)
         return ClusterDetailRenderState(
             cluster_no=cluster_no,
             autocorr=np.asarray(autocorr),
-            t_autocorr=np.asarray(plotdata.t_autocorr),
+            t_autocorr=np.asarray(payload_cache.t_autocorr),
             template_waveform=np.asarray(template_waveform),
-            t_template=np.asarray(plotdata.t_template),
+            t_template=np.asarray(payload_cache.t_template),
         )
 
     def active_session_notes(self) -> str:
@@ -191,15 +191,15 @@ class EphysPlotQueries:
             return ""
         return stream_runtime.stream.session_notes
 
-    def _plot_menu_state_for_plotdata(
+    def _plot_menu_state_for_payload_cache(
         self,
-        plotdata: Any,
+        payload_cache: Any,
         *,
         previous_selected_keys: Mapping[PlotMenu, str | None] | None = None,
         raw_image_payloads: Mapping[Any, Any] | None = None,
     ) -> PlotMenuState:
         return build_plot_menu_state(
-            plotdata,
+            payload_cache,
             previous_selected_keys=previous_selected_keys,
             raw_image_payloads=raw_image_payloads,
         )
@@ -215,8 +215,10 @@ class EphysPlotQueries:
         logger.warning("Ignoring unavailable plot spec %s", spec_key)
         return None
 
-    def _active_plotdata(self) -> Any:
+    def _active_payload_cache(self) -> Any:
         stream_runtime = getattr(self.context.runtime, "active_stream_runtime", None)
         if stream_runtime is None:
             return None
-        return stream_runtime.plot_data_for_shank(self.context.active_shank_idx())
+        return stream_runtime.plot_payload_cache_for_shank(
+            self.context.active_shank_idx()
+        )

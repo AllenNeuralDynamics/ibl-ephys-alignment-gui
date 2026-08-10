@@ -17,11 +17,22 @@ class FakeLayout:
 
 
 class FakeQueries:
-    def __init__(self) -> None:
+    def __init__(self, *, brain_atlas: Any = "atlas") -> None:
         self.nearby_calls: list[dict[str, Any]] = []
         self.nearby_state: Any = "nearby-state"
         self.alignment_render = SimpleNamespace(
             active_nearby_boundary_state=self.active_nearby_boundary_state,
+        )
+        self.workspace = SimpleNamespace(
+            active_brain_atlas=lambda: brain_atlas,
+            allen_structure_tree=lambda: "allen",
+            depth_view_settings=lambda: SimpleNamespace(
+                probe_tip_um=0.0,
+                probe_top_um=3840.0,
+                probe_extra_um=100.0,
+            ),
+            fit_depth_um=lambda: [],
+            linear_fit_enabled=lambda: False,
         )
 
     def active_nearby_boundary_state(self, **kwargs: Any) -> Any:
@@ -35,8 +46,9 @@ def _display(
     histology_available: bool = True,
     brain_atlas: Any = "atlas",
 ) -> DesktopHistologyDisplay:
+    queries = queries or FakeQueries(brain_atlas=brain_atlas)
     return DesktopHistologyDisplay.create(
-        app=SimpleNamespace(queries=queries or FakeQueries()),
+        app=SimpleNamespace(queries=queries),
         ports=DesktopHistologyDisplayPorts(
             aligned_plot="aligned",
             reference_plot="reference",
@@ -52,17 +64,8 @@ def _display(
             linear_fit_curve=SimpleNamespace(setData=lambda **_kwargs: None),
             set_axis=lambda *_args, **_kwargs: None,
             padding_provider=lambda: 0.05,
-            probe_extent_query_kwargs=lambda: {
-                "probe_tip_um": 0.0,
-                "probe_top_um": 3840.0,
-                "probe_extra_um": 100.0,
-            },
-            fit_depth_um=lambda: [],
-            lin_fit_enabled=lambda: False,
             scale_factor_y_range=lambda: (0.0, 1.0),
             histology_available=lambda: histology_available,
-            brain_atlas=lambda: brain_atlas,
-            allen=lambda: "allen",
         ),
     )
 
@@ -104,5 +107,5 @@ def test_histology_display_fails_closed_without_histology_or_atlas() -> None:
     queries = FakeQueries()
 
     assert not _display(queries, histology_available=False).render_active_nearby()
-    assert not _display(queries, brain_atlas=None).render_active_nearby()
+    assert not _display(FakeQueries(brain_atlas=None)).render_active_nearby()
     assert queries.nearby_calls == []

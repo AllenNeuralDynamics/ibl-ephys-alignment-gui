@@ -53,10 +53,6 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         reload_folder_line=SimpleNamespace(setText=lambda _text: None),
         reload_folder_button=object(),
         export_view=object(),
-        popup_manager_extra=object(),
-        struct_list=object(),
-        struct_view=object(),
-        struct_description=object(),
         fig_scale=object(),
         fig_hist=object(),
         fig_hist_ref=object(),
@@ -77,3 +73,16 @@ def test_workbench_ports_do_not_require_online_qc_widgets() -> None:
     assert ports.save.histology_available()
     assert ports.save.ephys_qc() == "Pass"
     ports.save.open_qc_dialog()
+
+
+def test_interaction_region_widgets_are_late_bound() -> None:
+    window = _fake_window_without_qc_widgets()
+
+    ports = desktop_workbench_ports_from_main_window(window)
+    window.struct_list = object()
+    window.struct_view = object()
+    window.struct_description = object()
+
+    assert ports.interaction.struct_list() is window.struct_list
+    assert ports.interaction.struct_view() is window.struct_view
+    assert ports.interaction.struct_description() is window.struct_description

@@ -1,4 +1,4 @@
-"""Tests for PlotData channel geometry derivation."""
+"""Tests for ephys plot channel geometry derivation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.plot_channel_geometry import build_plot_channel_geometry
+from ephys_alignment_gui.plotting.channel_geometry import build_plot_channel_geometry
 
 
 def test_plot_geometry_uses_runtime_channel_collection_rows() -> None:

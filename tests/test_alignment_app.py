@@ -68,7 +68,7 @@ from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 
-class FakePlotData:
+class FakePlotPayloadCache:
     def __init__(self, label: str = "plot") -> None:
         self.label = label
         self.filtered_subsets: list[str] = []
@@ -117,24 +117,24 @@ class FakeStreamRuntime:
     def __init__(self) -> None:
         self.calls: list[int] = []
         self.shank_runtime_by_idx = {}
-        self.plotdata_by_shank = {
-            1: FakePlotData("shank-1"),
-            2: FakePlotData("shank-2"),
+        self.plot_payload_cache_by_shank = {
+            1: FakePlotPayloadCache("shank-1"),
+            2: FakePlotPayloadCache("shank-2"),
         }
 
-    def plot_data_for_shank(self, shank_idx: int) -> FakePlotData:
+    def plot_payload_cache_for_shank(self, shank_idx: int) -> FakePlotPayloadCache:
         self.calls.append(shank_idx)
-        return self.plotdata_by_shank[shank_idx]
+        return self.plot_payload_cache_by_shank[shank_idx]
 
-    def filtered_plot_data_for_shank(
+    def filtered_plot_payload_cache_for_shank(
         self,
         shank_idx: int,
         *,
         unit_filter: str,
-    ) -> FakePlotData:
-        plotdata = self.plot_data_for_shank(shank_idx)
-        plotdata.filter_units(unit_filter)
-        return plotdata
+    ) -> FakePlotPayloadCache:
+        payload_cache = self.plot_payload_cache_for_shank(shank_idx)
+        payload_cache.filter_units(unit_filter)
+        return payload_cache
 
     def visited_shank_runtimes(self):
         return self.shank_runtime_by_idx
@@ -593,7 +593,7 @@ def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> 
     workspace.display_state.set_unit_filter("KS good")
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
 
@@ -614,7 +614,7 @@ def test_commands_begin_load_data_noops_when_stream_shank_already_active() -> No
     workspace.data_context.mouse_root = _mouse_root_with_probe()
     workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
     workspace.document.mark_data_loaded(True)
@@ -643,7 +643,7 @@ def test_commands_begin_load_data_activates_cached_stream_and_captures_lines() -
     workspace.document.mark_data_loaded(True)
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
     workspace.runtime.clear_active_stream()
@@ -738,7 +738,7 @@ def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> N
     workspace.display_state.set_unit_filter("KS good")
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
 
@@ -757,12 +757,12 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
     workspace.display_state.set_unit_filter("KS good")
     workspace.runtime.cache_loaded_stream_data(
         _ephys_stream("streamA"),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=0,
     )
     workspace.runtime.cache_loaded_stream_data(
         _ephys_stream("streamB"),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=0,
     )
 
@@ -876,7 +876,7 @@ def test_commands_activate_cached_ephys_data_uses_explicit_shank() -> None:
     workspace.data_context.mouse_root = _mouse_root_with_probe()
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
     workspace.runtime.clear_active_stream()
@@ -921,7 +921,7 @@ def test_commands_activate_cached_ephys_data_failure_does_not_mark_loaded() -> N
     workspace.data_context.mouse_root = _mouse_root_with_probe()
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
     workspace.runtime.clear_active_stream()
@@ -1466,7 +1466,7 @@ def test_commands_set_unit_filter_updates_display_state() -> None:
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
     assert workspace.app.queries.ephys.active_unit_filter() == "KS good"
-    assert stream_runtime.plotdata_by_shank[1].filtered_subsets == ["KS good"]
+    assert stream_runtime.plot_payload_cache_by_shank[1].filtered_subsets == ["KS good"]
     assert stream_runtime.calls == [1]
 
 
@@ -1527,7 +1527,7 @@ def test_commands_prepare_loaded_shank_without_histology() -> None:
     workspace = _workspace_with_probe_state(shank_idx=1)
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=0,
     )
     workspace.document.mark_data_loaded(True)
@@ -1562,7 +1562,7 @@ def test_commands_prepare_loaded_shank_initializes_histology_runtime() -> None:
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
     stream_runtime = workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
 
@@ -1621,7 +1621,7 @@ def test_prepare_loaded_shank_preserves_explicit_original_selection() -> None:
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
     workspace.runtime.cache_loaded_stream_data(
         _ephys_stream(),
-        workspace.plot_data_factory,
+        workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
 
@@ -1650,7 +1650,7 @@ def test_queries_return_default_unit_filter() -> None:
     assert queries.ephys.active_unit_filter() == "all"
 
 
-def test_queries_can_resolve_raw_payload_without_plotdata() -> None:
+def test_queries_can_resolve_raw_payload_without_payload_cache() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(),
         runtime=SimpleNamespace(active_stream_runtime=None),
@@ -1669,7 +1669,7 @@ def test_queries_can_resolve_raw_payload_without_plotdata() -> None:
     assert payload == "raw-image"
 
 
-def test_queries_fail_closed_without_plotdata_or_raw_payloads() -> None:
+def test_queries_fail_closed_without_payload_cache_or_raw_payloads() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(),
         runtime=SimpleNamespace(active_stream_runtime=None),
@@ -1681,7 +1681,7 @@ def test_queries_fail_closed_without_plotdata_or_raw_payloads() -> None:
     assert queries.ephys.active_plot_payload("image.fr") is None
 
 
-def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
+def test_queries_return_active_in_brain_depths_from_runtime_payload_cache() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(selected_shank=1),
         runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
@@ -1693,7 +1693,7 @@ def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
     )
 
 
-def test_queries_prepare_shank_plot_data_state_filters_runtime_plotdata() -> None:
+def test_queries_prepare_shank_plot_data_state_filters_runtime_payload_cache() -> None:
     document = AlignmentDocument(selected_shank=1)
     stream_runtime = FakeStreamRuntime()
     queries = AlignmentQueries(
@@ -1709,8 +1709,8 @@ def test_queries_prepare_shank_plot_data_state_filters_runtime_plotdata() -> Non
     assert state.unit_filter == "KS good"
     assert state.channel_min_um == 5.0
     assert state.channel_max_um == 200.0
-    assert stream_runtime.plotdata_by_shank[1].filtered_subsets == ["KS good"]
-    assert stream_runtime.plotdata_by_shank[1].in_brain_depths_um is None
+    assert stream_runtime.plot_payload_cache_by_shank[1].filtered_subsets == ["KS good"]
+    assert stream_runtime.plot_payload_cache_by_shank[1].in_brain_depths_um is None
 
 
 def test_queries_build_active_shank_screen_state_from_runtime_menus() -> None:
@@ -1765,7 +1765,7 @@ def test_queries_prepare_active_shank_screen_state_materializes_runtime() -> Non
     assert prepared.plot_data.shank_idx == 2
     assert prepared.screen is not None
     assert prepared.screen.plot_menu.group("image").selected_key == "image.raw.raw_ap"
-    assert stream_runtime.plotdata_by_shank[2].filtered_subsets == ["KS good"]
+    assert stream_runtime.plot_payload_cache_by_shank[2].filtered_subsets == ["KS good"]
 
 
 def test_queries_prepare_active_shank_screen_state_reports_required_slice_gap() -> None:
@@ -1791,7 +1791,7 @@ def test_queries_prepare_active_shank_screen_state_reports_required_slice_gap() 
     assert prepared.screen is None
 
 
-def test_queries_build_cluster_detail_from_runtime_plotdata() -> None:
+def test_queries_build_cluster_detail_from_runtime_payload_cache() -> None:
     queries = AlignmentQueries(
         document=AlignmentDocument(selected_shank=1),
         runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),

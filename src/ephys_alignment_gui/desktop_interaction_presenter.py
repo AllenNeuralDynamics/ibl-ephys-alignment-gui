@@ -60,6 +60,20 @@ class DesktopInteractionPresenter:
     infinite_line_type: type = pg.InfiniteLine
     linear_region_type: type = pg.LinearRegionItem
 
+    @staticmethod
+    def _resolve_widget(widget_or_factory: Any) -> Any:
+        """Return a widget from either a direct handle or a zero-arg factory."""
+        return widget_or_factory() if callable(widget_or_factory) else widget_or_factory
+
+    def _struct_list(self) -> Any:
+        return self._resolve_widget(self.widgets.struct_list)
+
+    def _struct_view(self) -> Any:
+        return self._resolve_widget(self.widgets.struct_view)
+
+    def _struct_description(self) -> Any:
+        return self._resolve_widget(self.widgets.struct_description)
+
     def initialize_region_lookup(
         self,
         init_region_lookup: Callable[[Any], None],
@@ -180,8 +194,8 @@ class DesktopInteractionPresenter:
                 size=(500, 700),
                 graphics=False,
             )
-            label_window.layout.addWidget(self.widgets.struct_view)
-            label_window.layout.addWidget(self.widgets.struct_description)
+            label_window.layout.addWidget(self._struct_view())
+            label_window.layout.addWidget(self._struct_description())
             label_window.layout.setRowStretch(0, 7)
             label_window.layout.setRowStretch(1, 3)
             label_window.closed.connect(self.label_closed)
@@ -260,17 +274,20 @@ class DesktopInteractionPresenter:
         *,
         scroll: bool = False,
     ) -> bool:
-        items = self.widgets.struct_list.findItems(
+        struct_list = self._struct_list()
+        items = struct_list.findItems(
             lookup,
             flags=QtCore.Qt.MatchRecursive,
         )
         if not items:
             logger.error("Could not find structure %s in region tree", lookup)
             return False
-        model_item = self.widgets.struct_list.indexFromItem(items[0])
+        struct_view = self._struct_view()
+        struct_description = self._struct_description()
+        model_item = struct_list.indexFromItem(items[0])
         if scroll:
-            self.widgets.struct_view.collapseAll()
-            self.widgets.struct_view.scrollTo(model_item)
-        self.widgets.struct_view.setCurrentIndex(model_item)
-        self.widgets.struct_description.setText(description)
+            struct_view.collapseAll()
+            struct_view.scrollTo(model_item)
+        struct_view.setCurrentIndex(model_item)
+        struct_description.setText(description)
         return True

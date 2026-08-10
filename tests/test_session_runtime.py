@@ -18,7 +18,7 @@ from ephys_alignment_gui.session_runtime import (
 )
 
 
-class FakePlotDataFactory:
+class FakePlotPayloadCacheFactory:
     def build(self, collection):
         return {"rows": collection.rows.copy()}
 
@@ -36,7 +36,7 @@ def _stream_runtime(collection: str = "streamA") -> EphysStreamRuntime:
         alf_data={"channels": {"exists": True}},
         session_notes="notes",
     )
-    return EphysStreamRuntime(stream, FakePlotDataFactory())
+    return EphysStreamRuntime(stream, FakePlotPayloadCacheFactory())
 
 
 def test_clear_active_stream_clears_current_stream_without_evicting_cache() -> None:
@@ -113,7 +113,7 @@ def test_cache_loaded_stream_data_builds_runtime_and_initializes_shank() -> None
 
     stream_runtime = runtime.cache_loaded_stream_data(
         stream,
-        FakePlotDataFactory(),
+        FakePlotPayloadCacheFactory(),
         shank_idx=1,
     )
 
@@ -132,7 +132,7 @@ def test_cache_loaded_stream_data_skips_cache_on_shank_init_failure() -> None:
     with pytest.raises(IndexError):
         runtime.cache_loaded_stream_data(
             stream,
-            FakePlotDataFactory(),
+            FakePlotPayloadCacheFactory(),
             shank_idx=3,
         )
 

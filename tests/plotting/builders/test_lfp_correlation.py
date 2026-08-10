@@ -6,7 +6,7 @@ import json
 
 import numpy as np
 
-from ephys_alignment_gui.plot_data import PlotData
+from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
 
 def test_lfp_correlation_builder_slices_full_matrix_to_shank_rows(tmp_path) -> None:
@@ -40,7 +40,7 @@ def test_lfp_correlation_builder_slices_full_matrix_to_shank_rows(tmp_path) -> N
         "spikes": {"exists": False},
         "clusters": {"exists": False},
     }
-    plot_data = PlotData(tmp_path, data, shank_idx=1)
+    plot_data = EphysPlotPayloadCache(tmp_path, data, shank_idx=1)
 
     result = plot_data.get_lfp_correlation_data_img()
 

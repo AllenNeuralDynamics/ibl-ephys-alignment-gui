@@ -120,9 +120,9 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         export=window.export_view,
         interaction=DesktopInteractionPorts(
             popup_manager=window.popup_manager,
-            struct_list=window.struct_list,
-            struct_view=window.struct_view,
-            struct_description=window.struct_description,
+            struct_list=lambda: window.struct_list,
+            struct_view=lambda: window.struct_view,
+            struct_description=lambda: window.struct_description,
             scale_plot=window.fig_scale,
             histology_plot=window.fig_hist,
             histology_reference_plot=window.fig_hist_ref,
