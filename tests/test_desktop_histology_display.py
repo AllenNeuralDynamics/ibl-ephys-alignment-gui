@@ -20,6 +20,9 @@ class FakeQueries:
     def __init__(self) -> None:
         self.nearby_calls: list[dict[str, Any]] = []
         self.nearby_state: Any = "nearby-state"
+        self.alignment_render = SimpleNamespace(
+            active_nearby_boundary_state=self.active_nearby_boundary_state,
+        )
 
     def active_nearby_boundary_state(self, **kwargs: Any) -> Any:
         self.nearby_calls.append(kwargs)
@@ -78,10 +81,8 @@ def test_histology_display_renders_nearby_boundaries() -> None:
     queries = FakeQueries()
     display = _display(queries)
     calls: list[Any] = []
-    display.panel.render_nearby = (
-        lambda state, fig=None, *, movable=False: calls.append(
-            (state, fig, movable)
-        )
+    display.panel.render_nearby = lambda state, fig=None, *, movable=False: (
+        calls.append((state, fig, movable))
     )
 
     rendered = display.render_active_nearby("fig", movable=True)

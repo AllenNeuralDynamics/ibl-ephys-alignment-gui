@@ -108,6 +108,9 @@ class FakeQueries:
     def __init__(self, menu_state: ActiveSliceMenuState | None) -> None:
         self.menu_state = menu_state
         self.offline_values: list[bool] = []
+        self.slices = SimpleNamespace(
+            active_slice_menu_state=self.active_slice_menu_state,
+        )
 
     def active_slice_menu_state(self, *, offline: bool) -> ActiveSliceMenuState | None:
         self.offline_values.append(offline)
@@ -161,9 +164,7 @@ def _display(
 
 def test_slice_display_attaches_menu_and_captures_checked_selection() -> None:
     default = _selection("histology_registration")
-    display, queries, _calls = _display(
-        _menu_state(default=default, selected=default)
-    )
+    display, queries, _calls = _display(_menu_state(default=default, selected=default))
     menu_bar = FakeMenuBar()
 
     display.attach_slice_menu(menu_bar, parent=object(), offline=True)

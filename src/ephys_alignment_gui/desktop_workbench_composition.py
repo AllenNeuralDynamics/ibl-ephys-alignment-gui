@@ -152,9 +152,9 @@ def build_desktop_workbench_presenter_cluster(
     path_dialog_presenter = DesktopPathDialogPresenter(
         folder_dialog=folder_dialog,
         callbacks=DesktopPathDialogCallbacks(
-            active_mouse_root=app.queries.active_mouse_root_path,
+            active_mouse_root=app.queries.workspace.active_mouse_root_path,
             set_mouse_root=mouse_root_presenter.set_mouse_root,
-            active_output_root=app.queries.active_output_root,
+            active_output_root=app.queries.workspace.active_output_root,
             set_save_root=output_path_presenter.set_save_root,
         ),
     )
@@ -164,7 +164,7 @@ def build_desktop_workbench_presenter_cluster(
             derive_output_directory_from_save_root=(
                 output_path_presenter.derive_output_directory_from_save_root
             ),
-            has_output_directory=app.queries.has_output_directory,
+            has_output_directory=app.queries.workspace.has_output_directory,
             select_output_folder=path_dialog_presenter.select_output_root,
         ),
     )

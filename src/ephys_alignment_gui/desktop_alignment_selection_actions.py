@@ -38,7 +38,7 @@ class DesktopAlignmentSelectionActions:
         if not isinstance(selected, PreviousAlignmentSelected):
             return False
 
-        selection = self.app.queries.active_shank_selection()
+        selection = self.app.queries.workspace.active_shank_selection()
         if not selection.data_loaded:
             logger.info("Data not loaded yet, alignment params updated")
             return True

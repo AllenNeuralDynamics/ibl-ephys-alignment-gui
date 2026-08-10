@@ -67,7 +67,7 @@ class DesktopSliceMenuPresenter:
         self.handles.action_group = action_group
         self.handles.initial_action = None
 
-        menu_state = self.app.queries.active_slice_menu_state(offline=offline)
+        menu_state = self.app.queries.slices.active_slice_menu_state(offline=offline)
         if menu_state is None:
             return
 

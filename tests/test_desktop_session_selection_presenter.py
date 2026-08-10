@@ -61,7 +61,11 @@ def _presenter(
     selection_view = FakeSelectionView(calls, session_name=session_name)
     app = SimpleNamespace(
         commands=commands,
-        queries=SimpleNamespace(mouse_root_loaded=lambda: mouse_root_loaded),
+        queries=SimpleNamespace(
+            workspace=SimpleNamespace(
+                mouse_root_loaded=lambda: mouse_root_loaded,
+            )
+        ),
     )
     presenter = DesktopSessionSelectionPresenter(
         app=app,

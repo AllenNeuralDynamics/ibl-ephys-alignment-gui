@@ -83,13 +83,14 @@ def _actions(
         prepare_result=prepare_result,
     )
     callbacks = FakeCallbacks()
+    workspace_queries = SimpleNamespace(
+        active_shank_selection=lambda: SimpleNamespace(
+            shank_idx=1,
+            data_loaded=data_loaded,
+        )
+    )
     app = SimpleNamespace(
-        queries=SimpleNamespace(
-            active_shank_selection=lambda: SimpleNamespace(
-                shank_idx=1,
-                data_loaded=data_loaded,
-            )
-        ),
+        queries=SimpleNamespace(workspace=workspace_queries),
         commands=commands,
     )
     return (

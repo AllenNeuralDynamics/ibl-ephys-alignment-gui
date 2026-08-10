@@ -37,6 +37,12 @@ class FakeQueries:
             )
         )
         self.calls: list[Any] = []
+        self.alignment_render = SimpleNamespace(
+            active_alignment_render_state=self.active_alignment_render_state,
+            active_histology_panel_state=self.active_histology_panel_state,
+            probe_extent_render_state=self.probe_extent_render_state,
+            active_fit_plot_state=self.active_fit_plot_state,
+        )
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         self.calls.append("active_alignment_render_state")

@@ -45,6 +45,10 @@ class FakeQueries:
     def __init__(self, slice_state: ActiveSliceDataState | None = None) -> None:
         self.slice_state = slice_state
         self.rendered_selections: list[SliceSelection] = []
+        self.slices = SimpleNamespace(
+            active_slice_render_state=self.active_slice_render_state,
+            active_slice_data_state=self.active_slice_data_state,
+        )
 
     def active_slice_render_state(self, selection: SliceSelection) -> Any:
         self.rendered_selections.append(selection)

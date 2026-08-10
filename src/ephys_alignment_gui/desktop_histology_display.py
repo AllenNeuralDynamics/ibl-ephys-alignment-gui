@@ -168,10 +168,12 @@ class DesktopHistologyDisplay:
         if brain_atlas is None:
             logger.error("Cannot render nearby boundaries: brain atlas is not loaded")
             return False
-        state = self.presenter.app.queries.active_nearby_boundary_state(
-            **self.ports.probe_extent_query_kwargs(),
-            allen=self.ports.allen(),
-            brain_atlas=brain_atlas,
+        state = (
+            self.presenter.app.queries.alignment_render.active_nearby_boundary_state(
+                **self.ports.probe_extent_query_kwargs(),
+                allen=self.ports.allen(),
+                brain_atlas=brain_atlas,
+            )
         )
         if state is None:
             logger.error(

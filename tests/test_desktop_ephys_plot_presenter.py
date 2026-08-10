@@ -107,6 +107,10 @@ class FakeQueries:
     def __init__(self) -> None:
         self.payload_calls = []
         self.bounds_calls = []
+        self.ephys = SimpleNamespace(
+            active_plot_payload=self.active_plot_payload,
+            active_plot_bounds=self.active_plot_bounds,
+        )
 
     def active_plot_payload(self, spec_key: str, *, raw_image_payloads):
         self.payload_calls.append((spec_key, raw_image_payloads))

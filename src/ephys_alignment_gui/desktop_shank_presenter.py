@@ -86,7 +86,7 @@ class DesktopShankPresenter:
     ) -> None:
         """Render the loaded desktop view for one active shank."""
         callbacks = self._require_callbacks()
-        preserve = self.app.queries.resolve_shank_preserve_plot_selection(
+        preserve = self.app.queries.workspace.resolve_shank_preserve_plot_selection(
             preserve_plot_selection
         )
 
@@ -108,13 +108,15 @@ class DesktopShankPresenter:
 
         if not preserve:
             self.app.commands.set_unit_filter("all")
-        screen_preparation = self.app.queries.prepare_active_shank_screen_state(
-            histology_available=prepared.histology_available,
-            preserve_plot_selection=preserve,
-            previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
-            raw_image_payloads=callbacks.raw_image_payloads(),
-            previous_slice_selection=selections.previous_slice_selection,
-            offline=callbacks.offline(),
+        screen_preparation = (
+            self.app.queries.active_shank.prepare_active_shank_screen_state(
+                histology_available=prepared.histology_available,
+                preserve_plot_selection=preserve,
+                previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
+                raw_image_payloads=callbacks.raw_image_payloads(),
+                previous_slice_selection=selections.previous_slice_selection,
+                offline=callbacks.offline(),
+            )
         )
         if screen_preparation.missing_plot_data:
             raise RuntimeError("No active stream runtime for shank plot data")

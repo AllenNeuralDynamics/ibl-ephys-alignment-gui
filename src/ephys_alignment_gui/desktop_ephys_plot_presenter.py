@@ -239,7 +239,7 @@ class DesktopEphysPlotPresenter:
         spec = self.registered_plot_spec(spec_key)
         if spec is None:
             return None
-        return self.app.queries.active_plot_payload(
+        return self.app.queries.ephys.active_plot_payload(
             spec.key,
             raw_image_payloads=self.callbacks.raw_image_payloads(),
         )
@@ -249,7 +249,7 @@ class DesktopEphysPlotPresenter:
         spec = self.registered_plot_spec(spec_key)
         if spec is None:
             return None
-        return self.app.queries.active_plot_bounds(
+        return self.app.queries.ephys.active_plot_bounds(
             spec.key,
             raw_image_payloads=self.callbacks.raw_image_payloads(),
         )

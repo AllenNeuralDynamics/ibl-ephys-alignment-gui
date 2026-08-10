@@ -96,6 +96,14 @@ class FakeQueries:
             plot_menu="plot-menu",
             slice_menu="slice-menu",
         )
+        self.workspace = SimpleNamespace(
+            resolve_shank_preserve_plot_selection=(
+                self.resolve_shank_preserve_plot_selection
+            ),
+        )
+        self.active_shank = SimpleNamespace(
+            prepare_active_shank_screen_state=self.prepare_active_shank_screen_state,
+        )
 
     def resolve_shank_preserve_plot_selection(self, preserve_plot_selection):
         self.calls.append(("resolve", preserve_plot_selection))
@@ -155,18 +163,14 @@ def _callbacks(calls: list[Any]) -> DesktopShankRenderCallbacks:
             calls.append(("capture", preserve)) or selections
         ),
         clear_reference_lines=lambda: calls.append("clear_lines"),
-        render_alignment_choices=lambda choices: (
-            calls.append(("alignment_choices", choices))
+        render_alignment_choices=lambda choices: calls.append(
+            ("alignment_choices", choices)
         ),
-        apply_plot_data_state=lambda state: calls.append(
-            ("apply_plot_data", state)
-        ),
+        apply_plot_data_state=lambda state: calls.append(("apply_plot_data", state)),
         raw_image_payloads=lambda: calls.append("raw_payloads") or {"raw": "payload"},
         render_plot_menus=lambda state: calls.append(("menus", state)),
         render_ephys_plots=lambda state: calls.append(("ephys", state)),
-        render_histology_plots=lambda idx: calls.append(
-            ("render_histology", idx)
-        ),
+        render_histology_plots=lambda idx: calls.append(("render_histology", idx)),
         restore_slice_selection=lambda menu, selection, label: calls.append(
             ("slice_selection", menu, selection, label)
         ),

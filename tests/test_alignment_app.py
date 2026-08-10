@@ -560,7 +560,7 @@ def test_queries_active_reference_line_state_prefers_pending_lines() -> None:
     state.feature_prev = np.array([0.0, 1.0, 2.0])
     workspace.document.active_set_pending_reference_lines([10.0], [11.0])
 
-    result = workspace.app.queries.active_reference_line_state(0)
+    result = workspace.app.queries.workspace.active_reference_line_state(0)
 
     assert isinstance(result, ActiveReferenceLineRenderState)
     np.testing.assert_allclose(result.feature_positions_um, [10.0])
@@ -573,7 +573,7 @@ def test_queries_active_reference_line_state_falls_back_to_previous_feature() ->
     state = workspace.document.select_alignment_key(key)
     state.feature_prev = np.array([-0.001, 0.001, 0.002, 0.003])
 
-    result = workspace.app.queries.active_reference_line_state(0)
+    result = workspace.app.queries.workspace.active_reference_line_state(0)
 
     assert isinstance(result, ActiveReferenceLineRenderState)
     np.testing.assert_allclose(result.feature_positions_um, [1000.0, 2000.0])
@@ -585,7 +585,7 @@ def test_queries_active_reference_line_state_rejects_mismatched_shank() -> None:
     workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
     workspace.document.active_set_pending_reference_lines([10.0], [11.0])
 
-    assert workspace.app.queries.active_reference_line_state(1) is None
+    assert workspace.app.queries.workspace.active_reference_line_state(1) is None
 
 
 def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> None:
@@ -818,10 +818,10 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     workspace = AlignmentWorkspace()
     queries = workspace.app.queries
 
-    assert queries.active_mouse_root_path() is None
-    assert not queries.mouse_root_loaded()
-    assert queries.active_output_root() is None
-    assert not queries.has_output_directory()
+    assert queries.workspace.active_mouse_root_path() is None
+    assert not queries.workspace.mouse_root_loaded()
+    assert queries.workspace.active_output_root() is None
+    assert not queries.workspace.has_output_directory()
 
     mouse_root = _mouse_root_with_probe()
     output_root = tmp_path / "results"
@@ -830,10 +830,10 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     workspace.document.set_output_root(output_root)
     workspace.document.set_output_directory(output_directory)
 
-    assert queries.active_mouse_root_path() == mouse_root.root
-    assert queries.mouse_root_loaded()
-    assert queries.active_output_root() == output_root
-    assert queries.has_output_directory()
+    assert queries.workspace.active_mouse_root_path() == mouse_root.root
+    assert queries.workspace.mouse_root_loaded()
+    assert queries.workspace.active_output_root() == output_root
+    assert queries.workspace.has_output_directory()
 
 
 def test_commands_clear_histology_context() -> None:
@@ -1294,7 +1294,7 @@ def test_queries_return_active_shank_selection_state() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    state = queries.active_shank_selection()
+    state = queries.workspace.active_shank_selection()
 
     assert state.shank_idx == 2
     assert state.shank_id == 3
@@ -1320,7 +1320,7 @@ def test_queries_identify_loaded_stream_shank() -> None:
         runtime=runtime,
     )
 
-    assert queries.is_loaded_stream_shank(("rec", "stream"), 1)
+    assert queries.workspace.is_loaded_stream_shank(("rec", "stream"), 1)
 
 
 def test_queries_reject_loaded_stream_shank_mismatches() -> None:
@@ -1341,11 +1341,11 @@ def test_queries_reject_loaded_stream_shank_mismatches() -> None:
         runtime=runtime,
     )
 
-    assert not queries.is_loaded_stream_shank(("rec", "other-stream"), 1)
-    assert not queries.is_loaded_stream_shank(("rec", "stream"), 0)
-    assert not queries.is_loaded_stream_shank(None, 1)
+    assert not queries.workspace.is_loaded_stream_shank(("rec", "other-stream"), 1)
+    assert not queries.workspace.is_loaded_stream_shank(("rec", "stream"), 0)
+    assert not queries.workspace.is_loaded_stream_shank(None, 1)
     document.mark_data_loaded(False)
-    assert not queries.is_loaded_stream_shank(("rec", "stream"), 1)
+    assert not queries.workspace.is_loaded_stream_shank(("rec", "stream"), 1)
 
 
 def test_queries_plan_load_data_delegates_to_runtime_cache_plan() -> None:
@@ -1363,9 +1363,9 @@ def test_queries_plan_load_data_delegates_to_runtime_cache_plan() -> None:
     )
     queries = AlignmentQueries(document=document, runtime=runtime)
 
-    active_plan = queries.plan_load_data(("rec", "stream"), 1)
-    cached_plan = queries.plan_load_data(("rec", "stream"), 0)
-    fresh_plan = queries.plan_load_data(("rec", "other-stream"), 0)
+    active_plan = queries.workspace.plan_load_data(("rec", "stream"), 1)
+    cached_plan = queries.workspace.plan_load_data(("rec", "stream"), 0)
+    fresh_plan = queries.workspace.plan_load_data(("rec", "other-stream"), 0)
 
     assert isinstance(active_plan, LoadDataAlreadyActive)
     assert isinstance(cached_plan, LoadDataCachedStreamAvailable)
@@ -1386,7 +1386,10 @@ def test_queries_resolve_stream_key_through_data_context() -> None:
         data_context=data_context,
     )
 
-    assert queries.stream_key_for_selection("rec", "probeA") == ("rec", "probeA.ap")
+    assert queries.workspace.stream_key_for_selection("rec", "probeA") == (
+        "rec",
+        "probeA.ap",
+    )
 
 
 def test_queries_report_histology_loaded_from_context() -> None:
@@ -1396,7 +1399,7 @@ def test_queries_report_histology_loaded_from_context() -> None:
         histology_context=SimpleNamespace(brain_atlas="atlas"),
     )
 
-    assert queries.histology_data_loaded()
+    assert queries.workspace.histology_data_loaded()
 
 
 def test_queries_stream_key_resolution_failure_returns_none() -> None:
@@ -1409,7 +1412,7 @@ def test_queries_stream_key_resolution_failure_returns_none() -> None:
         data_context=SimpleNamespace(stream_key_for_selection=fail),
     )
 
-    assert queries.stream_key_for_selection("rec", "probeA") is None
+    assert queries.workspace.stream_key_for_selection("rec", "probeA") is None
 
 
 def test_queries_build_plot_menu_state_from_active_runtime_shank() -> None:
@@ -1427,7 +1430,7 @@ def test_queries_build_plot_menu_state_from_active_runtime_shank() -> None:
         runtime=SimpleNamespace(active_stream_runtime=stream_runtime),
     )
 
-    state = queries.active_plot_menu_state()
+    state = queries.ephys.active_plot_menu_state()
 
     assert state.group("image").selected_key == "image.fr"
     assert stream_runtime.calls == [2]
@@ -1441,7 +1444,7 @@ def test_queries_resolve_plot_payload_from_active_runtime_shank() -> None:
         runtime=SimpleNamespace(active_stream_runtime=stream_runtime),
     )
 
-    payload = queries.active_plot_payload("image.fr")
+    payload = queries.ephys.active_plot_payload("image.fr")
 
     assert payload == {"label": "shank-1"}
     assert stream_runtime.calls == [1]
@@ -1457,7 +1460,7 @@ def test_commands_set_unit_filter_updates_display_state() -> None:
 
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
-    assert workspace.app.queries.active_unit_filter() == "KS good"
+    assert workspace.app.queries.ephys.active_unit_filter() == "KS good"
     assert stream_runtime.plotdata_by_shank[1].filtered_subsets == ["KS good"]
     assert stream_runtime.calls == [1]
 
@@ -1484,7 +1487,7 @@ def test_display_commands_update_app_owned_display_settings() -> None:
     assert workspace.display_state.reference_lines_visible is False
     assert workspace.display_state.histology_boundaries_visible is False
     assert workspace.display_state.region_annotation_source == "FranklinPaxinos"
-    assert workspace.app.queries.linear_fit_enabled() is False
+    assert workspace.app.queries.workspace.linear_fit_enabled() is False
 
 
 def test_queries_return_output_and_alignment_screen_read_models(tmp_path) -> None:
@@ -1501,10 +1504,10 @@ def test_queries_return_output_and_alignment_screen_read_models(tmp_path) -> Non
     )
     state.edit_history.total_idx = 1
 
-    assert workspace.app.queries.active_plot_export_directory() == (
+    assert workspace.app.queries.workspace.active_plot_export_directory() == (
         tmp_path / "session" / "probeA" / "Plots_Shank_3"
     )
-    edit_state = workspace.app.queries.active_alignment_edit_screen_state()
+    edit_state = workspace.app.queries.workspace.active_alignment_edit_screen_state()
 
     assert isinstance(edit_state, ActiveAlignmentEditScreenState)
     assert edit_state.current_idx == 0
@@ -1639,7 +1642,7 @@ def test_queries_return_default_unit_filter() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    assert queries.active_unit_filter() == "all"
+    assert queries.ephys.active_unit_filter() == "all"
 
 
 def test_queries_can_resolve_raw_payload_without_plotdata() -> None:
@@ -1648,11 +1651,11 @@ def test_queries_can_resolve_raw_payload_without_plotdata() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    state = queries.active_plot_menu_state(
+    state = queries.ephys.active_plot_menu_state(
         previous_selected_keys={"image": "image.raw.raw_ap"},
         raw_image_payloads={"raw_ap": "raw-image"},
     )
-    payload = queries.active_plot_payload(
+    payload = queries.ephys.active_plot_payload(
         "image.raw.raw_ap",
         raw_image_payloads={"raw_ap": "raw-image"},
     )
@@ -1667,10 +1670,10 @@ def test_queries_fail_closed_without_plotdata_or_raw_payloads() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    state = queries.active_plot_menu_state()
+    state = queries.ephys.active_plot_menu_state()
 
     assert not state.group("image").enabled
-    assert queries.active_plot_payload("image.fr") is None
+    assert queries.ephys.active_plot_payload("image.fr") is None
 
 
 def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
@@ -1680,7 +1683,7 @@ def test_queries_return_active_in_brain_depths_from_runtime_plotdata() -> None:
     )
 
     np.testing.assert_array_equal(
-        queries.active_in_brain_depths_um(),
+        queries.ephys.active_in_brain_depths_um(),
         [20.0, 40.0],
     )
 
@@ -1694,7 +1697,7 @@ def test_queries_prepare_shank_plot_data_state_filters_runtime_plotdata() -> Non
         display_state=AlignmentDisplayState(unit_filter="KS good"),
     )
 
-    state = queries.prepare_active_shank_plot_data_state()
+    state = queries.ephys.prepare_active_shank_plot_data_state()
 
     assert state is not None
     assert state.shank_idx == 1
@@ -1714,7 +1717,7 @@ def test_queries_build_active_shank_screen_state_from_runtime_menus() -> None:
         display_state=AlignmentDisplayState(unit_filter="KS good"),
     )
 
-    state = queries.active_shank_screen_state(
+    state = queries.active_shank.active_shank_screen_state(
         preserve_plot_selection=True,
         previous_ephys_plot_keys={"image": "image.raw.raw_ap"},
         raw_image_payloads={"raw_ap": "raw"},
@@ -1742,7 +1745,7 @@ def test_queries_prepare_active_shank_screen_state_materializes_runtime() -> Non
         display_state=AlignmentDisplayState(unit_filter="KS good"),
     )
 
-    prepared = queries.prepare_active_shank_screen_state(
+    prepared = queries.active_shank.prepare_active_shank_screen_state(
         histology_available=False,
         preserve_plot_selection=True,
         previous_ephys_plot_keys={"image": "image.raw.raw_ap"},
@@ -1769,7 +1772,7 @@ def test_queries_prepare_active_shank_screen_state_reports_required_slice_gap() 
         display_state=AlignmentDisplayState(unit_filter="KS good"),
     )
 
-    prepared = queries.prepare_active_shank_screen_state(
+    prepared = queries.active_shank.prepare_active_shank_screen_state(
         histology_available=True,
         preserve_plot_selection=True,
         previous_ephys_plot_keys=None,
@@ -1789,7 +1792,7 @@ def test_queries_build_cluster_detail_from_runtime_plotdata() -> None:
         runtime=SimpleNamespace(active_stream_runtime=FakeStreamRuntime()),
     )
 
-    detail = queries.active_cluster_detail(3)
+    detail = queries.ephys.active_cluster_detail(3)
 
     assert detail is not None
     assert detail.cluster_no == 13
@@ -1805,7 +1808,7 @@ def test_queries_cluster_detail_fails_closed_without_active_runtime() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    assert queries.active_cluster_detail(3) is None
+    assert queries.ephys.active_cluster_detail(3) is None
 
 
 def test_queries_active_session_notes_returns_loaded_stream_notes() -> None:
@@ -1818,7 +1821,7 @@ def test_queries_active_session_notes_returns_loaded_stream_notes() -> None:
         ),
     )
 
-    assert queries.active_session_notes() == "session notes"
+    assert queries.ephys.active_session_notes() == "session notes"
 
 
 def test_queries_active_session_notes_fails_closed_without_runtime() -> None:
@@ -1827,7 +1830,7 @@ def test_queries_active_session_notes_fails_closed_without_runtime() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    assert queries.active_session_notes() == ""
+    assert queries.ephys.active_session_notes() == ""
 
 
 def test_queries_active_histology_region_id_reads_active_shank_runtime() -> None:
@@ -1848,8 +1851,8 @@ def test_queries_active_histology_region_id_reads_active_shank_runtime() -> None
         ),
     )
 
-    assert queries.active_histology_region_id(1) == 42
-    assert queries.active_histology_region_id(9) is None
+    assert queries.alignment_render.active_histology_region_id(1) == 42
+    assert queries.alignment_render.active_histology_region_id(9) is None
 
 
 def test_queries_build_active_alignment_render_state_from_document_runtime() -> None:
@@ -1880,7 +1883,7 @@ def test_queries_build_active_alignment_render_state_from_document_runtime() -> 
         derived_data_service=derived,
     )
 
-    render_state = queries.active_alignment_render_state()
+    render_state = queries.alignment_render.active_alignment_render_state()
 
     assert render_state is not None
     assert render_state.key == key
@@ -1947,12 +1950,12 @@ def test_queries_build_histology_and_scale_panel_states() -> None:
         derived_data_service=derived,
     )
 
-    histology_state = queries.active_histology_panel_state(
+    histology_state = queries.alignment_render.active_histology_panel_state(
         probe_tip_um=0.0,
         probe_top_um=3840.0,
         probe_extra_um=100.0,
     )
-    scale_state = queries.active_scale_factor_state(
+    scale_state = queries.alignment_render.active_scale_factor_state(
         probe_tip_um=0.0,
         probe_top_um=3840.0,
         probe_extra_um=100.0,
@@ -1992,14 +1995,14 @@ def test_queries_build_nearby_boundary_state_from_runtime_cache() -> None:
         derived_data_service=derived,
     )
 
-    first_state = queries.active_nearby_boundary_state(
+    first_state = queries.alignment_render.active_nearby_boundary_state(
         probe_tip_um=0.0,
         probe_top_um=3840.0,
         probe_extra_um=100.0,
         allen="allen-table",
         brain_atlas="atlas",
     )
-    second_state = queries.active_nearby_boundary_state(
+    second_state = queries.alignment_render.active_nearby_boundary_state(
         probe_tip_um=0.0,
         probe_top_um=3840.0,
         probe_extra_um=100.0,
@@ -2041,7 +2044,7 @@ def test_queries_build_fit_plot_state() -> None:
         ),
     )
 
-    fit_state = queries.active_fit_plot_state(
+    fit_state = queries.alignment_render.active_fit_plot_state(
         depth_um=np.array([0.0, 20.0]),
         lin_fit=True,
     )
@@ -2073,7 +2076,7 @@ def test_queries_active_alignment_render_state_fails_closed_without_runtime() ->
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    assert queries.active_alignment_render_state() is None
+    assert queries.alignment_render.active_alignment_render_state() is None
 
 
 def test_queries_ensure_active_slice_data_state_uses_runtime_cache() -> None:
@@ -2106,8 +2109,8 @@ def test_queries_ensure_active_slice_data_state_uses_runtime_cache() -> None:
         slice_service=slice_service,
     )
 
-    first = queries.ensure_active_slice_data_state()
-    second = queries.ensure_active_slice_data_state()
+    first = queries.slices.ensure_active_slice_data_state()
+    second = queries.slices.ensure_active_slice_data_state()
 
     assert first is not None
     assert second is not None
@@ -2119,7 +2122,7 @@ def test_queries_ensure_active_slice_data_state_uses_runtime_cache() -> None:
     assert call["histology_images"] == {}
     assert call["lazy_channel_paths"] == {}
     assert call["track_interpolation_ras"] is track
-    assert queries.active_slice_data_by_attr()["slice_data"] is first.slice_data
+    assert queries.slices.active_slice_data_by_attr()["slice_data"] is first.slice_data
 
 
 def test_queries_build_active_slice_menu_state_with_fallback_selection() -> None:
@@ -2135,11 +2138,11 @@ def test_queries_build_active_slice_menu_state_with_fallback_selection() -> None
         fp_slice_data={"label": np.zeros((2, 2, 3))},
     )
 
-    restored = queries.active_slice_menu_state(
+    restored = queries.slices.active_slice_menu_state(
         offline=True,
         previous_selection=SliceSelection("slice_data", "histology_registration"),
     )
-    fallback = queries.active_slice_menu_state(
+    fallback = queries.slices.active_slice_menu_state(
         offline=True,
         previous_selection=SliceSelection("slice_data", "missing"),
     )
@@ -2182,7 +2185,7 @@ def test_queries_build_active_slice_render_state_for_selection() -> None:
         derived=derived,
     )
 
-    render_state = queries.active_slice_render_state(
+    render_state = queries.slices.active_slice_render_state(
         SliceSelection("slice_data", "histology_registration")
     )
 
@@ -2261,8 +2264,8 @@ def test_queries_build_active_perpendicular_slice_state_from_runtime_cache() -> 
         slice_service=slice_service,
     )
 
-    first = queries.active_perpendicular_slice_state("ccf")
-    second = queries.active_perpendicular_slice_state("ccf")
+    first = queries.slices.active_perpendicular_slice_state("ccf")
+    second = queries.slices.active_perpendicular_slice_state("ccf")
 
     assert first is not None
     assert second is not None

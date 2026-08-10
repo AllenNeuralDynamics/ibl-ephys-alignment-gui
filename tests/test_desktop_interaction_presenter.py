@@ -268,14 +268,19 @@ def _presenter(
             t_template=np.array([0.0, 0.5]),
             template_waveform=np.array([10.0, 11.0]),
         )
-    app = SimpleNamespace(
-        queries=SimpleNamespace(
+    queries = SimpleNamespace(
+        ephys=SimpleNamespace(
             active_cluster_detail=lambda _idx: detail,
             active_session_notes=lambda: "notes",
+        ),
+        alignment_render=SimpleNamespace(
             active_histology_region_id=lambda _idx: active_region_id,
+        ),
+        workspace=SimpleNamespace(
             region_description=region_lookup.get_region_description,
-        )
+        ),
     )
+    app = SimpleNamespace(queries=queries)
     presenter = DesktopInteractionPresenter(
         app=app,
         popup_manager=popup_manager,

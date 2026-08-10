@@ -52,6 +52,9 @@ class FakeBusyContext:
 class FakeQueries:
     def __init__(self, *, shank_idx: int = 0) -> None:
         self.shank_idx = shank_idx
+        self.workspace = SimpleNamespace(
+            active_shank_selection=self.active_shank_selection,
+        )
 
     def active_shank_selection(self):
         return SimpleNamespace(shank_idx=self.shank_idx)
@@ -67,8 +70,8 @@ class FakeCommands:
     ) -> None:
         self.begin_result = begin_result or _fresh_prepared(shank_idx=0)
         self.complete_result = complete_result or _fresh_completed(shank_idx=0)
-        self.probe_cache_result = (
-            probe_cache_result or LoadDataFreshRequiredResult(("rec", "stream"), 0)
+        self.probe_cache_result = probe_cache_result or LoadDataFreshRequiredResult(
+            ("rec", "stream"), 0
         )
         self.begin_calls: list[dict[str, Any]] = []
         self.complete_calls: list[LoadDataFreshPrepared] = []
@@ -170,9 +173,7 @@ def _fresh_completed(
 
 def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     return DesktopLoadDataCallbacks(
-        reference_line_positions=lambda: (
-            calls.append(("positions",)) or ([1.0], [2.0])
-        ),
+        reference_line_positions=lambda: calls.append(("positions",)) or ([1.0], [2.0]),
         prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
         display_output_directory=lambda path: calls.append(("output", path)),
         render_loaded_shank=lambda shank_idx, preserve: calls.append(

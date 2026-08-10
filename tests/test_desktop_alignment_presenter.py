@@ -23,6 +23,9 @@ class FakeQueries:
     def __init__(self, render_state: ActiveAlignmentRenderState | None) -> None:
         self.render_state = render_state
         self.calls: list[Any] = []
+        self.alignment_render = SimpleNamespace(
+            active_alignment_render_state=self.active_alignment_render_state,
+        )
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         self.calls.append("query_alignment")

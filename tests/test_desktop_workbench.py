@@ -760,7 +760,7 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
 
 def test_workbench_factory_configures_focused_presenters() -> None:
     ports = _workbench_ports()
-    queries = SimpleNamespace(
+    workspace_queries = SimpleNamespace(
         active_mouse_root_path=lambda: None,
         active_output_root=lambda: None,
         has_output_directory=lambda: False,
@@ -771,6 +771,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         active_shank_selection=lambda: SimpleNamespace(shank_idx=0),
         mouse_root_loaded=lambda: True,
     )
+    queries = SimpleNamespace(workspace=workspace_queries)
     captured_reference_lines: list[Any] = []
     commands = SimpleNamespace(
         can_load_data=lambda: Ok(),
@@ -820,10 +821,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert presenter_cluster.mouse_root_presenter.callbacks is not None
     assert presenter_cluster.output_path_presenter.commands is commands
     assert presenter_cluster.path_dialog_presenter.callbacks.active_mouse_root is (
-        queries.active_mouse_root_path
+        queries.workspace.active_mouse_root_path
     )
     assert presenter_cluster.output_folder_prompt.callbacks.has_output_directory is (
-        queries.has_output_directory
+        queries.workspace.has_output_directory
     )
     assert presenter_cluster.load_preflight_presenter.can_load_data is (
         commands.can_load_data

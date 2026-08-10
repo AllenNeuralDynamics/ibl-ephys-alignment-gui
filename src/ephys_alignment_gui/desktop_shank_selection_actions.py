@@ -28,7 +28,7 @@ class DesktopShankSelectionActions:
             return False
 
         shank_id = shank_idx + 1
-        selection = self.app.queries.active_shank_selection()
+        selection = self.app.queries.workspace.active_shank_selection()
         if shank_idx == selection.shank_idx:
             logger.info("Shank %s already selected", shank_id)
             return True

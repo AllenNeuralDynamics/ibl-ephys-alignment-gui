@@ -70,7 +70,7 @@ class DesktopInteractionPresenter:
         notes = self.text_edit_factory()
         notes.setReadOnly(True)
         notes.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
-        notes.setText(self.app.queries.active_session_notes())
+        notes.setText(self.app.queries.ephys.active_session_notes())
         notes_window.layout.addWidget(notes)
         self.popup_manager.notes_window = notes_window
 
@@ -99,7 +99,7 @@ class DesktopInteractionPresenter:
             logger.error("Cannot show cluster detail: clicked point is not a cluster")
             return None
 
-        detail = self.app.queries.active_cluster_detail(clust_idx)
+        detail = self.app.queries.ephys.active_cluster_detail(clust_idx)
         if detail is None:
             logger.error(
                 "Cannot show cluster detail: active ephys stream is not loaded"
@@ -154,10 +154,10 @@ class DesktopInteractionPresenter:
         idx = self.histology_display.selected_region_index()
         if idx is None:
             return False
-        region_id = self.app.queries.active_histology_region_id(idx)
+        region_id = self.app.queries.alignment_render.active_histology_region_id(idx)
         if region_id is None:
             return False
-        region_description = self.app.queries.region_description(region_id)
+        region_description = self.app.queries.workspace.region_description(region_id)
         if region_description is None:
             return False
         description, lookup = region_description
@@ -195,7 +195,7 @@ class DesktopInteractionPresenter:
     def label_pressed(self, item: Any) -> None:
         """Render region information for a clicked structure tree item."""
         idx = int(item.model().itemFromIndex(item).accessibleText())
-        region_description = self.app.queries.region_description(idx)
+        region_description = self.app.queries.workspace.region_description(idx)
         if region_description is None:
             return
         description, lookup = region_description

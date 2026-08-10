@@ -62,7 +62,11 @@ def _actions(
     reference_lines = FakeReferenceLineDisplay()
     app = SimpleNamespace(
         queries=SimpleNamespace(
-            active_shank_selection=lambda: SimpleNamespace(shank_idx=active_shank_idx)
+            workspace=SimpleNamespace(
+                active_shank_selection=lambda: SimpleNamespace(
+                    shank_idx=active_shank_idx
+                )
+            )
         ),
         commands=commands,
     )

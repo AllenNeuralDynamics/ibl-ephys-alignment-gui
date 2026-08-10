@@ -34,7 +34,7 @@ class DesktopSessionSelectionPresenter:
     def session_selected(self) -> bool:
         """Select the current recording and render its probe choices."""
         callbacks = self.callbacks
-        if not self.app.queries.mouse_root_loaded():
+        if not self.app.queries.workspace.mouse_root_loaded():
             return False
 
         session_name = self.selection_view.current_session()

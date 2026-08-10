@@ -53,8 +53,8 @@ class DesktopViews:
             ports=desktop_display_ports_from_main_window(window, app=app),
         )
         depth = DesktopDepthPlotView(
-            depth_view=app.queries.depth_view_settings,
-            in_brain_depths_um=app.queries.active_in_brain_depths_um,
+            depth_view=app.queries.workspace.depth_view_settings,
+            in_brain_depths_um=app.queries.ephys.active_in_brain_depths_um,
             default_range_plots=(window.fig_hist, window.fig_hist_ref, window.fig_img),
             range_plots={
                 "fig_img": window.fig_img,
@@ -78,9 +78,9 @@ class DesktopViews:
         alignment_screen = DesktopAlignmentScreenView(
             depth_plots=depth,
             set_lin_fit=app.commands.set_linear_fit_enabled,
-            lin_fit_enabled=app.queries.linear_fit_enabled,
+            lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
             reference_lines=displays.reference_lines,
-            active_edit_screen_state=app.queries.active_alignment_edit_screen_state,
+            active_edit_screen_state=app.queries.workspace.active_alignment_edit_screen_state,
             lin_fit_checkbox=window.lin_fit_option,
             current_index_label=window.idx_string,
             total_index_label=window.tot_idx_string,

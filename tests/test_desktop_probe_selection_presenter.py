@@ -115,8 +115,12 @@ def _presenter(
     app = SimpleNamespace(
         commands=commands,
         queries=SimpleNamespace(
-            mouse_root_loaded=lambda: mouse_root_loaded,
-            active_shank_selection=lambda: SimpleNamespace(shank_idx=active_shank_idx)
+            workspace=SimpleNamespace(
+                mouse_root_loaded=lambda: mouse_root_loaded,
+                active_shank_selection=lambda: SimpleNamespace(
+                    shank_idx=active_shank_idx
+                ),
+            )
         ),
     )
     presenter = DesktopProbeSelectionPresenter(

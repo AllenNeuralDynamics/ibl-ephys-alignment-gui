@@ -39,7 +39,7 @@ class DesktopProbeSelectionPresenter:
     def probe_selected(self) -> bool:
         """Select the current probe or present its cached stream."""
         callbacks = self.callbacks
-        if not self.app.queries.mouse_root_loaded():
+        if not self.app.queries.workspace.mouse_root_loaded():
             return False
 
         session_name = self.selection_view.current_session()
@@ -49,7 +49,7 @@ class DesktopProbeSelectionPresenter:
 
         callbacks.capture_pending_reference_lines()
 
-        target_shank = self.app.queries.active_shank_selection().shank_idx
+        target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         if callbacks.present_cached_probe_selection(
             session_name,
             probe_name,

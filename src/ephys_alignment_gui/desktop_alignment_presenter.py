@@ -101,7 +101,7 @@ class DesktopAlignmentPresenter:
         callbacks = self._require_callbacks()
         options = desktop_presentation_options_for_edit(event.edit_kind)
         callbacks.restore_lin_fit(event.lin_fit)
-        render_state = queries.active_alignment_render_state()
+        render_state = queries.alignment_render.active_alignment_render_state()
         if render_state is None:
             logger.error(
                 "Cannot refresh alignment: active alignment data is not loaded"

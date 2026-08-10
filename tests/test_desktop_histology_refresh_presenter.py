@@ -14,6 +14,10 @@ class FakeQueries:
     def __init__(self, line_state: Any = None) -> None:
         self.line_state = line_state
         self.line_calls: list[int] = []
+        self.workspace = SimpleNamespace(
+            active_shank_selection=self.active_shank_selection,
+            active_reference_line_state=self.active_reference_line_state,
+        )
 
     def active_shank_selection(self) -> Any:
         return SimpleNamespace(shank_idx=2)

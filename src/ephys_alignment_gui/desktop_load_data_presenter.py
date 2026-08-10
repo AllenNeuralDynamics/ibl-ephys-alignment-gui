@@ -49,7 +49,7 @@ class DesktopLoadDataPresenter:
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
         callbacks = self.callbacks
-        target_shank = self.app.queries.active_shank_selection().shank_idx
+        target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
         probe_name = self.selection_view.current_probe()
         begin_result = self.app.commands.begin_load_data(

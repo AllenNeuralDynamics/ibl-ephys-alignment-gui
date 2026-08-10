@@ -54,12 +54,12 @@ def desktop_histology_display_ports_from_main_window(
         set_axis=window.set_axis,
         padding_provider=lambda: window.pad,
         probe_extent_query_kwargs=window._probe_extent_query_kwargs,
-        fit_depth_um=app.queries.fit_depth_um,
-        lin_fit_enabled=app.queries.linear_fit_enabled,
+        fit_depth_um=app.queries.workspace.fit_depth_um,
+        lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
         scale_factor_y_range=window._scale_factor_y_range,
         histology_available=lambda: window.histology_exists,
-        brain_atlas=app.queries.active_brain_atlas,
-        allen=app.queries.allen_structure_tree,
+        brain_atlas=app.queries.workspace.active_brain_atlas,
+        allen=app.queries.workspace.allen_structure_tree,
     )
 
 

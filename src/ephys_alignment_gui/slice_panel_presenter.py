@@ -119,7 +119,7 @@ class SlicePanelPresenter:
         selection = self.current_slice_selection()
         if selection is None:
             return None
-        return self.app.queries.active_slice_render_state(selection)
+        return self.app.queries.slices.active_slice_render_state(selection)
 
     def current_slice_selection(self) -> SliceSelection | None:
         """Return the slice selection stored on the checked QAction."""
@@ -154,7 +154,7 @@ class SlicePanelPresenter:
         """Render a coronal slice selection from the application read model."""
         if not self.histology_exists():
             return
-        render_state = self.app.queries.active_slice_render_state(selection)
+        render_state = self.app.queries.slices.active_slice_render_state(selection)
         if render_state is None:
             logger.warning("No active slice render state for %s", selection)
             return
@@ -216,7 +216,9 @@ class SlicePanelPresenter:
             return
 
         self.plots.perpendicular.clear()
-        render_state = self.app.queries.active_perpendicular_slice_state(channel_name)
+        render_state = self.app.queries.slices.active_perpendicular_slice_state(
+            channel_name
+        )
         if render_state is None:
             return
 
@@ -345,7 +347,7 @@ class SlicePanelPresenter:
         img_type: str,
     ) -> SliceSelection | None:
         """Map a legacy slice mapping object back to a SliceSelection."""
-        state = self.app.queries.active_slice_data_state()
+        state = self.app.queries.slices.active_slice_data_state()
         if state is None:
             return None
         if data is state.slice_data:

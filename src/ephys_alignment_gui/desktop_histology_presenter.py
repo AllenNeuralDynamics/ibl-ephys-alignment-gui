@@ -137,7 +137,7 @@ class DesktopHistologyPresenter:
         ),
     ) -> HistologyPanelRenderState | None:
         """Return active histology-panel state from the narrow histology query."""
-        state = self.app.queries.active_histology_panel_state(
+        state = self.app.queries.alignment_render.active_histology_panel_state(
             **self.callbacks.probe_extent_query_kwargs()
         )
         if state is None:
@@ -149,7 +149,7 @@ class DesktopHistologyPresenter:
         render_state: ActiveAlignmentRenderState,
     ) -> HistologyPanelRenderState | None:
         """Build histology-panel state for an active alignment render DTO."""
-        probe_extent = self.app.queries.probe_extent_render_state(
+        probe_extent = self.app.queries.alignment_render.probe_extent_render_state(
             render_state.active_alignment,
             **self.callbacks.probe_extent_query_kwargs(),
         )
@@ -176,7 +176,7 @@ class DesktopHistologyPresenter:
 
     def render_fit(self) -> bool:
         """Render the active feature/track fit curve."""
-        state = self.app.queries.active_fit_plot_state(
+        state = self.app.queries.alignment_render.active_fit_plot_state(
             depth_um=self.callbacks.fit_depth_um(),
             lin_fit=self.callbacks.lin_fit_enabled(),
         )

@@ -101,7 +101,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
-        allen = self.app.queries.allen_structure_tree()
+        allen = self.app.queries.workspace.allen_structure_tree()
         if allen is None:
             raise RuntimeError("Allen structure metadata is unavailable")
         self.init_region_lookup(allen)
@@ -285,9 +285,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if save_path:
             image_path_overview = Path(save_path)
         else:
-            if not self.app.queries.has_output_directory():
+            if not self.app.queries.workspace.has_output_directory():
                 self.on_output_folder_selected()
-            image_path = self.app.queries.active_plot_export_directory()
+            image_path = self.app.queries.workspace.active_plot_export_directory()
             if image_path is None:
                 return
             image_path_overview = Path(image_path)
@@ -319,7 +319,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.displays.histology.render_active_nearby(fig, movable=movable)
 
     def _probe_extent_query_kwargs(self) -> dict[str, float]:
-        depth_view = self.app.queries.depth_view_settings()
+        depth_view = self.app.queries.workspace.depth_view_settings()
         return {
             "probe_tip_um": depth_view.probe_tip_um,
             "probe_top_um": depth_view.probe_top_um,
