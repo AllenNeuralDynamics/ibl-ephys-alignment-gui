@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.ephys_data_service import (
+from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
+from ephys_alignment_gui.services.ephys_data import (
     ChannelCollectionView,
     EphysStreamData,
 )
-from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
 
 @dataclass(frozen=True)

@@ -7,8 +7,8 @@ from typing import Any
 
 from numpy.typing import NDArray
 
-from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
 from ephys_alignment_gui.runtime.slice import SliceRuntime
+from ephys_alignment_gui.services.ephys_data import ChannelCollectionView
 
 
 @dataclass

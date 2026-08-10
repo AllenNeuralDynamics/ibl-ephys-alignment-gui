@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui import region_lookup_service
-from ephys_alignment_gui.region_lookup_service import RegionLookupService
+import ephys_alignment_gui.services.region_lookup as region_lookup_service
+from ephys_alignment_gui.services.region_lookup import RegionLookupService
 
 
 def test_load_allen_csv_caches_loaded_structure_tree(

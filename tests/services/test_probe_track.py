@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui.datapackage_loader import ProbeInfo, XyzPicks
-from ephys_alignment_gui.probe_track_service import ProbeTrackService
+from ephys_alignment_gui.services.probe_track import ProbeTrackService
 
 
 class FakeBrainAtlas:

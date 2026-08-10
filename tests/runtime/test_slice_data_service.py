@@ -8,14 +8,14 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_derived_data_service import (
+from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.runtime.slice import SliceRuntime
+from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
+from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentHistologyData,
     HistologyPlotData,
     ScaleFactorData,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.runtime.slice import SliceRuntime
-from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 
 
 class FakeSliceService:

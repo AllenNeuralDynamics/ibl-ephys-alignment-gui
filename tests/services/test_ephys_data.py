@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui.datapackage_loader import ChannelTablePaths, ProbeInfo
-from ephys_alignment_gui.ephys_data_service import (
+from ephys_alignment_gui.services.ephys_data import (
     ChannelTable,
     EphysDataService,
     EphysStreamData,
@@ -131,7 +131,7 @@ def test_ephys_data_service_loads_stream_data(monkeypatch, tmp_path):
         return {}
 
     monkeypatch.setattr(
-        "ephys_alignment_gui.ephys_data_service.alfio.load_object",
+        "ephys_alignment_gui.services.ephys_data.alfio.load_object",
         fake_load_object,
     )
 

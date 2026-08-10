@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
-from ephys_alignment_gui.alignment_repository import AlignmentHistory
-from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.alignment_state import (
     AlignmentState,
     PendingReferenceLines,
@@ -32,6 +29,9 @@ from ephys_alignment_gui.application.workflow import (
 )
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.runtime.shank import ShankRuntime
+from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
+from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
+from ephys_alignment_gui.services.alignment_runtime import AlignmentRuntimeService
 
 
 class AlignmentController:

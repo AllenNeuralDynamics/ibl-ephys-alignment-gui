@@ -15,8 +15,8 @@ from ephys_alignment_gui.application.results.metadata import (
 )
 from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.ephys_data_service import EphysDataService
-from ephys_alignment_gui.histology_data_service import HistologyDataContext
+from ephys_alignment_gui.services.ephys_data import EphysDataService
+from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 
 @dataclass

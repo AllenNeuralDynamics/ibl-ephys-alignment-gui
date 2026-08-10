@@ -11,7 +11,7 @@ from ephys_alignment_gui.datapackage_loader import (
     ProbeInfo,
     load_mouse_root,
 )
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 logger = logging.getLogger(__name__)
 

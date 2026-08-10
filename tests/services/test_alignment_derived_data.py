@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ephys_alignment_gui.alignment_derived_data_service import (
+from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
 )
 

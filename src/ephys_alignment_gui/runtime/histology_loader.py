@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.histology_data_service import (
+from ephys_alignment_gui.services.histology_data import (
     HistologyDataContext,
     HistologyDataService,
 )

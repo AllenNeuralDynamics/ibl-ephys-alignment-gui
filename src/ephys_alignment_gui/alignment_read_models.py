@@ -8,12 +8,12 @@ from typing import Any
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_derived_data_service import (
+from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.plotting.menu_state import PlotMenuState
+from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentHistologyData,
     ChannelProjectionData,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.plotting.menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import (
     SliceMenuItem,
     SliceRenderDecision,

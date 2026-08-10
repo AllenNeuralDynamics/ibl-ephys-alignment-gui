@@ -8,7 +8,7 @@ import numpy as np
 import SimpleITK as sitk
 
 from ephys_alignment_gui.anatomical_atlas import _BLESSED_DIRECTION
-from ephys_alignment_gui.slice_service import (
+from ephys_alignment_gui.services.slice import (
     SliceService,
     SliceSet,
     cut_slice_from_atlas_image,

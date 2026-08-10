@@ -5,15 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_derived_data_service import (
-    AlignmentDerivedDataService,
-)
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
-from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
-from ephys_alignment_gui.alignment_repository import AlignmentRepository
-from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.application.app import AlignmentApp
 from ephys_alignment_gui.application.commands import AlignmentCommands
 from ephys_alignment_gui.application.commands.alignment_edit import (
@@ -38,24 +31,31 @@ from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.workflow import WorkflowPolicy
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.ephys_stream_loader import EphysStreamLoader
 from ephys_alignment_gui.event_bus import EventBus
-from ephys_alignment_gui.histology_data_service import (
-    HistologyDataContext,
-    HistologyDataService,
-)
 from ephys_alignment_gui.load_data_job import LoadDataJob
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
-from ephys_alignment_gui.probe_track_service import ProbeTrackService
-from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.runtime.histology_loader import HistologyRuntimeLoader
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
+from ephys_alignment_gui.services.alignment_derived_data import (
+    AlignmentDerivedDataService,
+)
+from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
+from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
+from ephys_alignment_gui.services.alignment_repository import AlignmentRepository
+from ephys_alignment_gui.services.alignment_runtime import AlignmentRuntimeService
+from ephys_alignment_gui.services.ephys_data import EphysDataService
+from ephys_alignment_gui.services.histology_data import (
+    HistologyDataContext,
+    HistologyDataService,
+)
+from ephys_alignment_gui.services.probe_track import ProbeTrackService
+from ephys_alignment_gui.services.region_lookup import RegionLookupService
+from ephys_alignment_gui.services.slice import SliceService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
-from ephys_alignment_gui.slice_service import SliceService
 
 
 @dataclass

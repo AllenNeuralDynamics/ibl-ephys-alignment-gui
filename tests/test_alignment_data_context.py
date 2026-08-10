@@ -9,7 +9,7 @@ import pytest
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 
 def _probe(

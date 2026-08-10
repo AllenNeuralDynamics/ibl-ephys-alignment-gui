@@ -8,7 +8,6 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
 from ephys_alignment_gui.plotting.builders.lfp_correlation import (
     LfpCorrelationPlotDataBuilder,
 )
@@ -24,6 +23,7 @@ from ephys_alignment_gui.plotting.channel_geometry import (
     build_plot_channel_geometry,
 )
 from ephys_alignment_gui.plotting.probe_bank_layout import arrange_channels_to_banks
+from ephys_alignment_gui.services.ephys_data import ChannelCollectionView
 
 logger = logging.getLogger(__name__)
 np.seterr(divide="ignore", invalid="ignore")

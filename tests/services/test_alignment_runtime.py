@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
+from ephys_alignment_gui.services.alignment_runtime import AlignmentRuntimeService
 
 
 class FakeEphysAlignment:

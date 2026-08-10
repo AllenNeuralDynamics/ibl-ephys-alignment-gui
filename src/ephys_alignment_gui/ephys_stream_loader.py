@@ -9,7 +9,7 @@ from typing import Any
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.ephys_data_service import (
+from ephys_alignment_gui.services.ephys_data import (
     ChannelCollectionView,
     EphysDataService,
     EphysStreamData,

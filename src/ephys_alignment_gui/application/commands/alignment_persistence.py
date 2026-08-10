@@ -8,13 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_derived_data_service import (
-    AlignmentDerivedDataService,
-)
-from ephys_alignment_gui.alignment_repository import (
-    AlignmentHistory,
-    AlignmentRepository,
-)
 from ephys_alignment_gui.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
 from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
@@ -32,6 +25,13 @@ from ephys_alignment_gui.controller import (
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.runtime.session import SessionRuntime
+from ephys_alignment_gui.services.alignment_derived_data import (
+    AlignmentDerivedDataService,
+)
+from ephys_alignment_gui.services.alignment_repository import (
+    AlignmentHistory,
+    AlignmentRepository,
+)
 
 logger = logging.getLogger(__name__)
 

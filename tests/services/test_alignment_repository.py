@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ephys_alignment_gui.alignment_repository import AlignmentRepository
+from ephys_alignment_gui.services.alignment_repository import AlignmentRepository
 
 
 def test_load_previous_alignments_local_uses_shank_suffix(tmp_path):

@@ -9,10 +9,10 @@ import pandas
 import pytest
 from iblutil.util import Bunch
 
-import ephys_alignment_gui.alignment_output_service as alignment_output_service
+import ephys_alignment_gui.services.alignment_output as alignment_output_service
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
-from ephys_alignment_gui.histology_data_service import HistologyDataContext
+from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
+from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 
 def test_alignment_output_service_creates_channel_dict() -> None:

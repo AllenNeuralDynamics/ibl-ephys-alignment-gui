@@ -9,20 +9,11 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_derived_data_service import (
-    AlignmentHistologyData,
-    HistologyPlotData,
-    ScaleFactorData,
-)
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
-)
-from ephys_alignment_gui.alignment_repository import (
-    LoadedAlignmentHistory,
-    SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.results import (
@@ -59,7 +50,6 @@ from ephys_alignment_gui.application.results.path import (
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.load_data_job import LoadDataJobCompleted, LoadDataJobRequest
 from ephys_alignment_gui.runtime.histology_loader import HistologyDataLoaded
 from ephys_alignment_gui.runtime.session import (
@@ -69,6 +59,16 @@ from ephys_alignment_gui.runtime.session import (
     SessionRuntime,
 )
 from ephys_alignment_gui.runtime.slice import SliceRuntime
+from ephys_alignment_gui.services.alignment_derived_data import (
+    AlignmentHistologyData,
+    HistologyPlotData,
+    ScaleFactorData,
+)
+from ephys_alignment_gui.services.alignment_repository import (
+    LoadedAlignmentHistory,
+    SavedAlignmentOutputs,
+)
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 

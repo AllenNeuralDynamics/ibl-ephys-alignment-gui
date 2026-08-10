@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.runtime.ephys_stream import EphysStreamRuntime
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
@@ -16,6 +15,7 @@ from ephys_alignment_gui.runtime.session import (
     LoadDataTarget,
     SessionRuntime,
 )
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 
 class FakePlotPayloadCacheFactory:

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import numpy as np
 
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 
 def _minimal_stream() -> EphysStreamData:

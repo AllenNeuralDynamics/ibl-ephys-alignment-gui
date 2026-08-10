@@ -5,16 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ephys_alignment_gui.ephys_data_service import (
-    ChannelCollectionView,
-    EphysStreamData,
-)
 from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.plotting.registry import PlotSpec, resolve_plot_payload
 from ephys_alignment_gui.runtime.shank import ShankRuntime
+from ephys_alignment_gui.services.ephys_data import (
+    ChannelCollectionView,
+    EphysStreamData,
+)
 
 StreamKey = tuple[str, str]
 

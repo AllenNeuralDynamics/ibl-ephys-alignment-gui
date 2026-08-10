@@ -14,7 +14,7 @@ from iblutil.util import Bunch
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.histology_data_service import HistologyDataContext
+from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 logger = logging.getLogger(__name__)
 

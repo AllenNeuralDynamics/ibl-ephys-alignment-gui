@@ -14,7 +14,7 @@ from ephys_alignment_gui.channel_geometry import (
     rows_for_shank,
     valid_shank_indices,
 )
-from ephys_alignment_gui.ephys_data_service import ChannelCollectionView
+from ephys_alignment_gui.services.ephys_data import ChannelCollectionView
 
 logger = logging.getLogger(__name__)
 

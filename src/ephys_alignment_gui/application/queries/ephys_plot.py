@@ -9,9 +9,6 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.alignment_derived_data_service import (
-    AlignmentDerivedDataService,
-)
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_read_models import (
     ActiveShankPlotDataState,
@@ -24,6 +21,9 @@ from ephys_alignment_gui.plotting.registry import (
     PlotSpec,
     resolve_plot_bounds,
     resolve_plot_payload,
+)
+from ephys_alignment_gui.services.alignment_derived_data import (
+    AlignmentDerivedDataService,
 )
 
 logger = logging.getLogger(__name__)

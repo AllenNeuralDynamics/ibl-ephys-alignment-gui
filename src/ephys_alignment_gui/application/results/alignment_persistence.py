@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ephys_alignment_gui.alignment_repository import (
+from ephys_alignment_gui.services.alignment_repository import (
     AlignmentHistory,
     SavedAlignmentOutputs,
 )

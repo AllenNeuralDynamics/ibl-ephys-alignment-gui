@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import SimpleITK as sitk
 
-from ephys_alignment_gui.histology_data_service import (
+from ephys_alignment_gui.services.histology_data import (
     HistologyDataContext,
     HistologyRuntimeData,
 )

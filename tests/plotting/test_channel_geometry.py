@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.plotting.channel_geometry import build_plot_channel_geometry
+from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 
 def test_plot_geometry_uses_runtime_channel_collection_rows() -> None:

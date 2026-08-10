@@ -8,10 +8,6 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_derived_data_service import (
-    AlignmentDerivedDataService,
-    AlignmentHistologyData,
-)
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
@@ -22,6 +18,10 @@ from ephys_alignment_gui.alignment_read_models import (
     ScaleFactorRenderState,
 )
 from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.services.alignment_derived_data import (
+    AlignmentDerivedDataService,
+    AlignmentHistologyData,
+)
 
 
 @dataclass
