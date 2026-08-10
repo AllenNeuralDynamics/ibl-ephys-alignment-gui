@@ -8,7 +8,7 @@ from typing import Any
 from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop_busy_context import BusyContext
-from ephys_alignment_gui.desktop_workbench import (
+from ephys_alignment_gui.desktop_workbench_port_types import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
     DesktopBusyPorts,

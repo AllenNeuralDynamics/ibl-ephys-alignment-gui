@@ -7,9 +7,14 @@ from typing import Any
 
 from ephys_alignment_gui.desktop_displays import DesktopDisplays
 from ephys_alignment_gui.desktop_export_view import DesktopExportView
+from ephys_alignment_gui.desktop_render_composition import DesktopRenderCluster
 from ephys_alignment_gui.desktop_shank_presenter import DesktopShankSelectionState
 from ephys_alignment_gui.desktop_views import DesktopViews
-from ephys_alignment_gui.desktop_workbench import (
+from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
+from ephys_alignment_gui.desktop_workbench_composition import (
+    DesktopWorkbenchPresenterCluster,
+)
+from ephys_alignment_gui.desktop_workbench_port_types import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
     DesktopBusyPorts,
@@ -20,7 +25,6 @@ from ephys_alignment_gui.desktop_workbench import (
     DesktopRenderPorts,
     DesktopSavePorts,
     DesktopShankRenderPorts,
-    DesktopWorkbench,
     DesktopWorkbenchPorts,
 )
 from ephys_alignment_gui.event_bus import EventBus
@@ -445,11 +449,20 @@ def _workbench(
         reference_lines=reference_line_display,
         slice_display=slice_display,
     )
-    return DesktopWorkbench(
-        app=object(),
-        displays=displays,
+    render_cluster = DesktopRenderCluster(
         alignment_presenter=alignment,
         shank_presenter=shank,
+        reference_line_presenter=reference_line_presenter or object(),
+        histology_refresh_presenter=histology_refresh_presenter or object(),
+        alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
+        shank_selection_actions=(
+            shank_selection_actions or FakeShankSelectionActions()
+        ),
+        alignment_selection_actions=(
+            alignment_selection_actions or FakeAlignmentSelectionActions()
+        ),
+    )
+    presenter_cluster = DesktopWorkbenchPresenterCluster(
         load_data_presenter=load_data or FakeLoadDataPresenter(),
         probe_selection_presenter=probe_selection or FakeProbeSelectionPresenter(),
         session_selection_presenter=(
@@ -468,15 +481,13 @@ def _workbench(
         plot_exporter=plot_exporter or FakePlotExporter(),
         interaction_presenter=interaction or FakeInteractionPresenter(),
         lifecycle_presenter=lifecycle or object(),
-        reference_line_presenter=reference_line_presenter or object(),
-        histology_refresh_presenter=histology_refresh_presenter or object(),
-        alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
-        shank_selection_actions=(
-            shank_selection_actions or FakeShankSelectionActions()
-        ),
-        alignment_selection_actions=(
-            alignment_selection_actions or FakeAlignmentSelectionActions()
-        ),
+    )
+    return DesktopWorkbench(
+        app=object(),
+        views=object(),
+        displays=displays,
+        render_cluster=render_cluster,
+        presenter_cluster=presenter_cluster,
     )
 
 
@@ -796,52 +807,60 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         ports=ports,
     )
 
+    render_cluster = workbench.render_cluster
+    presenter_cluster = workbench.presenter_cluster
+
     assert workbench.views is views
-    assert workbench.render_cluster is not None
     assert workbench.displays.histology is panel
-    assert workbench.alignment_presenter.callbacks is not None
-    assert workbench.shank_presenter.callbacks is not None
-    assert workbench.load_data_presenter.callbacks is not None
-    assert workbench.probe_selection_presenter.callbacks is not None
-    assert workbench.session_selection_presenter.callbacks is not None
-    assert workbench.mouse_root_presenter.callbacks is not None
-    assert workbench.output_path_presenter.commands is commands
-    assert workbench.path_dialog_presenter.callbacks.active_mouse_root is (
+    assert render_cluster.alignment_presenter.callbacks is not None
+    assert render_cluster.shank_presenter.callbacks is not None
+    assert presenter_cluster.load_data_presenter.callbacks is not None
+    assert presenter_cluster.probe_selection_presenter.callbacks is not None
+    assert presenter_cluster.session_selection_presenter.callbacks is not None
+    assert presenter_cluster.mouse_root_presenter.callbacks is not None
+    assert presenter_cluster.output_path_presenter.commands is commands
+    assert presenter_cluster.path_dialog_presenter.callbacks.active_mouse_root is (
         queries.active_mouse_root_path
     )
-    assert workbench.output_folder_prompt.callbacks.has_output_directory is (
+    assert presenter_cluster.output_folder_prompt.callbacks.has_output_directory is (
         queries.has_output_directory
     )
-    assert workbench.load_preflight_presenter.can_load_data is commands.can_load_data
-    assert workbench.alignment_edit_actions.commands is commands
-    assert workbench.alignment_edit_actions.callbacks.tip_position_um() == 42.0
-    assert workbench.shank_selection_actions.app is app
-    assert workbench.shank_selection_actions.selection_view is not None
-    assert workbench.alignment_selection_actions.app is app
-    workbench.alignment_presenter.callbacks.render_histology_alignment("edit-state")
+    assert presenter_cluster.load_preflight_presenter.can_load_data is (
+        commands.can_load_data
+    )
+    assert render_cluster.alignment_edit_actions.commands is commands
+    assert render_cluster.alignment_edit_actions.callbacks.tip_position_um() == 42.0
+    assert render_cluster.shank_selection_actions.app is app
+    assert render_cluster.shank_selection_actions.selection_view is not None
+    assert render_cluster.alignment_selection_actions.app is app
+    render_cluster.alignment_presenter.callbacks.render_histology_alignment(
+        "edit-state"
+    )
     assert panel.calls == [("edit", "edit-state")]
-    workbench.alignment_presenter.callbacks.plot_channels("projection")
+    render_cluster.alignment_presenter.callbacks.plot_channels("projection")
     assert slice_display.plotted_channels == ["projection"]
-    workbench.alignment_presenter.callbacks.refresh_perpendicular_histology()
+    render_cluster.alignment_presenter.callbacks.refresh_perpendicular_histology()
     assert slice_display.perpendicular_refreshes == 1
-    assert workbench.shank_presenter.callbacks.render_alignment_choices is (
+    assert render_cluster.shank_presenter.callbacks.render_alignment_choices is (
         ports.render.shank.render_alignment_choices
     )
-    assert workbench.save_presenter.callbacks.use_docdb is (ports.save.use_docdb)
-    assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
+    assert presenter_cluster.save_presenter.callbacks.use_docdb is (
+        ports.save.use_docdb
+    )
+    assert presenter_cluster.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
     assert (
-        workbench.previous_alignment_load_presenter.callbacks.select_alignment.__self__
-        is workbench.alignment_selection_actions
+        presenter_cluster.previous_alignment_load_presenter.callbacks.select_alignment.__self__
+        is render_cluster.alignment_selection_actions
     )
     assert (
-        workbench.mouse_root_presenter.callbacks.select_first_session.__self__
-        is workbench.session_selection_presenter
+        presenter_cluster.mouse_root_presenter.callbacks.select_first_session.__self__
+        is presenter_cluster.session_selection_presenter
     )
     assert (
-        workbench.session_selection_presenter.callbacks.select_first_probe.__self__
-        is workbench.probe_selection_presenter
+        presenter_cluster.session_selection_presenter.callbacks.select_first_probe.__self__
+        is presenter_cluster.probe_selection_presenter
     )
     assert workbench.displays.ephys is ephys_display
     assert workbench.displays.slice is slice_display
@@ -849,42 +868,42 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert reference_line_display.lines_changed_callback is not None
     reference_line_display.lines_changed_callback()
     assert captured_reference_lines == [([1.0], [2.0])]
-    workbench.alignment_presenter.callbacks.clear_reference_lines()
-    workbench.alignment_presenter.callbacks.reattach_reference_lines()
-    workbench.alignment_presenter.callbacks.update_reference_lines_to_alignment()
-    workbench.shank_presenter.callbacks.clear_reference_lines()
+    render_cluster.alignment_presenter.callbacks.clear_reference_lines()
+    render_cluster.alignment_presenter.callbacks.reattach_reference_lines()
+    render_cluster.alignment_presenter.callbacks.update_reference_lines_to_alignment()
+    render_cluster.shank_presenter.callbacks.clear_reference_lines()
     assert reference_line_display.clear_count == 2
     assert reference_line_display.reattach_count == 1
     assert reference_line_display.sync_count == 1
-    workbench.shank_presenter.callbacks.render_ephys_plots("state")
+    render_cluster.shank_presenter.callbacks.render_ephys_plots("state")
     assert ephys_display.rendered_states == ["state"]
-    workbench.shank_presenter.callbacks.render_histology_plots(1)
+    render_cluster.shank_presenter.callbacks.render_histology_plots(1)
     assert panel.calls[-1] == "panels"
     assert slice_display.perpendicular_refreshes == 2
     assert reference_line_display.created_lines == [([1.0], [2.0])]
-    workbench.shank_presenter.callbacks.restore_slice_selection(
+    render_cluster.shank_presenter.callbacks.restore_slice_selection(
         "menu",
         "selection",
         "label",
     )
     assert slice_display.restored == [("menu", "selection", "label")]
-    assert workbench.plot_exporter.ephys_exporter.presenter is (
+    assert presenter_cluster.plot_exporter.ephys_exporter.presenter is (
         ephys_display.plot_presenter
     )
-    assert workbench.plot_exporter.ephys_exporter.panel is ephys_display.panel
-    assert workbench.plot_exporter.slice_handles.slice_display is slice_display
-    workbench.plot_exporter.add_lines_points()
+    assert presenter_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
+    assert presenter_cluster.plot_exporter.slice_handles.slice_display is slice_display
+    presenter_cluster.plot_exporter.add_lines_points()
     assert reference_line_display.add_count == 1
-    assert workbench.plot_exporter.callbacks.set_axis is ports.export.set_axis
-    assert workbench.plot_exporter.ephys_exporter.callbacks.set_view is (
+    assert presenter_cluster.plot_exporter.callbacks.set_axis is ports.export.set_axis
+    assert presenter_cluster.plot_exporter.ephys_exporter.callbacks.set_view is (
         ports.export.set_view
     )
-    assert workbench.interaction_presenter.popup_manager is (
+    assert presenter_cluster.interaction_presenter.popup_manager is (
         ports.interaction.popup_manager
     )
-    assert workbench.interaction_presenter.reference_line_display is (
+    assert presenter_cluster.interaction_presenter.reference_line_display is (
         reference_line_display
     )
-    assert workbench.interaction_presenter.callbacks.set_axis is (
+    assert presenter_cluster.interaction_presenter.callbacks.set_axis is (
         ports.interaction.set_axis
     )
