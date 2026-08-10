@@ -75,9 +75,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 apply_plot_data_state=window.shank_screen_view.apply_plot_data_state,
                 raw_image_payloads=window.shank_screen_view.raw_image_payload_mapping,
                 render_plot_menus=window.shank_screen_view.render_plot_menus,
-                configure_view=(
-                    window.shank_screen_view.configure_view_after_render
-                ),
+                configure_view=(window.shank_screen_view.configure_view_after_render),
                 offline=lambda: window.offline,
             ),
         ),
@@ -106,7 +104,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         export=window.export_view,
         interaction=DesktopInteractionPorts(
             popup_manager=window.popup_manager,
-            region_lookup_service=window.region_lookup_service,
             struct_list=window.struct_list,
             struct_view=window.struct_view,
             struct_description=window.struct_description,

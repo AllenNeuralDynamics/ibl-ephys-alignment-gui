@@ -23,6 +23,7 @@ from ephys_alignment_gui.alignment_persistence_commands import (
 from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
 from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
 from ephys_alignment_gui.alignment_read_models import (
+    ActiveAlignmentEditScreenState,
     ActiveAlignmentRenderState,
     ActiveReferenceLineRenderState,
     ActiveShankPlotDataState,
@@ -62,6 +63,7 @@ from ephys_alignment_gui.controller import (
     PreviousAlignmentSelected,
     ShankSelected,
 )
+from ephys_alignment_gui.display_commands import DisplayCommandHandler
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_plot_queries import EphysPlotQueries
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
@@ -114,6 +116,7 @@ class AlignmentCommands:
     metadata_commands: MetadataSelectionCommandHandler
     persistence_commands: AlignmentPersistenceCommandHandler
     edit_commands: AlignmentEditCommandHandler
+    display_commands: DisplayCommandHandler
 
     def select_shank(
         self,
@@ -306,6 +309,22 @@ class AlignmentCommands:
         """Select the unit subset used when preparing ephys plot data."""
         return self.edit_commands.set_unit_filter(unit_filter)
 
+    def toggle_reference_lines_visible(self) -> bool:
+        """Toggle whether reference lines should be rendered."""
+        return self.display_commands.toggle_reference_lines_visible()
+
+    def toggle_histology_boundaries_visible(self) -> bool:
+        """Toggle whether histology boundary overlays should be rendered."""
+        return self.display_commands.toggle_histology_boundaries_visible()
+
+    def toggle_region_annotation_source(self) -> str:
+        """Toggle the displayed region annotation label source."""
+        return self.display_commands.toggle_region_annotation_source()
+
+    def set_linear_fit_enabled(self, enabled: bool) -> bool:
+        """Set whether fit commands should use linear fitting."""
+        return self.display_commands.set_linear_fit_enabled(enabled)
+
     def offset_alignment_from_tip(
         self,
         *,
@@ -421,6 +440,7 @@ class AlignmentQueries:
     )
     histology_context: Any | None = None
     slice_service: Any | None = None
+    region_lookup_service: Any | None = None
     slice_display_policy: SliceDisplayPolicy = field(default_factory=SliceDisplayPolicy)
     query_context: AlignmentQueryContext = field(init=False)
     ephys_plot_queries: EphysPlotQueries = field(init=False)
@@ -556,6 +576,67 @@ class AlignmentQueries:
     def has_output_directory(self) -> bool:
         """Return whether the active probe output directory is available."""
         return self.document.output_directory is not None
+
+    def active_output_directory(self) -> Path | None:
+        """Return the derived active output directory, if available."""
+        return self.document.output_directory
+
+    def active_plot_export_directory(self) -> Path | None:
+        """Return the default plot-export directory for the active shank."""
+        output_directory = self.active_output_directory()
+        if output_directory is None:
+            return None
+        shank_id = self.active_shank_selection().shank_id
+        return output_directory / f"Plots_Shank_{shank_id}"
+
+    def depth_view_settings(self) -> Any:
+        """Return feature-depth display settings."""
+        return self.display_state.depth_view
+
+    def fit_depth_um(self) -> Any:
+        """Return the depth grid used for fit-panel rendering."""
+        return self.display_state.depth_view.fit_depth_um
+
+    def linear_fit_enabled(self) -> bool:
+        """Return whether fit commands use linear fitting."""
+        return self.display_state.edit_settings.lin_fit
+
+    def active_brain_atlas(self) -> Any | None:
+        """Return loaded brain-atlas runtime data for desktop rendering."""
+        if self.histology_context is None:
+            return None
+        return self.histology_context.brain_atlas
+
+    def allen_structure_tree(self) -> Any | None:
+        """Return Allen structure metadata for desktop rendering."""
+        if self.region_lookup_service is None:
+            return None
+        return self.region_lookup_service.load_allen_csv()
+
+    def region_description(self, region_id: int) -> tuple[str, str] | None:
+        """Return user-facing region description and lookup label."""
+        if self.region_lookup_service is None:
+            return None
+        return self.region_lookup_service.get_region_description(region_id)
+
+    def active_alignment_edit_screen_state(
+        self,
+    ) -> ActiveAlignmentEditScreenState:
+        """Return edit-history status and previous reference-line render data."""
+        state = self.document.active_alignment_state
+        if state is None:
+            return ActiveAlignmentEditScreenState(current_idx=0, total_idx=0)
+
+        previous_feature_positions_um = None
+        feature_prev = state.feature_prev
+        if feature_prev is not None and np.any(feature_prev):
+            previous_feature_positions_um = np.asarray(feature_prev)[1:-1] * 1e6
+
+        return ActiveAlignmentEditScreenState(
+            current_idx=state.edit_history.current_idx,
+            total_idx=state.edit_history.total_idx,
+            previous_feature_positions_um=previous_feature_positions_um,
+        )
 
     def active_unit_filter(self) -> str:
         """Return the selected unit subset for active ephys plot data."""

@@ -34,6 +34,8 @@ def desktop_ephys_display_ports_from_main_window(
 
 def desktop_histology_display_ports_from_main_window(
     window: Any,
+    *,
+    app: Any,
 ) -> DesktopHistologyDisplayPorts:
     """Adapt MainWindow plot handles to histology display ports."""
     return DesktopHistologyDisplayPorts(
@@ -52,12 +54,12 @@ def desktop_histology_display_ports_from_main_window(
         set_axis=window.set_axis,
         padding_provider=lambda: window.pad,
         probe_extent_query_kwargs=window._probe_extent_query_kwargs,
-        fit_depth_um=lambda: window.display_state.depth_view.fit_depth_um,
-        lin_fit_enabled=lambda: window.display_state.edit_settings.lin_fit,
+        fit_depth_um=app.queries.fit_depth_um,
+        lin_fit_enabled=app.queries.linear_fit_enabled,
         scale_factor_y_range=window._scale_factor_y_range,
         histology_available=lambda: window.histology_exists,
-        brain_atlas=lambda: window.histology_context.brain_atlas,
-        allen=lambda: window.allen,
+        brain_atlas=app.queries.active_brain_atlas,
+        allen=app.queries.allen_structure_tree,
     )
 
 
@@ -92,11 +94,13 @@ def desktop_slice_display_ports_from_main_window(
     )
 
 
-def desktop_display_ports_from_main_window(window: Any) -> DesktopDisplayPorts:
+def desktop_display_ports_from_main_window(
+    window: Any, *, app: Any
+) -> DesktopDisplayPorts:
     """Adapt MainWindow plot handles to desktop display-region ports."""
     return DesktopDisplayPorts(
         ephys=desktop_ephys_display_ports_from_main_window(window),
-        histology=desktop_histology_display_ports_from_main_window(window),
+        histology=desktop_histology_display_ports_from_main_window(window, app=app),
         reference_lines=desktop_reference_line_display_ports_from_main_window(window),
         slice=desktop_slice_display_ports_from_main_window(window),
     )

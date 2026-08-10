@@ -17,7 +17,10 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
 from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
-from ephys_alignment_gui.alignment_read_models import ActiveReferenceLineRenderState
+from ephys_alignment_gui.alignment_read_models import (
+    ActiveAlignmentEditScreenState,
+    ActiveReferenceLineRenderState,
+)
 from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
     SavedAlignmentOutputs,
@@ -1466,6 +1469,50 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
 
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
+
+
+def test_display_commands_update_app_owned_display_settings() -> None:
+    workspace = AlignmentWorkspace()
+
+    assert workspace.app.commands.toggle_reference_lines_visible() is False
+    assert workspace.app.commands.toggle_histology_boundaries_visible() is False
+    assert workspace.app.commands.toggle_region_annotation_source() == (
+        "FranklinPaxinos"
+    )
+    assert workspace.app.commands.set_linear_fit_enabled(False) is False
+
+    assert workspace.display_state.reference_lines_visible is False
+    assert workspace.display_state.histology_boundaries_visible is False
+    assert workspace.display_state.region_annotation_source == "FranklinPaxinos"
+    assert workspace.app.queries.linear_fit_enabled() is False
+
+
+def test_queries_return_output_and_alignment_screen_read_models(tmp_path) -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.set_output_directory(tmp_path / "session" / "probeA")
+    workspace.document.set_selected_shank(2)
+    state = workspace.document.select_alignment_key(AlignmentKey("rec1", "streamA", 2))
+    state.feature_prev = np.array([0.0, 0.001, 0.002, 0.003])
+    state.edit_history.set_current_alignment(
+        ActiveAlignment(
+            feature=np.array([0.0, 0.001]),
+            track=np.array([0.0, 0.0015]),
+        )
+    )
+    state.edit_history.total_idx = 1
+
+    assert workspace.app.queries.active_plot_export_directory() == (
+        tmp_path / "session" / "probeA" / "Plots_Shank_3"
+    )
+    edit_state = workspace.app.queries.active_alignment_edit_screen_state()
+
+    assert isinstance(edit_state, ActiveAlignmentEditScreenState)
+    assert edit_state.current_idx == 0
+    assert edit_state.total_idx == 1
+    np.testing.assert_allclose(
+        edit_state.previous_feature_positions_um,
+        [1000.0, 2000.0],
+    )
 
 
 def test_commands_prepare_loaded_shank_without_histology() -> None:

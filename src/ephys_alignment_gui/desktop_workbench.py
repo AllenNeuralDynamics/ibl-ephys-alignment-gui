@@ -173,7 +173,6 @@ class DesktopInteractionPorts:
     """Desktop operations and handles needed by interaction presentation."""
 
     popup_manager: Any
-    region_lookup_service: Any
     struct_list: Any
     struct_view: Any
     struct_description: Any
@@ -470,7 +469,6 @@ class DesktopWorkbench:
             ephys_panel=displays.ephys.panel,
             histology_display=displays.histology,
             reference_line_display=displays.reference_lines,
-            region_lookup_service=ports.region_lookup_service,
             widgets=DesktopInteractionWidgets(
                 struct_list=ports.struct_list,
                 struct_view=ports.struct_view,
@@ -648,9 +646,7 @@ class DesktopWorkbench:
 
     def render_loaded_shank_histology(self, shank_idx: int | None = None) -> bool:
         """Render loaded-shank histology, perpendicular slice, and line overlays."""
-        return self.histology_refresh_presenter.render_loaded_shank_histology(
-            shank_idx
-        )
+        return self.histology_refresh_presenter.render_loaded_shank_histology(shank_idx)
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""

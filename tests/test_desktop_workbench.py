@@ -731,7 +731,6 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
         ),
         interaction=DesktopInteractionPorts(
             popup_manager=object(),
-            region_lookup_service=object(),
             struct_list=object(),
             struct_view=object(),
             struct_description=object(),
@@ -828,9 +827,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert workbench.shank_presenter.callbacks.render_alignment_choices is (
         ports.render.shank.render_alignment_choices
     )
-    assert workbench.save_presenter.callbacks.use_docdb is (
-        ports.save.use_docdb
-    )
+    assert workbench.save_presenter.callbacks.use_docdb is (ports.save.use_docdb)
     assert workbench.previous_alignment_load_presenter.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
@@ -887,9 +884,6 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert workbench.interaction_presenter.reference_line_display is (
         reference_line_display
-    )
-    assert workbench.interaction_presenter.region_lookup_service is (
-        ports.interaction.region_lookup_service
     )
     assert workbench.interaction_presenter.callbacks.set_axis is (
         ports.interaction.set_axis

@@ -273,6 +273,7 @@ def _presenter(
             active_cluster_detail=lambda _idx: detail,
             active_session_notes=lambda: "notes",
             active_histology_region_id=lambda _idx: active_region_id,
+            region_description=region_lookup.get_region_description,
         )
     )
     presenter = DesktopInteractionPresenter(
@@ -281,7 +282,6 @@ def _presenter(
         ephys_panel=ephys_panel,
         histology_display=histology_display,
         reference_line_display=reference_line_display,
-        region_lookup_service=region_lookup,
         widgets=widgets,
         callbacks=DesktopInteractionCallbacks(
             histology_available=lambda: histology_available,
@@ -386,9 +386,7 @@ def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
     presenter.on_mouse_hover([line, object()])
     presenter.on_mouse_hover([state["widgets"].scale_plot, scale_region])
     presenter.on_mouse_hover([state["widgets"].histology_plot, hist_region])
-    presenter.on_mouse_hover(
-        [state["widgets"].histology_reference_plot, ref_region]
-    )
+    presenter.on_mouse_hover([state["widgets"].histology_reference_plot, ref_region])
 
     assert state["reference_line_display"].clear_calls == 4
     assert state["reference_line_display"].selected == [line]

@@ -50,7 +50,6 @@ class DesktopInteractionPresenter:
     ephys_panel: Any
     histology_display: Any
     reference_line_display: Any
-    region_lookup_service: Any
     widgets: DesktopInteractionWidgets
     callbacks: DesktopInteractionCallbacks
     popup_window_factory: Callable[..., Any] = ephys_gui.PopupWindow
@@ -158,9 +157,10 @@ class DesktopInteractionPresenter:
         region_id = self.app.queries.active_histology_region_id(idx)
         if region_id is None:
             return False
-        description, lookup = self.region_lookup_service.get_region_description(
-            region_id
-        )
+        region_description = self.app.queries.region_description(region_id)
+        if region_description is None:
+            return False
+        description, lookup = region_description
         if not self._select_structure(lookup, description, scroll=True):
             return False
 
@@ -195,7 +195,10 @@ class DesktopInteractionPresenter:
     def label_pressed(self, item: Any) -> None:
         """Render region information for a clicked structure tree item."""
         idx = int(item.model().itemFromIndex(item).accessibleText())
-        description, lookup = self.region_lookup_service.get_region_description(idx)
+        region_description = self.app.queries.region_description(idx)
+        if region_description is None:
+            return
+        description, lookup = region_description
         self._select_structure(lookup, description)
 
     def on_mouse_double_clicked(self, event: Any) -> bool:
@@ -224,9 +227,7 @@ class DesktopInteractionPresenter:
             items[1],
             self.linear_region_type,
         ):
-            scale_factor = self.histology_display.scale_factor_for_region_item(
-                items[1]
-            )
+            scale_factor = self.histology_display.scale_factor_for_region_item(items[1])
             if scale_factor is not None:
                 self.widgets.scale_axis.setLabel(
                     "Scale Factor = " + str(np.around(scale_factor, 2))

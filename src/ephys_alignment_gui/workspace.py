@@ -20,6 +20,7 @@ from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
 from ephys_alignment_gui.app import AlignmentApp, AlignmentCommands, AlignmentQueries
 from ephys_alignment_gui.controller import AlignmentController
+from ephys_alignment_gui.display_commands import DisplayCommandHandler
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.ephys_stream_loader import EphysStreamLoader
@@ -106,6 +107,7 @@ class AlignmentWorkspace:
     loaded_shank_commands: LoadedShankCommandHandler = field(init=False)
     persistence_commands: AlignmentPersistenceCommandHandler = field(init=False)
     edit_commands: AlignmentEditCommandHandler = field(init=False)
+    display_commands: DisplayCommandHandler = field(init=False)
     app: AlignmentApp = field(init=False)
 
     def __post_init__(self) -> None:
@@ -178,6 +180,9 @@ class AlignmentWorkspace:
             display_state=self.display_state,
             runtime=self.runtime,
         )
+        self.display_commands = DisplayCommandHandler(
+            display_state=self.display_state,
+        )
         self.app = AlignmentApp(
             commands=AlignmentCommands(
                 shank_selection_commands=self.shank_selection_commands,
@@ -187,6 +192,7 @@ class AlignmentWorkspace:
                 metadata_commands=self.metadata_commands,
                 persistence_commands=self.persistence_commands,
                 edit_commands=self.edit_commands,
+                display_commands=self.display_commands,
             ),
             queries=AlignmentQueries(
                 document=self.document,
@@ -197,6 +203,7 @@ class AlignmentWorkspace:
                 slice_data_runtime_service=self.slice_data_runtime_service,
                 histology_context=self.histology_context,
                 slice_service=self.slice_service,
+                region_lookup_service=self.region_lookup_service,
                 slice_display_policy=self.slice_display_policy,
             ),
             events=self.events,

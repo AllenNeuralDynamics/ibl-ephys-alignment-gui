@@ -109,6 +109,15 @@ class ActiveReferenceLineRenderState:
 
 
 @dataclass(frozen=True)
+class ActiveAlignmentEditScreenState:
+    """Edit-history status and prior-line data for frontend rendering."""
+
+    current_idx: int
+    total_idx: int
+    previous_feature_positions_um: Any | None = None
+
+
+@dataclass(frozen=True)
 class ActiveShankPlotDataState:
     """Prepared ephys plot-data bounds for the active shank."""
 

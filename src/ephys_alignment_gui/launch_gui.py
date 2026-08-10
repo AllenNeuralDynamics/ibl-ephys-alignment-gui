@@ -73,20 +73,8 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
             )
         offline = True
 
-        self.workspace = AlignmentWorkspace()
-        self.app = self.workspace.app
-        self.runtime = self.workspace.runtime
-        self.document = self.workspace.document
-        self.display_state = self.workspace.display_state
-        self.data_context = self.workspace.data_context
-        self.histology_context = self.workspace.histology_context
-        self.slice_service = self.workspace.slice_service
-        self.region_lookup_service = self.workspace.region_lookup_service
-        self.controller = self.workspace.controller
-        self.alignment_derived_data_service = (
-            self.workspace.alignment_derived_data_service
-        )
-        self.plot_data_factory = self.workspace.plot_data_factory
+        self._workspace = AlignmentWorkspace()
+        self.app = self._workspace.app
         self.popup_manager = DesktopPopupManager()
         self.init_variables()
         self.offline: bool = offline
@@ -113,8 +101,10 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.use_docdb: bool = True
         self._empty_state_item: Any = None
 
-        self.allen = self.region_lookup_service.load_allen_csv()
-        self.init_region_lookup(self.allen)
+        allen = self.app.queries.allen_structure_tree()
+        if allen is None:
+            raise RuntimeError("Allen structure metadata is unavailable")
+        self.init_region_lookup(allen)
 
     def closeEvent(self, event) -> None:
         """Disconnect desktop event subscriptions before the Qt window closes."""
@@ -295,14 +285,12 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         if save_path:
             image_path_overview = Path(save_path)
         else:
-            if self.document.output_directory is None:
+            if not self.app.queries.has_output_directory():
                 self.on_output_folder_selected()
-            if self.document.output_directory is None:
+            image_path = self.app.queries.active_plot_export_directory()
+            if image_path is None:
                 return
-            shank_id = self.app.queries.active_shank_selection().shank_id
-            image_path_overview = Path(
-                self.document.output_directory / f"Plots_Shank_{shank_id}"
-            )
+            image_path_overview = Path(image_path)
 
         image_path_overview.mkdir(exist_ok=True)
         self.desktop_workbench.export_plots(image_path_overview, sess_info=sess_info)
@@ -331,7 +319,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.displays.histology.render_active_nearby(fig, movable=movable)
 
     def _probe_extent_query_kwargs(self) -> dict[str, float]:
-        depth_view = self.display_state.depth_view
+        depth_view = self.app.queries.depth_view_settings()
         return {
             "probe_tip_um": depth_view.probe_tip_um,
             "probe_top_um": depth_view.probe_top_um,
@@ -472,14 +460,14 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.alignment_selected(idx)
 
     def toggle_histology_button_pressed(self) -> None:
-        boundaries_visible = self.display_state.toggle_histology_boundaries_visible()
+        boundaries_visible = self.app.commands.toggle_histology_boundaries_visible()
         if not boundaries_visible:
             self.plot_histology_nearby()
         else:
             self.plot_histology_ref()
 
     def toggle_histology_map_button_pressed(self) -> None:
-        self.display_state.toggle_region_annotation_source()
+        self.app.commands.toggle_region_annotation_source()
 
         self.plot_histology()
         self.plot_histology_ref()
@@ -528,7 +516,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+L key pressed. Shows/hides reference lines on ephys and histology
         plots
         """
-        lines_visible = self.display_state.toggle_reference_lines_visible()
+        lines_visible = self.app.commands.toggle_reference_lines_visible()
         if not lines_visible:
             self.displays.reference_lines.remove_from_plots()
         else:
@@ -648,7 +636,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fit_button_pressed.
         """
         # Update the flag
-        self.display_state.edit_settings.set_lin_fit(state != 0)
+        self.app.commands.set_linear_fit_enabled(state != 0)
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use

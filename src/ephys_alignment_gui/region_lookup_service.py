@@ -18,6 +18,8 @@ class RegionLookupService:
 
     def load_allen_csv(self) -> Any:
         """Load the Allen structure tree bundled with iblatlas."""
+        if self.allen is not None:
+            return self.allen
         allen_path = Path(Path(atlas.__file__).parent, "allen_structure_tree.csv")
         self.allen = alfio.load_file_content(allen_path)
         return self.allen
@@ -27,9 +29,7 @@ class RegionLookupService:
         allen = self.allen if self.allen is not None else self.load_allen_csv()
         struct_idx = np.where(allen["id"] == region_idx)[0][0]
         description = ""
-        region_lookup = (
-            allen["acronym"][struct_idx] + ": " + allen["name"][struct_idx]
-        )
+        region_lookup = allen["acronym"][struct_idx] + ": " + allen["name"][struct_idx]
 
         if region_lookup == "void: void":
             region_lookup = "root: root"

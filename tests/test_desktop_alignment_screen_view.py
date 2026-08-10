@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from ephys_alignment_gui.alignment_read_models import ActiveAlignmentEditScreenState
 from ephys_alignment_gui.desktop_alignment_screen_view import (
     DesktopAlignmentScreenView,
 )
@@ -56,7 +57,7 @@ class FakeLabel:
 
 def _view(
     *,
-    active_state: Any = None,
+    active_state: ActiveAlignmentEditScreenState | None = None,
 ) -> tuple[
     DesktopAlignmentScreenView,
     FakeDepthPlots,
@@ -70,19 +71,15 @@ def _view(
     reference_lines = FakeReferenceLines()
     current_label = FakeLabel()
     total_label = FakeLabel()
-    display_state = SimpleNamespace(
-        edit_settings=SimpleNamespace(
-            lin_fit=True,
-            set_lin_fit=lambda enabled: setattr(
-                display_state.edit_settings, "lin_fit", bool(enabled)
-            ),
-        )
-    )
+    lin_fit_state = SimpleNamespace(enabled=True)
     view = DesktopAlignmentScreenView(
         depth_plots=depth_plots,
-        display_state=display_state,
+        set_lin_fit=lambda enabled: setattr(lin_fit_state, "enabled", bool(enabled)),
+        lin_fit_enabled=lambda: lin_fit_state.enabled,
         reference_lines=reference_lines,
-        active_alignment_state=lambda: active_state,
+        active_edit_screen_state=lambda: (
+            active_state or ActiveAlignmentEditScreenState(current_idx=0, total_idx=0)
+        ),
         lin_fit_checkbox=checkbox,
         current_index_label=current_label,
         total_index_label=total_label,
@@ -96,7 +93,7 @@ def test_restore_lin_fit_updates_display_state_and_checkbox() -> None:
     view.restore_lin_fit_from_edit(False)
     view.restore_lin_fit_from_edit(None)
 
-    assert view.display_state.edit_settings.lin_fit is False
+    assert view.lin_fit_enabled() is False
     assert checkbox.calls == [
         ("block", True),
         ("checked", False),
@@ -119,7 +116,11 @@ def test_depth_range_methods_delegate_to_depth_plot_view() -> None:
 
 
 def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> None:
-    active_state = SimpleNamespace(feature_prev=np.array([0.0, 0.001, 0.002, 0.003]))
+    active_state = ActiveAlignmentEditScreenState(
+        current_idx=0,
+        total_idx=0,
+        previous_feature_positions_um=np.array([1000.0, 2000.0]),
+    )
     view, _depth, _checkbox, reference_lines, _current, _total = _view(
         active_state=active_state
     )
@@ -131,9 +132,7 @@ def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> N
 
 
 def test_update_status_uses_active_edit_history() -> None:
-    active_state = SimpleNamespace(
-        edit_history=SimpleNamespace(current_idx=2, total_idx=5)
-    )
+    active_state = ActiveAlignmentEditScreenState(current_idx=2, total_idx=5)
     view, _depth, _checkbox, _lines, current_label, total_label = _view(
         active_state=active_state
     )

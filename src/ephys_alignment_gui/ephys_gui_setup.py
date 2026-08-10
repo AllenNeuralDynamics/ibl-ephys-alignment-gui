@@ -532,7 +532,7 @@ class Setup:
         """
         Create all figures that will be added to the GUI
         """
-        depth_view = self.display_state.depth_view
+        depth_view = self.app.queries.depth_view_settings()
         y_min, y_max = depth_view.plot_y_range_um
         # Lists to store the position of probe top and tip
         self.probe_top_lines = []
@@ -749,7 +749,7 @@ class Setup:
         self.fig_fit.addItem(self.fit_scatter)
 
         self.lin_fit_option = QtWidgets.QCheckBox("Linear fit", self.fig_fit)
-        self.lin_fit_option.setChecked(self.display_state.edit_settings.lin_fit)
+        self.lin_fit_option.setChecked(self.app.queries.linear_fit_enabled())
         self.lin_fit_option.stateChanged.connect(self.lin_fit_option_changed)
         self.on_fig_size_changed()
 
