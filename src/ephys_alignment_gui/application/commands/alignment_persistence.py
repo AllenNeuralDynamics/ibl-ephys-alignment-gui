@@ -11,27 +11,27 @@ from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
-from ephys_alignment_gui.alignment_persistence_results import (
-    AlignmentOutputBuilt,
-    AlignmentOutputsSaved,
-    NoPreviousAlignments,
-)
 from ephys_alignment_gui.alignment_repository import (
     AlignmentHistory,
     AlignmentRepository,
 )
 from ephys_alignment_gui.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
     PreviousAlignmentSelected,
     VisitedAlignmentOutputsSaved,
 )
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    AlignmentOutputBuilt,
+    AlignmentOutputsSaved,
+    NoPreviousAlignments,
+)
+from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.controller import (
     AlignmentController,
 )
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 
 logger = logging.getLogger(__name__)
 

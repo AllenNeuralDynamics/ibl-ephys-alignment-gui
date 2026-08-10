@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.metadata_results import MouseRootLoaded
-from ephys_alignment_gui.workflow import Failed
+from ephys_alignment_gui.application.results.metadata import MouseRootLoaded
+from ephys_alignment_gui.application.workflow import Failed
 
 logger = logging.getLogger(__name__)
 

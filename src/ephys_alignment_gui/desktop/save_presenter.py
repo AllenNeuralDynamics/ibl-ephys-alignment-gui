@@ -8,8 +8,8 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
-from ephys_alignment_gui.workflow import Blocked, Failed, Ok, Requirement
+from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok, Requirement
 
 logger = logging.getLogger(__name__)
 

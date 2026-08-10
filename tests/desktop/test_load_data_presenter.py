@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
     LoadDataAlreadyActiveResult,
@@ -15,6 +15,8 @@ from ephys_alignment_gui.app_results import (
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
 )
+from ephys_alignment_gui.application.results.metadata import ProbeSelected
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -23,8 +25,6 @@ from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )
-from ephys_alignment_gui.metadata_results import ProbeSelected
-from ephys_alignment_gui.workflow import Failed
 
 
 class FakeBusyContext:

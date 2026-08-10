@@ -7,16 +7,16 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.ephys_data_service import EphysDataService
-from ephys_alignment_gui.histology_data_service import HistologyDataContext
-from ephys_alignment_gui.metadata_results import (
+from ephys_alignment_gui.application.commands.path import PathCommandHandler
+from ephys_alignment_gui.application.results.metadata import (
     MouseRootLoaded,
     ProbeSelected,
     RecordingSelected,
 )
-from ephys_alignment_gui.path_commands import PathCommandHandler
-from ephys_alignment_gui.workflow import Failed, Ok
+from ephys_alignment_gui.application.workflow import Failed, Ok
+from ephys_alignment_gui.controller import AlignmentController
+from ephys_alignment_gui.ephys_data_service import EphysDataService
+from ephys_alignment_gui.histology_data_service import HistologyDataContext
 
 
 @dataclass

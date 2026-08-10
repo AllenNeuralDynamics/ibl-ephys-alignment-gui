@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.alignment_events import ShankChanged
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     PendingReferenceLinesUpdated,
     ShankSelected,
 )
+from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.reference_line_capture import (
@@ -19,7 +20,6 @@ from ephys_alignment_gui.reference_line_capture import (
     capture_active_reference_lines,
     capture_outgoing_reference_lines,
 )
-from ephys_alignment_gui.workflow import Failed, Ok
 
 logger = logging.getLogger(__name__)
 

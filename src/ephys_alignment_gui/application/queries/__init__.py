@@ -5,21 +5,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ephys_alignment_gui.active_shank_screen_queries import ActiveShankScreenQueries
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
-from ephys_alignment_gui.alignment_render_queries import AlignmentRenderQueries
+from ephys_alignment_gui.application.queries.active_shank_screen import (
+    ActiveShankScreenQueries,
+)
+from ephys_alignment_gui.application.queries.alignment_render import (
+    AlignmentRenderQueries,
+)
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.application.queries.ephys_plot import EphysPlotQueries
+from ephys_alignment_gui.application.queries.slice import SliceQueries
+from ephys_alignment_gui.application.queries.workspace_state import (
+    WorkspaceStateQueries,
+)
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.ephys_plot_queries import EphysPlotQueries
 from ephys_alignment_gui.session_runtime import SessionRuntime
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
-from ephys_alignment_gui.slice_queries import SliceQueries
-from ephys_alignment_gui.workspace_state_queries import WorkspaceStateQueries
 
 
 @dataclass

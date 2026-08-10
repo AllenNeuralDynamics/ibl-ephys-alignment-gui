@@ -13,7 +13,6 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentHistologyData,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentRenderState,
     FitPlotRenderState,
@@ -22,6 +21,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
 
 
 @dataclass

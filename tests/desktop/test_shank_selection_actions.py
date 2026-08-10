@@ -5,11 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app_results import ShankSelected
+from ephys_alignment_gui.application.results import ShankSelected
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.shank_selection_actions import (
     DesktopShankSelectionActions,
 )
-from ephys_alignment_gui.workflow import Failed
 
 
 class FakeSelectionView:

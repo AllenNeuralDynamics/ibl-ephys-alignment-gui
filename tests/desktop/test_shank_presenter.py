@@ -13,7 +13,8 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveShankScreenState,
     PreparedActiveShankScreenState,
 )
-from ephys_alignment_gui.app_results import LoadedShankPrepared
+from ephys_alignment_gui.application.results import LoadedShankPrepared
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,
@@ -22,7 +23,6 @@ from ephys_alignment_gui.desktop.shank_presenter import (
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.event_bus import EventBus
 from ephys_alignment_gui.slice_display_policy import SliceSelection
-from ephys_alignment_gui.workflow import Failed
 
 
 def _event(

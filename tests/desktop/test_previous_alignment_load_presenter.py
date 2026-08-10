@@ -6,13 +6,15 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
-from ephys_alignment_gui.app_results import AlignmentChoicesUpdated
+from ephys_alignment_gui.application.results import AlignmentChoicesUpdated
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    NoPreviousAlignments,
+)
+from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.desktop.previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
 )
-from ephys_alignment_gui.workflow import Failed, Ok
 
 
 class FakeBusyFactory:

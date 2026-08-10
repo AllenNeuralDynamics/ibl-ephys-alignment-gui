@@ -9,20 +9,34 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     AlignmentDerivedDataService,
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_edit_commands import AlignmentEditCommandHandler
 from ephys_alignment_gui.alignment_edit_service import AlignmentEditService
 from ephys_alignment_gui.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.alignment_output_service import AlignmentOutputService
-from ephys_alignment_gui.alignment_persistence_commands import (
-    AlignmentPersistenceCommandHandler,
-)
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
-from ephys_alignment_gui.app import AlignmentApp
-from ephys_alignment_gui.app_commands import AlignmentCommands
-from ephys_alignment_gui.app_queries import AlignmentQueries
+from ephys_alignment_gui.application.app import AlignmentApp
+from ephys_alignment_gui.application.commands import AlignmentCommands
+from ephys_alignment_gui.application.commands.alignment_edit import (
+    AlignmentEditCommandHandler,
+)
+from ephys_alignment_gui.application.commands.alignment_persistence import (
+    AlignmentPersistenceCommandHandler,
+)
+from ephys_alignment_gui.application.commands.display import DisplayCommandHandler
+from ephys_alignment_gui.application.commands.load_data import LoadDataCommandHandler
+from ephys_alignment_gui.application.commands.loaded_shank import (
+    LoadedShankCommandHandler,
+)
+from ephys_alignment_gui.application.commands.metadata_selection import (
+    MetadataSelectionCommandHandler,
+)
+from ephys_alignment_gui.application.commands.path import PathCommandHandler
+from ephys_alignment_gui.application.commands.shank_selection import (
+    ShankSelectionCommandHandler,
+)
+from ephys_alignment_gui.application.queries import AlignmentQueries
+from ephys_alignment_gui.application.workflow import WorkflowPolicy
 from ephys_alignment_gui.controller import AlignmentController
-from ephys_alignment_gui.display_commands import DisplayCommandHandler
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.ephys_data_service import EphysDataService
 from ephys_alignment_gui.ephys_stream_loader import EphysStreamLoader
@@ -32,24 +46,16 @@ from ephys_alignment_gui.histology_data_service import (
     HistologyDataService,
 )
 from ephys_alignment_gui.histology_runtime_loader import HistologyRuntimeLoader
-from ephys_alignment_gui.load_data_commands import LoadDataCommandHandler
 from ephys_alignment_gui.load_data_job import LoadDataJob
-from ephys_alignment_gui.loaded_shank_commands import LoadedShankCommandHandler
-from ephys_alignment_gui.metadata_selection_commands import (
-    MetadataSelectionCommandHandler,
-)
-from ephys_alignment_gui.path_commands import PathCommandHandler
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
 from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.shank_selection_commands import ShankSelectionCommandHandler
 from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
-from ephys_alignment_gui.workflow import WorkflowPolicy
 
 
 @dataclass

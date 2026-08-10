@@ -14,7 +14,7 @@ from ephys_alignment_gui.alignment_state import (
     AlignmentState,
     PendingReferenceLines,
 )
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
     AlignmentEditNoop,
@@ -24,9 +24,14 @@ from ephys_alignment_gui.app_results import (
     ShankRuntimeInitialized,
     ShankSelected,
 )
+from ephys_alignment_gui.application.workflow import (
+    Failed,
+    Ok,
+    PolicyResult,
+    WorkflowPolicy,
+)
 from ephys_alignment_gui.document import AlignmentDocument
 from ephys_alignment_gui.shank_runtime import ShankRuntime
-from ephys_alignment_gui.workflow import Failed, Ok, PolicyResult, WorkflowPolicy
 
 
 class AlignmentController:

@@ -6,13 +6,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app_results import ShankSelected
+from ephys_alignment_gui.application.results import ShankSelected
+from ephys_alignment_gui.application.results.metadata import ProbeSelected
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.probe_selection_presenter import (
     DesktopProbeSelectionCallbacks,
     DesktopProbeSelectionPresenter,
 )
-from ephys_alignment_gui.metadata_results import ProbeSelected
-from ephys_alignment_gui.workflow import Failed
 
 
 class FakeBusyContext:

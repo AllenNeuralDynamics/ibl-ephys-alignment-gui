@@ -5,15 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.alignment_persistence_results import AlignmentOutputsSaved
 from ephys_alignment_gui.alignment_repository import SavedAlignmentOutputs
-from ephys_alignment_gui.app_results import VisitedAlignmentOutputsSaved
-from ephys_alignment_gui.desktop.save_presenter import (
-    DesktopSaveCallbacks,
-    DesktopSavePresenter,
+from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    AlignmentOutputsSaved,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.workflow import (
+from ephys_alignment_gui.application.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     OUTPUT_REQUIRED,
     Blocked,
@@ -21,6 +18,11 @@ from ephys_alignment_gui.workflow import (
     Ok,
     Requirement,
 )
+from ephys_alignment_gui.desktop.save_presenter import (
+    DesktopSaveCallbacks,
+    DesktopSavePresenter,
+)
+from ephys_alignment_gui.document import AlignmentKey
 
 
 class FakeBusyContext:

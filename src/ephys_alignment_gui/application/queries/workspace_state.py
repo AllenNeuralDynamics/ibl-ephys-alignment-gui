@@ -11,12 +11,12 @@ import numpy as np
 
 from ephys_alignment_gui.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.alignment_query_context import AlignmentQueryContext
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
 )
-from ephys_alignment_gui.app_results import ShankSelectionState
+from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
+from ephys_alignment_gui.application.results import ShankSelectionState
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.session_runtime import LoadDataPlan, LoadDataTarget
 

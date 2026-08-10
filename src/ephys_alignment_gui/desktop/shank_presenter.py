@@ -14,11 +14,11 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveSliceMenuState,
     PreparedActiveShankScreenState,
 )
-from ephys_alignment_gui.app_results import LoadedShankPrepared
+from ephys_alignment_gui.application.results import LoadedShankPrepared
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.event_bus import EventSubscription
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState
 from ephys_alignment_gui.slice_display_policy import SliceSelection
-from ephys_alignment_gui.workflow import Failed
 
 logger = logging.getLogger(__name__)
 

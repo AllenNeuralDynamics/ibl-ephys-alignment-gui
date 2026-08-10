@@ -16,7 +16,6 @@ from ephys_alignment_gui.alignment_derived_data_service import (
 )
 from ephys_alignment_gui.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.alignment_events import AlignmentEdited, ShankChanged
-from ephys_alignment_gui.alignment_persistence_results import NoPreviousAlignments
 from ephys_alignment_gui.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
@@ -25,8 +24,8 @@ from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
     SavedAlignmentOutputs,
 )
-from ephys_alignment_gui.app_queries import AlignmentQueries
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.queries import AlignmentQueries
+from ephys_alignment_gui.application.results import (
     ActiveStreamDetached,
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
@@ -45,17 +44,24 @@ from ephys_alignment_gui.app_results import (
     StreamCacheEvicted,
     VisitedAlignmentOutputsSaved,
 )
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    NoPreviousAlignments,
+)
+from ephys_alignment_gui.application.results.metadata import (
+    MouseRootLoaded,
+    ProbeSelected,
+    RecordingSelected,
+)
+from ephys_alignment_gui.application.results.path import (
+    OutputDirectoryDerived,
+    OutputRootSet,
+)
+from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
 from ephys_alignment_gui.histology_runtime_loader import HistologyDataLoaded
 from ephys_alignment_gui.load_data_job import LoadDataJobCompleted, LoadDataJobRequest
-from ephys_alignment_gui.metadata_results import (
-    MouseRootLoaded,
-    ProbeSelected,
-    RecordingSelected,
-)
-from ephys_alignment_gui.path_results import OutputDirectoryDerived, OutputRootSet
 from ephys_alignment_gui.session_runtime import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
@@ -64,7 +70,6 @@ from ephys_alignment_gui.session_runtime import (
 )
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.slice_runtime import SliceRuntime
-from ephys_alignment_gui.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 

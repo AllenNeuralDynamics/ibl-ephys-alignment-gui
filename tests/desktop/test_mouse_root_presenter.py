@@ -6,12 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from ephys_alignment_gui.application.results.metadata import MouseRootLoaded
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.mouse_root_presenter import (
     DesktopMouseRootCallbacks,
     DesktopMouseRootPresenter,
 )
-from ephys_alignment_gui.metadata_results import MouseRootLoaded
-from ephys_alignment_gui.workflow import Failed
 
 
 class FakeBusyContext:

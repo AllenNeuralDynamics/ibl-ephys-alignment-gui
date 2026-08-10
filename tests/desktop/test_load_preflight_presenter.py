@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from ephys_alignment_gui.desktop.load_preflight_presenter import (
-    DesktopLoadPreflightPresenter,
-    DesktopOutputFolderPrompt,
-    OutputFolderPromptCallbacks,
-)
-from ephys_alignment_gui.workflow import (
+from ephys_alignment_gui.application.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     Blocked,
     Ok,
     Requirement,
+)
+from ephys_alignment_gui.desktop.load_preflight_presenter import (
+    DesktopLoadPreflightPresenter,
+    DesktopOutputFolderPrompt,
+    OutputFolderPromptCallbacks,
 )
 
 

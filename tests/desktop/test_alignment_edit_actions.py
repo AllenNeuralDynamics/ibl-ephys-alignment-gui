@@ -7,13 +7,16 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.app_results import AlignmentEditApplied, AlignmentEditNoop
+from ephys_alignment_gui.application.results import (
+    AlignmentEditApplied,
+    AlignmentEditNoop,
+)
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.alignment_edit_actions import (
     NUDGE_STEP_M,
     DesktopAlignmentEditActionCallbacks,
     DesktopAlignmentEditActions,
 )
-from ephys_alignment_gui.workflow import Failed
 
 
 def _applied() -> AlignmentEditApplied:

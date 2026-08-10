@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.workflow import (
+from ephys_alignment_gui.application.workflow import (
     CHANNEL_INFO_REQUIRED,
     CHOOSE_OUTPUT_FOLDER,
     OUTPUT_REQUIRED,
@@ -14,6 +13,7 @@ from ephys_alignment_gui.workflow import (
     Ok,
     WorkflowPolicy,
 )
+from ephys_alignment_gui.document import AlignmentDocument
 
 
 def _check_load_data(

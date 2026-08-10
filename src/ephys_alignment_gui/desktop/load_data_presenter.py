@@ -9,18 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
 )
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.histology_runtime_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )
-from ephys_alignment_gui.workflow import Failed
 
 logger = logging.getLogger(__name__)
 

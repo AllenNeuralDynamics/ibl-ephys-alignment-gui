@@ -30,7 +30,7 @@ from ephys_alignment_gui.settings import (
     output_root_from_environment,
 )
 from ephys_alignment_gui.thread_worker import Worker
-from ephys_alignment_gui.workflow import Requirement
+from ephys_alignment_gui.application.workflow import Requirement
 from ephys_alignment_gui.workspace import AlignmentWorkspace
 
 logger = logging.getLogger(__name__)

@@ -5,15 +5,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.app_results import (
+from ephys_alignment_gui.application.results import (
     LoadedShankPrepared,
     PreviousAlignmentSelected,
 )
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.desktop.alignment_selection_actions import (
     DesktopAlignmentSelectionActions,
     DesktopAlignmentSelectionCallbacks,
 )
-from ephys_alignment_gui.workflow import Failed
 
 
 def _selected() -> PreviousAlignmentSelected:

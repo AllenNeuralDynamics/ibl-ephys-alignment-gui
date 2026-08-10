@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.ephys_stream_loader import (
     EphysStreamLoader,
     LoadedEphysSelection,
@@ -12,7 +13,6 @@ from ephys_alignment_gui.histology_runtime_loader import (
     HistologyLoadResult,
     HistologyRuntimeLoader,
 )
-from ephys_alignment_gui.workflow import Failed
 
 
 @dataclass(frozen=True)

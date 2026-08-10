@@ -7,12 +7,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.active_alignment import ActiveAlignment
-from ephys_alignment_gui.alignment_persistence_results import AlignmentOutputsSaved
 from ephys_alignment_gui.alignment_state import PendingReferenceLines
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    AlignmentOutputsSaved,
+)
+from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.document import AlignmentKey
 from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.histology_runtime_loader import HistologyLoadResult
-from ephys_alignment_gui.metadata_results import ProbeSelected
 
 
 @dataclass(frozen=True)
