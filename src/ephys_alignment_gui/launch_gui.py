@@ -15,14 +15,14 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
 import ephys_alignment_gui.ephys_gui_setup as ephys_gui
-from ephys_alignment_gui.desktop_display_ports import (
+from ephys_alignment_gui.desktop.display_ports import (
     desktop_display_ports_from_main_window,
 )
-from ephys_alignment_gui.desktop_displays import DesktopDisplays
-from ephys_alignment_gui.desktop_popup_manager import DesktopPopupManager
-from ephys_alignment_gui.desktop_views import DesktopViews
-from ephys_alignment_gui.desktop_workbench import DesktopWorkbench
-from ephys_alignment_gui.desktop_workbench_ports import (
+from ephys_alignment_gui.desktop.displays import DesktopDisplays
+from ephys_alignment_gui.desktop.popup_manager import DesktopPopupManager
+from ephys_alignment_gui.desktop.views import DesktopViews
+from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
+from ephys_alignment_gui.desktop.workbench_ports import (
     desktop_workbench_ports_from_main_window,
 )
 from ephys_alignment_gui.settings import (

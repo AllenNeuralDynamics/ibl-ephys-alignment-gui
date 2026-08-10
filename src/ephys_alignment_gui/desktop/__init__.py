@@ -1,0 +1,1 @@
+"""Desktop Qt presentation layer."""
