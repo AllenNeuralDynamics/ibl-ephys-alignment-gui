@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime
+from ephys_alignment_gui.runtime.ephys_stream import EphysStreamRuntime
 
 
 class FakePlotPayloadCacheFactory:

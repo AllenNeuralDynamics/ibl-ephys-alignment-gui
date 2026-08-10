@@ -17,8 +17,8 @@ from ephys_alignment_gui.alignment_read_models import (
 )
 from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
 from ephys_alignment_gui.application.results import ShankSelectionState
-from ephys_alignment_gui.ephys_stream_runtime import StreamKey
-from ephys_alignment_gui.session_runtime import LoadDataPlan, LoadDataTarget
+from ephys_alignment_gui.runtime.ephys_stream import StreamKey
+from ephys_alignment_gui.runtime.session import LoadDataPlan, LoadDataTarget
 
 logger = logging.getLogger(__name__)
 

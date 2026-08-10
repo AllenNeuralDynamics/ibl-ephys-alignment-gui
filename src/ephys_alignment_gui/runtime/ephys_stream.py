@@ -14,7 +14,7 @@ from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.plotting.registry import PlotSpec, resolve_plot_payload
-from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.runtime.shank import ShankRuntime
 
 StreamKey = tuple[str, str]
 

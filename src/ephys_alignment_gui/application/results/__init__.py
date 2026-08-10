@@ -13,8 +13,8 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
 )
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.ephys_stream_runtime import StreamKey
-from ephys_alignment_gui.histology_runtime_loader import HistologyLoadResult
+from ephys_alignment_gui.runtime.ephys_stream import StreamKey
+from ephys_alignment_gui.runtime.histology_loader import HistologyLoadResult
 
 
 @dataclass(frozen=True)

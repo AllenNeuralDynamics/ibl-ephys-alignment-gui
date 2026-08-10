@@ -31,7 +31,7 @@ from ephys_alignment_gui.application.workflow import (
     WorkflowPolicy,
 )
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.runtime.shank import ShankRuntime
 
 
 class AlignmentController:

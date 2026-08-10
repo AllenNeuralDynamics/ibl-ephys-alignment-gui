@@ -31,7 +31,7 @@ from ephys_alignment_gui.controller import (
     AlignmentController,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.session_runtime import SessionRuntime
+from ephys_alignment_gui.runtime.session import SessionRuntime
 
 logger = logging.getLogger(__name__)
 

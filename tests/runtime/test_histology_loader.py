@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ephys_alignment_gui.histology_runtime_loader import (
+from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataAlreadyLoaded,
     HistologyDataLoaded,
     HistologyDataUnavailable,

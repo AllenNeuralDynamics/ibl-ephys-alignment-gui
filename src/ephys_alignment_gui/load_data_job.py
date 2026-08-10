@@ -9,7 +9,7 @@ from ephys_alignment_gui.ephys_stream_loader import (
     EphysStreamLoader,
     LoadedEphysSelection,
 )
-from ephys_alignment_gui.histology_runtime_loader import (
+from ephys_alignment_gui.runtime.histology_loader import (
     HistologyLoadResult,
     HistologyRuntimeLoader,
 )

@@ -17,8 +17,8 @@ from ephys_alignment_gui.application.results import (
 from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.event_bus import EventBus
-from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.shank_runtime import ShankRuntime
+from ephys_alignment_gui.runtime.session import SessionRuntime
+from ephys_alignment_gui.runtime.shank import ShankRuntime
 
 logger = logging.getLogger(__name__)
 

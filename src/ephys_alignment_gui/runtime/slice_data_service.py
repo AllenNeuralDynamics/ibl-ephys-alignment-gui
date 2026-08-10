@@ -15,8 +15,8 @@ from ephys_alignment_gui.alignment_read_models import (
     PerpendicularSliceRenderState,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.shank_runtime import ShankRuntime
-from ephys_alignment_gui.slice_runtime import SliceCacheEntry
+from ephys_alignment_gui.runtime.shank import ShankRuntime
+from ephys_alignment_gui.runtime.slice import SliceCacheEntry
 
 logger = logging.getLogger(__name__)
 

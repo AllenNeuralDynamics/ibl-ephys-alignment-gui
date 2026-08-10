@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui.ephys_data_service import ChannelTable, EphysStreamData
-from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime
-from ephys_alignment_gui.session_runtime import (
+from ephys_alignment_gui.runtime.ephys_stream import EphysStreamRuntime
+from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
     LoadDataFreshRequired,

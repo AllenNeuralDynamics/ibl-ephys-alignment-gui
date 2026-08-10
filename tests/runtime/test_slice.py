@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.slice_runtime import SliceRuntime
+from ephys_alignment_gui.runtime.slice import SliceRuntime
 
 
 def test_coronal_slice_cache_hits_by_alignment_key_and_track() -> None:

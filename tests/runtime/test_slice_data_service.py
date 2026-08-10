@@ -14,8 +14,8 @@ from ephys_alignment_gui.alignment_derived_data_service import (
     ScaleFactorData,
 )
 from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
-from ephys_alignment_gui.slice_runtime import SliceRuntime
+from ephys_alignment_gui.runtime.slice import SliceRuntime
+from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 
 
 class FakeSliceService:

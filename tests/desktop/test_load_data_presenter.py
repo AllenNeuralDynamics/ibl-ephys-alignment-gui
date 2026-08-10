@@ -21,7 +21,7 @@ from ephys_alignment_gui.desktop.load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
-from ephys_alignment_gui.histology_runtime_loader import (
+from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )

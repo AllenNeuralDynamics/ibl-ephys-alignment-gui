@@ -27,7 +27,6 @@ from ephys_alignment_gui.application.results import (
 from ephys_alignment_gui.application.workflow import Failed, PolicyResult
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.ephys_stream_loader import LoadedEphysSelection
-from ephys_alignment_gui.ephys_stream_runtime import StreamKey
 from ephys_alignment_gui.load_data_job import LoadDataJob, LoadDataJobRequest
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
@@ -37,7 +36,8 @@ from ephys_alignment_gui.reference_line_capture import (
     ReferenceLineCapture,
     capture_active_reference_lines_if_provided,
 )
-from ephys_alignment_gui.session_runtime import (
+from ephys_alignment_gui.runtime.ephys_stream import StreamKey
+from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
     LoadDataTarget,

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ephys_alignment_gui.ephys_data_service import EphysStreamData
-from ephys_alignment_gui.ephys_stream_runtime import EphysStreamRuntime, StreamKey
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
+from ephys_alignment_gui.runtime.ephys_stream import EphysStreamRuntime, StreamKey
 
 
 @dataclass(frozen=True)

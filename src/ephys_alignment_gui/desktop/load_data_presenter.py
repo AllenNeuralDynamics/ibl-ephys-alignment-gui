@@ -17,7 +17,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshRequiredResult,
 )
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.histology_runtime_loader import (
+from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
 )

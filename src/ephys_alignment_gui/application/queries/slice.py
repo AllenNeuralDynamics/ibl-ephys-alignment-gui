@@ -22,7 +22,7 @@ from ephys_alignment_gui.application.queries.alignment_render import (
     AlignmentRenderQueries,
 )
 from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
-from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
+from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy, SliceSelection
 
 logger = logging.getLogger(__name__)

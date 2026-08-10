@@ -45,15 +45,15 @@ from ephys_alignment_gui.histology_data_service import (
     HistologyDataContext,
     HistologyDataService,
 )
-from ephys_alignment_gui.histology_runtime_loader import HistologyRuntimeLoader
 from ephys_alignment_gui.load_data_job import LoadDataJob
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.probe_track_service import ProbeTrackService
 from ephys_alignment_gui.region_lookup_service import RegionLookupService
-from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
+from ephys_alignment_gui.runtime.histology_loader import HistologyRuntimeLoader
+from ephys_alignment_gui.runtime.session import SessionRuntime
+from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.slice_service import SliceService
 

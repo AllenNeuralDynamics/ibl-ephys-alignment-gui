@@ -7,14 +7,14 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.histology_runtime_loader import (
-    HistologyDataLoaded,
-    HistologyDataUnavailable,
-)
 from ephys_alignment_gui.load_data_job import (
     LoadDataJob,
     LoadDataJobCompleted,
     LoadDataJobRequest,
+)
+from ephys_alignment_gui.runtime.histology_loader import (
+    HistologyDataLoaded,
+    HistologyDataUnavailable,
 )
 
 

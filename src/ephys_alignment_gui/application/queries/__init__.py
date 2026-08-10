@@ -23,8 +23,8 @@ from ephys_alignment_gui.application.queries.workspace_state import (
     WorkspaceStateQueries,
 )
 from ephys_alignment_gui.document import AlignmentDocument
-from ephys_alignment_gui.session_runtime import SessionRuntime
-from ephys_alignment_gui.slice_data_runtime_service import SliceDataRuntimeService
+from ephys_alignment_gui.runtime.session import SessionRuntime
+from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.slice_display_policy import SliceDisplayPolicy
 
 
