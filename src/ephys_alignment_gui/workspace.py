@@ -18,7 +18,9 @@ from ephys_alignment_gui.alignment_persistence_commands import (
 )
 from ephys_alignment_gui.alignment_repository import AlignmentRepository
 from ephys_alignment_gui.alignment_runtime_service import AlignmentRuntimeService
-from ephys_alignment_gui.app import AlignmentApp, AlignmentCommands, AlignmentQueries
+from ephys_alignment_gui.app import AlignmentApp
+from ephys_alignment_gui.app_commands import AlignmentCommands
+from ephys_alignment_gui.app_queries import AlignmentQueries
 from ephys_alignment_gui.controller import AlignmentController
 from ephys_alignment_gui.display_commands import DisplayCommandHandler
 from ephys_alignment_gui.document import AlignmentDocument

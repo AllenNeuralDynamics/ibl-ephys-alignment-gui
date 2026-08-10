@@ -25,7 +25,7 @@ from ephys_alignment_gui.alignment_repository import (
     LoadedAlignmentHistory,
     SavedAlignmentOutputs,
 )
-from ephys_alignment_gui.app import AlignmentQueries
+from ephys_alignment_gui.app_queries import AlignmentQueries
 from ephys_alignment_gui.app_results import (
     ActiveStreamDetached,
     CachedEphysDataActivated,
