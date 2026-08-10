@@ -31,11 +31,49 @@ Once the package has been installed in your environment, you can run the GUI wit
 launch
 ```
 
-You can prefill the save-root directory by setting `EPHYS_ALIGNMENT_OUTPUT_ROOT`,
-and the mouse-root file dialog start directory by setting
-`EPHYS_ALIGNMENT_INPUT_ROOT`. For example, on Code Ocean set
-`EPHYS_ALIGNMENT_INPUT_ROOT=/data` and `EPHYS_ALIGNMENT_OUTPUT_ROOT=/results`.
-The GUI still lets users choose or edit different paths after startup.
+### Code Ocean environment variables
+
+For a Code Ocean capsule, set these environment variables so the GUI starts in
+the mounted data directory, saves under results, and can resolve external assets
+referenced by `datapackage.json`:
+
+```
+EPHYS_ALIGNMENT_INPUT_ROOT=/data
+EPHYS_ALIGNMENT_OUTPUT_ROOT=/results
+IBL_ASSET_ROOTS=/data
+```
+
+`EPHYS_ALIGNMENT_INPUT_ROOT` sets the mouse-root file dialog start directory.
+`EPHYS_ALIGNMENT_OUTPUT_ROOT` sets the default save/output root. Both are only
+startup defaults; the GUI still lets users choose or edit different paths.
+
+`IBL_ASSET_ROOTS` is an `os.pathsep`-separated list of directories searched for
+external assets, such as SmartSPIM registration data and `spim_template_to_ccf`.
+On Code Ocean, `/data` is normally sufficient when all required assets are
+attached.
+
+If an attached asset is not mounted under the name recorded in
+`datapackage.json`, provide explicit asset locations with either:
+
+```
+IBL_ASSET_CONFIG=/data/asset_config.json
+```
+
+where the JSON file contains:
+
+```json
+{
+  "asset_roots": ["/data"],
+  "asset_overrides": {
+    "smartspim": "/data/SmartSPIM_...",
+    "spim_template_to_ccf": "/data/spim_template_to_ccf"
+  }
+}
+```
+
+or set `IBL_ASSET_OVERRIDES` directly to a JSON object with the same
+`asset_overrides` mapping. Override keys may be either the logical asset key
+from the datapackage, such as `smartspim`, or the asset name.
 
 
 ## Keyboard shortcuts
