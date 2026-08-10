@@ -84,7 +84,7 @@ def build_desktop_render_cluster(
         reference_line_presenter.capture_pending_reference_lines
     )
     alignment_edit_actions = DesktopAlignmentEditActions(
-        commands=app.commands,
+        commands=app.commands.edit,
         callbacks=DesktopAlignmentEditActionCallbacks(
             histology_available=ports.alignment_edit_actions.histology_available,
             capture_pending_reference_lines=(

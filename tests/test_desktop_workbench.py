@@ -773,11 +773,21 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     queries = SimpleNamespace(workspace=workspace_queries)
     captured_reference_lines: list[Any] = []
-    commands = SimpleNamespace(
+    command_impl = SimpleNamespace(
         can_load_data=lambda: Ok(),
         capture_active_reference_lines=lambda positions: (
             captured_reference_lines.append(positions) or Ok()
         ),
+    )
+    commands = SimpleNamespace(
+        paths=command_impl,
+        metadata=command_impl,
+        shanks=command_impl,
+        load=command_impl,
+        loaded_shank=command_impl,
+        persistence=command_impl,
+        edit=command_impl,
+        display=command_impl,
     )
     app = SimpleNamespace(events=EventBus(), queries=queries, commands=commands)
     panel = FakeHistologyDisplay()
@@ -819,7 +829,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert presenter_cluster.probe_selection_presenter.callbacks is not None
     assert presenter_cluster.session_selection_presenter.callbacks is not None
     assert presenter_cluster.mouse_root_presenter.callbacks is not None
-    assert presenter_cluster.output_path_presenter.commands is commands
+    assert presenter_cluster.output_path_presenter.commands is commands.paths
     assert presenter_cluster.path_dialog_presenter.callbacks.active_mouse_root is (
         queries.workspace.active_mouse_root_path
     )
@@ -827,9 +837,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         queries.workspace.has_output_directory
     )
     assert presenter_cluster.load_preflight_presenter.can_load_data is (
-        commands.can_load_data
+        commands.load.can_load_data
     )
-    assert render_cluster.alignment_edit_actions.commands is commands
+    assert render_cluster.alignment_edit_actions.commands is commands.edit
     assert render_cluster.alignment_edit_actions.callbacks.tip_position_um() == 42.0
     assert render_cluster.shank_selection_actions.app is app
     assert render_cluster.shank_selection_actions.selection_view is not None

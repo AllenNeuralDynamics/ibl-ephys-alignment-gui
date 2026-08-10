@@ -187,14 +187,14 @@ class AlignmentWorkspace:
         )
         self.app = AlignmentApp(
             commands=AlignmentCommands(
-                shank_selection_commands=self.shank_selection_commands,
-                load_data_commands=self.load_data_commands,
-                loaded_shank_commands=self.loaded_shank_commands,
-                path_commands=self.path_commands,
-                metadata_commands=self.metadata_commands,
-                persistence_commands=self.persistence_commands,
-                edit_commands=self.edit_commands,
-                display_commands=self.display_commands,
+                paths=self.path_commands,
+                metadata=self.metadata_commands,
+                shanks=self.shank_selection_commands,
+                load=self.load_data_commands,
+                loaded_shank=self.loaded_shank_commands,
+                persistence=self.persistence_commands,
+                edit=self.edit_commands,
+                display=self.display_commands,
             ),
             queries=AlignmentQueries(
                 document=self.document,

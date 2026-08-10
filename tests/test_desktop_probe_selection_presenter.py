@@ -51,6 +51,8 @@ class FakeCommands:
         self.shank_result = shank_result
         self.calls: list[tuple[str, str]] = []
         self.shank_calls: list[tuple[int, str]] = []
+        self.metadata = self
+        self.shanks = self
 
     def select_probe_metadata(self, session_name: str, probe_name: str):
         self.calls.append((session_name, probe_name))

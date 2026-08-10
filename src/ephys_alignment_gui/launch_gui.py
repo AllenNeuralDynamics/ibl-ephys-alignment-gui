@@ -166,7 +166,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         """Initialise startup state for stream-dependent app and desktop data."""
         self.popup_manager.close_all()
         self.shank_screen_view.reset_raw_image_payloads()
-        self.app.commands.detach_active_stream()
+        self.app.commands.load.detach_active_stream()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -460,14 +460,16 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.alignment_selected(idx)
 
     def toggle_histology_button_pressed(self) -> None:
-        boundaries_visible = self.app.commands.toggle_histology_boundaries_visible()
+        boundaries_visible = (
+            self.app.commands.display.toggle_histology_boundaries_visible()
+        )
         if not boundaries_visible:
             self.plot_histology_nearby()
         else:
             self.plot_histology_ref()
 
     def toggle_histology_map_button_pressed(self) -> None:
-        self.app.commands.toggle_region_annotation_source()
+        self.app.commands.display.toggle_region_annotation_source()
 
         self.plot_histology()
         self.plot_histology_ref()
@@ -516,7 +518,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         Triggered when Shift+L key pressed. Shows/hides reference lines on ephys and histology
         plots
         """
-        lines_visible = self.app.commands.toggle_reference_lines_visible()
+        lines_visible = self.app.commands.display.toggle_reference_lines_visible()
         if not lines_visible:
             self.displays.reference_lines.remove_from_plots()
         else:
@@ -636,7 +638,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         fit_button_pressed.
         """
         # Update the flag
-        self.app.commands.set_linear_fit_enabled(state != 0)
+        self.app.commands.display.set_linear_fit_enabled(state != 0)
 
         # Only recompute if we have reference lines and histology
         # If no lines yet, just update the flag for future use

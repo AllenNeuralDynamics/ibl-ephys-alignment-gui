@@ -20,7 +20,7 @@ class DesktopReferenceLinePresenter:
 
     def capture_pending_reference_lines(self) -> bool:
         """Capture current reference-line positions into document state."""
-        result = self.app.commands.capture_active_reference_lines(
+        result = self.app.commands.shanks.capture_active_reference_lines(
             self.reference_line_display.positions()
         )
         if isinstance(result, Failed):

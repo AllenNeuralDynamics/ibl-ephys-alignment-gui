@@ -77,7 +77,7 @@ class DesktopViews:
         )
         alignment_screen = DesktopAlignmentScreenView(
             depth_plots=depth,
-            set_lin_fit=app.commands.set_linear_fit_enabled,
+            set_lin_fit=app.commands.display.set_linear_fit_enabled,
             lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
             reference_lines=displays.reference_lines,
             active_edit_screen_state=app.queries.workspace.active_alignment_edit_screen_state,

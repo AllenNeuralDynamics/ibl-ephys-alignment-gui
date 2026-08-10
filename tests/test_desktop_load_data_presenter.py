@@ -76,6 +76,7 @@ class FakeCommands:
         self.begin_calls: list[dict[str, Any]] = []
         self.complete_calls: list[LoadDataFreshPrepared] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
+        self.load = self
 
     def begin_load_data(self, **kwargs):
         self.begin_calls.append(kwargs)

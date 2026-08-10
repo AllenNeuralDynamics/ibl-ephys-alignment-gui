@@ -56,6 +56,8 @@ class FakeCommands:
             histology_available=True,
             alignment_choices=["original"],
         )
+        self.loaded_shank = self
+        self.edit = self
 
     def set_unit_filter(self, unit_filter: str) -> None:
         self.calls.append(("set_unit_filter", unit_filter))

@@ -447,7 +447,7 @@ def test_commands_select_shank_updates_document_and_emits_event() -> None:
     events: list[ShankChanged] = []
     workspace.app.events.subscribe(ShankChanged, events.append)
 
-    result = workspace.app.commands.select_shank(1, source="test")
+    result = workspace.app.commands.shanks.select_shank(1, source="test")
 
     assert isinstance(result, ShankSelected)
     assert workspace.document.selected_alignment_key == key1
@@ -470,7 +470,7 @@ def test_commands_select_shank_captures_outgoing_reference_lines() -> None:
     events: list[ShankChanged] = []
     workspace.app.events.subscribe(ShankChanged, events.append)
 
-    result = workspace.app.commands.select_shank(
+    result = workspace.app.commands.shanks.select_shank(
         1,
         outgoing_reference_lines=([10.0, 20.0], [11.0, 21.0]),
         source="test",
@@ -493,7 +493,9 @@ def test_commands_select_shank_clears_missing_outgoing_reference_lines() -> None
     workspace.document.mark_data_loaded(True)
     workspace.document.active_set_pending_reference_lines([1.0], [2.0])
 
-    result = workspace.app.commands.select_shank(1, outgoing_reference_lines=None)
+    result = workspace.app.commands.shanks.select_shank(
+        1, outgoing_reference_lines=None
+    )
 
     assert isinstance(result, ShankSelected)
     assert workspace.document.alignment_state_for(key0).pending_reference_lines is None
@@ -506,7 +508,7 @@ def test_commands_select_shank_without_line_state_leaves_pending_lines() -> None
     workspace.document.mark_data_loaded(True)
     workspace.document.active_set_pending_reference_lines([1.0], [2.0])
 
-    result = workspace.app.commands.select_shank(1)
+    result = workspace.app.commands.shanks.select_shank(1)
 
     assert isinstance(result, ShankSelected)
     pending = workspace.document.alignment_state_for(key0).pending_reference_lines
@@ -521,7 +523,7 @@ def test_commands_capture_active_reference_lines_updates_document_state() -> Non
     workspace.document.select_alignment_key(key)
     workspace.document.mark_data_loaded(True)
 
-    result = workspace.app.commands.capture_active_reference_lines(
+    result = workspace.app.commands.shanks.capture_active_reference_lines(
         ([10.0, 20.0], [11.0, 21.0])
     )
 
@@ -539,7 +541,7 @@ def test_commands_capture_active_reference_lines_clears_missing_lines() -> None:
     workspace.document.mark_data_loaded(True)
     workspace.document.active_set_pending_reference_lines([1.0], [2.0])
 
-    result = workspace.app.commands.capture_active_reference_lines(None)
+    result = workspace.app.commands.shanks.capture_active_reference_lines(None)
 
     assert isinstance(result, PendingReferenceLinesUpdated)
     assert workspace.document.alignment_state_for(key).pending_reference_lines is None
@@ -548,7 +550,7 @@ def test_commands_capture_active_reference_lines_clears_missing_lines() -> None:
 def test_commands_capture_active_reference_lines_noops_when_data_unloaded() -> None:
     workspace = AlignmentWorkspace()
 
-    result = workspace.app.commands.capture_active_reference_lines(None)
+    result = workspace.app.commands.shanks.capture_active_reference_lines(None)
 
     assert isinstance(result, Ok)
 
@@ -598,7 +600,7 @@ def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> 
         shank_idx=1,
     )
 
-    result = workspace.app.commands.prepare_fresh_ephys_load(("rec", "stream"))
+    result = workspace.app.commands.load.prepare_fresh_ephys_load(("rec", "stream"))
 
     assert isinstance(result, LoadDataPrepared)
     assert result.preserve_plot_selection
@@ -621,7 +623,7 @@ def test_commands_begin_load_data_noops_when_stream_shank_already_active() -> No
     workspace.document.mark_data_loaded(True)
     state = workspace.document.active_alignment_state
 
-    result = workspace.app.commands.begin_load_data(
+    result = workspace.app.commands.load.begin_load_data(
         recording_id="rec",
         probe_name="probeA",
         target_shank=1,
@@ -649,7 +651,7 @@ def test_commands_begin_load_data_activates_cached_stream_and_captures_lines() -
     )
     workspace.runtime.clear_active_stream()
 
-    result = workspace.app.commands.begin_load_data(
+    result = workspace.app.commands.load.begin_load_data(
         recording_id="rec",
         probe_name="probeA",
         target_shank=0,
@@ -677,7 +679,7 @@ def test_commands_begin_load_data_prepares_fresh_load_and_captures_lines() -> No
     workspace.document.mark_data_loaded(True)
     workspace.display_state.set_unit_filter("KS good")
 
-    result = workspace.app.commands.begin_load_data(
+    result = workspace.app.commands.load.begin_load_data(
         recording_id="rec",
         probe_name="probeA",
         target_shank=0,
@@ -705,7 +707,7 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
         preserve_plot_selection=True,
     )
 
-    result = workspace.app.commands.complete_fresh_load_data(prepared)
+    result = workspace.app.commands.load.complete_fresh_load_data(prepared)
 
     assert isinstance(result, LoadDataFreshCompleted)
     assert result.stream_key == ("rec", "stream")
@@ -721,7 +723,7 @@ def test_commands_activate_cached_probe_selection_reports_fresh_required() -> No
     workspace.data_context.mouse_root = _mouse_root_with_probe()
     workspace.document.mark_data_loaded(True)
 
-    result = workspace.app.commands.activate_cached_probe_selection(
+    result = workspace.app.commands.load.activate_cached_probe_selection(
         recording_id="rec",
         probe_name="probeA",
         target_shank=0,
@@ -743,7 +745,7 @@ def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> N
         shank_idx=1,
     )
 
-    result = workspace.app.commands.detach_active_stream()
+    result = workspace.app.commands.load.detach_active_stream()
 
     assert isinstance(result, ActiveStreamDetached)
     assert result.cached_stream_count == 1
@@ -767,7 +769,7 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
         shank_idx=0,
     )
 
-    result = workspace.app.commands.evict_stream_cache()
+    result = workspace.app.commands.load.evict_stream_cache()
 
     assert isinstance(result, StreamCacheEvicted)
     assert result.evicted_stream_count == 2
@@ -790,10 +792,10 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     workspace.metadata_commands.data_context = data_context
     workspace.path_commands.data_context = data_context
 
-    mouse_result = workspace.app.commands.set_mouse_root(loaded_root.root)
+    mouse_result = workspace.app.commands.metadata.set_mouse_root(loaded_root.root)
     workspace.document.select_probe(probe.recording_id, probe.probe_name)
-    root_result = workspace.app.commands.set_output_root(tmp_path / "results")
-    derived_result = workspace.app.commands.derive_output_directory()
+    root_result = workspace.app.commands.paths.set_output_root(tmp_path / "results")
+    derived_result = workspace.app.commands.paths.derive_output_directory()
 
     assert isinstance(mouse_result, MouseRootLoaded)
     assert mouse_result.mouse_root.root == loaded_root.root
@@ -808,7 +810,7 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
 def test_commands_can_load_data_delegates_to_workflow_policy() -> None:
     workspace = AlignmentWorkspace()
 
-    result = workspace.app.commands.can_load_data()
+    result = workspace.app.commands.load.can_load_data()
 
     assert isinstance(result, Blocked)
     assert result.first.code == "probe_required"
@@ -840,7 +842,7 @@ def test_commands_clear_histology_context() -> None:
     workspace = AlignmentWorkspace()
     workspace.histology_context.runtime_data = object()
 
-    result = workspace.app.commands.clear_histology_context()
+    result = workspace.app.commands.metadata.clear_histology_context()
 
     assert isinstance(result, Ok)
     assert workspace.histology_context.runtime_data is None
@@ -851,7 +853,7 @@ def test_commands_select_probe_metadata_loads_channel_info() -> None:
     workspace = AlignmentWorkspace(ephys_data_service=ephys_data_service)
     workspace.data_context.mouse_root = _mouse_root_with_probe()
 
-    result = workspace.app.commands.select_probe_metadata("rec", "probeA")
+    result = workspace.app.commands.metadata.select_probe_metadata("rec", "probeA")
 
     assert isinstance(result, ProbeSelected)
     assert ephys_data_service.loaded_probe is not None
@@ -865,7 +867,7 @@ def test_commands_select_recording_metadata_clears_probe_selection() -> None:
     workspace = AlignmentWorkspace()
     workspace.data_context.mouse_root = _mouse_root_with_probe()
 
-    result = workspace.app.commands.select_recording_metadata("rec")
+    result = workspace.app.commands.metadata.select_recording_metadata("rec")
 
     assert isinstance(result, RecordingSelected)
     assert result.probes == ["probeA"]
@@ -882,7 +884,7 @@ def test_commands_activate_cached_ephys_data_uses_explicit_shank() -> None:
     )
     workspace.runtime.clear_active_stream()
 
-    result = workspace.app.commands.activate_cached_ephys_data(
+    result = workspace.app.commands.load.activate_cached_ephys_data(
         recording_id="rec",
         probe_name="probeA",
         stream_key=("rec", "stream"),
@@ -904,7 +906,7 @@ def test_commands_activate_cached_ephys_data_reports_missing_cache() -> None:
     workspace = AlignmentWorkspace()
     workspace.data_context.mouse_root = _mouse_root_with_probe()
 
-    result = workspace.app.commands.activate_cached_ephys_data(
+    result = workspace.app.commands.load.activate_cached_ephys_data(
         recording_id="rec",
         probe_name="probeA",
         stream_key=("rec", "missing"),
@@ -927,7 +929,7 @@ def test_commands_activate_cached_ephys_data_failure_does_not_mark_loaded() -> N
     )
     workspace.runtime.clear_active_stream()
 
-    result = workspace.app.commands.activate_cached_ephys_data(
+    result = workspace.app.commands.load.activate_cached_ephys_data(
         recording_id="rec",
         probe_name="probeA",
         stream_key=("rec", "stream"),
@@ -972,7 +974,9 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
         )
     }
 
-    result = workspace.app.commands.save_visited_alignment_outputs(use_docdb=True)
+    result = workspace.app.commands.persistence.save_visited_alignment_outputs(
+        use_docdb=True
+    )
 
     assert isinstance(result, VisitedAlignmentOutputsSaved)
     assert result.saved_count == 1
@@ -1011,7 +1015,7 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
     }
     workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
 
-    result = workspace.app.commands.load_previous_alignments(
+    result = workspace.app.commands.persistence.load_previous_alignments(
         folder=tmp_path,
         use_docdb=True,
     )
@@ -1027,7 +1031,7 @@ def test_commands_load_previous_alignments_reports_missing_history(tmp_path) -> 
     repo = FakeAlignmentRepository()
     workspace = _workspace_with_probe_state(repo=repo)
 
-    result = workspace.app.commands.load_previous_alignments(
+    result = workspace.app.commands.persistence.load_previous_alignments(
         folder=tmp_path,
         use_docdb=False,
     )
@@ -1046,7 +1050,7 @@ def test_commands_select_previous_alignment_defaults_to_active_shank() -> None:
         {"saved": [[1.0, 2.0], [3.0, 4.0]]}
     )
 
-    result = workspace.app.commands.select_previous_alignment(0)
+    result = workspace.app.commands.persistence.select_previous_alignment(0)
 
     assert isinstance(result, PreviousAlignmentSelected)
     assert result.choice == "saved"
@@ -1069,7 +1073,7 @@ def test_commands_offset_alignment_defaults_to_active_shank() -> None:
         lin_fit=True,
     )
 
-    result = workspace.app.commands.offset_alignment_from_tip(
+    result = workspace.app.commands.edit.offset_alignment_from_tip(
         tip_position_um=100.0,
         probe_tip_um=0.0,
         lin_fit=False,
@@ -1108,7 +1112,9 @@ def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
         shank_runtime_by_idx={1: shank_runtime}
     )
 
-    result = workspace.app.commands.fit_active_alignment_from_pending_reference_lines()
+    result = (
+        workspace.app.commands.edit.fit_active_alignment_from_pending_reference_lines()
+    )
 
     assert isinstance(result, AlignmentEditApplied)
     assert result.lin_fit is False
@@ -1124,7 +1130,9 @@ def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
 def test_commands_fit_active_alignment_reports_missing_runtime() -> None:
     workspace = _workspace_with_probe_state(shank_idx=1)
 
-    result = workspace.app.commands.fit_active_alignment_from_pending_reference_lines()
+    result = (
+        workspace.app.commands.edit.fit_active_alignment_from_pending_reference_lines()
+    )
 
     assert isinstance(result, Failed)
     assert result.message == "Cannot fit alignment: active shank runtime is not loaded"
@@ -1142,7 +1150,7 @@ def test_commands_offset_active_alignment_uses_display_settings() -> None:
     workspace.display_state.depth_view.probe_tip_um = 20.0
     workspace.display_state.edit_settings.set_lin_fit(False)
 
-    result = workspace.app.commands.offset_active_alignment_from_tip(
+    result = workspace.app.commands.edit.offset_active_alignment_from_tip(
         tip_position_um=120.0,
     )
 
@@ -1168,11 +1176,11 @@ def test_commands_nudge_active_alignment_respects_channel_depth_bounds() -> None
         }
     )
 
-    applied = workspace.app.commands.nudge_active_alignment_from_tip(
+    applied = workspace.app.commands.edit.nudge_active_alignment_from_tip(
         tip_position_um=0.0,
         track_shift_m=-50 / 1e6,
     )
-    blocked = workspace.app.commands.nudge_active_alignment_from_tip(
+    blocked = workspace.app.commands.edit.nudge_active_alignment_from_tip(
         tip_position_um=0.0,
         track_shift_m=-500 / 1e6,
     )
@@ -1204,7 +1212,7 @@ def test_commands_reset_active_alignment_uses_runtime_and_display_settings() -> 
         }
     )
 
-    result = workspace.app.commands.reset_active_alignment_to_initial()
+    result = workspace.app.commands.edit.reset_active_alignment_to_initial()
 
     assert isinstance(result, AlignmentEditApplied)
     assert result.lin_fit is False
@@ -1222,14 +1230,14 @@ def test_commands_previous_next_alignment_default_to_active_shank() -> None:
         np.array([10.0, 14.0]),
         lin_fit=True,
     )
-    workspace.app.commands.offset_alignment_from_tip(
+    workspace.app.commands.edit.offset_alignment_from_tip(
         tip_position_um=100.0,
         probe_tip_um=0.0,
         lin_fit=False,
     )
 
-    previous_result = workspace.app.commands.go_previous_alignment()
-    next_result = workspace.app.commands.go_next_alignment()
+    previous_result = workspace.app.commands.edit.go_previous_alignment()
+    next_result = workspace.app.commands.edit.go_next_alignment()
 
     assert isinstance(previous_result, AlignmentEditApplied)
     np.testing.assert_allclose(previous_result.alignment.track, [10.0, 14.0])
@@ -1244,7 +1252,7 @@ def test_commands_do_not_emit_alignment_event_for_noop_edit() -> None:
     events: list[AlignmentEdited] = []
     workspace.app.events.subscribe(AlignmentEdited, events.append)
 
-    result = workspace.app.commands.go_next_alignment()
+    result = workspace.app.commands.edit.go_next_alignment()
 
     assert not isinstance(result, AlignmentEditApplied)
     assert events == []
@@ -1272,7 +1280,7 @@ def test_commands_reset_alignment_to_initial_clears_pending_lines() -> None:
         ),
     )
 
-    result = workspace.app.commands.reset_alignment_to_initial(
+    result = workspace.app.commands.edit.reset_alignment_to_initial(
         shank_runtime,
         lin_fit=False,
     )
@@ -1456,7 +1464,7 @@ def test_commands_set_unit_filter_updates_display_state() -> None:
     stream_runtime = FakeStreamRuntime()
     workspace.runtime.active_stream_runtime = stream_runtime
 
-    result = workspace.app.commands.set_unit_filter("KS good")
+    result = workspace.app.commands.edit.set_unit_filter("KS good")
 
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
@@ -1468,7 +1476,7 @@ def test_commands_set_unit_filter_updates_display_state() -> None:
 def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
     workspace = AlignmentWorkspace()
 
-    result = workspace.app.commands.set_unit_filter("KS good")
+    result = workspace.app.commands.edit.set_unit_filter("KS good")
 
     assert isinstance(result, Ok)
     assert workspace.display_state.unit_filter == "KS good"
@@ -1477,12 +1485,12 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
 def test_display_commands_update_app_owned_display_settings() -> None:
     workspace = AlignmentWorkspace()
 
-    assert workspace.app.commands.toggle_reference_lines_visible() is False
-    assert workspace.app.commands.toggle_histology_boundaries_visible() is False
-    assert workspace.app.commands.toggle_region_annotation_source() == (
+    assert workspace.app.commands.display.toggle_reference_lines_visible() is False
+    assert workspace.app.commands.display.toggle_histology_boundaries_visible() is False
+    assert workspace.app.commands.display.toggle_region_annotation_source() == (
         "FranklinPaxinos"
     )
-    assert workspace.app.commands.set_linear_fit_enabled(False) is False
+    assert workspace.app.commands.display.set_linear_fit_enabled(False) is False
 
     assert workspace.display_state.reference_lines_visible is False
     assert workspace.display_state.histology_boundaries_visible is False
@@ -1527,7 +1535,7 @@ def test_commands_prepare_loaded_shank_without_histology() -> None:
     )
     workspace.document.mark_data_loaded(True)
 
-    result = workspace.app.commands.prepare_loaded_shank(1)
+    result = workspace.app.commands.loaded_shank.prepare_loaded_shank(1)
 
     assert isinstance(result, LoadedShankPrepared)
     assert result.shank_idx == 1
@@ -1561,7 +1569,7 @@ def test_commands_prepare_loaded_shank_initializes_histology_runtime() -> None:
         shank_idx=1,
     )
 
-    result = workspace.app.commands.prepare_loaded_shank(1)
+    result = workspace.app.commands.loaded_shank.prepare_loaded_shank(1)
 
     assert isinstance(result, LoadedShankPrepared)
     assert result.histology_available
@@ -1586,7 +1594,7 @@ def test_commands_prepare_loaded_shank_initializes_histology_runtime() -> None:
     np.testing.assert_allclose(active_state.active_alignment.feature, [1.0, 2.0])
     np.testing.assert_allclose(active_state.active_alignment.track, [3.0, 4.0])
 
-    second = workspace.app.commands.prepare_loaded_shank(1)
+    second = workspace.app.commands.loaded_shank.prepare_loaded_shank(1)
 
     assert isinstance(second, LoadedShankPrepared)
     assert len(probe_track_service.calls) == 1
@@ -1609,7 +1617,7 @@ def test_prepare_loaded_shank_preserves_explicit_original_selection() -> None:
     active_key = AlignmentKey("rec", "stream", 1)
     state = workspace.document.select_alignment_key(active_key)
     state.set_alignments({"saved": [[10.0, 20.0], [30.0, 40.0]]})
-    selected = workspace.app.commands.select_previous_alignment(1)
+    selected = workspace.app.commands.persistence.select_previous_alignment(1)
     assert isinstance(selected, PreviousAlignmentSelected)
     assert selected.choice == "original"
     workspace.document.mark_data_loaded(True)
@@ -1620,7 +1628,7 @@ def test_prepare_loaded_shank_preserves_explicit_original_selection() -> None:
         shank_idx=1,
     )
 
-    result = workspace.app.commands.prepare_loaded_shank(
+    result = workspace.app.commands.loaded_shank.prepare_loaded_shank(
         1,
         select_default_alignment_if_empty=False,
     )

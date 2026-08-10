@@ -182,7 +182,7 @@ class DesktopEphysPlotPresenter:
 
     def filter_unit_pressed(self, unit_filter: str) -> None:
         """Apply a unit filter and redraw the currently selected ephys plots."""
-        self.app.commands.set_unit_filter(unit_filter)
+        self.app.commands.edit.set_unit_filter(unit_filter)
         self.set_initial_actions_checked()
         self.set_unit_filter_action_checked(unit_filter)
         self.update_plot()

@@ -99,7 +99,7 @@ def build_desktop_workbench_presenter_cluster(
     """Build desktop Workbench presenters outside the Workbench class."""
     displays = views.displays
     output_path_presenter = DesktopOutputPathPresenter(
-        commands=app.commands,
+        commands=app.commands.paths,
         path_view=views.path,
     )
     lifecycle_presenter = DesktopLifecyclePresenter(
@@ -140,7 +140,7 @@ def build_desktop_workbench_presenter_cluster(
         ),
     )
     mouse_root_presenter = DesktopMouseRootPresenter(
-        commands=app.commands,
+        commands=app.commands.metadata,
         path_view=views.path,
         selection_view=views.selection,
         callbacks=_mouse_root_callbacks(
@@ -169,12 +169,12 @@ def build_desktop_workbench_presenter_cluster(
         ),
     )
     load_preflight_presenter = DesktopLoadPreflightPresenter(
-        can_load_data=app.commands.can_load_data,
+        can_load_data=app.commands.load.can_load_data,
         load_heavy_data=load_data_presenter.load_heavy_data,
         output_folder_prompt=output_folder_prompt,
     )
     save_presenter = DesktopSavePresenter(
-        commands=app.commands,
+        commands=app.commands.persistence,
         callbacks=_save_callbacks(
             ports.save,
             output_folder_prompt,
@@ -182,7 +182,7 @@ def build_desktop_workbench_presenter_cluster(
         ),
     )
     previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
-        commands=app.commands,
+        commands=app.commands.persistence,
         callbacks=_previous_alignment_load_callbacks(
             ports.previous_alignment_load,
             folder_dialog,

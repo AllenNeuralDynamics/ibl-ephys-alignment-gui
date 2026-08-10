@@ -73,7 +73,7 @@ class DesktopProbeSelectionPresenter:
             "Ready",
             disable_widgets=self.selection_view.selection_widgets(),
         ):
-            result = self.app.commands.select_probe_metadata(
+            result = self.app.commands.metadata.select_probe_metadata(
                 session_name,
                 probe_name,
             )
@@ -87,7 +87,7 @@ class DesktopProbeSelectionPresenter:
                 self.selection_view.populate_probe_shanks(result.shanks)
                 logger.info("Found %s shanks in data.", result.n_shanks)
 
-            selected = self.app.commands.select_shank(0, source="probe-selected")
+            selected = self.app.commands.shanks.select_shank(0, source="probe-selected")
             if isinstance(selected, Failed):
                 logger.error(selected.message)
                 self.selection_view.set_load_data_enabled(False)

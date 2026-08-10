@@ -43,7 +43,7 @@ class DesktopSessionSelectionPresenter:
 
         callbacks.capture_pending_reference_lines()
         callbacks.evict_stream_cache()
-        result = self.app.commands.select_recording_metadata(session_name)
+        result = self.app.commands.metadata.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)
             return False

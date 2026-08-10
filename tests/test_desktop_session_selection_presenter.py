@@ -43,6 +43,7 @@ class FakeCommands:
     def __init__(self, result: Any | None = None) -> None:
         self.result = result or RecordingSelected("rec", ["probeA", "probeB"])
         self.calls: list[str] = []
+        self.metadata = self
 
     def select_recording_metadata(self, recording_id: str):
         self.calls.append(recording_id)

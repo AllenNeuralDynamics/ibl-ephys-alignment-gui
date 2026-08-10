@@ -33,7 +33,7 @@ class DesktopShankSelectionActions:
             logger.info("Shank %s already selected", shank_id)
             return True
 
-        result = self.app.commands.select_shank(
+        result = self.app.commands.shanks.select_shank(
             shank_idx,
             outgoing_reference_lines=self.reference_line_display.positions(),
             source="dropdown",

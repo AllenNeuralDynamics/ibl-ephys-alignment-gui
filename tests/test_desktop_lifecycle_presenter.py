@@ -13,6 +13,7 @@ from ephys_alignment_gui.desktop_lifecycle_presenter import (
 class FakeCommands:
     def __init__(self, calls: list[tuple]) -> None:
         self.calls = calls
+        self.load = self
 
     def detach_active_stream(self) -> None:
         self.calls.append(("detach-app",))

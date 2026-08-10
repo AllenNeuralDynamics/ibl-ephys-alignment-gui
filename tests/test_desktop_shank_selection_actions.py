@@ -34,6 +34,7 @@ class FakeCommands:
     def __init__(self, result: Any | None = None) -> None:
         self.result = result
         self.calls: list[tuple[Any, Any, str]] = []
+        self.shanks = self
 
     def select_shank(
         self,

@@ -43,6 +43,8 @@ class FakeCommands:
         )
         self.select_calls: list[int] = []
         self.prepare_calls: list[tuple[int, bool]] = []
+        self.persistence = self
+        self.loaded_shank = self
 
     def select_previous_alignment(self, idx: int) -> Any:
         self.select_calls.append(idx)

@@ -31,7 +31,7 @@ class DesktopAlignmentSelectionActions:
         """Select a previous/original alignment and refresh loaded histology."""
         logger.info("Alignment index %s selected", idx)
 
-        selected = self.app.commands.select_previous_alignment(idx)
+        selected = self.app.commands.persistence.select_previous_alignment(idx)
         if isinstance(selected, Failed):
             logger.error(selected.message)
             return False
@@ -43,7 +43,7 @@ class DesktopAlignmentSelectionActions:
             logger.info("Data not loaded yet, alignment params updated")
             return True
 
-        prepared = self.app.commands.prepare_loaded_shank(
+        prepared = self.app.commands.loaded_shank.prepare_loaded_shank(
             selection.shank_idx,
             select_default_alignment_if_empty=False,
         )

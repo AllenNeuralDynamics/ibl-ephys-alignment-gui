@@ -93,7 +93,7 @@ class DesktopShankPresenter:
         logger.info("Setting up view for shank index %s", shank_idx)
         selections = callbacks.capture_plot_selection(preserve)
         callbacks.clear_reference_lines()
-        prepared = self.app.commands.prepare_loaded_shank(shank_idx)
+        prepared = self.app.commands.loaded_shank.prepare_loaded_shank(shank_idx)
         if isinstance(prepared, Failed):
             logger.error(prepared.message)
             return
@@ -107,7 +107,7 @@ class DesktopShankPresenter:
             callbacks.render_alignment_choices(prepared.alignment_choices)
 
         if not preserve:
-            self.app.commands.set_unit_filter("all")
+            self.app.commands.edit.set_unit_filter("all")
         screen_preparation = (
             self.app.queries.active_shank.prepare_active_shank_screen_state(
                 histology_available=prepared.histology_available,

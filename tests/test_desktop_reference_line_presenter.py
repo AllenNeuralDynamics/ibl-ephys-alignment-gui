@@ -15,6 +15,7 @@ class FakeCommands:
     def __init__(self, result: Any | None = None) -> None:
         self.result = Ok() if result is None else result
         self.captures: list[Any] = []
+        self.shanks = self
 
     def capture_active_reference_lines(self, positions: Any) -> Any:
         self.captures.append(positions)

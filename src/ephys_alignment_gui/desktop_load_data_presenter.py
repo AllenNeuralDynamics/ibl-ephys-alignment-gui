@@ -52,7 +52,7 @@ class DesktopLoadDataPresenter:
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
         probe_name = self.selection_view.current_probe()
-        begin_result = self.app.commands.begin_load_data(
+        begin_result = self.app.commands.load.begin_load_data(
             recording_id=session_name,
             probe_name=probe_name,
             target_shank=target_shank,
@@ -82,7 +82,7 @@ class DesktopLoadDataPresenter:
                 "Loading probe data, active shank index %s",
                 begin_result.shank_idx,
             )
-            completed = self.app.commands.complete_fresh_load_data(begin_result)
+            completed = self.app.commands.load.complete_fresh_load_data(begin_result)
             if isinstance(completed, Failed):
                 logger.error(completed.message)
                 return False
@@ -117,7 +117,7 @@ class DesktopLoadDataPresenter:
         target_shank: int,
     ) -> bool:
         """Present a cached probe-selection change after caller teardown."""
-        result = self.app.commands.activate_cached_probe_selection(
+        result = self.app.commands.load.activate_cached_probe_selection(
             recording_id=session_name,
             probe_name=probe_name,
             target_shank=target_shank,

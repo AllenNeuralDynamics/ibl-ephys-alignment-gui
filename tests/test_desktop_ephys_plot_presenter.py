@@ -124,6 +124,7 @@ class FakeQueries:
 class FakeCommands:
     def __init__(self) -> None:
         self.unit_filters = []
+        self.edit = self
 
     def set_unit_filter(self, unit_filter: str) -> None:
         self.unit_filters.append(unit_filter)

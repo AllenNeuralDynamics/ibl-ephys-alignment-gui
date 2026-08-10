@@ -39,7 +39,7 @@ class DesktopLifecyclePresenter:
 
     def detach_active_stream(self) -> None:
         """Detach the active app stream and clear its desktop presentation."""
-        self.app.commands.detach_active_stream()
+        self.app.commands.load.detach_active_stream()
         self.clear_active_stream_presentation()
         self.reset_desktop_stream_state()
 
@@ -51,7 +51,7 @@ class DesktopLifecyclePresenter:
 
     def evict_stream_cache(self) -> None:
         """Evict app stream cache and clear desktop presentation state."""
-        self.app.commands.evict_stream_cache()
+        self.app.commands.load.evict_stream_cache()
         self.clear_active_stream_presentation()
         self.reset_desktop_stream_state()
         self.callbacks.collect_garbage()
