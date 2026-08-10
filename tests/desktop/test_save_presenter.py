@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.services.alignment_repository import SavedAlignmentOutputs
 from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
@@ -23,6 +22,7 @@ from ephys_alignment_gui.desktop.save_presenter import (
     DesktopSavePresenter,
 )
 from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.services.alignment_repository import SavedAlignmentOutputs
 
 
 class FakeBusyContext:

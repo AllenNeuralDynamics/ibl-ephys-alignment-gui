@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.reference_line_layer import (
+from ephys_alignment_gui.desktop.reference_line_layer import (
     ReferenceLineLayer,
     ReferenceLinePlots,
 )

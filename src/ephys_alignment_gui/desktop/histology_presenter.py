@@ -12,7 +12,7 @@ from ephys_alignment_gui.alignment_read_models import (
     HistologyPanelRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.histology_panel_presenter import HistologyPanelView
+from ephys_alignment_gui.desktop.histology_panel_view import HistologyPanelView
 
 logger = logging.getLogger(__name__)
 

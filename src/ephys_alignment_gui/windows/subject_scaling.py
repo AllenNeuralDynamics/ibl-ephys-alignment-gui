@@ -3,7 +3,7 @@ import pyqtgraph as pg
 from PyQt5 import QtGui, QtWidgets
 
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
-from ephys_alignment_gui.plot_elements import ColorBar, replace_axis
+from ephys_alignment_gui.desktop.plot_elements import ColorBar, replace_axis
 from ephys_alignment_gui.probe_geometry import trace_header
 
 pg.setConfigOption("background", "w")

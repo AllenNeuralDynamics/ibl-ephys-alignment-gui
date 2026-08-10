@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ephys_alignment_gui.feature_plot_view import FeaturePlotView
+from ephys_alignment_gui.desktop.feature_plot_view import FeaturePlotView
 
 
 class FakeSignal:

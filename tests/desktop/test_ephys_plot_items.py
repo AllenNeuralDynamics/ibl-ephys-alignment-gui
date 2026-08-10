@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ephys_alignment_gui.ephys_plot_items import EphysPlotItems
+from ephys_alignment_gui.desktop.ephys_plot_items import EphysPlotItems
 
 
 class FakeFigure:

@@ -15,8 +15,8 @@ from ephys_alignment_gui.alignment_read_models import (
     ActiveSliceRenderState,
     PerpendicularSliceRenderState,
 )
+from ephys_alignment_gui.desktop.plot_elements import ColorBar
 from ephys_alignment_gui.ephys_alignment import TIP_SIZE_UM
-from ephys_alignment_gui.plot_elements import ColorBar
 from ephys_alignment_gui.slice_display_policy import SliceImageKind, SliceSelection
 
 logger = logging.getLogger(__name__)

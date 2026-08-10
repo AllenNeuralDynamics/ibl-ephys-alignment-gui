@@ -10,15 +10,15 @@ import numpy as np
 from ephys_alignment_gui.alignment_read_models import (
     PerpendicularSliceRenderState,
 )
-from ephys_alignment_gui.document import AlignmentKey
-from ephys_alignment_gui.slice_display_policy import SliceSelection
-from ephys_alignment_gui.slice_panel_presenter import (
+from ephys_alignment_gui.desktop.slice_panel_presenter import (
     SlicePanelPlots,
     SlicePanelPresenter,
     SlicePanelStyle,
     SlicePanelView,
     SlicePanelViewState,
 )
+from ephys_alignment_gui.document import AlignmentKey
+from ephys_alignment_gui.slice_display_policy import SliceSelection
 
 
 class FakeAction:
@@ -233,11 +233,11 @@ def test_slice_panel_plot_selection_queries_render_state() -> None:
 
 def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.ScatterPlotItem",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.ScatterPlotItem",
         FakePlotItem,
     )
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
     _presenter, view, coronal, perpendicular, _layout = _presenter_with_plots()
@@ -273,7 +273,7 @@ def test_slice_panel_owns_channel_overlay_handles(monkeypatch) -> None:
 
 def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.PlotCurveItem",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.PlotCurveItem",
         FakePlotItem,
     )
     _presenter, view, coronal, _perpendicular, _layout = _presenter_with_plots()
@@ -292,19 +292,19 @@ def test_slice_panel_owns_export_trajectory_handle(monkeypatch) -> None:
 
 def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.ImageItem",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.ImageItem",
         FakeImageItem,
     )
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.InfiniteLine",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.InfiniteLine",
         FakePlotItem,
     )
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.pg.ScatterPlotItem",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.pg.ScatterPlotItem",
         FakePlotItem,
     )
     monkeypatch.setattr(
-        "ephys_alignment_gui.slice_panel_presenter.ColorBar",
+        "ephys_alignment_gui.desktop.slice_panel_presenter.ColorBar",
         FakeColorBar,
     )
     _presenter, view, _coronal, perpendicular, _layout = _presenter_with_plots()

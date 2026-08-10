@@ -8,16 +8,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.alignment_read_models import ActiveAlignmentRenderState
-from ephys_alignment_gui.desktop.histology_presenter import (
-    DesktopHistologyPresenter,
-    DesktopHistologyRenderCallbacks,
-)
-from ephys_alignment_gui.histology_panel_presenter import (
+from ephys_alignment_gui.desktop.histology_panel_view import (
     FitPanelItems,
     HistologyPanelAxes,
     HistologyPanelPlots,
     HistologyPanelStyle,
     HistologyPanelView,
+)
+from ephys_alignment_gui.desktop.histology_presenter import (
+    DesktopHistologyPresenter,
+    DesktopHistologyRenderCallbacks,
 )
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@ import pyqtgraph as pg
 import pyqtgraph.exporters
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from ephys_alignment_gui.plot_elements import replace_axis
+from ephys_alignment_gui.desktop.plot_elements import replace_axis
 
 pg.setConfigOption("background", "w")
 pg.setConfigOption("foreground", "k")

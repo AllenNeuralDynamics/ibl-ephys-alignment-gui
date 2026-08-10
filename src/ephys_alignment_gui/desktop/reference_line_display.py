@@ -10,7 +10,7 @@ from typing import Any
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui
 
-from ephys_alignment_gui.reference_line_layer import (
+from ephys_alignment_gui.desktop.reference_line_layer import (
     ReferenceLineLayer,
     ReferenceLinePlots,
 )

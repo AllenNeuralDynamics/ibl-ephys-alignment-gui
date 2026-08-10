@@ -10,13 +10,13 @@ from typing import Any
 from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.alignment_read_models import ActiveSliceMenuState
-from ephys_alignment_gui.slice_display_policy import SliceSelection
-from ephys_alignment_gui.slice_panel_presenter import (
+from ephys_alignment_gui.desktop.slice_panel_presenter import (
     SlicePanelPlots,
     SlicePanelPresenter,
     SlicePanelStyle,
     SlicePanelView,
 )
+from ephys_alignment_gui.slice_display_policy import SliceSelection
 
 logger = logging.getLogger(__name__)
 

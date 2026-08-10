@@ -11,9 +11,9 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
 
-from ephys_alignment_gui.ephys_plot_items import EphysPlotItems
-from ephys_alignment_gui.feature_plot_view import FeaturePlotView
-from ephys_alignment_gui.plot_elements import ColorBar
+from ephys_alignment_gui.desktop.ephys_plot_items import EphysPlotItems
+from ephys_alignment_gui.desktop.feature_plot_view import FeaturePlotView
+from ephys_alignment_gui.desktop.plot_elements import ColorBar
 
 logger = logging.getLogger(__name__)
 

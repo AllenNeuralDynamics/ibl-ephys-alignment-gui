@@ -11,7 +11,7 @@ from one.remote import aws
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ephys_alignment_gui.ephys_alignment import EphysAlignment
-from ephys_alignment_gui.plot_elements import (
+from ephys_alignment_gui.desktop.plot_elements import (
     ColorBar,
     QRangeSlider,
     replace_axis,

@@ -18,7 +18,7 @@ from ephys_alignment_gui.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.plot_elements import ColorBar
+from ephys_alignment_gui.desktop.plot_elements import ColorBar
 
 logger = logging.getLogger(__name__)
 
