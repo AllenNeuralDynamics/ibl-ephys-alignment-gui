@@ -1,8 +1,7 @@
 import logging
 from typing import Any
 
-import pyqtgraph as pg
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.settings import (
@@ -19,6 +18,7 @@ from ephys_alignment_gui.desktop.shell.popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop.shell.region_lookup_setup import (
     initialize_region_lookup,
 )
+from ephys_alignment_gui.desktop.shell.style import DesktopShellStyle
 from ephys_alignment_gui.desktop.views import DesktopViews
 from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop.workbench.ports import (
@@ -70,8 +70,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._workspace = AlignmentWorkspace()
         self.app = self._workspace.app
         self.popup_manager = DesktopPopupManager()
+        self.style = DesktopShellStyle.default()
         self.shell_actions = DesktopShellActions(self)
-        self.init_variables()
         self.offline: bool = offline
         window_setup.initialize_shell(self, offline=offline)
         self.displays = DesktopDisplays.create(
@@ -137,71 +137,3 @@ class MainWindow(QtWidgets.QMainWindow):
                 OUTPUT_ROOT_ENV_VAR,
                 output_root,
             )
-
-    def init_variables(self) -> None:
-        """
-        Initialise variables
-        """
-        # Line styles and fonts
-        self.kpen_dot = pg.mkPen(color="k", style=QtCore.Qt.DotLine, width=2)
-        self.reference_line_kpen = pg.mkPen(
-            color="k", style=QtCore.Qt.DotLine, width=10
-        )
-        self.rpen_dot = pg.mkPen(color="r", style=QtCore.Qt.DotLine, width=2)
-        self.kpen_solid = pg.mkPen(color="k", style=QtCore.Qt.SolidLine, width=2)
-        self.bpen_solid = pg.mkPen(color="b", style=QtCore.Qt.SolidLine, width=3)
-        self.bar_colour = QtGui.QColor(160, 160, 160)
-
-        # Padding to add to figures to make sure always same size viewbox
-        self.pad = 0.05
-
-    """
-    Plot functions
-    """
-
-    def _histology_available(self) -> bool:
-        """Return whether histology runtime data is loaded."""
-        return self.app.queries.workspace.histology_data_loaded()
-
-    def plot_histology(self, fig=None, ax="left", movable=True) -> None:
-        """Compatibility wrapper for aligned histology rendering."""
-        if not self._histology_available():
-            return
-        self.desktop_workbench.render_active_aligned_histology(fig, movable=movable)
-
-    def plot_histology_ref(self, fig=None, ax="right", movable=False) -> None:
-        """Compatibility wrapper for reference histology rendering."""
-        if not self._histology_available():
-            return
-        self.desktop_workbench.render_active_reference_histology(
-            fig,
-            movable=movable,
-        )
-
-    def plot_histology_nearby(self, fig=None, ax="right", movable=False) -> None:
-        """Compatibility wrapper for nearby histology boundary rendering."""
-        self.desktop_workbench.render_active_nearby_histology(fig, movable=movable)
-
-    def plot_scale_factor(self) -> None:
-        """
-        Plots the scale factor applied to brain regions along probe track, displayed
-        alongside histology figure
-        """
-
-        # If no histology we can't do alignment
-        if not self._histology_available():
-            return
-
-        self.desktop_workbench.render_active_scale_factor()
-
-    def plot_fit(self) -> None:
-        """
-        Plots the scale factor and offset applied to channels along depth of probe track
-        relative to orignal position of channels
-        """
-
-        # If no histology we can't do alignment
-        if not self._histology_available():
-            return
-
-        self.desktop_workbench.render_active_fit()

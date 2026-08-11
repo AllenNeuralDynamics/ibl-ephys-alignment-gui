@@ -31,6 +31,7 @@ class DesktopViews:
     @classmethod
     def from_main_window(cls, window: Any, *, displays: Any) -> DesktopViews:
         """Build focused desktop view objects from a MainWindow shell."""
+        style = window.style
         selection = DesktopSelectionView(
             session_model=window.session_list,
             session_combobox=window.session_combobox,
@@ -62,7 +63,7 @@ class DesktopViews:
             },
             probe_tip_lines=displays.ephys.panel.probe_tip_lines,
             probe_top_lines=displays.ephys.panel.probe_top_lines,
-            padding=lambda: window.pad,
+            padding=lambda: style.padding,
         )
         shank_screen = DesktopShankScreenView(
             depth_plots=depth,
@@ -83,7 +84,7 @@ class DesktopViews:
             ephys_graphics_layout=displays.ephys.graphics_layout,
             ephys_data_area=displays.ephys.area,
             slice_plot=displays.slice.coronal_plot,
-            slice_trajectory_pen=window.rpen_dot,
+            slice_trajectory_pen=style.linear_fit_pen,
             reset_axis=window.shell_actions.reset_axis_button_pressed,
             set_view=shank_screen.set_view,
             set_axis=set_axis,

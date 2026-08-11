@@ -59,8 +59,10 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         reload_folder_line=SimpleNamespace(setText=lambda _text: None),
         reload_folder_button=object(),
         export_view=object(),
-        bar_colour=object(),
-        kpen_solid=object(),
+        style=SimpleNamespace(
+            bar_colour=object(),
+            solid_pen=object(),
+        ),
         activateWindow=lambda: None,
     )
 

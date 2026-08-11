@@ -26,6 +26,7 @@ from ephys_alignment_gui.desktop.workbench.port_types import (
 
 def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPorts:
     """Adapt MainWindow widgets and legacy methods to Workbench ports."""
+    style = window.style
 
     def busy_context(*args: Any, **kwargs: Any) -> BusyContext:
         return BusyContext(window, *args, **kwargs)
@@ -127,8 +128,8 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             histology_plot=window.displays.histology.aligned_plot,
             histology_reference_plot=window.displays.histology.reference_plot,
             scale_axis=window.displays.histology.scale_axis,
-            bar_colour=window.bar_colour,
-            line_pen=window.kpen_solid,
+            bar_colour=style.bar_colour,
+            line_pen=style.solid_pen,
             histology_available=histology_available,
             activate_window=window.activateWindow,
             set_axis=set_axis,
