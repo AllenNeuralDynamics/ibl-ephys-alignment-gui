@@ -11,9 +11,11 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.core.alignment_read_models import ActiveSliceMenuState
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
-from ephys_alignment_gui.desktop.displays.slice_panel_presenter import (
-    SlicePanelPresenter,
+from ephys_alignment_gui.desktop.displays.slice_panel_view import (
     SlicePanelView,
+)
+from ephys_alignment_gui.desktop.presenters.slice_panel_presenter import (
+    SlicePanelPresenter,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,7 +97,7 @@ class DesktopSliceMenuPresenter:
             action.setData(item.selection.to_payload())
             action.triggered.connect(
                 lambda _checked=False, selection=item.selection: (
-                    self.panel.plot_slice_selection(selection)
+                    self.panel.render_slice_selection(selection)
                 )
             )
             menu.addAction(action)
@@ -137,7 +139,7 @@ class DesktopSliceMenuPresenter:
 
         self.render_menu(slice_menu_state)
         choice = slice_menu_state.selection
-        selected_action = self.panel.action_for_selection(choice.selection)
+        selected_action = self.action_for_selection(choice.selection)
         if selected_action is None:
             selected_action = self.handles.initial_action
         if selected_action is None:
@@ -160,7 +162,7 @@ class DesktopSliceMenuPresenter:
         selected_action.setChecked(True)
         selected_selection = SliceSelection.from_payload(selected_action.data())
         if selected_selection is not None:
-            self.panel.plot_slice_selection(selected_selection)
+            self.panel.render_slice_selection(selected_selection)
 
     def _set_menu_enabled(self, enabled: bool) -> None:
         menu = self.handles.menu
@@ -174,6 +176,24 @@ class DesktopSliceMenuPresenter:
         if action_group is None:
             return None
         return action_group.checkedAction()
+
+    def current_selection(self) -> SliceSelection | None:
+        """Return the slice selection stored on the checked QAction."""
+        action = self.checked_action()
+        if action is None:
+            return None
+        return SliceSelection.from_payload(action.data())
+
+    def action_for_selection(self, selection: SliceSelection) -> Any:
+        """Find the QAction that represents a slice selection."""
+        action_group = self.handles.action_group
+        if action_group is None:
+            return None
+        for action in action_group.actions():
+            action_selection = SliceSelection.from_payload(action.data())
+            if action_selection == selection:
+                return action
+        return None
 
     def toggle_plot(self, *, reverse: bool = False) -> None:
         """Toggle to the next available slice plot."""
@@ -235,7 +255,6 @@ class DesktopSliceDisplay:
         panel = SlicePanelPresenter(
             app=app,
             view=view,
-            action_group_provider=lambda: handles.action_group,
         )
         menu_presenter = DesktopSliceMenuPresenter(
             app=app,
@@ -313,15 +332,20 @@ class DesktopSliceDisplay:
 
     def plot_slice_selection(self, selection: SliceSelection) -> None:
         """Render a coronal slice selection."""
-        self.panel.plot_slice_selection(selection)
+        self.panel.render_slice_selection(selection)
 
     def refresh_perpendicular_histology(self) -> None:
         """Refresh perpendicular slice for the selected scalar slice."""
-        self.panel.refresh_perpendicular_histology()
+        self.panel.refresh_perpendicular_histology(
+            self.menu_presenter.current_selection()
+        )
 
     def plot_channels(self, projection: Any = None) -> None:
         """Render or update channel/tip overlays on the coronal slice."""
-        self.panel.plot_channels(projection)
+        self.panel.plot_channels(
+            projection,
+            selection=self.menu_presenter.current_selection(),
+        )
 
     def toggle_channel_visibility(self) -> None:
         """Toggle channel, tip, trajectory, and perpendicular overlays."""
@@ -329,8 +353,13 @@ class DesktopSliceDisplay:
 
     def render_export_trajectory_overlay(self, pen: Any) -> None:
         """Render the coronal trajectory overlay used by overview exports."""
-        self.panel.render_export_trajectory_overlay(pen)
+        self.panel.render_export_trajectory_overlay(
+            pen,
+            selection=self.menu_presenter.current_selection(),
+        )
 
     def current_channel_locations_ras(self) -> Any | None:
         """Return channel locations for the current slice overlay."""
-        return self.panel.current_channel_locations_ras()
+        return self.panel.current_channel_locations_ras(
+            self.menu_presenter.current_selection()
+        )

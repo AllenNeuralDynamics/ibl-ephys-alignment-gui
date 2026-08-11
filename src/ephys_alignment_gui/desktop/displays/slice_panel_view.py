@@ -1,4 +1,4 @@
-"""Desktop presenter/view adapter for coronal and perpendicular slice panels."""
+"""Desktop pyqtgraph view for coronal and perpendicular slice panels."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ActiveSliceRenderState,
     PerpendicularSliceRenderState,
 )
-from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
+from ephys_alignment_gui.core.slice_display_policy import SliceImageKind
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
 from ephys_alignment_gui.geometry.ephys_alignment import TIP_SIZE_UM
 
@@ -146,19 +146,18 @@ class SlicePanelView:
         """Clear slice-panel plot items and forget desktop handles."""
         self._remove_histogram_item()
         self.plots.coronal.clear()
-        self.plots.perpendicular.clear()
+        self.clear_perpendicular()
         self.view_state.reset_coronal_overlays()
-        self.view_state.reset_perpendicular_overlays()
         self.view_state.slice_color_bar = None
         self.view_state.slice_hist_levels = None
         self.view_state.histogram_item = None
 
-    def render_slice(
-        self,
-        render_state: ActiveSliceRenderState,
-        *,
-        plot_perpendicular_histology: Callable[[str], None] | None = None,
-    ) -> None:
+    def clear_perpendicular(self) -> None:
+        """Clear perpendicular plot items and forget perpendicular handles."""
+        self.plots.perpendicular.clear()
+        self.view_state.reset_perpendicular_overlays()
+
+    def render_slice(self, render_state: ActiveSliceRenderState) -> None:
         """Render a coronal slice payload with desktop plot items."""
         if not self.histology_exists():
             return
@@ -187,20 +186,14 @@ class SlicePanelView:
         self._remove_histogram_item()
         if decision.kind is SliceImageKind.LABEL:
             view_state.slice_hist_levels = None
-            view_state.reset_perpendicular_overlays()
-            self.plots.perpendicular.clear()
+            self.clear_perpendicular()
             self.plots.coronal_layout.addItem(self.plots.histogram_alt, 0, 1)
             view_state.slice_item = self.plots.histogram_alt
         elif decision.kind is SliceImageKind.RGB:
             view_state.slice_hist_levels = None
-            view_state.reset_perpendicular_overlays()
-            self.plots.perpendicular.clear()
+            self.clear_perpendicular()
         else:
-            self._render_scalar_slice_controls(
-                img,
-                render_state,
-                plot_perpendicular_histology=plot_perpendicular_histology,
-            )
+            self._render_scalar_slice_controls(img, render_state)
 
         self.plots.coronal.addItem(img)
         view_state.traj_line = pg.PlotCurveItem()
@@ -277,6 +270,10 @@ class SlicePanelView:
             return
         self._update_channel_overlay(projection)
 
+    def set_channel_projection(self, projection: Any) -> None:
+        """Store channel projection data without changing visible overlays."""
+        self.view_state.channel_projection = projection
+
     def toggle_channel_visibility(self) -> None:
         """Toggle channel, tip, trajectory, and perpendicular overlays."""
         if not self.histology_exists():
@@ -340,8 +337,6 @@ class SlicePanelView:
         self,
         img: Any,
         render_state: ActiveSliceRenderState,
-        *,
-        plot_perpendicular_histology: Callable[[str], None] | None = None,
     ) -> None:
         decision = render_state.decision
         view_state = self.view_state
@@ -370,11 +365,6 @@ class SlicePanelView:
                 )
 
         view_state.slice_hist_levels = view_state.histogram_item.getLevels()
-        if (
-            render_state.scalar_channel is not None
-            and plot_perpendicular_histology is not None
-        ):
-            plot_perpendicular_histology(render_state.scalar_channel)
         view_state.histogram_item.sigLevelsChanged.connect(
             self.update_perpendicular_levels
         )
@@ -522,133 +512,3 @@ class SlicePanelView:
     def _remove_item(plot: Any, item: Any) -> None:
         if item is not None:
             plot.removeItem(item)
-
-
-@dataclass
-class SlicePanelPresenter:
-    """Query app slice read models and render them through a slice view."""
-
-    app: Any
-    view: SlicePanelView
-    action_group_provider: Callable[[], Any | None]
-
-    def current_scalar_slice_channel(self) -> str | None:
-        """Return the selected scalar slice channel, if the slice UI has one."""
-        render_state = self.current_slice_render_state()
-        if render_state is None:
-            return None
-        return render_state.scalar_channel
-
-    def clear(self) -> None:
-        """Clear slice-panel plot items and forget desktop handles."""
-        self.view.clear()
-
-    def current_slice_render_state(self) -> ActiveSliceRenderState | None:
-        """Return render state for the currently checked slice action."""
-        selection = self.current_slice_selection()
-        if selection is None:
-            return None
-        return self.app.queries.slices.active_slice_render_state(selection)
-
-    def current_slice_selection(self) -> SliceSelection | None:
-        """Return the slice selection stored on the checked QAction."""
-        action_group = self.action_group_provider()
-        if action_group is None:
-            return None
-        action = action_group.checkedAction()
-        if action is None:
-            return None
-        return SliceSelection.from_payload(action.data())
-
-    def action_for_selection(self, selection: SliceSelection) -> Any:
-        """Find the QAction that represents a slice selection."""
-        action_group = self.action_group_provider()
-        if action_group is None:
-            return None
-        for action in action_group.actions():
-            action_selection = SliceSelection.from_payload(action.data())
-            if action_selection == selection:
-                return action
-        return None
-
-    def plot_slice_selection(self, selection: SliceSelection) -> None:
-        """Render a coronal slice selection from the application read model."""
-        if not self.view.histology_exists():
-            return
-        render_state = self.app.queries.slices.active_slice_render_state(selection)
-        if render_state is None:
-            logger.warning("No active slice render state for %s", selection)
-            return
-        self.render_slice(render_state)
-
-    def render_slice(self, render_state: ActiveSliceRenderState) -> None:
-        """Render a coronal slice payload with desktop plot items."""
-        self.view.render_slice(
-            render_state,
-            plot_perpendicular_histology=self.plot_perpendicular_histology,
-        )
-
-    def plot_perpendicular_histology(self, channel_name: str = "ccf") -> None:
-        """Plot the perpendicular histology slice for the current alignment."""
-        if not self.view.histology_exists():
-            return
-
-        self.view.plots.perpendicular.clear()
-        render_state = self.app.queries.slices.active_perpendicular_slice_state(
-            channel_name
-        )
-        if render_state is None:
-            return
-
-        self.render_perpendicular_histology(render_state)
-
-    def render_perpendicular_histology(
-        self,
-        render_state: PerpendicularSliceRenderState,
-    ) -> None:
-        """Render a perpendicular slice payload with desktop plot items."""
-        self.view.render_perpendicular_histology(render_state)
-
-    def update_perpendicular_levels(self) -> None:
-        """Sync perpendicular plot levels with main slice histogram levels."""
-        self.view.update_perpendicular_levels()
-
-    def refresh_perpendicular_histology(self) -> None:
-        """Refresh perpendicular slice for the selected scalar slice."""
-        channel_name = self.current_scalar_slice_channel()
-        if channel_name is None:
-            return
-        self.plot_perpendicular_histology(channel_name)
-
-    def plot_channels(self, projection: Any = None) -> None:
-        """Render or update channel/tip overlays on the coronal slice."""
-        if projection is None:
-            render_state = self.current_slice_render_state()
-            if render_state is None:
-                return
-            projection = render_state.projection
-        self.view.plot_channels(projection)
-
-    def toggle_channel_visibility(self) -> None:
-        """Toggle channel, tip, trajectory, and perpendicular overlays."""
-        self.view.toggle_channel_visibility()
-
-    def render_export_trajectory_overlay(self, pen: Any) -> None:
-        """Render the coronal trajectory overlay used by overview exports."""
-        channel_locations_ras = self.current_channel_locations_ras()
-        self.view.render_export_trajectory_overlay(
-            pen,
-            channel_locations_ras=channel_locations_ras,
-        )
-
-    def current_channel_locations_ras(self) -> Any | None:
-        """Return channel locations for the current slice overlay."""
-        channel_locations_ras = self.view.current_channel_locations_ras()
-        if channel_locations_ras is not None:
-            return channel_locations_ras
-
-        render_state = self.current_slice_render_state()
-        if render_state is None:
-            return None
-        self.view.view_state.channel_projection = render_state.projection
-        return render_state.projection.channel_locations_ras

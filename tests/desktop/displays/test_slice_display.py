@@ -17,7 +17,7 @@ from ephys_alignment_gui.desktop.displays.slice_display import (
     DesktopSliceDisplay,
     DesktopSliceDisplayConfig,
 )
-from ephys_alignment_gui.desktop.displays.slice_panel_presenter import (
+from ephys_alignment_gui.desktop.displays.slice_panel_view import (
     SlicePanelPlots,
     SlicePanelStyle,
     SlicePanelView,
@@ -191,7 +191,7 @@ def _display(
         view_factory=lambda **kwargs: view,
     )
     calls: list[SliceSelection] = []
-    display.panel.plot_slice_selection = calls.append
+    display.panel.render_slice_selection = calls.append
     return display, queries, calls
 
 
