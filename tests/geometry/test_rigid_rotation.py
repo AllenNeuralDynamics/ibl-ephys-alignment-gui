@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui.geometry.rigid_rotation import (
+    display_spacing_mm_from_image,
     polar_rotation,
     rotate_points,
     rotation_transform,
@@ -130,3 +131,20 @@ def test_rotate_image_preserves_content_mass_and_center():
     c_expected = R @ (c_orig - center) + center
 
     np.testing.assert_allclose(c_fwd, c_expected, atol=0.03)  # within ~1 voxel
+
+
+def test_rotate_image_default_spacing_uses_source_spacing():
+    sitk = pytest.importorskip("SimpleITK")
+    from ephys_alignment_gui.geometry.rigid_rotation import rotate_image
+
+    img = sitk.GetImageFromArray(np.zeros((4, 5, 6), dtype=np.uint8))
+    img.SetSpacing((0.030, 0.040, 0.050))
+
+    rotated = rotate_image(
+        img,
+        np.eye(3),
+        np.asarray(img.TransformContinuousIndexToPhysicalPoint([2.5, 2.0, 1.5])),
+    )
+
+    assert display_spacing_mm_from_image(img) == pytest.approx(0.030)
+    assert rotated.GetSpacing() == pytest.approx((0.030, 0.030, 0.030))

@@ -32,6 +32,8 @@ class _FakeAtlas:
         self.bc = _FakeBrainCoordinates()
         self.display_rotation = None
         self.display_rotation_center = None
+        self.intensity_sitk_image = sitk.GetImageFromArray(self.image)
+        self.intensity_sitk_image.SetSpacing((0.030, 0.030, 0.030))
 
     def physical_points_to_indices(self, points, round=True):
         return np.asarray(points, dtype=np.int64)
@@ -131,3 +133,43 @@ def test_volume_for_channel_loads_without_existing_slice_index(tmp_path) -> None
 
     np.testing.assert_array_equal(volume, channel)
     assert "fluor" in histology_images
+
+
+def test_lazy_channel_rotation_uses_atlas_canonical_spacing(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    atlas = _FakeAtlas()
+    atlas.display_rotation = np.eye(3)
+    atlas.display_rotation_center = np.zeros(3)
+    atlas.intensity_sitk_image.SetSpacing((0.030, 0.030, 0.030))
+    service = SliceService()
+    channel = atlas.image + 4000
+    channel_path = _write_image(tmp_path / "fluor.mha", channel)
+    channel_image = sitk.ReadImage(str(channel_path))
+    channel_image.SetSpacing((0.010, 0.010, 0.010))
+    sitk.WriteImage(channel_image, str(channel_path))
+    calls: list[float | None] = []
+
+    def fake_rotate_image(
+        image,
+        rotation,
+        center,
+        *,
+        spacing_mm=None,
+        interpolator="linear",
+        default_value=0.0,
+    ):
+        calls.append(spacing_mm)
+        return image
+
+    monkeypatch.setattr("ephys_alignment_gui.services.slice.rotate_image", fake_rotate_image)
+
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images={},
+        lazy_channel_paths={"fluor": channel_path},
+        channel_name="fluor",
+    )
+
+    assert calls == [0.030]

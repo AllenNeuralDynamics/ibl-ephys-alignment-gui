@@ -153,7 +153,10 @@ class BrainAtlasAnatomical(BrainAtlas):
 
         # IBL defines origin by saying which index is at world coordinate 0,0,0
         # This is kind of broken for many images, and we'll manually override the
-        # origin (called xyz0 in IBL) later. Here we just set it to 0,0,0
+        # origin (called xyz0 in IBL) later. BrainAtlas currently does not build
+        # eager cached state from ``bc`` during __init__; if iblatlas changes
+        # that assumption, this temporary origin must be replaced with a direct
+        # real-origin initialization path.
         iorigin = [0, 0, 0]
 
         # We can use BrainRegions from iblatlas because the labels are
@@ -166,8 +169,7 @@ class BrainAtlasAnatomical(BrainAtlas):
 
         # Need to convert these lateralized labels to IBL codes (input to their
         # mappings)
-        _, im = ismember(label_img_sra_arr, regions.id)
-        label = np.reshape(im.astype(np.int16), label_img_sra_arr.shape)
+        label = _labels_to_region_indices(label_img_sra_arr, regions)
 
         # Initialize the superclass
         super().__init__(
@@ -295,3 +297,17 @@ class BrainAtlasAnatomical(BrainAtlas):
             An (N, 3) array of physical points in the atlas space.
         """
         return self.bc.i2xyz(channel_ndxs[:, self.dims2xyz])
+
+
+def _labels_to_region_indices(label_ids: NDArray, regions: BrainRegions) -> NDArray:
+    """Convert lateralized CCF IDs to BrainRegions row indices, loudly."""
+    found, region_indices = ismember(label_ids, regions.id)
+    if not np.all(found):
+        missing_ids = np.unique(np.asarray(label_ids)[~found])
+        preview = ", ".join(str(int(label_id)) for label_id in missing_ids[:20])
+        suffix = "" if missing_ids.size <= 20 else f", ... ({missing_ids.size} total)"
+        raise ValueError(
+            "Label image contains IDs absent from BrainRegions.id: "
+            f"{preview}{suffix}"
+        )
+    return np.reshape(region_indices.astype(np.int16), np.asarray(label_ids).shape)

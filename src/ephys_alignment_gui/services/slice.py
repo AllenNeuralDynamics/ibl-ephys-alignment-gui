@@ -13,7 +13,10 @@ from numpy.typing import NDArray
 
 from ephys_alignment_gui.geometry.anatomical_atlas import _BLESSED_DIRECTION
 from ephys_alignment_gui.geometry.perpendicular_slice import build_perpendicular_slice
-from ephys_alignment_gui.geometry.rigid_rotation import rotate_image
+from ephys_alignment_gui.geometry.rigid_rotation import (
+    display_spacing_mm_from_image,
+    rotate_image,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +235,12 @@ class SliceService:
             and brain_atlas.display_rotation is not None
             and brain_atlas.display_rotation_center is not None
         ):
+            spacing_mm = _canonical_display_spacing_mm(brain_atlas, channel_image)
             channel_image = rotate_image(
                 channel_image,
                 brain_atlas.display_rotation,
                 brain_atlas.display_rotation_center,
+                spacing_mm=spacing_mm,
                 interpolator="linear",
             )
 
@@ -250,6 +255,17 @@ class SliceService:
         histology_images[channel_name] = channel_image
         logger.debug("Cached %s in histology_images", channel_name)
         return channel_image
+
+
+def _canonical_display_spacing_mm(
+    brain_atlas: Any,
+    source_image: sitk.Image,
+) -> float:
+    """Return the canonical display spacing for lazy histology channels."""
+    atlas_image = getattr(brain_atlas, "intensity_sitk_image", None)
+    if atlas_image is not None:
+        return display_spacing_mm_from_image(atlas_image)
+    return display_spacing_mm_from_image(source_image)
 
 
 def cut_slice_from_atlas_image(

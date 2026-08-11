@@ -16,6 +16,7 @@ from ephys_alignment_gui.geometry.anatomical_atlas import (
     BrainAtlasAnatomical,
 )
 from ephys_alignment_gui.geometry.rigid_rotation import (
+    display_spacing_mm_from_image,
     image_center_physical,
     load_affine_matrix,
     polar_rotation,
@@ -123,19 +124,33 @@ class HistologyDataService:
         # rotation, which is the transpose (inverse) of the extracted rotation.
         R = polar_rotation(linear).T
         rotation_center = image_center_physical(intensity_image)
+        display_spacing_mm = display_spacing_mm_from_image(intensity_image)
         logger.debug(
-            "Computed SPIM->template display rotation (det=%.6f)",
+            "Computed SPIM->template display rotation (det=%.6f, spacing=%.3f mm)",
             np.linalg.det(R),
+            display_spacing_mm,
         )
 
         intensity_image_rot = rotate_image(
-            intensity_image, R, rotation_center, interpolator="linear"
+            intensity_image,
+            R,
+            rotation_center,
+            spacing_mm=display_spacing_mm,
+            interpolator="linear",
         )
         label_image_rot = rotate_image(
-            label_image, R, rotation_center, interpolator="nearest"
+            label_image,
+            R,
+            rotation_center,
+            spacing_mm=display_spacing_mm,
+            interpolator="nearest",
         )
         histology_image_rot = rotate_image(
-            histology_image, R, rotation_center, interpolator="linear"
+            histology_image,
+            R,
+            rotation_center,
+            spacing_mm=display_spacing_mm,
+            interpolator="linear",
         )
 
         brain_atlas = BrainAtlasAnatomical(

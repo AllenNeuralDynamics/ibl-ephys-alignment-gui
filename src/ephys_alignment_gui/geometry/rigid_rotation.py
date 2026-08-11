@@ -111,22 +111,24 @@ def rotate_image(
     image: sitk.Image,
     R: NDArray[np.float64],
     center: NDArray[np.float64],
-    spacing_mm: float = 0.025,
+    spacing_mm: float | None = None,
     interpolator: Literal["linear", "nearest"] = "linear",
     default_value: float = 0.0,
 ) -> sitk.Image:
     """Resample ``image`` into the rotated canonical frame.
 
     Output grid is axis-aligned (identity direction), isotropic at
-    ``spacing_mm``, with extent chosen to contain all 8 rotated corners of the
-    input. The output is the image as seen after applying rotation R about
-    ``center``; for downstream array-axis slicing this corresponds to
-    anatomical ML/AP/DV.
+    ``spacing_mm`` or, when omitted, the finest source spacing, with extent
+    chosen to contain all 8 rotated corners of the input. The output is the
+    image as seen after applying rotation R about ``center``; for downstream
+    array-axis slicing this corresponds to anatomical ML/AP/DV.
     """
     interp = {
         "linear": sitk.sitkLinear,
         "nearest": sitk.sitkNearestNeighbor,
     }[interpolator]
+    if spacing_mm is None:
+        spacing_mm = display_spacing_mm_from_image(image)
 
     min_corner, max_corner = rotated_bounding_box(image, R, center)
     extent = max_corner - min_corner
@@ -153,6 +155,14 @@ def rotate_image(
         interp,
         default_value,
     )
+
+
+def display_spacing_mm_from_image(image: sitk.Image) -> float:
+    """Return the isotropic display spacing to use for a source image."""
+    spacing = np.asarray(image.GetSpacing(), dtype=np.float64)
+    if spacing.shape != (3,) or np.any(spacing <= 0):
+        raise ValueError(f"Invalid image spacing: {tuple(image.GetSpacing())}")
+    return float(np.min(spacing))
 
 
 def rotate_points(
