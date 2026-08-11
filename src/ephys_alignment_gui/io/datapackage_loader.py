@@ -197,9 +197,10 @@ class ProbeInfo:
 class MouseRoot:
     """Resolved view of a preprocessed mouse output directory.
 
-    Probes are nested by ``recording_id`` then ``probe_name`` so that the
-    same physical probe re-inserted across recordings stays distinct (the
-    triplet ``(recording_id, probe_name, probe_shank)`` is the unique key).
+    Probes are nested by ``recording_id`` then GUI-selectable ephys collection.
+    ``ProbeInfo.probe_name`` is currently the selectable collection key for
+    compatibility with older app code; ``ProbeInfo.logical_probe`` carries the
+    histology/logical probe label and may repeat across split streams.
     """
 
     root: Path
@@ -215,11 +216,11 @@ class MouseRoot:
         return sorted(self.probes.keys())
 
     def probes_for_session(self, recording_id: str) -> list[str]:
-        """Probe names for a given recording ID (sorted)."""
+        """Ephys collection labels for a given recording ID (sorted)."""
         return sorted(self.probes.get(recording_id, {}).keys())
 
     def get_probe(self, recording_id: str, probe_name: str) -> ProbeInfo:
-        """Look up a probe by (recording_id, probe_name)."""
+        """Look up a probe by selected ``(recording_id, ephys_collection)``."""
         if recording_id not in self.probes:
             raise DataPackageError(
                 f"No recording {recording_id!r} in datapackage "
@@ -467,12 +468,7 @@ def _parse_probes(
     resolver: RootSearchResolver,
     assets: Mapping[str, AssetRef],
 ) -> dict[str, dict[str, ProbeInfo]]:
-    """Parse the nested ``recording_id -> ephys_collection -> entry`` JSON.
-
-    ``recording_id`` and ``ephys_collection`` come from the outer/inner dict keys
-    rather than fields on each entry, so we set them on the resulting
-    ProbeInfo from the keys.
-    """
+    """Parse the nested ``recording_id -> ephys_collection -> entry`` JSON."""
     probes: dict[str, dict[str, ProbeInfo]] = {}
     for recording_id, recording_probes in d.items():
         if not isinstance(recording_probes, dict):
@@ -481,7 +477,15 @@ def _parse_probes(
                 f"{type(recording_probes).__name__}. Datapackage may be from a "
                 "pre-2.0.0 schema; re-run preprocessing."
             )
-        for probe_name, entry in recording_probes.items():
+        for collection_key, entry in recording_probes.items():
+            ephys_collection = str(entry.get("ephys_collection") or collection_key)
+            logical_probe = str(entry.get("logical_probe") or ephys_collection)
+            recording_entries = probes.setdefault(recording_id, {})
+            if ephys_collection in recording_entries:
+                raise DataPackageError(
+                    "Duplicate ephys collection in datapackage probes for "
+                    f"{recording_id!r}: {ephys_collection!r}"
+                )
             picks = tuple(
                 XyzPicks(
                     image_space=_resolve_ref(p["image_space"], resolver, assets),
@@ -502,12 +506,12 @@ def _parse_probes(
             channel_table = _parse_channel_table(
                 entry.get("channel_table"), resolver, assets
             )
-            probes.setdefault(recording_id, {})[probe_name] = ProbeInfo(
+            recording_entries[ephys_collection] = ProbeInfo(
                 probe_id=entry["probe_id"],
-                probe_name=probe_name,
+                probe_name=ephys_collection,
                 recording_id=recording_id,
-                logical_probe=entry.get("logical_probe", probe_name),
-                ephys_collection=entry.get("ephys_collection", probe_name),
+                logical_probe=logical_probe,
+                ephys_collection=ephys_collection,
                 num_shanks=entry["num_shanks"],
                 ephys_dir=_resolve_ephys_dir(ephys_rel, resolver, assets)
                 if ephys_rel

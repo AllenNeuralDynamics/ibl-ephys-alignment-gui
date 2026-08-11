@@ -22,6 +22,37 @@ def _load(root: Path):
     return load_mouse_root(root, asset_roots=[root.parent.parent])
 
 
+def _seed_probe_files(root: Path, recording_id: str, collection: str) -> None:
+    probe_dir = root / recording_id / collection
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    (probe_dir / "xyz_picks.json").touch()
+    (probe_dir / "xyz_picks_image_space.json").touch()
+
+
+def _probe_entry(
+    *,
+    probe_id: str,
+    logical_probe: str,
+    collection: str,
+    recording_id: str,
+) -> dict:
+    return {
+        "probe_id": probe_id,
+        "logical_probe": logical_probe,
+        "ephys_collection": collection,
+        "num_shanks": 1,
+        "ephys": _ref(f"{recording_id}/{collection}"),
+        "xyz_picks": [
+            {
+                "ccf": _ref(f"{recording_id}/{collection}/xyz_picks.json"),
+                "image_space": _ref(
+                    f"{recording_id}/{collection}/xyz_picks_image_space.json"
+                ),
+            }
+        ],
+    }
+
+
 def _make_mouse_root(
     tmp_path: Path,
     *,
@@ -396,6 +427,119 @@ def test_loads_explicit_ephys_geometry_fields(tmp_path):
     assert picks.histology_shank == 3
     assert picks.ephys_shank == 0
     assert picks.shank == 1
+
+
+def test_probe_picker_uses_ephys_collection_when_json_key_is_logical_probe(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    _seed_probe_files(root, "rec1", "45883-1")
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["probes"] = {
+        "rec1": {
+            "46116": _probe_entry(
+                probe_id="track-46116",
+                logical_probe="46116",
+                collection="45883-1",
+                recording_id="rec1",
+            )
+        }
+    }
+    dp_path.write_text(json.dumps(data))
+
+    mr = _load(root)
+
+    assert mr.probes_for_session("rec1") == ["45883-1"]
+    probe = mr.get_probe("rec1", "45883-1")
+    assert probe.probe_name == "45883-1"
+    assert probe.ephys_collection == "45883-1"
+    assert probe.logical_probe == "46116"
+
+
+def test_probe_picker_lists_session_specific_ephys_collections(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    expected = {
+        "ecephys_771432_2025-03-11_16-35-36": [
+            "46116",
+            "46122",
+        ],
+        "ecephys_771432_2025-03-12_16-11-26": [
+            "45883-1",
+            "45883-2",
+            "45883-3",
+            "45883-4",
+            "46100",
+            "46110",
+            "46113",
+            "46116",
+            "46122",
+            "50209",
+        ],
+        "ecephys_771432_2025-05-07_18-22-06": [
+            "45883-1",
+            "45883-2",
+            "45883-3",
+            "45883-4",
+            "46100",
+            "46110",
+            "46113",
+            "46116",
+            "46122",
+            "50209",
+        ],
+    }
+    logical_by_collection = {
+        "45883-1": "46116",
+        "45883-2": "46116",
+        "45883-3": "46116",
+        "45883-4": "46116",
+    }
+    probes: dict[str, dict[str, dict]] = {}
+    for recording_id, collections in expected.items():
+        probes[recording_id] = {}
+        for idx, collection in enumerate(collections):
+            _seed_probe_files(root, recording_id, collection)
+            logical_probe = logical_by_collection.get(collection, collection)
+            probes[recording_id][f"{logical_probe}-{idx}"] = _probe_entry(
+                probe_id=f"{recording_id}-{collection}",
+                logical_probe=logical_probe,
+                collection=collection,
+                recording_id=recording_id,
+            )
+
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["mouse_id"] = "771432"
+    data["probes"] = probes
+    dp_path.write_text(json.dumps(data))
+
+    mr = _load(root)
+
+    assert mr.sessions == sorted(expected)
+    for recording_id, collections in expected.items():
+        assert mr.probes_for_session(recording_id) == sorted(collections)
+
+
+def test_duplicate_ephys_collection_in_recording_raises(tmp_path):
+    root = _make_mouse_root(tmp_path)
+    _seed_probe_files(root, "rec1", "45883-1")
+    dp_path = root / "datapackage.json"
+    entry = _probe_entry(
+        probe_id="track-46116",
+        logical_probe="46116",
+        collection="45883-1",
+        recording_id="rec1",
+    )
+    data = json.loads(dp_path.read_text())
+    data["probes"] = {
+        "rec1": {
+            "first": entry,
+            "second": {**entry, "probe_id": "track-46122"},
+        }
+    }
+    dp_path.write_text(json.dumps(data))
+
+    with pytest.raises(DataPackageError, match="Duplicate ephys collection"):
+        _load(root)
 
 
 def test_loads_channel_table_without_optional_contact_id(tmp_path):
