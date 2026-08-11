@@ -33,6 +33,7 @@ from ephys_alignment_gui.desktop.presenters.load_data_presenter import (
 )
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
+    LoadDataJobCompleted,
     LoadDataJobProgress,
 )
 from ephys_alignment_gui.runtime.histology_loader import (
@@ -105,6 +106,8 @@ class FakeCommands:
         self.start_calls: list[LoadDataFreshPrepared] = []
         self.run_calls: list[LoadDataFreshPrepared] = []
         self.activate_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
+        self.invocation_calls: list[LoadDataFreshPrepared] = []
+        self.cancel_calls: list[str] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
         self._next_load_id = 1
         self.load = self
@@ -168,6 +171,62 @@ class FakeCommands:
             )
         return self.job_result
 
+    def fresh_load_job_invocation(self, execution: FreshLoadExecution):
+        self.invocation_calls.append(execution.prepared)
+        return SimpleNamespace(
+            execution=execution,
+            request=SimpleNamespace(
+                target=execution.prepared.target,
+                load_id=execution.load_id,
+            ),
+            cancel_token=SimpleNamespace(reason=None),
+        )
+
+    def run_fresh_load_job(self, invocation, *, progress=None):
+        prepared = invocation.execution.prepared
+        self.run_calls.append(prepared)
+        if callable(progress):
+            progress(
+                LoadDataJobProgress(
+                    target=prepared.target,
+                    phase="ephys",
+                    status="started",
+                    message="Loading ephys data...",
+                    load_id=invocation.execution.load_id,
+                )
+            )
+        return self.job_result
+
+    def publish_fresh_load_progress(
+        self,
+        execution: FreshLoadExecution,
+        progress: LoadDataJobProgress,
+    ) -> None:
+        self._emit_load_data_progress(progress)
+
+    def publish_started_fresh_load_job_result(
+        self,
+        execution: FreshLoadExecution,
+        job_result: Any,
+    ):
+        prepared = execution.prepared
+        if isinstance(job_result, Failed):
+            self._emit_load_data_failed(
+                job_result.message,
+                prepared,
+                load_id=execution.load_id,
+            )
+            return job_result
+        if isinstance(job_result, LoadDataJobCancelled):
+            self._emit_load_data_cancelled(
+                job_result.reason,
+                prepared,
+                load_id=execution.load_id,
+            )
+            return job_result
+        self._emit_fresh_load_completed(prepared, load_id=execution.load_id)
+        return job_result
+
     def activate_completed_fresh_load_data(
         self,
         prepared: LoadDataFreshPrepared,
@@ -199,13 +258,20 @@ class FakeCommands:
             execution.prepared,
             load_id=execution.load_id,
         )
-        self._emit_activation_for_result(self.complete_result, load_id=execution.load_id)
+        self._emit_activation_for_result(
+            self.complete_result,
+            load_id=execution.load_id,
+        )
         return self.complete_result
 
     def activate_cached_probe_selection(self, **kwargs):
         self.probe_cache_calls.append(kwargs)
         self._emit_activation_for_result(self.probe_cache_result)
         return self.probe_cache_result
+
+    def cancel_active_fresh_load(self, reason: str):
+        self.cancel_calls.append(reason)
+        return None
 
     def _emit_activation_for_result(
         self,
@@ -362,6 +428,82 @@ class FakeSelectionView:
         return "load-button"
 
 
+class ImmediateFreshLoadRunner:
+    def __init__(self) -> None:
+        self.starts: list[Any] = []
+        self.cancel_calls: list[str] = []
+
+    @property
+    def is_running(self) -> bool:
+        return False
+
+    def start(
+        self,
+        *,
+        execution,
+        invocation,
+        run_job,
+        on_progress,
+        on_finished,
+    ) -> None:
+        self.starts.append(invocation)
+        result = run_job(
+            invocation,
+            progress=lambda event: on_progress(execution, event),
+        )
+        on_finished(execution, result)
+
+    def cancel(self, reason: str) -> None:
+        self.cancel_calls.append(reason)
+
+
+class ManualFreshLoadRunner:
+    def __init__(self) -> None:
+        self.active = False
+        self.cancel_calls: list[str] = []
+        self.start_args: dict[str, Any] | None = None
+
+    @property
+    def is_running(self) -> bool:
+        return self.active
+
+    def start(
+        self,
+        *,
+        execution,
+        invocation,
+        run_job,
+        on_progress,
+        on_finished,
+    ) -> None:
+        self.active = True
+        self.start_args = {
+            "execution": execution,
+            "invocation": invocation,
+            "run_job": run_job,
+            "on_progress": on_progress,
+            "on_finished": on_finished,
+        }
+
+    def finish(self) -> None:
+        assert self.start_args is not None
+        execution = self.start_args["execution"]
+        invocation = self.start_args["invocation"]
+        result = self.start_args["run_job"](
+            invocation,
+            progress=lambda event: self.start_args["on_progress"](
+                execution,
+                event,
+            ),
+        )
+        self.active = False
+        self.start_args["on_finished"](execution, result)
+
+    def cancel(self, reason: str) -> None:
+        self.cancel_calls.append(reason)
+        self.active = False
+
+
 def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
     return CachedEphysDataActivated(
         stream_runtime=object(),
@@ -401,8 +543,12 @@ def _fresh_prepared(
     )
 
 
-def _job_completed() -> SimpleNamespace:
-    return SimpleNamespace(label="job-completed")
+def _job_completed() -> LoadDataJobCompleted:
+    return LoadDataJobCompleted(
+        target=SimpleNamespace(label="target"),
+        ephys=SimpleNamespace(stream=SimpleNamespace(ephys_dir=Path("/tmp/ephys"))),
+        histology=HistologyDataLoaded(),
+    )
 
 
 def _fresh_completed(
@@ -444,6 +590,7 @@ def _presenter(
     begin_result: Any | None = None,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
+    load_runner: Any | None = None,
 ) -> tuple[DesktopLoadDataPresenter, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
@@ -452,7 +599,12 @@ def _presenter(
     commands.events = events
     app = SimpleNamespace(events=events, queries=queries, commands=commands)
     selection_view = FakeSelectionView(calls)
-    presenter = DesktopLoadDataPresenter(app, selection_view, _callbacks(calls))
+    presenter = DesktopLoadDataPresenter(
+        app,
+        selection_view,
+        _callbacks(calls),
+        load_runner=load_runner or ImmediateFreshLoadRunner(),
+    )
     presenter.connect_load_events()
     return (
         presenter,
@@ -554,6 +706,7 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
     assert presenter.load_heavy_data()
 
     assert commands.start_calls == [prepared]
+    assert commands.invocation_calls == [prepared]
     assert commands.run_calls == [prepared]
     assert commands.activate_calls == [(prepared, commands.job_result)]
     assert ("prepare-fresh",) in calls
@@ -561,6 +714,47 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
     assert ("message", "Setting up visualization...") in calls
     assert ("render-shank", 0, True) in calls
     assert ("clear-empty",) in calls
+
+
+def test_load_heavy_data_starts_background_runner_before_completion() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    runner = ManualFreshLoadRunner()
+    presenter, commands, _queries, calls = _presenter(
+        begin_result=prepared,
+        load_runner=runner,
+    )
+
+    assert presenter.load_heavy_data()
+
+    assert runner.is_running
+    assert commands.start_calls == [prepared]
+    assert commands.invocation_calls == [prepared]
+    assert commands.run_calls == []
+    assert commands.activate_calls == []
+    assert ("prepare-fresh",) in calls
+    assert ("busy-enter",) in calls
+    assert ("render-shank", 0, True) not in calls
+
+    runner.finish()
+
+    assert not runner.is_running
+    assert commands.run_calls == [prepared]
+    assert commands.activate_calls == [(prepared, commands.job_result)]
+    assert ("render-shank", 0, True) in calls
+    assert ("busy-exit", None) in calls
+
+
+def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> None:
+    runner = ManualFreshLoadRunner()
+    runner.active = True
+    presenter, commands, _queries, calls = _presenter(load_runner=runner)
+
+    assert not presenter.load_heavy_data()
+
+    assert commands.cancel_calls == ["superseded by a newer load request"]
+    assert runner.cancel_calls == ["superseded by a newer load request"]
+    assert commands.begin_calls == []
+    assert calls == []
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
@@ -594,7 +788,7 @@ def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
         ),
     )
 
-    assert not presenter.load_heavy_data()
+    assert presenter.load_heavy_data()
 
     assert commands.run_calls == [prepared]
     assert commands.activate_calls == []

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.results import (
+    FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
@@ -26,7 +27,16 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamActivated,
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
-from ephys_alignment_gui.io.load_data_job import LoadDataJobCancelled
+from ephys_alignment_gui.desktop.workers.load_data_runner import (
+    FreshLoadJobResult,
+    FreshLoadRunner,
+    QtFreshLoadRunner,
+)
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataJobCancelled,
+    LoadDataJobCompleted,
+    LoadDataJobProgress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +60,13 @@ class DesktopLoadDataPresenter:
     app: Any
     selection_view: Any
     callbacks: DesktopLoadDataCallbacks
+    load_runner: FreshLoadRunner = field(default_factory=QtFreshLoadRunner)
     _active_load_context: Any | None = field(default=None, init=False, repr=False)
+    _active_load_context_manager: Any | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _active_load_id: int | None = field(default=None, init=False, repr=False)
 
     def connect_load_events(self) -> list[EventSubscription]:
@@ -107,6 +123,14 @@ class DesktopLoadDataPresenter:
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
         callbacks = self.callbacks
+        if self.load_runner.is_running:
+            logger.info("Load request ignored because a foreground load is active")
+            self.app.commands.load.cancel_active_fresh_load(
+                "superseded by a newer load request"
+            )
+            self.load_runner.cancel("superseded by a newer load request")
+            return False
+
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
         probe_name = self.selection_view.current_probe()
@@ -126,47 +150,112 @@ class DesktopLoadDataPresenter:
             return True
         assert isinstance(begin_result, LoadDataFreshPrepared)
         execution = self.app.commands.load.start_fresh_load_data(begin_result)
+        invocation = self.app.commands.load.fresh_load_job_invocation(execution)
+        if isinstance(invocation, LoadDataJobCancelled):
+            logger.info("Load cancelled: %s", invocation.reason)
+            return False
 
-        with callbacks.busy_context(
+        self._open_load_context(
             "Loading heavy data...",
             "Data loaded successfully",
             disable_widgets=self.selection_view.load_data_widget(),
-        ) as ctx:
-            logger.info("=== Starting heavy data load ===")
-            callbacks.prepare_for_fresh_stream_load()
-            self._active_load_context = ctx
-            self._active_load_id = execution.load_id
-
-            try:
-                logger.info(
-                    "Loading probe data, active shank index %s",
-                    begin_result.shank_idx,
-                )
-                job_result = self.app.commands.load.run_started_fresh_load_data(
-                    execution,
-                )
-                if isinstance(job_result, Failed | LoadDataJobCancelled):
-                    return False
-
-                ctx.update_message("Setting up visualization...")
-                completed = self.app.commands.load.activate_started_fresh_load_data(
-                    execution,
-                    job_result,
-                )
-                if isinstance(completed, Failed | LoadDataStaleResultIgnored):
-                    return False
-                assert isinstance(completed, LoadDataFreshCompleted)
-                stream_runtime = completed.ephys.stream_runtime
-
-                logger.info(
-                    "Loaded ephys data from %s",
-                    stream_runtime.stream.ephys_dir,
-                )
-                logger.info("=== Heavy data load complete ===")
-            finally:
-                self._active_load_context = None
-                self._active_load_id = None
+        )
+        logger.info("=== Starting heavy data load ===")
+        callbacks.prepare_for_fresh_stream_load()
+        self._active_load_id = execution.load_id
+        logger.info(
+            "Loading probe data, active shank index %s",
+            begin_result.shank_idx,
+        )
+        try:
+            self.load_runner.start(
+                execution=execution,
+                invocation=invocation,
+                run_job=self.app.commands.load.run_fresh_load_job,
+                on_progress=self._on_load_worker_progress,
+                on_finished=self._on_load_worker_finished,
+            )
+        except Exception as exc:
+            self.app.commands.load.cancel_active_fresh_load(
+                "failed to start background load"
+            )
+            self._close_load_context(exc)
+            logger.exception("Failed to start background load")
+            return False
         return True
+
+    def _on_load_worker_progress(
+        self,
+        execution: FreshLoadExecution,
+        event: LoadDataJobProgress,
+    ) -> None:
+        """Publish worker progress from the GUI thread."""
+        self.app.commands.load.publish_fresh_load_progress(execution, event)
+
+    def _on_load_worker_finished(
+        self,
+        execution: FreshLoadExecution,
+        job_result: FreshLoadJobResult,
+    ) -> None:
+        """Publish worker completion and activate successful fresh-load data."""
+        published = self.app.commands.load.publish_started_fresh_load_job_result(
+            execution,
+            job_result,
+        )
+        if isinstance(published, Failed):
+            logger.error(published.message)
+            self._close_load_context(RuntimeError(published.message))
+            return
+        if isinstance(published, LoadDataJobCancelled):
+            logger.info("Load cancelled: %s", published.reason)
+            self._close_load_context(
+                RuntimeError(f"Load cancelled: {published.reason}")
+            )
+            return
+        if not isinstance(published, LoadDataJobCompleted):
+            self._close_load_context(RuntimeError("Fresh load returned no result"))
+            return
+
+        if self._active_load_context is not None:
+            self._active_load_context.update_message("Setting up visualization...")
+        completed = self.app.commands.load.activate_started_fresh_load_data(
+            execution,
+            published,
+        )
+        if isinstance(completed, Failed):
+            logger.error(completed.message)
+            self._close_load_context(RuntimeError(completed.message))
+            return
+        if isinstance(completed, LoadDataStaleResultIgnored):
+            logger.info("Load result ignored: %s", completed.reason)
+            self._close_load_context(RuntimeError(completed.reason))
+            return
+        assert isinstance(completed, LoadDataFreshCompleted)
+        stream_runtime = completed.ephys.stream_runtime
+        logger.info("Loaded ephys data from %s", stream_runtime.stream.ephys_dir)
+        logger.info("=== Heavy data load complete ===")
+        self._close_load_context()
+
+    def _open_load_context(self, *args: Any, **kwargs: Any) -> None:
+        """Enter and hold the desktop busy context for an async load."""
+        manager = self.callbacks.busy_context(*args, **kwargs)
+        self._active_load_context_manager = manager
+        self._active_load_context = manager.__enter__()
+
+    def _close_load_context(self, exc: BaseException | None = None) -> None:
+        """Exit the active desktop busy context, if one is open."""
+        manager = self._active_load_context_manager
+        try:
+            if manager is None:
+                return
+            if exc is None:
+                manager.__exit__(None, None, None)
+            else:
+                manager.__exit__(type(exc), exc, exc.__traceback__)
+        finally:
+            self._active_load_context = None
+            self._active_load_context_manager = None
+            self._active_load_id = None
 
     def present_cached_probe_selection(
         self,

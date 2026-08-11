@@ -14,6 +14,10 @@ from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_state import PendingReferenceLines
 from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataCancelToken,
+    LoadDataJobRequest,
+)
 from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.histology_loader import HistologyLoadResult
@@ -187,6 +191,15 @@ class FreshLoadExecution:
 
     load_id: int
     prepared: LoadDataFreshPrepared
+
+
+@dataclass(frozen=True)
+class FreshLoadJobInvocation:
+    """Runnable fresh-load job request for an active execution."""
+
+    execution: FreshLoadExecution
+    request: LoadDataJobRequest
+    cancel_token: LoadDataCancelToken
 
 
 @dataclass(frozen=True)

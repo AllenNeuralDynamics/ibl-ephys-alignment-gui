@@ -17,6 +17,7 @@ from ephys_alignment_gui.application.results import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
     FreshLoadExecution,
+    FreshLoadJobInvocation,
     LoadDataAlreadyActiveResult,
     LoadDataBeginResult,
     LoadDataCachedActivated,
@@ -60,6 +61,7 @@ from ephys_alignment_gui.io.load_data_job import (
     LoadDataJob,
     LoadDataJobCancelled,
     LoadDataJobCompleted,
+    LoadDataJobProgress,
     LoadDataJobRequest,
     LoadDataProgressCallback,
 )
@@ -280,6 +282,23 @@ class LoadDataCommandHandler:
         progress: LoadDataProgressCallback | None = None,
     ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
         """Run a tracked fresh-load job without activating its result."""
+        invocation = self.fresh_load_job_invocation(execution)
+        if isinstance(invocation, LoadDataJobCancelled):
+            return invocation
+
+        def _progress(event: LoadDataJobProgress) -> None:
+            self.publish_fresh_load_progress(execution, event)
+            if progress is not None:
+                progress(event)
+
+        job_result = self.run_fresh_load_job(invocation, progress=_progress)
+        return self.publish_started_fresh_load_job_result(execution, job_result)
+
+    def fresh_load_job_invocation(
+        self,
+        execution: FreshLoadExecution,
+    ) -> FreshLoadJobInvocation | LoadDataJobCancelled:
+        """Return a runnable job invocation for an active fresh-load execution."""
         prepared = execution.prepared
         cancel_token = self.load_lifecycle.cancel_token_for(execution)
         if cancel_token is None:
@@ -287,16 +306,54 @@ class LoadDataCommandHandler:
                 target=prepared.target,
                 reason="Fresh load request is no longer active.",
             )
-
-        job_result = self.load_data_job.run(
-            LoadDataJobRequest(prepared.target, load_id=execution.load_id),
-            progress=self._fresh_load_progress_callback(
-                prepared,
-                progress,
-                load_id=execution.load_id,
-            ),
+        return FreshLoadJobInvocation(
+            execution=execution,
+            request=LoadDataJobRequest(prepared.target, load_id=execution.load_id),
             cancel_token=cancel_token,
         )
+
+    def run_fresh_load_job(
+        self,
+        invocation: FreshLoadJobInvocation,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+    ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
+        """Run fresh-load IO without publishing app events."""
+        return self.load_data_job.run(
+            invocation.request,
+            progress=progress,
+            cancel_token=invocation.cancel_token,
+        )
+
+    def publish_fresh_load_progress(
+        self,
+        execution: FreshLoadExecution,
+        event: LoadDataJobProgress,
+    ) -> None:
+        """Publish one fresh-load progress event on the app event bus."""
+        if not self.load_lifecycle.is_active(execution):
+            return
+        prepared = execution.prepared
+        self.events.emit(
+            LoadDataProgressed(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                phase=event.phase,
+                status=event.status,
+                message=event.message,
+                load_id=event.load_id
+                if event.load_id is not None
+                else execution.load_id,
+            )
+        )
+
+    def publish_started_fresh_load_job_result(
+        self,
+        execution: FreshLoadExecution,
+        job_result: LoadDataJobCompleted | LoadDataJobCancelled | Failed,
+    ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
+        """Publish result events for a tracked fresh-load job."""
+        prepared = execution.prepared
         if isinstance(job_result, Failed):
             self.load_lifecycle.finish(execution)
             self.events.emit(
@@ -604,31 +661,6 @@ class LoadDataCommandHandler:
             return "Loaded data target is stale; selected mouse root changed."
 
         return None
-
-    def _fresh_load_progress_callback(
-        self,
-        prepared: LoadDataFreshPrepared,
-        progress: LoadDataProgressCallback | None,
-        *,
-        load_id: int | None = None,
-    ) -> LoadDataProgressCallback:
-        """Return a progress callback that also emits app-level load events."""
-
-        def _emit_progress(event) -> None:
-            self.events.emit(
-                LoadDataProgressed(
-                    stream_key=prepared.stream_key,
-                    shank_idx=prepared.shank_idx,
-                    phase=event.phase,
-                    status=event.status,
-                    message=event.message,
-                    load_id=event.load_id if event.load_id is not None else load_id,
-                )
-            )
-            if progress is not None:
-                progress(event)
-
-        return _emit_progress
 
     def _emit_histology_report(
         self,
