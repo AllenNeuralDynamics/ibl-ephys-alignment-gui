@@ -44,7 +44,16 @@ from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
-from ephys_alignment_gui.core.alignment_events import AlignmentEdited, ShankChanged
+from ephys_alignment_gui.core.alignment_events import (
+    AlignmentEdited,
+    FreshLoadCompleted,
+    HistologyLoadReported,
+    LoadDataCancelled,
+    LoadDataFailed,
+    LoadDataProgressed,
+    ShankChanged,
+    StreamActivated,
+)
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
@@ -53,11 +62,16 @@ from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.io.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.io.load_data_job import (
+    LoadDataJobCancelled,
     LoadDataJobCompleted,
+    LoadDataJobProgress,
     LoadDataJobRequest,
 )
 from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
-from ephys_alignment_gui.runtime.histology_loader import HistologyDataLoaded
+from ephys_alignment_gui.runtime.histology_loader import (
+    HistologyDataLoaded,
+    HistologyDataUnavailable,
+)
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
@@ -352,6 +366,16 @@ class FakeLoadDataJob:
 
     def run(self, request: LoadDataJobRequest, **_kwargs):
         self.calls.append(request)
+        progress = _kwargs.get("progress")
+        if callable(progress):
+            progress(
+                LoadDataJobProgress(
+                    target=request.target,
+                    phase="ephys",
+                    status="started",
+                    message="Loading ephys data...",
+                )
+            )
         if self.result is None:
             return LoadDataJobCompleted(
                 target=request.target,
@@ -677,6 +701,8 @@ def test_commands_begin_load_data_noops_when_stream_shank_already_active() -> No
     )
     workspace.document.mark_data_loaded(True)
     state = workspace.document.active_alignment_state
+    events: list[StreamActivated] = []
+    workspace.app.events.subscribe(StreamActivated, events.append)
 
     result = workspace.app.commands.load.begin_load_data(
         recording_id="rec",
@@ -691,6 +717,7 @@ def test_commands_begin_load_data_noops_when_stream_shank_already_active() -> No
     assert state is not None
     assert state.pending_reference_lines is None
     assert workspace.document.data_loaded
+    assert events == []
 
 
 def test_commands_begin_load_data_activates_cached_stream_and_captures_lines() -> None:
@@ -705,6 +732,8 @@ def test_commands_begin_load_data_activates_cached_stream_and_captures_lines() -
         shank_idx=1,
     )
     workspace.runtime.clear_active_stream()
+    events: list[StreamActivated] = []
+    workspace.app.events.subscribe(StreamActivated, events.append)
 
     result = workspace.app.commands.load.begin_load_data(
         recording_id="rec",
@@ -724,6 +753,15 @@ def test_commands_begin_load_data_activates_cached_stream_and_captures_lines() -
         old_state.pending_reference_lines.feature_positions_um,
         [10.0],
     )
+    assert events == [
+        StreamActivated(
+            source="cached",
+            stream_key=("rec", "stream"),
+            shank_idx=0,
+            active_key=AlignmentKey("rec", "stream", 0),
+            preserve_plot_selection=True,
+        )
+    ]
 
 
 def test_commands_begin_load_data_prepares_fresh_load_and_captures_lines() -> None:
@@ -770,6 +808,14 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
         target=_load_target(shank_idx=1),
     )
     workspace.data_context.mouse_root = prepared.target.mouse_root
+    progress_events: list[LoadDataProgressed] = []
+    completed_events: list[FreshLoadCompleted] = []
+    histology_events: list[HistologyLoadReported] = []
+    events: list[StreamActivated] = []
+    workspace.app.events.subscribe(LoadDataProgressed, progress_events.append)
+    workspace.app.events.subscribe(FreshLoadCompleted, completed_events.append)
+    workspace.app.events.subscribe(HistologyLoadReported, histology_events.append)
+    workspace.app.events.subscribe(StreamActivated, events.append)
 
     result = workspace.app.commands.load.complete_fresh_load_data(prepared)
 
@@ -781,6 +827,37 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
     assert isinstance(result.histology, HistologyDataLoaded)
     assert load_data_job.calls == [LoadDataJobRequest(prepared.target)]
     assert workspace.document.data_loaded
+    assert progress_events == [
+        LoadDataProgressed(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            phase="ephys",
+            status="started",
+            message="Loading ephys data...",
+        )
+    ]
+    assert completed_events == [
+        FreshLoadCompleted(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+        )
+    ]
+    assert histology_events == [
+        HistologyLoadReported(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            status="loaded",
+        )
+    ]
+    assert events == [
+        StreamActivated(
+            source="fresh",
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            active_key=AlignmentKey("rec", "stream", 1),
+            preserve_plot_selection=True,
+        )
+    ]
 
 
 def test_commands_run_fresh_load_data_does_not_activate_result() -> None:
@@ -793,6 +870,12 @@ def test_commands_run_fresh_load_data_does_not_activate_result() -> None:
         preserve_plot_selection=True,
         target=_load_target(shank_idx=1),
     )
+    progress_events: list[LoadDataProgressed] = []
+    completed_events: list[FreshLoadCompleted] = []
+    stream_events: list[StreamActivated] = []
+    workspace.app.events.subscribe(LoadDataProgressed, progress_events.append)
+    workspace.app.events.subscribe(FreshLoadCompleted, completed_events.append)
+    workspace.app.events.subscribe(StreamActivated, stream_events.append)
 
     result = workspace.app.commands.load.run_fresh_load_data(prepared)
 
@@ -801,6 +884,48 @@ def test_commands_run_fresh_load_data_does_not_activate_result() -> None:
     assert load_data_job.calls == [LoadDataJobRequest(prepared.target)]
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
+    assert progress_events == [
+        LoadDataProgressed(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            phase="ephys",
+            status="started",
+            message="Loading ephys data...",
+        )
+    ]
+    assert completed_events == [
+        FreshLoadCompleted(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+        )
+    ]
+    assert stream_events == []
+
+
+def test_commands_run_fresh_load_data_emits_cancelled_event() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    workspace.load_data_commands.load_data_job = FakeLoadDataJob(
+        LoadDataJobCancelled(target=prepared.target, reason="new probe selected")
+    )
+    events: list[LoadDataCancelled] = []
+    workspace.app.events.subscribe(LoadDataCancelled, events.append)
+
+    result = workspace.app.commands.load.run_fresh_load_data(prepared)
+
+    assert isinstance(result, LoadDataJobCancelled)
+    assert events == [
+        LoadDataCancelled(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            reason="new probe selected",
+        )
+    ]
 
 
 def test_commands_cache_completed_fresh_load_data_without_activation() -> None:
@@ -839,6 +964,8 @@ def test_commands_reject_stale_fresh_load_activation() -> None:
         probe_name="probeA",
         ephys_collection="other",
     )
+    failed_events: list[LoadDataFailed] = []
+    workspace.app.events.subscribe(LoadDataFailed, failed_events.append)
 
     result = workspace.app.commands.load.activate_completed_fresh_load_data(
         prepared,
@@ -849,6 +976,46 @@ def test_commands_reject_stale_fresh_load_activation() -> None:
     assert "stale" in result.message
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
+    assert failed_events == [
+        LoadDataFailed(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            message="Loaded data target is stale; selected probe changed.",
+        )
+    ]
+
+
+def test_commands_activate_fresh_load_reports_unavailable_histology() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    job_result = LoadDataJobCompleted(
+        target=prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream()),
+        histology=HistologyDataUnavailable("no histology"),
+    )
+    workspace.data_context.mouse_root = prepared.target.mouse_root
+    events: list[HistologyLoadReported] = []
+    workspace.app.events.subscribe(HistologyLoadReported, events.append)
+
+    result = workspace.app.commands.load.activate_completed_fresh_load_data(
+        prepared,
+        job_result,
+    )
+
+    assert isinstance(result, LoadDataFreshCompleted)
+    assert events == [
+        HistologyLoadReported(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            status="unavailable",
+            message="no histology",
+        )
+    ]
 
 
 def test_commands_activate_cached_probe_selection_reports_fresh_required() -> None:
@@ -994,6 +1161,24 @@ def test_commands_select_probe_metadata_loads_channel_info() -> None:
     assert result.shanks == ["1/2", "2/2"]
     assert workspace.document.channel_info_loaded
     assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
+
+
+def test_queries_active_probe_selection_state_reports_selected_probe() -> None:
+    ephys_data_service = FakeEphysDataService()
+    workspace = AlignmentWorkspace(ephys_data_service=ephys_data_service)
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    workspace.document.output_root = Path("/tmp/out-root")
+
+    selected = workspace.app.commands.metadata.select_probe_metadata("rec", "probeA")
+    result = workspace.app.queries.workspace.active_probe_selection_state()
+
+    assert isinstance(selected, ProbeSelected)
+    assert result is not None
+    assert result.recording_id == "rec"
+    assert result.probe_name == "probeA"
+    assert result.shanks == ["1/2", "2/2"]
+    assert result.n_shanks == 2
+    assert result.output_directory == workspace.document.output_directory
 
 
 def test_commands_select_recording_metadata_clears_probe_selection() -> None:

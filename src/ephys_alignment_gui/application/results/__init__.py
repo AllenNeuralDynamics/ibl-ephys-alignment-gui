@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.results.alignment_persistence import (
@@ -26,6 +27,17 @@ class ShankSelectionState:
     shank_id: int
     alignment_key: AlignmentKey | None
     data_loaded: bool
+
+
+@dataclass(frozen=True)
+class ActiveProbeSelectionState:
+    """Read model for active probe/shank selector presentation."""
+
+    recording_id: str
+    probe_name: str
+    shanks: list[str]
+    n_shanks: int
+    output_directory: Path | None
 
 
 @dataclass(frozen=True)

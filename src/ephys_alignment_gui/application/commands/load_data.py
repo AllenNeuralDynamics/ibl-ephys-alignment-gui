@@ -24,7 +24,16 @@ from ephys_alignment_gui.application.results import (
 )
 from ephys_alignment_gui.application.workflow import Failed, PolicyResult
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_events import (
+    FreshLoadCompleted,
+    HistologyLoadReported,
+    LoadDataCancelled,
+    LoadDataFailed,
+    LoadDataProgressed,
+    StreamActivated,
+)
 from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.core.reference_line_capture import (
     REFERENCE_LINES_NOT_PROVIDED,
     ReferenceLineCapture,
@@ -45,7 +54,13 @@ from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
-from ephys_alignment_gui.runtime.histology_loader import HistologyRuntimeLoader
+from ephys_alignment_gui.runtime.histology_loader import (
+    HistologyDataAlreadyLoaded,
+    HistologyDataLoaded,
+    HistologyDataUnavailable,
+    HistologyLoadResult,
+    HistologyRuntimeLoader,
+)
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
@@ -68,6 +83,7 @@ class LoadDataCommandHandler:
     histology_runtime_loader: HistologyRuntimeLoader
     plot_payload_cache_factory: EphysPlotPayloadCacheFactory
     metadata_commands: MetadataSelectionCommandHandler
+    events: EventBus
 
     def can_load_data(self) -> PolicyResult:
         """Return whether the selected stream can be loaded."""
@@ -204,11 +220,38 @@ class LoadDataCommandHandler:
         cancel_token: LoadDataCancelToken | None = None,
     ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
         """Run the fresh load job without activating the loaded stream."""
-        return self.load_data_job.run(
+        job_result = self.load_data_job.run(
             LoadDataJobRequest(prepared.target),
-            progress=progress,
+            progress=self._fresh_load_progress_callback(prepared, progress),
             cancel_token=cancel_token,
         )
+        if isinstance(job_result, Failed):
+            self.events.emit(
+                LoadDataFailed(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    message=job_result.message,
+                )
+            )
+        elif isinstance(job_result, LoadDataJobCancelled):
+            self.events.emit(
+                LoadDataCancelled(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    reason=job_result.reason,
+                )
+            )
+        else:
+            self.events.emit(
+                FreshLoadCompleted(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    warning_messages=tuple(
+                        warning.message for warning in job_result.warnings
+                    ),
+                )
+            )
+        return job_result
 
     def activate_completed_fresh_load_data(
         self,
@@ -218,16 +261,33 @@ class LoadDataCommandHandler:
         """Cache/activate completed fresh-load data if its target is still current."""
         stale = self._stale_fresh_load_reason(prepared, job_result)
         if stale is not None:
+            self.events.emit(
+                LoadDataFailed(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    message=stale,
+                )
+            )
             return Failed(stale)
 
         self.histology_runtime_loader.activate_result(
             job_result.histology,
             mouse_root=prepared.target.mouse_root,
         )
+        self._emit_histology_report(prepared, job_result.histology)
         ephys_result = self._cache_loaded_probe_data(
             job_result.ephys,
             shank_idx=prepared.shank_idx,
             activate=True,
+        )
+        self.events.emit(
+            StreamActivated(
+                source="fresh",
+                stream_key=prepared.target.stream_key,
+                shank_idx=prepared.shank_idx,
+                active_key=self.controller.document.selected_alignment_key,
+                preserve_plot_selection=prepared.preserve_plot_selection,
+            )
         )
         return LoadDataFreshCompleted(
             stream_key=prepared.stream_key,
@@ -309,6 +369,15 @@ class LoadDataCommandHandler:
             return Failed(f"Failed to restore cached stream runtime: {exc}")
 
         self.controller.finish_load_data(shank_idx)
+        self.events.emit(
+            StreamActivated(
+                source="cached",
+                stream_key=stream_key,
+                shank_idx=shank_idx,
+                active_key=self.controller.document.selected_alignment_key,
+                preserve_plot_selection=True,
+            )
+        )
         return CachedEphysDataActivated(
             stream_runtime=stream_runtime,
             shank_idx=shank_idx,
@@ -405,6 +474,57 @@ class LoadDataCommandHandler:
             return "Loaded data target is stale; selected mouse root changed."
 
         return None
+
+    def _fresh_load_progress_callback(
+        self,
+        prepared: LoadDataFreshPrepared,
+        progress: LoadDataProgressCallback | None,
+    ) -> LoadDataProgressCallback:
+        """Return a progress callback that also emits app-level load events."""
+
+        def _emit_progress(event) -> None:
+            self.events.emit(
+                LoadDataProgressed(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    phase=event.phase,
+                    status=event.status,
+                    message=event.message,
+                )
+            )
+            if progress is not None:
+                progress(event)
+
+        return _emit_progress
+
+    def _emit_histology_report(
+        self,
+        prepared: LoadDataFreshPrepared,
+        histology: HistologyLoadResult,
+    ) -> None:
+        """Emit a semantic event for non-fatal histology load availability."""
+        if isinstance(histology, HistologyDataAlreadyLoaded):
+            event = HistologyLoadReported(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                status="already_loaded",
+            )
+        elif isinstance(histology, HistologyDataLoaded):
+            event = HistologyLoadReported(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                status="loaded",
+            )
+        elif isinstance(histology, HistologyDataUnavailable):
+            event = HistologyLoadReported(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                status="unavailable",
+                message=histology.message,
+            )
+        else:
+            return
+        self.events.emit(event)
 
     def _stream_key_for_selection(
         self,

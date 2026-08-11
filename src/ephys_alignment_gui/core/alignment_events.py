@@ -42,3 +42,68 @@ class ShankChanged:
     active_key: AlignmentKey | None
     data_loaded: bool
     preserve_plot_selection: bool | None = None
+
+
+StreamActivationSource = Literal["cached", "fresh"]
+LoadDataPhase = Literal["ephys", "histology", "complete", "cancelled"]
+LoadDataStatus = Literal["started", "completed", "warning", "cancelled"]
+HistologyLoadStatus = Literal["already_loaded", "loaded", "unavailable"]
+
+
+@dataclass(frozen=True)
+class StreamActivated:
+    """Payload emitted after a stream/shank becomes active runtime state."""
+
+    source: StreamActivationSource
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    active_key: AlignmentKey | None
+    preserve_plot_selection: bool | None = None
+
+
+@dataclass(frozen=True)
+class LoadDataProgressed:
+    """Payload emitted as a fresh stream load advances."""
+
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    phase: LoadDataPhase
+    status: LoadDataStatus
+    message: str
+
+
+@dataclass(frozen=True)
+class FreshLoadCompleted:
+    """Payload emitted after fresh heavy ephys/histology IO completes."""
+
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    warning_messages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LoadDataFailed:
+    """Payload emitted when a fresh load or activation fails."""
+
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    message: str
+
+
+@dataclass(frozen=True)
+class LoadDataCancelled:
+    """Payload emitted when a fresh load is cancelled."""
+
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class HistologyLoadReported:
+    """Payload emitted after fresh-load histology availability is known."""
+
+    stream_key: tuple[str, str] | None
+    shank_idx: int
+    status: HistologyLoadStatus
+    message: str | None = None

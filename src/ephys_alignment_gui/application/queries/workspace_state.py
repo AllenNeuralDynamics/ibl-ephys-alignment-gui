@@ -10,7 +10,10 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.application.queries.context import AlignmentQueryContext
-from ephys_alignment_gui.application.results import ShankSelectionState
+from ephys_alignment_gui.application.results import (
+    ActiveProbeSelectionState,
+    ShankSelectionState,
+)
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
@@ -41,6 +44,26 @@ class WorkspaceStateQueries:
             shank_id=shank_idx + 1,
             alignment_key=self.context.document.selected_alignment_key,
             data_loaded=self.context.document.data_loaded,
+        )
+
+    def active_probe_selection_state(self) -> ActiveProbeSelectionState | None:
+        """Return selected probe metadata needed by desktop selectors."""
+        document = self.context.document
+        if document.selected_recording is None or document.selected_probe is None:
+            return None
+
+        shanks: list[str] = []
+        n_shanks = 0
+        if self.data_context is not None:
+            shanks = self.data_context.shank_labels()
+            n_shanks = self.data_context.n_shanks
+
+        return ActiveProbeSelectionState(
+            recording_id=document.selected_recording,
+            probe_name=document.selected_probe,
+            shanks=shanks,
+            n_shanks=n_shanks,
+            output_directory=document.output_directory,
         )
 
     def active_reference_line_state(

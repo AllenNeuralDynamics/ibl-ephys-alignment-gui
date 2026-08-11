@@ -121,8 +121,14 @@ class FakeHistologyDisplay:
 
 
 class FakeLoadDataPresenter:
-    def __init__(self) -> None:
+    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
         self.load_count = 0
+        self.subscriptions = subscriptions or []
+        self.connect_count = 0
+
+    def connect_load_events(self) -> list[FakeSubscription]:
+        self.connect_count += 1
+        return self.subscriptions
 
     def load_heavy_data(self) -> bool:
         self.load_count += 1
@@ -557,23 +563,32 @@ def _workbench(
 def test_workbench_owns_event_subscription_lifecycle() -> None:
     alignment_sub = FakeSubscription()
     shank_sub = FakeSubscription()
+    load_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
-    workbench = _workbench(alignment, shank, FakeHistologyDisplay())
+    load_data = FakeLoadDataPresenter([load_sub])
+    workbench = _workbench(
+        alignment,
+        shank,
+        FakeHistologyDisplay(),
+        load_data=load_data,
+    )
 
     subscriptions = workbench.connect_events()
     second_connect = workbench.connect_events()
 
-    assert subscriptions == [alignment_sub, shank_sub]
+    assert subscriptions == [alignment_sub, shank_sub, load_sub]
     assert second_connect == subscriptions
     assert alignment.connect_count == 1
     assert shank.connect_count == 1
+    assert load_data.connect_count == 1
 
     workbench.disconnect_events()
     workbench.disconnect_events()
 
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
+    assert load_sub.disconnect_count == 1
 
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:

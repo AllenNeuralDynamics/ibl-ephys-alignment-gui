@@ -17,6 +17,15 @@ from ephys_alignment_gui.application.results import (
 )
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.alignment_events import (
+    FreshLoadCompleted,
+    HistologyLoadReported,
+    LoadDataCancelled,
+    LoadDataFailed,
+    LoadDataProgressed,
+    StreamActivated,
+)
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.presenters.load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
@@ -58,21 +67,33 @@ class FakeQueries:
         self.shank_idx = shank_idx
         self.workspace = SimpleNamespace(
             active_shank_selection=self.active_shank_selection,
+            active_probe_selection_state=self.active_probe_selection_state,
         )
 
     def active_shank_selection(self):
         return SimpleNamespace(shank_idx=self.shank_idx)
+
+    def active_probe_selection_state(self):
+        return SimpleNamespace(
+            recording_id="rec",
+            probe_name="probeA",
+            shanks=["1/2", "2/2"],
+            n_shanks=2,
+            output_directory=Path("/tmp/out"),
+        )
 
 
 class FakeCommands:
     def __init__(
         self,
         *,
+        events: EventBus | None = None,
         begin_result: Any | None = None,
         job_result: Any | None = None,
         complete_result: Any | None = None,
         probe_cache_result: Any | None = None,
     ) -> None:
+        self.events = events
         self.begin_result = begin_result or _fresh_prepared(shank_idx=0)
         self.job_result = job_result or _job_completed()
         self.complete_result = complete_result or _fresh_completed(shank_idx=0)
@@ -87,20 +108,25 @@ class FakeCommands:
 
     def begin_load_data(self, **kwargs):
         self.begin_calls.append(kwargs)
+        self._emit_activation_for_result(self.begin_result)
         return self.begin_result
 
     def run_fresh_load_data(self, prepared: LoadDataFreshPrepared, **kwargs):
         self.run_calls.append(prepared)
-        progress = kwargs.get("progress")
-        if callable(progress):
-            progress(
-                LoadDataJobProgress(
-                    target=prepared.target,
-                    phase="ephys",
-                    status="started",
-                    message="Loading ephys data...",
-                )
+        self._emit_load_data_progress(
+            LoadDataJobProgress(
+                target=prepared.target,
+                phase="ephys",
+                status="started",
+                message="Loading ephys data...",
             )
+        )
+        if isinstance(self.job_result, Failed):
+            self._emit_load_data_failed(self.job_result.message, prepared)
+        elif isinstance(self.job_result, LoadDataJobCancelled):
+            self._emit_load_data_cancelled(self.job_result.reason, prepared)
+        else:
+            self._emit_fresh_load_completed(prepared)
         return self.job_result
 
     def activate_completed_fresh_load_data(
@@ -109,11 +135,119 @@ class FakeCommands:
         job_result: Any,
     ):
         self.activate_calls.append((prepared, job_result))
+        if isinstance(self.complete_result, Failed):
+            self._emit_load_data_failed(self.complete_result.message, prepared)
+            return self.complete_result
+        self._emit_histology_report(self.complete_result, prepared)
+        self._emit_activation_for_result(self.complete_result)
         return self.complete_result
 
     def activate_cached_probe_selection(self, **kwargs):
         self.probe_cache_calls.append(kwargs)
+        self._emit_activation_for_result(self.probe_cache_result)
         return self.probe_cache_result
+
+    def _emit_activation_for_result(self, result: Any) -> None:
+        if self.events is None:
+            return
+        if isinstance(result, LoadDataCachedActivated):
+            self.events.emit(
+                StreamActivated(
+                    source="cached",
+                    stream_key=result.stream_key,
+                    shank_idx=result.activated.shank_idx,
+                    active_key=None,
+                    preserve_plot_selection=True,
+                )
+            )
+        if isinstance(result, LoadDataFreshCompleted):
+            self.events.emit(
+                StreamActivated(
+                    source="fresh",
+                    stream_key=result.stream_key,
+                    shank_idx=result.ephys.shank_idx,
+                    active_key=None,
+                    preserve_plot_selection=result.preserve_plot_selection,
+                )
+            )
+
+    def _emit_load_data_progress(self, progress: LoadDataJobProgress) -> None:
+        if self.events is None:
+            return
+        self.events.emit(
+            LoadDataProgressed(
+                stream_key=progress.target.stream_key,
+                shank_idx=progress.target.shank_idx,
+                phase=progress.phase,
+                status=progress.status,
+                message=progress.message,
+            )
+        )
+
+    def _emit_fresh_load_completed(self, prepared: LoadDataFreshPrepared) -> None:
+        if self.events is None:
+            return
+        self.events.emit(
+            FreshLoadCompleted(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+            )
+        )
+
+    def _emit_load_data_failed(
+        self,
+        message: str,
+        prepared: LoadDataFreshPrepared,
+    ) -> None:
+        if self.events is None:
+            return
+        self.events.emit(
+            LoadDataFailed(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                message=message,
+            )
+        )
+
+    def _emit_load_data_cancelled(
+        self,
+        reason: str,
+        prepared: LoadDataFreshPrepared,
+    ) -> None:
+        if self.events is None:
+            return
+        self.events.emit(
+            LoadDataCancelled(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                reason=reason,
+            )
+        )
+
+    def _emit_histology_report(
+        self,
+        result: LoadDataFreshCompleted,
+        prepared: LoadDataFreshPrepared,
+    ) -> None:
+        if self.events is None:
+            return
+        if isinstance(result.histology, HistologyDataUnavailable):
+            self.events.emit(
+                HistologyLoadReported(
+                    stream_key=prepared.stream_key,
+                    shank_idx=prepared.shank_idx,
+                    status="unavailable",
+                    message=result.histology.message,
+                )
+            )
+            return
+        self.events.emit(
+            HistologyLoadReported(
+                stream_key=prepared.stream_key,
+                shank_idx=prepared.shank_idx,
+                status="loaded",
+            )
+        )
 
 
 class FakeSelectionView:
@@ -228,12 +362,16 @@ def _presenter(
     calls: list[tuple] | None = None,
 ) -> tuple[DesktopLoadDataPresenter, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
+    events = EventBus()
     queries = FakeQueries()
     commands = commands or FakeCommands(begin_result=begin_result)
-    app = SimpleNamespace(queries=queries, commands=commands)
+    commands.events = events
+    app = SimpleNamespace(events=events, queries=queries, commands=commands)
     selection_view = FakeSelectionView(calls)
+    presenter = DesktopLoadDataPresenter(app, selection_view, _callbacks(calls))
+    presenter.connect_load_events()
     return (
-        DesktopLoadDataPresenter(app, selection_view, _callbacks(calls)),
+        presenter,
         commands,
         queries,
         calls,

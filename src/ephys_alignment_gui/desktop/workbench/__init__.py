@@ -76,6 +76,9 @@ class DesktopWorkbench:
         self._event_subscriptions.extend(
             self.render_cluster.shank_presenter.connect_shank_events()
         )
+        self._event_subscriptions.extend(
+            self.presenter_cluster.load_data_presenter.connect_load_events()
+        )
         return list(self._event_subscriptions)
 
     def disconnect_events(self) -> None:

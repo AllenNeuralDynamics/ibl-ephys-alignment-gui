@@ -171,6 +171,7 @@ class AlignmentWorkspace:
             histology_runtime_loader=self.histology_runtime_loader,
             plot_payload_cache_factory=self.plot_payload_cache_factory,
             metadata_commands=self.metadata_commands,
+            events=self.events,
         )
         self.loaded_shank_commands = LoadedShankCommandHandler(
             controller=self.controller,
