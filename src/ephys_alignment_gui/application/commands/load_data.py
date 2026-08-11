@@ -30,6 +30,10 @@ from ephys_alignment_gui.application.results import (
 from ephys_alignment_gui.application.results import (
     StreamCacheEvicted as StreamCacheEvictedResult,
 )
+from ephys_alignment_gui.application.save_runtime_dependencies import (
+    describe_save_runtime_dependencies,
+    plan_save_runtime_dependencies,
+)
 from ephys_alignment_gui.application.workflow import Failed, PolicyResult
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_events import (
@@ -439,8 +443,21 @@ class LoadDataCommandHandler:
         self.events.emit(StreamDetached(cached_stream_count=result.cached_stream_count))
         return result
 
-    def evict_stream_cache(self) -> StreamCacheEvictedResult:
+    def evict_stream_cache(self) -> StreamCacheEvictedResult | Failed:
         """Evict cached stream runtimes for a recording/session transition."""
+        dependency_plan = plan_save_runtime_dependencies(
+            document=self.controller.document,
+            data_context=self.data_context,
+            runtime=self.runtime,
+        )
+        protected = dependency_plan.eviction_protected
+        if protected:
+            return Failed(
+                "Cannot evict loaded stream runtimes while edited alignments "
+                "depend on them. Save or discard edits first: "
+                f"{describe_save_runtime_dependencies(protected)}."
+            )
+
         evicted_stream_count = len(self.runtime.stream_cache)
         self.runtime.clear_stream_cache()
         self.display_state.reset_for_active_stream()

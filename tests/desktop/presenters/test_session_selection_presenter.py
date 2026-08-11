@@ -40,8 +40,14 @@ class FakeSelectionView:
 
 
 class FakeCommands:
-    def __init__(self, result: Any | None = None) -> None:
+    def __init__(
+        self,
+        result: Any | None = None,
+        *,
+        evict_result: Any | None = None,
+    ) -> None:
         self.result = result or RecordingSelected("rec", ["probeA", "probeB"])
+        self.evict_result = evict_result
         self.calls: list[str] = []
         self.ui_calls: list[tuple] | None = None
         self.metadata = self
@@ -51,9 +57,10 @@ class FakeCommands:
         self.calls.append(recording_id)
         return self.result
 
-    def evict_stream_cache(self) -> None:
+    def evict_stream_cache(self) -> Any:
         if self.ui_calls is not None:
             self.ui_calls.append(("evict-app",))
+        return self.evict_result
 
 
 def _presenter(
@@ -148,4 +155,15 @@ def test_session_selected_failure_does_not_mutate_selection_view() -> None:
     assert not presenter.session_selected()
 
     assert commands.calls == ["rec"]
+    assert calls == [("capture",), ("evict-app",)]
+
+
+def test_session_selected_stops_when_cache_eviction_is_blocked() -> None:
+    presenter, commands, calls = _presenter(
+        commands=FakeCommands(evict_result=Failed("dirty runtime"))
+    )
+
+    assert not presenter.session_selected()
+
+    assert commands.calls == []
     assert calls == [("capture",), ("evict-app",)]

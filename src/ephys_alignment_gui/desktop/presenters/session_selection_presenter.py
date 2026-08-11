@@ -41,7 +41,10 @@ class DesktopSessionSelectionPresenter:
             return False
 
         callbacks.capture_pending_reference_lines()
-        self.app.commands.load.evict_stream_cache()
+        evicted = self.app.commands.load.evict_stream_cache()
+        if isinstance(evicted, Failed):
+            logger.error(evicted.message)
+            return False
         result = self.app.commands.metadata.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)

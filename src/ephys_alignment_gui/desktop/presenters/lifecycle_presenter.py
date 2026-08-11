@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     StreamCacheEvicted,
     StreamDetached,
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -79,7 +83,9 @@ class DesktopLifecyclePresenter:
 
     def evict_stream_cache(self) -> None:
         """Evict app stream cache; event subscribers clear desktop state."""
-        self.app.commands.load.evict_stream_cache()
+        result = self.app.commands.load.evict_stream_cache()
+        if isinstance(result, Failed):
+            logger.error(result.message)
 
     def show_empty_state(self) -> None:
         """Show the desktop empty-state placeholder."""

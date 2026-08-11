@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     StreamCacheEvicted,
     StreamDetached,
@@ -16,9 +17,16 @@ from ephys_alignment_gui.desktop.presenters.lifecycle_presenter import (
 
 
 class FakeCommands:
-    def __init__(self, calls: list[tuple], events: EventBus) -> None:
+    def __init__(
+        self,
+        calls: list[tuple],
+        events: EventBus,
+        *,
+        evict_result=None,
+    ) -> None:
         self.calls = calls
         self.events = events
+        self.evict_result = evict_result
         self.load = self
 
     def detach_active_stream(self) -> None:
@@ -27,6 +35,8 @@ class FakeCommands:
 
     def evict_stream_cache(self) -> None:
         self.calls.append(("evict-app",))
+        if self.evict_result is not None:
+            return self.evict_result
         self.events.emit(StreamCacheEvicted(evicted_stream_count=2))
 
 
@@ -39,7 +49,11 @@ class FakeDisplaySection:
         self.calls.append(("clear", self.name))
 
 
-def _presenter(calls: list[tuple]) -> DesktopLifecyclePresenter:
+def _presenter(
+    calls: list[tuple],
+    *,
+    evict_result=None,
+) -> DesktopLifecyclePresenter:
     events = EventBus()
     displays = SimpleNamespace(
         reference_lines=FakeDisplaySection(calls, "reference-lines"),
@@ -54,7 +68,10 @@ def _presenter(calls: list[tuple]) -> DesktopLifecyclePresenter:
         collect_garbage=lambda: calls.append(("gc",)),
     )
     return DesktopLifecyclePresenter(
-        app=SimpleNamespace(events=events, commands=FakeCommands(calls, events)),
+        app=SimpleNamespace(
+            events=events,
+            commands=FakeCommands(calls, events, evict_result=evict_result),
+        ),
         displays=displays,
         callbacks=callbacks,
     )
@@ -112,3 +129,13 @@ def test_evict_stream_cache_clears_app_cache_and_desktop_state() -> None:
         ("reset-raw-images",),
         ("gc",),
     ]
+
+
+def test_evict_stream_cache_blocked_does_not_clear_desktop_state() -> None:
+    calls: list[tuple] = []
+    presenter = _presenter(calls, evict_result=Failed("dirty runtime"))
+    presenter.connect_lifecycle_events()
+
+    presenter.evict_stream_cache()
+
+    assert calls == [("evict-app",)]

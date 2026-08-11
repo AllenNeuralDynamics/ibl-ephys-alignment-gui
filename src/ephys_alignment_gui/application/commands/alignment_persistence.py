@@ -17,6 +17,9 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
     NoPreviousAlignments,
 )
+from ephys_alignment_gui.application.save_runtime_dependencies import (
+    plan_save_runtime_dependencies,
+)
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
@@ -278,6 +281,15 @@ class AlignmentPersistenceCommandHandler:
         if not states_by_key:
             return {}
 
+        runtime_plan = plan_save_runtime_dependencies(
+            document=self.controller.document,
+            data_context=self.data_context,
+            runtime=self.runtime,
+        )
+        if runtime_plan.unavailable:
+            return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
+        runtime_by_key = runtime_plan.by_key
+
         save_inputs: dict[AlignmentKey, AlignmentSaveInput] = {}
         for key, state in sorted(
             states_by_key.items(),
@@ -291,13 +303,9 @@ class AlignmentPersistenceCommandHandler:
             if alignment is None:
                 continue
 
-            stream_runtime = self._stream_runtime_for_key(key)
+            stream_runtime = runtime_by_key[key].stream_runtime
             if stream_runtime is None:
-                return Failed(
-                    "Cannot save edited alignment for "
-                    f"{key.recording_id}/{key.ephys_collection} shank "
-                    f"{key.shank_idx + 1}: stream runtime is not loaded."
-                )
+                return Failed("Cannot save alignment: stream runtime is not loaded.")
 
             shank_runtime = stream_runtime.shank_runtime_by_idx.get(key.shank_idx)
             if shank_runtime is None:
@@ -409,18 +417,6 @@ class AlignmentPersistenceCommandHandler:
             saved=saved,
             previous_alignments=persistable_alignments,
         )
-
-    def _stream_runtime_for_key(self, key: AlignmentKey) -> Any | None:
-        stream_key = (key.recording_id, key.ephys_collection)
-        stream_runtime = self.runtime.cached_stream(stream_key)
-        if stream_runtime is not None:
-            return stream_runtime
-        active = self.runtime.active_stream_runtime
-        if active is not None and getattr(active, "stream_key", None) == stream_key:
-            return active
-        if self.runtime.current_stream_key == stream_key:
-            return active
-        return None
 
     def _output_directory_for_key(self, key: AlignmentKey) -> Path | Failed:
         document = self.controller.document

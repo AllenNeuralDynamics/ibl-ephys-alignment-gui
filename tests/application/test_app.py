@@ -1198,6 +1198,48 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
     assert events == [StreamCacheEvictedEvent(evicted_stream_count=2)]
 
 
+def test_commands_evict_stream_cache_blocks_dirty_cached_runtime() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.alignment_state_for(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    runtime = FakeStreamRuntime(("rec", "stream"))
+    workspace.runtime.stream_cache[("rec", "stream")] = runtime
+    events: list[StreamCacheEvictedEvent] = []
+    workspace.app.events.subscribe(StreamCacheEvictedEvent, events.append)
+
+    result = workspace.app.commands.load.evict_stream_cache()
+
+    assert isinstance(result, Failed)
+    assert "Cannot evict loaded stream runtimes" in result.message
+    assert "rec/stream shank 1" in result.message
+    assert workspace.runtime.stream_cache[("rec", "stream")] is runtime
+    assert events == []
+
+
+def test_commands_evict_stream_cache_allows_dirty_missing_runtime() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.alignment_state_for(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    workspace.runtime.stream_cache[("rec", "other")] = FakeStreamRuntime(
+        ("rec", "other")
+    )
+
+    result = workspace.app.commands.load.evict_stream_cache()
+
+    assert isinstance(result, StreamCacheEvicted)
+    assert workspace.runtime.stream_cache == {}
+
+
 def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     workspace = AlignmentWorkspace()
     loaded_root = SimpleNamespace(root=tmp_path / "mouse", mouse_id="mouse")
@@ -1561,6 +1603,15 @@ def test_commands_save_edited_alignment_outputs_fails_for_dirty_missing_runtime(
 ) -> None:
     workspace = AlignmentWorkspace()
     workspace.document.output_directory = tmp_path
+    probe = _probe_info()
+    workspace.data_context.mouse_root = MouseRoot(
+        root=Path("/tmp/mouse"),
+        schema_version="3.1.0",
+        mouse_id="mouse",
+        transforms=None,
+        histology=None,
+        probes={"rec": {"probeA": probe}},
+    )
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
