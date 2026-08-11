@@ -168,6 +168,7 @@ class AlignmentWorkspace:
             display_state=self.display_state,
             runtime=self.runtime,
             load_data_job=self.load_data_job,
+            histology_runtime_loader=self.histology_runtime_loader,
             plot_payload_cache_factory=self.plot_payload_cache_factory,
             metadata_commands=self.metadata_commands,
         )

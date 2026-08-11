@@ -9,6 +9,7 @@ from typing import Any
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.services.ephys_data import (
     ChannelCollectionView,
     EphysDataService,
@@ -75,6 +76,22 @@ class EphysStreamLoader:
             channel_table=channel_table,
         )
         return self.from_stream(stream, shank_idx)
+
+    def load_target(self, target: LoadDataJobTarget) -> LoadedEphysSelection:
+        """Load ephys data for an immutable target snapshot."""
+        stream = self.ephys_data_service.load_stream_data(
+            target.probe_info,
+            channel_table=target.channel_table,
+        )
+        if stream.stream_key != target.stream_key:
+            raise ValueError(
+                "Loaded stream does not match requested target: "
+                f"{stream.stream_key!r} != {target.stream_key!r}"
+            )
+        return LoadedEphysSelection(
+            stream=stream,
+            channel_collection=stream.channel_collection(target.shank_idx),
+        )
 
     def from_stream(
         self,

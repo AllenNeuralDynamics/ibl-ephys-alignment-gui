@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ephys_alignment_gui.application.commands.metadata_selection import (
     MetadataSelectionCommandHandler,
@@ -32,11 +32,20 @@ from ephys_alignment_gui.core.reference_line_capture import (
 )
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.io.ephys_stream_loader import LoadedEphysSelection
-from ephys_alignment_gui.io.load_data_job import LoadDataJob, LoadDataJobRequest
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataCancelToken,
+    LoadDataJob,
+    LoadDataJobCancelled,
+    LoadDataJobCompleted,
+    LoadDataJobRequest,
+    LoadDataProgressCallback,
+)
+from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
 )
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
+from ephys_alignment_gui.runtime.histology_loader import HistologyRuntimeLoader
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
     LoadDataCachedStreamAvailable,
@@ -56,6 +65,7 @@ class LoadDataCommandHandler:
     display_state: AlignmentDisplayState
     runtime: SessionRuntime
     load_data_job: LoadDataJob
+    histology_runtime_loader: HistologyRuntimeLoader
     plot_payload_cache_factory: EphysPlotPayloadCacheFactory
     metadata_commands: MetadataSelectionCommandHandler
 
@@ -110,14 +120,25 @@ class LoadDataCommandHandler:
                 return result
             return LoadDataCachedActivated(stream_key=stream_key, activated=result)
 
+        target = self._fresh_load_target_for_selection(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=stream_key,
+            shank_idx=target_shank,
+        )
+        if isinstance(target, Failed):
+            return target
+
         prepared = self.prepare_fresh_ephys_load(stream_key)
         selected = self.controller.select_shank(target_shank)
         if isinstance(selected, Failed):
             return selected
+        target = replace(target, shank_idx=selected.shank_idx)
         return LoadDataFreshPrepared(
             stream_key=stream_key,
             shank_idx=selected.shank_idx,
             preserve_plot_selection=prepared.preserve_plot_selection,
+            target=target,
         )
 
     def activate_cached_probe_selection(
@@ -161,20 +182,76 @@ class LoadDataCommandHandler:
     def complete_fresh_load_data(
         self,
         prepared: LoadDataFreshPrepared,
-    ) -> LoadDataFreshCompleted | Failed:
-        """Run fresh ephys and histology load steps for a prepared transaction."""
-        job_result = self.load_data_job.run(LoadDataJobRequest(prepared.shank_idx))
-        if isinstance(job_result, Failed):
+        *,
+        progress: LoadDataProgressCallback | None = None,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> LoadDataFreshCompleted | LoadDataJobCancelled | Failed:
+        """Run and activate a fresh load transaction synchronously."""
+        job_result = self.run_fresh_load_data(
+            prepared,
+            progress=progress,
+            cancel_token=cancel_token,
+        )
+        if isinstance(job_result, Failed | LoadDataJobCancelled):
             return job_result
+        return self.activate_completed_fresh_load_data(prepared, job_result)
+
+    def run_fresh_load_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
+        """Run the fresh load job without activating the loaded stream."""
+        return self.load_data_job.run(
+            LoadDataJobRequest(prepared.target),
+            progress=progress,
+            cancel_token=cancel_token,
+        )
+
+    def activate_completed_fresh_load_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+        job_result: LoadDataJobCompleted,
+    ) -> LoadDataFreshCompleted | Failed:
+        """Cache/activate completed fresh-load data if its target is still current."""
+        stale = self._stale_fresh_load_reason(prepared, job_result)
+        if stale is not None:
+            return Failed(stale)
+
+        self.histology_runtime_loader.activate_result(
+            job_result.histology,
+            mouse_root=prepared.target.mouse_root,
+        )
         ephys_result = self._cache_loaded_probe_data(
             job_result.ephys,
             shank_idx=prepared.shank_idx,
+            activate=True,
         )
         return LoadDataFreshCompleted(
             stream_key=prepared.stream_key,
+            target=prepared.target,
             ephys=ephys_result,
             histology=job_result.histology,
             preserve_plot_selection=prepared.preserve_plot_selection,
+        )
+
+    def cache_completed_fresh_load_data(
+        self,
+        job_result: LoadDataJobCompleted,
+    ) -> FreshEphysDataLoaded | Failed:
+        """Cache a completed fresh-load result without activating it."""
+        if job_result.ephys.stream.stream_key != job_result.target.stream_key:
+            return Failed(
+                "Loaded stream does not match completed load target: "
+                f"{job_result.ephys.stream.stream_key!r} != "
+                f"{job_result.target.stream_key!r}"
+            )
+        return self._cache_loaded_probe_data(
+            job_result.ephys,
+            shank_idx=job_result.target.shank_idx,
+            activate=False,
         )
 
     def prepare_fresh_ephys_load(
@@ -243,18 +320,91 @@ class LoadDataCommandHandler:
         loaded: LoadedEphysSelection,
         *,
         shank_idx: int,
+        activate: bool,
     ) -> FreshEphysDataLoaded:
         """Insert loaded ephys data into runtime cache and mark document loaded."""
         stream_runtime = self.runtime.cache_loaded_stream_data(
             loaded.stream,
             self.plot_payload_cache_factory,
             shank_idx=shank_idx,
+            activate=activate,
         )
-        self.controller.finish_load_data(shank_idx)
+        if activate:
+            self.controller.finish_load_data(shank_idx)
         return FreshEphysDataLoaded(
             stream_runtime=stream_runtime,
             shank_idx=shank_idx,
         )
+
+    def _fresh_load_target_for_selection(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        stream_key: StreamKey | None,
+        shank_idx: int,
+    ) -> LoadDataJobTarget | Failed:
+        mouse_root = self.data_context.mouse_root
+        if mouse_root is None:
+            return Failed("Fresh load requires a loaded mouse root.")
+
+        probe = self.data_context.probe_info
+        if probe is None:
+            return Failed("Fresh load requires selected probe metadata.")
+        if probe.recording_id != recording_id or probe.probe_name != probe_name:
+            return Failed(
+                "Fresh load target does not match selected probe metadata: "
+                f"{recording_id}/{probe_name}"
+            )
+
+        channel_table = self.data_context.channel_table
+        if channel_table is None:
+            return Failed("Fresh load requires selected channel metadata.")
+
+        resolved_stream_key = stream_key or (probe.recording_id, probe.ephys_collection)
+        return LoadDataJobTarget(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=resolved_stream_key,
+            shank_idx=shank_idx,
+            mouse_root=mouse_root,
+            probe_info=probe,
+            channel_table=channel_table,
+        )
+
+    def _stale_fresh_load_reason(
+        self,
+        prepared: LoadDataFreshPrepared,
+        job_result: LoadDataJobCompleted,
+    ) -> str | None:
+        if not prepared.target.same_identity(job_result.target):
+            return "Loaded data target does not match the prepared load target."
+
+        current_stream_key = self._stream_key_for_selection(
+            prepared.target.recording_id,
+            prepared.target.probe_name,
+        )
+        if current_stream_key != prepared.target.stream_key:
+            return "Loaded data target is stale; selected stream changed."
+
+        current_probe = self.data_context.probe_info
+        if current_probe is None:
+            return "Loaded data target is stale; no probe is currently selected."
+        if (
+            current_probe.recording_id != prepared.target.recording_id
+            or current_probe.probe_name != prepared.target.probe_name
+            or current_probe.ephys_collection != prepared.target.stream_key[1]
+        ):
+            return "Loaded data target is stale; selected probe changed."
+
+        current_mouse_root = self.data_context.mouse_root
+        if (
+            current_mouse_root is None
+            or current_mouse_root.root != prepared.target.mouse_root.root
+        ):
+            return "Loaded data target is stale; selected mouse root changed."
+
+        return None
 
     def _stream_key_for_selection(
         self,

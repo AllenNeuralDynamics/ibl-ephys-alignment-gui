@@ -38,14 +38,37 @@ class HistologyDataContext:
     """Mutable holder for currently loaded histology runtime data."""
 
     runtime_data: HistologyRuntimeData | None = None
+    source_mouse_root: Path | None = None
 
-    def set(self, data: HistologyRuntimeData) -> None:
+    def set(
+        self,
+        data: HistologyRuntimeData,
+        *,
+        mouse_root: MouseRoot | Path | None = None,
+    ) -> None:
         """Store loaded histology runtime data."""
         self.runtime_data = data
+        if isinstance(mouse_root, MouseRoot):
+            self.source_mouse_root = mouse_root.root
+        elif mouse_root is not None:
+            self.source_mouse_root = Path(mouse_root)
+        else:
+            self.source_mouse_root = None
 
     def clear(self) -> None:
         """Clear loaded histology runtime data."""
         self.runtime_data = None
+        self.source_mouse_root = None
+
+    def is_loaded_for(self, mouse_root: MouseRoot | Path) -> bool:
+        """Return whether histology is loaded for one mouse root."""
+        if self.runtime_data is None:
+            return False
+        if self.source_mouse_root is None:
+            return True
+        if isinstance(mouse_root, MouseRoot):
+            return self.source_mouse_root == mouse_root.root
+        return self.source_mouse_root == Path(mouse_root)
 
     @property
     def brain_atlas(self) -> BrainAtlasAnatomical | None:
@@ -87,9 +110,7 @@ class HistologyDataService:
         # atlas-aligned axes. SPIM-native recovery (for saving xyz_picks and
         # composing with the ANTs CCF chain) is done via R^T through the
         # BrainAtlasAnatomical.unrotate_to_spim_native helper.
-        linear, _ = load_affine_matrix(
-            mouse_root.transforms.image_to_template_affine
-        )
+        linear, _ = load_affine_matrix(mouse_root.transforms.image_to_template_affine)
         # An ANTs 0GenericAffine.mat maps points fixed->moving. The
         # ls_to_template registration has fixed=template, moving=SPIM, so this
         # linear part is the template->SPIM map. We want to rotate SPIM data

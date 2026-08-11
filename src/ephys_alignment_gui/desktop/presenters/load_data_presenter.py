@@ -17,6 +17,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshRequiredResult,
 )
 from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.io.load_data_job import LoadDataJobCancelled
 from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
@@ -76,12 +77,25 @@ class DesktopLoadDataPresenter:
             logger.info("=== Starting heavy data load ===")
             callbacks.prepare_for_fresh_stream_load()
 
-            ctx.update_message("Loading ephys and histology data...")
             logger.info(
                 "Loading probe data, active shank index %s",
                 begin_result.shank_idx,
             )
-            completed = self.app.commands.load.complete_fresh_load_data(begin_result)
+            job_result = self.app.commands.load.run_fresh_load_data(
+                begin_result,
+                progress=lambda event: ctx.update_message(event.message),
+            )
+            if isinstance(job_result, Failed):
+                logger.error(job_result.message)
+                return False
+            if isinstance(job_result, LoadDataJobCancelled):
+                logger.info("Load cancelled: %s", job_result.reason)
+                return False
+
+            completed = self.app.commands.load.activate_completed_fresh_load_data(
+                begin_result,
+                job_result,
+            )
             if isinstance(completed, Failed):
                 logger.error(completed.message)
                 return False

@@ -131,11 +131,30 @@ class SessionRuntime:
         self.current_stream_key = stream_key
         return runtime
 
-    def cache_loaded_stream(self, runtime: EphysStreamRuntime) -> None:
-        """Cache a freshly loaded stream runtime and mark it active."""
+    def cache_loaded_stream(
+        self,
+        runtime: EphysStreamRuntime,
+        *,
+        activate: bool = True,
+    ) -> None:
+        """Cache a freshly loaded stream runtime and optionally mark it active."""
+        self.stream_cache[runtime.stream_key] = runtime
+        if activate:
+            self.active_stream_runtime = runtime
+            self.current_stream_key = runtime.stream_key
+
+    def activate_stream_runtime(
+        self,
+        runtime: EphysStreamRuntime,
+        *,
+        shank_idx: int,
+    ) -> EphysStreamRuntime:
+        """Activate a cached stream runtime after initializing one shank."""
+        runtime.shank_runtime_for(shank_idx)
         self.stream_cache[runtime.stream_key] = runtime
         self.active_stream_runtime = runtime
         self.current_stream_key = runtime.stream_key
+        return runtime
 
     def cache_loaded_stream_data(
         self,
@@ -143,6 +162,7 @@ class SessionRuntime:
         plot_payload_cache_factory: EphysPlotPayloadCacheFactory,
         *,
         shank_idx: int,
+        activate: bool = True,
     ) -> EphysStreamRuntime:
         """Build, cache, and initialize runtime ownership for a loaded stream."""
         runtime = EphysStreamRuntime(
@@ -150,5 +170,5 @@ class SessionRuntime:
             plot_payload_cache_factory=plot_payload_cache_factory,
         )
         runtime.shank_runtime_for(shank_idx)
-        self.cache_loaded_stream(runtime)
+        self.cache_loaded_stream(runtime, activate=activate)
         return runtime

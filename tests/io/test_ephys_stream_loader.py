@@ -8,8 +8,9 @@ import numpy as np
 import pytest
 
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.io.datapackage_loader import ProbeInfo
+from ephys_alignment_gui.io.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.io.ephys_stream_loader import EphysStreamLoader
+from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 
@@ -75,6 +76,48 @@ def test_ephys_stream_loader_loads_stream_and_active_collection(tmp_path) -> Non
     assert loaded.depths.tolist() == [0.0, 20.0]
     assert loaded.session_notes == "notes"
     assert loaded.alf_data is stream.alf_data
+    assert service.loaded_probe is probe
+    assert service.loaded_table is table
+
+
+def test_ephys_stream_loader_loads_immutable_target(tmp_path) -> None:
+    probe = _probe(tmp_path)
+    table = _channel_table()
+    stream = _stream(tmp_path, table)
+    context = AlignmentDataContext()
+
+    class FakeEphysDataService:
+        loaded_probe = None
+        loaded_table = None
+
+        def load_stream_data(self, selected_probe, channel_table=None):
+            self.loaded_probe = selected_probe
+            self.loaded_table = channel_table
+            return stream
+
+    service = FakeEphysDataService()
+    loader = EphysStreamLoader(context, service)
+    target = LoadDataJobTarget(
+        recording_id="rec1",
+        probe_name="probeA",
+        stream_key=("rec1", "streamA"),
+        shank_idx=1,
+        mouse_root=MouseRoot(
+            root=tmp_path,
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=None,
+            histology=None,
+            probes={},
+        ),
+        probe_info=probe,
+        channel_table=table,
+    )
+
+    loaded = loader.load_target(target)
+
+    assert loaded.stream is stream
+    assert loaded.channel_collection.rows.tolist() == [2, 3]
     assert service.loaded_probe is probe
     assert service.loaded_table is table
 

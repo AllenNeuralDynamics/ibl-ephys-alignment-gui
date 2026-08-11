@@ -13,6 +13,7 @@ from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_state import PendingReferenceLines
 from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.histology_loader import HistologyLoadResult
 
@@ -165,6 +166,7 @@ class LoadDataFreshPrepared:
     stream_key: StreamKey | None
     shank_idx: int
     preserve_plot_selection: bool
+    target: LoadDataJobTarget
 
 
 @dataclass(frozen=True)
@@ -180,6 +182,7 @@ class LoadDataFreshCompleted:
     """Fresh ephys data and subject histology load steps completed."""
 
     stream_key: StreamKey | None
+    target: LoadDataJobTarget
     ephys: FreshEphysDataLoaded
     histology: HistologyLoadResult
     preserve_plot_selection: bool

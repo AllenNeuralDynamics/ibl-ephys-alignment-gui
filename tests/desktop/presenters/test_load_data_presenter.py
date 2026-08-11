@@ -21,6 +21,10 @@ from ephys_alignment_gui.desktop.presenters.load_data_presenter import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataPresenter,
 )
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataJobCancelled,
+    LoadDataJobProgress,
+)
 from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
@@ -65,16 +69,19 @@ class FakeCommands:
         self,
         *,
         begin_result: Any | None = None,
+        job_result: Any | None = None,
         complete_result: Any | None = None,
         probe_cache_result: Any | None = None,
     ) -> None:
         self.begin_result = begin_result or _fresh_prepared(shank_idx=0)
+        self.job_result = job_result or _job_completed()
         self.complete_result = complete_result or _fresh_completed(shank_idx=0)
         self.probe_cache_result = probe_cache_result or LoadDataFreshRequiredResult(
             ("rec", "stream"), 0
         )
         self.begin_calls: list[dict[str, Any]] = []
-        self.complete_calls: list[LoadDataFreshPrepared] = []
+        self.run_calls: list[LoadDataFreshPrepared] = []
+        self.activate_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
         self.load = self
 
@@ -82,8 +89,26 @@ class FakeCommands:
         self.begin_calls.append(kwargs)
         return self.begin_result
 
-    def complete_fresh_load_data(self, prepared: LoadDataFreshPrepared):
-        self.complete_calls.append(prepared)
+    def run_fresh_load_data(self, prepared: LoadDataFreshPrepared, **kwargs):
+        self.run_calls.append(prepared)
+        progress = kwargs.get("progress")
+        if callable(progress):
+            progress(
+                LoadDataJobProgress(
+                    target=prepared.target,
+                    phase="ephys",
+                    status="started",
+                    message="Loading ephys data...",
+                )
+            )
+        return self.job_result
+
+    def activate_completed_fresh_load_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+        job_result: Any,
+    ):
+        self.activate_calls.append((prepared, job_result))
         return self.complete_result
 
     def activate_cached_probe_selection(self, **kwargs):
@@ -149,7 +174,17 @@ def _fresh_prepared(
         stream_key=("rec", "stream"),
         shank_idx=shank_idx,
         preserve_plot_selection=preserve_plot_selection,
+        target=SimpleNamespace(
+            recording_id="rec",
+            probe_name="probeA",
+            stream_key=("rec", "stream"),
+            shank_idx=shank_idx,
+        ),
     )
+
+
+def _job_completed() -> SimpleNamespace:
+    return SimpleNamespace(label="job-completed")
 
 
 def _fresh_completed(
@@ -163,6 +198,7 @@ def _fresh_completed(
     )
     return LoadDataFreshCompleted(
         stream_key=("rec", "stream"),
+        target=SimpleNamespace(label="target"),
         ephys=FreshEphysDataLoaded(
             stream_runtime=stream_runtime,
             shank_idx=shank_idx,
@@ -220,7 +256,8 @@ def test_load_heavy_data_skips_already_active_stream_shank() -> None:
             "outgoing_reference_lines": ([1.0], [2.0]),
         }
     ]
-    assert commands.complete_calls == []
+    assert commands.run_calls == []
+    assert commands.activate_calls == []
     assert calls == [("positions",)]
 
 
@@ -294,9 +331,10 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
 
     assert presenter.load_heavy_data()
 
-    assert commands.complete_calls == [prepared]
+    assert commands.run_calls == [prepared]
+    assert commands.activate_calls == [(prepared, commands.job_result)]
     assert ("prepare-fresh",) in calls
-    assert ("message", "Loading ephys and histology data...") in calls
+    assert ("message", "Loading ephys data...") in calls
     assert ("message", "Setting up visualization...") in calls
     assert ("render-shank", 0, True) in calls
     assert ("clear-empty",) in calls
@@ -318,6 +356,26 @@ def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
     assert presenter.load_heavy_data()
 
     assert ("render-shank", 0, True) in calls
+
+
+def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    presenter, commands, _queries, calls = _presenter(
+        begin_result=prepared,
+        commands=FakeCommands(
+            begin_result=prepared,
+            job_result=LoadDataJobCancelled(
+                target=prepared.target,
+                reason="new probe selected",
+            ),
+        ),
+    )
+
+    assert not presenter.load_heavy_data()
+
+    assert commands.run_calls == [prepared]
+    assert commands.activate_calls == []
+    assert ("render-shank", 0, True) not in calls
 
 
 def test_probe_selection_returns_false_on_cached_command_failure() -> None:

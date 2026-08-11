@@ -125,6 +125,23 @@ def test_cache_loaded_stream_data_builds_runtime_and_initializes_shank() -> None
     assert 1 in stream_runtime.shank_runtime_by_idx
 
 
+def test_cache_loaded_stream_data_can_store_without_activation() -> None:
+    runtime = SessionRuntime()
+    stream = _stream_runtime().stream
+
+    stream_runtime = runtime.cache_loaded_stream_data(
+        stream,
+        FakePlotPayloadCacheFactory(),
+        shank_idx=1,
+        activate=False,
+    )
+
+    assert runtime.stream_cache[("rec1", "streamA")] is stream_runtime
+    assert runtime.active_stream_runtime is None
+    assert runtime.current_stream_key is None
+    assert stream_runtime.current_shank_idx == 1
+
+
 def test_cache_loaded_stream_data_skips_cache_on_shank_init_failure() -> None:
     runtime = SessionRuntime()
     stream = _stream_runtime().stream
