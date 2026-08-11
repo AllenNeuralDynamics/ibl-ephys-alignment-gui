@@ -23,42 +23,77 @@ class FakeQueries:
         *,
         probe_extent: Any = "probe_extent",
         fit_state: Any = "fit_state",
+        nearby_state: Any = "nearby_state",
     ) -> None:
         self.render_state = render_state
         self.probe_extent = probe_extent
         self.fit_state = fit_state
-        self.histology_state = (
+        self.nearby_state = nearby_state
+        self.screen_state = (
             None
-            if render_state is None
-            else SimpleNamespace(
-                key=render_state.key,
-                histology=render_state.histology,
-                probe_extent=probe_extent,
-            )
+            if render_state is None or probe_extent is None or fit_state is None
+            else self._screen_state(render_state, nearby=None)
+        )
+        self.nearby_screen_state = (
+            None
+            if self.screen_state is None
+            else self._screen_state(render_state, nearby=nearby_state)
         )
         self.calls: list[Any] = []
         self.alignment_render = SimpleNamespace(
             active_alignment_render_state=self.active_alignment_render_state,
-            active_histology_panel_state=self.active_histology_panel_state,
-            probe_extent_render_state=self.probe_extent_render_state,
-            active_fit_plot_state=self.active_fit_plot_state,
+            active_histology_screen_state=self.active_histology_screen_state,
+            active_nearby_boundary_screen_state=(
+                self.active_nearby_boundary_screen_state
+            ),
+            histology_screen_state_for_alignment=(
+                self.histology_screen_state_for_alignment
+            ),
+        )
+
+    def _screen_state(
+        self,
+        render_state: ActiveAlignmentRenderState,
+        *,
+        nearby: Any,
+    ) -> Any:
+        return SimpleNamespace(
+            histology=SimpleNamespace(
+                key=render_state.key,
+                histology=render_state.histology,
+                probe_extent=self.probe_extent,
+            ),
+            scale_factor=SimpleNamespace(
+                key=render_state.key,
+                region=render_state.histology.scale.region,
+                scale=render_state.histology.scale.scale,
+                probe_extent=self.probe_extent,
+            ),
+            fit=self.fit_state,
+            nearby=nearby,
         )
 
     def active_alignment_render_state(self) -> ActiveAlignmentRenderState | None:
         self.calls.append("active_alignment_render_state")
         return self.render_state
 
-    def active_histology_panel_state(self, **kwargs: Any) -> Any:
-        self.calls.append(("active_histology", kwargs))
-        return self.histology_state
+    def active_histology_screen_state(self, **kwargs: Any) -> Any:
+        self.calls.append(("active_histology_screen", kwargs))
+        return self.screen_state
 
-    def probe_extent_render_state(self, active_alignment: Any, **kwargs: Any) -> Any:
-        self.calls.append(("probe_extent", active_alignment, kwargs))
-        return self.probe_extent
+    def active_nearby_boundary_screen_state(self, **kwargs: Any) -> Any:
+        self.calls.append(("active_nearby_boundary_screen", kwargs))
+        return self.nearby_screen_state
 
-    def active_fit_plot_state(self, *, depth_um: Any, lin_fit: bool) -> Any:
-        self.calls.append(("fit", depth_um, lin_fit))
-        return self.fit_state
+    def histology_screen_state_for_alignment(
+        self,
+        render_state: ActiveAlignmentRenderState,
+        **kwargs: Any,
+    ) -> Any:
+        self.calls.append(("histology_screen_for_alignment", render_state, kwargs))
+        if self.probe_extent is None or self.fit_state is None:
+            return None
+        return self._screen_state(render_state, nearby=None)
 
 
 class FakePanel:
@@ -142,15 +177,16 @@ def test_render_alignment_edit_updates_histology_scale_and_fit() -> None:
     assert rendered is True
     assert queries.calls == [
         (
-            "probe_extent",
-            render_state.active_alignment,
+            "histology_screen_for_alignment",
+            render_state,
             {
                 "probe_tip_um": 0.0,
                 "probe_top_um": 3840.0,
                 "probe_extra_um": 100.0,
+                "depth_um": "depth",
+                "lin_fit": False,
             },
-        ),
-        ("fit", "depth", False),
+        )
     ]
     assert panel.calls == [
         ("aligned", render_state.histology, "probe_extent", None, True),
@@ -169,14 +205,15 @@ def test_render_active_panels_updates_reference_aligned_scale_and_fit() -> None:
     assert rendered is True
     assert queries.calls == [
         (
-            "active_histology",
+            "active_histology_screen",
             {
                 "probe_tip_um": 0.0,
                 "probe_top_um": 3840.0,
                 "probe_extra_um": 100.0,
+                "depth_um": "depth",
+                "lin_fit": False,
             },
-        ),
-        ("fit", "depth", False),
+        )
     ]
     assert panel.calls == [
         ("reference", render_state.histology, "probe_extent", None, False),
@@ -196,11 +233,13 @@ def test_render_active_aligned_noops_without_active_alignment() -> None:
     assert rendered is False
     assert queries.calls == [
         (
-            "active_histology",
+            "active_histology_screen",
             {
                 "probe_tip_um": 0.0,
                 "probe_top_um": 3840.0,
                 "probe_extra_um": 100.0,
+                "depth_um": "depth",
+                "lin_fit": False,
             },
         )
     ]
@@ -217,12 +256,14 @@ def test_render_alignment_edit_noops_without_probe_extent() -> None:
     assert rendered is False
     assert queries.calls == [
         (
-            "probe_extent",
-            render_state.active_alignment,
+            "histology_screen_for_alignment",
+            render_state,
             {
                 "probe_tip_um": 0.0,
                 "probe_top_um": 3840.0,
                 "probe_extra_um": 100.0,
+                "depth_um": "depth",
+                "lin_fit": False,
             },
         )
     ]

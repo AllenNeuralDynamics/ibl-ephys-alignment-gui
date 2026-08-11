@@ -76,6 +76,16 @@ class FitPlotRenderState:
 
 
 @dataclass(frozen=True)
+class ActiveHistologyScreenState:
+    """Histology, scale, fit, and optional nearby-boundary screen data."""
+
+    histology: HistologyPanelRenderState
+    scale_factor: ScaleFactorRenderState
+    fit: FitPlotRenderState
+    nearby: NearbyBoundaryRenderState | None = None
+
+
+@dataclass(frozen=True)
 class ClusterDetailRenderState:
     """Cluster autocorrelogram and template waveform data for frontend rendering."""
 

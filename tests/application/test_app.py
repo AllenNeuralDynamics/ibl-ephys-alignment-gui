@@ -2806,6 +2806,74 @@ def test_queries_build_histology_and_scale_panel_states() -> None:
     assert scale_state.scale is histology.scale.scale
 
 
+def test_queries_build_histology_screen_state_with_optional_nearby_boundaries() -> None:
+    document = AlignmentDocument()
+    key = AlignmentKey("rec", "stream", 1)
+    state = document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 0.005]),
+        np.array([0.0, 0.004]),
+    )
+    histology = AlignmentHistologyData(
+        histology=HistologyPlotData(
+            region=np.array([[0.0, 100.0]]),
+            axis_label=np.array([[50.0, "VISp"]], dtype=object),
+            colour=np.array([[1, 2, 3]]),
+        ),
+        reference_histology=HistologyPlotData(
+            region=np.array([[0.0, 120.0]]),
+            axis_label=np.array([[60.0, "VISp"]], dtype=object),
+            colour=np.array([[4, 5, 6]]),
+        ),
+        scale=ScaleFactorData(
+            region=np.array([[0.0, 100.0]]),
+            scale=np.array([1.1]),
+        ),
+    )
+    derived = FakeDerivedDataService(histology=histology)
+    shank_runtime = SimpleNamespace(
+        ephysalign="aligner",
+        region_fp=None,
+        region_label_fp=None,
+        region_colour_fp=None,
+        nearby_boundaries=None,
+    )
+    queries = AlignmentQueries(
+        document=document,
+        runtime=SimpleNamespace(
+            active_stream_runtime=SimpleNamespace(
+                shank_runtime_by_idx={1: shank_runtime}
+            )
+        ),
+        derived_data_service=derived,
+        histology_context=SimpleNamespace(brain_atlas="atlas"),
+        region_lookup_service=SimpleNamespace(load_allen_csv=lambda: "allen-table"),
+    )
+
+    screen_state = queries.alignment_render.active_histology_screen_state(
+        probe_tip_um=0.0,
+        probe_top_um=3840.0,
+        probe_extra_um=100.0,
+        depth_um=np.array([0.0, 20.0]),
+        lin_fit=False,
+        include_nearby=True,
+    )
+
+    assert screen_state is not None
+    assert screen_state.histology.key == key
+    assert screen_state.histology.histology is histology
+    assert screen_state.scale_factor.key == key
+    assert screen_state.scale_factor.region is histology.scale.region
+    assert screen_state.scale_factor.scale is histology.scale.scale
+    np.testing.assert_allclose(screen_state.fit.feature_um, [0.0, 5000.0])
+    np.testing.assert_allclose(screen_state.fit.track_um, [0.0, 4000.0])
+    assert screen_state.nearby is not None
+    np.testing.assert_array_equal(screen_state.nearby.x, [1.0, 2.0])
+    assert len(derived.nearby_kwargs) == 1
+    assert derived.nearby_kwargs[0]["allen"] == "allen-table"
+    assert derived.nearby_kwargs[0]["brain_atlas"] == "atlas"
+
+
 def test_queries_build_nearby_boundary_state_from_runtime_cache() -> None:
     document = AlignmentDocument()
     key = AlignmentKey("rec", "stream", 1)

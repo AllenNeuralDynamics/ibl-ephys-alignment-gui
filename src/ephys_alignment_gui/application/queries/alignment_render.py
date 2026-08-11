@@ -12,6 +12,7 @@ from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentRenderState,
+    ActiveHistologyScreenState,
     FitPlotRenderState,
     HistologyPanelRenderState,
     NearbyBoundaryRenderState,
@@ -31,6 +32,8 @@ class AlignmentRenderQueries:
     context: AlignmentQueryContext
     display_state: AlignmentDisplayState
     derived_data_service: AlignmentDerivedDataService
+    histology_context: Any | None = None
+    region_lookup_service: Any | None = None
 
     def active_histology_region_id(self, region_idx: int) -> int | None:
         """Return an active histology region id by plotted region index."""
@@ -127,6 +130,108 @@ class AlignmentRenderQueries:
             probe_extent=histology_state.probe_extent,
         )
 
+    def active_histology_screen_state(
+        self,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+        depth_um: Any,
+        lin_fit: bool,
+        include_nearby: bool = False,
+    ) -> ActiveHistologyScreenState | None:
+        """Return the cohesive histology/scale/fit screen read model."""
+        context = self.context.active_alignment_context()
+        if context is None:
+            return None
+        probe_extent = self._probe_extent_render_state(
+            context.active_alignment,
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+        if probe_extent is None:
+            return None
+        histology = self.compute_active_histology(
+            context.active_alignment,
+            context.shank_runtime,
+        )
+        histology_state = HistologyPanelRenderState(
+            key=context.key,
+            histology=histology,
+            probe_extent=probe_extent,
+        )
+        fit_state = self._fit_plot_state(
+            context,
+            depth_um=depth_um,
+            lin_fit=lin_fit,
+        )
+        if fit_state is None:
+            return None
+        nearby_state = None
+        if include_nearby:
+            nearby_state = self._nearby_boundary_state(
+                context,
+                probe_extent=probe_extent,
+                allen=self._allen_structure_tree(),
+                brain_atlas=self._active_brain_atlas(),
+            )
+        return ActiveHistologyScreenState(
+            histology=histology_state,
+            scale_factor=ScaleFactorRenderState(
+                key=context.key,
+                region=histology.scale.region,
+                scale=histology.scale.scale,
+                probe_extent=probe_extent,
+            ),
+            fit=fit_state,
+            nearby=nearby_state,
+        )
+
+    def histology_screen_state_for_alignment(
+        self,
+        render_state: ActiveAlignmentRenderState,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+        depth_um: Any,
+        lin_fit: bool,
+    ) -> ActiveHistologyScreenState | None:
+        """Return the histology screen read model for an alignment render DTO."""
+        context = self.context.active_alignment_context()
+        if context is None or context.key != render_state.key:
+            return None
+        probe_extent = self._probe_extent_render_state(
+            render_state.active_alignment,
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+        )
+        if probe_extent is None:
+            return None
+        fit_state = self._fit_plot_state(
+            context,
+            depth_um=depth_um,
+            lin_fit=lin_fit,
+        )
+        if fit_state is None:
+            return None
+        return ActiveHistologyScreenState(
+            histology=HistologyPanelRenderState(
+                key=render_state.key,
+                histology=render_state.histology,
+                probe_extent=probe_extent,
+            ),
+            scale_factor=ScaleFactorRenderState(
+                key=render_state.key,
+                region=render_state.histology.scale.region,
+                scale=render_state.histology.scale.scale,
+                probe_extent=probe_extent,
+            ),
+            fit=fit_state,
+        )
+
     def active_nearby_boundary_state(
         self,
         *,
@@ -148,6 +253,45 @@ class AlignmentRenderQueries:
             probe_extra_um=probe_extra_um,
         )
         if probe_extent is None:
+            return None
+        return self._nearby_boundary_state(
+            context,
+            probe_extent=probe_extent,
+            allen=allen,
+            brain_atlas=brain_atlas,
+            steps=steps,
+        )
+
+    def active_nearby_boundary_screen_state(
+        self,
+        *,
+        probe_tip_um: float,
+        probe_top_um: float,
+        probe_extra_um: float,
+        depth_um: Any,
+        lin_fit: bool,
+    ) -> ActiveHistologyScreenState | None:
+        """Return the histology screen read model with nearby boundaries included."""
+        return self.active_histology_screen_state(
+            probe_tip_um=probe_tip_um,
+            probe_top_um=probe_top_um,
+            probe_extra_um=probe_extra_um,
+            depth_um=depth_um,
+            lin_fit=lin_fit,
+            include_nearby=True,
+        )
+
+    def _nearby_boundary_state(
+        self,
+        context: Any,
+        *,
+        probe_extent: ProbeExtentRenderState,
+        allen: Any,
+        brain_atlas: Any,
+        steps: int = 6,
+    ) -> NearbyBoundaryRenderState | None:
+        """Return nearby-boundary curves for an alignment context."""
+        if allen is None or brain_atlas is None:
             return None
         nearby_boundaries = context.shank_runtime.nearby_boundaries
         if nearby_boundaries is None:
@@ -179,6 +323,16 @@ class AlignmentRenderQueries:
         context = self.context.active_alignment_context()
         if context is None:
             return None
+        return self._fit_plot_state(context, depth_um=depth_um, lin_fit=lin_fit)
+
+    def _fit_plot_state(
+        self,
+        context: Any,
+        *,
+        depth_um: Any,
+        lin_fit: bool,
+    ) -> FitPlotRenderState | None:
+        """Return feature/track fit curve render data for one alignment context."""
         feature = np.asarray(context.active_alignment.feature, dtype=float)
         track = np.asarray(context.active_alignment.track, dtype=float)
         feature_um = feature * 1e6
@@ -202,6 +356,18 @@ class AlignmentRenderQueries:
             linear_feature_um=linear_feature_um,
             linear_track_um=linear_track_um,
         )
+
+    def _active_brain_atlas(self) -> Any | None:
+        """Return loaded brain-atlas runtime data, if available."""
+        if self.histology_context is None:
+            return None
+        return self.histology_context.brain_atlas
+
+    def _allen_structure_tree(self) -> Any | None:
+        """Return Allen structure metadata, if available."""
+        if self.region_lookup_service is None:
+            return None
+        return self.region_lookup_service.load_allen_csv()
 
     def compute_active_histology(
         self,

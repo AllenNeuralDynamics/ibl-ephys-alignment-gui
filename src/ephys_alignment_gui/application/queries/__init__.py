@@ -75,6 +75,8 @@ class AlignmentQueries:
             context=self.context,
             display_state=self.display_state,
             derived_data_service=self.derived_data_service,
+            histology_context=self.histology_context,
+            region_lookup_service=self.region_lookup_service,
         )
         self.slices = SliceQueries(
             context=self.context,
