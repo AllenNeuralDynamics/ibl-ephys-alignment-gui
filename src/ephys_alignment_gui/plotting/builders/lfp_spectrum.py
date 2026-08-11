@@ -19,6 +19,11 @@ from ephys_alignment_gui.plotting.probe_bank_layout import (
 FREQ_BANDS = np.vstack(([0, 4], [4, 10], [10, 30], [30, 80], [80, 200]))
 
 
+def lfp_band_label(freq) -> str:
+    """Return the stable menu/payload key for one LFP band."""
+    return f"{freq[0]} - {freq[1]} Hz"
+
+
 class LfpSpectrumPlotDataBuilder:
     """Build LFP spectrum image and probe plot payloads."""
 
@@ -31,14 +36,12 @@ class LfpSpectrumPlotDataBuilder:
         data_probe = {}
         if not self.data[f"psd_{format}"]["exists"]:
             for freq in FREQ_BANDS:
-                data_probe.update({f"{freq[0]} - {freq[1]} Hz": None})
+                data_probe.update({lfp_band_label(freq): None})
             return None, data_probe
 
         data_img = self._build_spectrum_image(in_brain_depths_um)
         for freq in FREQ_BANDS:
-            data_probe.update(
-                self._build_probe_band(freq, in_brain_depths_um)
-            )
+            data_probe.update(self._build_probe_band(freq, in_brain_depths_um))
         return data_img, data_probe
 
     def _build_spectrum_image(self, in_brain_depths_um=None):
@@ -75,7 +78,9 @@ class LfpSpectrumPlotDataBuilder:
         col = in_brain_depth_mask(unique_depths, in_brain_depths_um)
         level_src = img_log if col is None else img_log[:, col]
         finite_vals = level_src[np.isfinite(level_src)]
-        max_abs = np.quantile(np.abs(finite_vals), 0.95) if len(finite_vals) > 0 else 1.0
+        max_abs = (
+            np.quantile(np.abs(finite_vals), 0.95) if len(finite_vals) > 0 else 1.0
+        )
         levels = np.array([-max_abs, max_abs])
 
         log_min = np.log10(freq_range[0])
@@ -115,7 +120,7 @@ class LfpSpectrumPlotDataBuilder:
         )
 
         return {
-            f"{freq[0]} - {freq[1]} Hz": {
+            lfp_band_label(freq): {
                 "img": probe_img,
                 "scale": probe_scale,
                 "offset": probe_offset,
@@ -123,9 +128,18 @@ class LfpSpectrumPlotDataBuilder:
                 "cmap": "viridis",
                 "xaxis": "Time (s)",
                 "xrange": np.array([0 * BNK_SIZE, (self.geometry.n_banks) * BNK_SIZE]),
-                "title": f"{freq[0]} - {freq[1]} Hz (dB)",
+                "title": f"{lfp_band_label(freq)} (dB)",
             }
         }
+
+    def probe_keys(self, format: str) -> tuple[str, ...]:
+        """Return cheaply discoverable probe-band keys for one PSD format."""
+        entry = self.data.get(f"psd_{format}")
+        if not entry or not entry.get("exists", False):
+            return ()
+        if "freqs" not in entry or "power" not in entry:
+            return ()
+        return tuple(lfp_band_label(freq) for freq in FREQ_BANDS)
 
     def _average_equal_depth_channels(self, values):
         _, chn_depth, chn_count = np.unique(

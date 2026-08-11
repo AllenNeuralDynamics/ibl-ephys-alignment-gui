@@ -46,18 +46,30 @@ class FakePayloadCache:
     def get_lfp_correlation_data_img(self) -> Any:
         return {"theta": "corr-img"}
 
+    def get_lfp_correlation_keys(self) -> tuple[str, ...]:
+        return ("theta",)
+
     def get_passive_events(self) -> Any:
         return self.passive_events
+
+    def get_passive_event_keys(self) -> tuple[str, ...]:
+        return tuple(self.passive_events)
 
     def get_lfp_spectrum_data(self, _format: str) -> Any:
         return "lfp-img", {"0 - 4 Hz": "probe-lfp"}
 
+    def get_lfp_spectrum_probe_keys(self, _format: str) -> tuple[str, ...]:
+        return ("0 - 4 Hz",)
+
     def get_rfmap_data(self) -> Any:
         return {"left": "rfmap"}, "bounds"
 
+    def get_rfmap_keys(self) -> tuple[str, ...]:
+        return ("left",)
+
 
 class FakeOptionalDependencyMissingPayloadCache(FakePayloadCache):
-    def get_passive_events(self) -> Any:
+    def get_passive_event_keys(self) -> tuple[str, ...]:
         raise ModuleNotFoundError(
             "No module named 'brainbox'",
             name="brainbox",
@@ -112,6 +124,7 @@ def test_available_plot_specs_include_present_dynamic_image_payloads() -> None:
 
     assert "image.lfp_correlation.theta" in keys
     assert not any(key.startswith("image.passive_event.") for key in keys)
+    assert payload_cache.calls == []
 
 
 def test_available_plot_specs_hide_static_entries_for_missing_datasets() -> None:
@@ -127,9 +140,15 @@ def test_available_plot_specs_hide_static_entries_for_missing_datasets() -> None
         "psd_lf_main": {"exists": False},
     }
 
-    image_keys = [spec.key for spec in available_plot_specs_for_menu(payload_cache, "image")]
-    probe_keys = [spec.key for spec in available_plot_specs_for_menu(payload_cache, "probe")]
-    line_keys = [spec.key for spec in available_plot_specs_for_menu(payload_cache, "line")]
+    image_keys = [
+        spec.key for spec in available_plot_specs_for_menu(payload_cache, "image")
+    ]
+    probe_keys = [
+        spec.key for spec in available_plot_specs_for_menu(payload_cache, "probe")
+    ]
+    line_keys = [
+        spec.key for spec in available_plot_specs_for_menu(payload_cache, "line")
+    ]
 
     assert "image.fr" not in image_keys
     assert "image.rms_ap" not in image_keys
@@ -144,12 +163,19 @@ def test_available_plot_specs_include_dynamic_probe_payloads_and_bounds() -> Non
     specs = available_plot_specs_for_menu(payload_cache, "probe")
     spec_by_key = {spec.key: spec for spec in specs}
 
-    assert resolve_plot_payload(
-        payload_cache,
-        spec_by_key["probe.lfp_spectrum.0 - 4 Hz"],
-    ) == "probe-lfp"
-    assert resolve_plot_payload(payload_cache, spec_by_key["probe.rfmap.left"]) == "rfmap"
-    assert resolve_plot_bounds(payload_cache, spec_by_key["probe.rfmap.left"]) == "bounds"
+    assert (
+        resolve_plot_payload(
+            payload_cache,
+            spec_by_key["probe.lfp_spectrum.0 - 4 Hz"],
+        )
+        == "probe-lfp"
+    )
+    assert (
+        resolve_plot_payload(payload_cache, spec_by_key["probe.rfmap.left"]) == "rfmap"
+    )
+    assert (
+        resolve_plot_bounds(payload_cache, spec_by_key["probe.rfmap.left"]) == "bounds"
+    )
 
 
 def test_available_plot_specs_include_passive_events_when_present() -> None:
@@ -158,10 +184,34 @@ def test_available_plot_specs_include_passive_events_when_present() -> None:
     specs = available_plot_specs_for_menu(payload_cache, "image")
     spec_by_key = {spec.key: spec for spec in specs}
 
-    assert resolve_plot_payload(
-        payload_cache,
-        spec_by_key["image.passive_event.stim"],
-    ) == "stim-img"
+    assert (
+        resolve_plot_payload(
+            payload_cache,
+            spec_by_key["image.passive_event.stim"],
+        )
+        == "stim-img"
+    )
+
+
+def test_available_plot_specs_does_not_build_dynamic_payloads() -> None:
+    class HeavyPayloadCache(FakePayloadCache):
+        def get_lfp_correlation_data_img(self) -> Any:
+            raise AssertionError("should not build LFP correlation while listing menu")
+
+        def get_passive_events(self) -> Any:
+            raise AssertionError("should not build passive events while listing menu")
+
+        def get_lfp_spectrum_data(self, _format: str) -> Any:
+            raise AssertionError("should not build LFP spectrum while listing menu")
+
+        def get_rfmap_data(self) -> Any:
+            raise AssertionError("should not build RF map while listing menu")
+
+    payload_cache = HeavyPayloadCache(passive_events={"stim": "stim-img"})
+
+    assert available_plot_specs_for_menu(payload_cache, "image")
+    assert available_plot_specs_for_menu(payload_cache, "probe")
+    assert payload_cache.calls == []
 
 
 def test_available_plot_specs_logs_missing_optional_dependency_once(caplog) -> None:

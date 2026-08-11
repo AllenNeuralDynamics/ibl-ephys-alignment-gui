@@ -177,6 +177,10 @@ class EphysPlotPayloadCache:
         """Return LFP spectrum image and probe payloads."""
         return self.lfp_spectrum_builder.build(format, self.in_brain_depths_um)
 
+    def get_lfp_spectrum_probe_keys(self, format: str) -> tuple[str, ...]:
+        """Return available probe-band keys without building LFP spectrum payloads."""
+        return self.lfp_spectrum_builder.probe_keys(format)
+
     def get_lfp_correlation_data_img(self):
         """Return LFP correlation image payloads."""
         return LfpCorrelationPlotDataBuilder(
@@ -186,13 +190,30 @@ class EphysPlotPayloadCache:
             in_brain_depths_um=self.in_brain_depths_um,
         ).build()
 
+    def get_lfp_correlation_keys(self) -> tuple[str, ...]:
+        """Return available LFP correlation keys without loading matrix payloads."""
+        return LfpCorrelationPlotDataBuilder(
+            probe_path=self.probe_path,
+            shank_idx=self.shank_idx,
+            geometry=self.channel_geometry,
+            in_brain_depths_um=self.in_brain_depths_um,
+        ).available_keys()
+
     def get_rfmap_data(self):
         """Return receptive-field map payloads and depth bounds."""
         return self.stimulus_builder.get_rfmap_data()
 
+    def get_rfmap_keys(self) -> tuple[str, ...]:
+        """Return available RF-map keys without building RF-map payloads."""
+        return self.stimulus_builder.rfmap_keys()
+
     def get_passive_events(self):
         """Return stimulus-aligned passive-event image payloads."""
         return self.stimulus_builder.get_passive_events()
+
+    def get_passive_event_keys(self) -> tuple[str, ...]:
+        """Return available passive-event keys without building event payloads."""
+        return self.stimulus_builder.passive_event_keys()
 
     def get_autocorr(self, clust_idx):
         """Return autocorrelogram and cluster id for a clicked cluster."""

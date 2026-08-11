@@ -2,10 +2,38 @@
 
 from __future__ import annotations
 
+from importlib.util import find_spec
+
 import numpy as np
 
 from ephys_alignment_gui.plotting.builders.spikes import SpikePlotDataBuilder
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
+
+PASSIVE_STIM_TYPES = ("valveOn", "toneOn", "noiseOn")
+GABOR_STIM_TYPES = ("leftGabor", "rightGabor")
+RFMAP_TYPES = ("on", "off")
+
+
+def _entry_exists(entry) -> bool:
+    """Return whether an ALF-style object entry is present."""
+    return bool(entry and entry.get("exists", False))
+
+
+def _brainbox_passive_available() -> bool:
+    """Return whether the optional passive-task helpers are importable."""
+    try:
+        if find_spec("brainbox") is None:
+            return False
+        if find_spec("brainbox.task") is None:
+            return False
+        return find_spec("brainbox.task.passive") is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
+
+
+def _missing_brainbox_passive() -> ModuleNotFoundError:
+    """Return the optional-dependency error used by registry logging."""
+    return ModuleNotFoundError("No module named 'brainbox'", name="brainbox")
 
 
 class StimulusPlotDataBuilder:
@@ -23,11 +51,11 @@ class StimulusPlotDataBuilder:
 
     def get_rfmap_data(self):
         """Return receptive-field map payloads and depth bounds."""
-        from brainbox.task import passive
-
         data_img = {}
         if not self.data["rf_map"]["exists"]:
             return data_img, None
+
+        from brainbox.task import passive
 
         rf_map_times, rf_map_pos, rf_stim_frames = (
             passive.get_on_off_times_and_positions(self.data["rf_map"])
@@ -78,13 +106,22 @@ class StimulusPlotDataBuilder:
 
         return data_img, depths
 
+    def rfmap_keys(self) -> tuple[str, ...]:
+        """Return cheaply discoverable RF-map payload keys."""
+        if not _entry_exists(self.data.get("rf_map")):
+            return ()
+        if not _brainbox_passive_available():
+            raise _missing_brainbox_passive()
+        return RFMAP_TYPES
+
     def get_passive_events(self):
         """Return stimulus-aligned passive-event image payloads."""
-        from brainbox.task import passive
-
         data_img = {}
         if not self.data["pass_stim"]["exists"] and not self.data["gabor"]["exists"]:
             return data_img
+
+        from brainbox.task import passive
+
         if not self.data["pass_stim"]["exists"] and self.data["gabor"]["exists"]:
             stim_types = ["leftGabor", "rightGabor"]
             stims = self.data["gabor"]
@@ -140,3 +177,27 @@ class StimulusPlotDataBuilder:
             )
 
         return data_img
+
+    def passive_event_keys(self) -> tuple[str, ...]:
+        """Return cheaply discoverable passive-event payload keys."""
+        if not _brainbox_passive_available():
+            if _entry_exists(self.data.get("pass_stim")) or _entry_exists(
+                self.data.get("gabor")
+            ):
+                raise _missing_brainbox_passive()
+            return ()
+
+        keys = []
+        pass_stim = self.data.get("pass_stim")
+        if _entry_exists(pass_stim):
+            keys.extend(
+                stim_type for stim_type in PASSIVE_STIM_TYPES if stim_type in pass_stim
+            )
+
+        gabor = self.data.get("gabor")
+        if _entry_exists(gabor):
+            keys.extend(
+                stim_type for stim_type in GABOR_STIM_TYPES if stim_type in gabor
+            )
+
+        return tuple(keys)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -155,21 +155,43 @@ def _mapping_child_specs(
     bounds_source: Callable[[Any], Any] | None = None,
 ) -> tuple[PlotSpec, ...]:
     """Build child specs for a mapping-valued plot payload."""
-    specs = []
-    for child_key, child_payload in payload.items():
-        if child_payload is None:
-            continue
-        specs.append(
-            PlotSpec(
-                key=f"{parent_key}.{_safe_child_key(child_key)}",
-                label=label(child_key),
-                menu=menu,
-                renderer=renderer,
-                source=lambda payload_cache, key=child_key: source(payload_cache)[key],
-                bounds_source=bounds_source,
-            )
+    return _mapping_child_specs_from_keys(
+        parent_key=parent_key,
+        menu=menu,
+        renderer=renderer,
+        child_keys=(
+            child_key
+            for child_key, child_payload in payload.items()
+            if child_payload is not None
+        ),
+        label=label,
+        source=source,
+        bounds_source=bounds_source,
+    )
+
+
+def _mapping_child_specs_from_keys(
+    *,
+    parent_key: str,
+    menu: PlotMenu,
+    renderer: PlotRenderer,
+    child_keys: Iterable[Any],
+    label: Callable[[Any], str],
+    source: Callable[[Any], Mapping[Any, Any]],
+    bounds_source: Callable[[Any], Any] | None = None,
+) -> tuple[PlotSpec, ...]:
+    """Build child specs from cheaply discovered mapping keys."""
+    return tuple(
+        PlotSpec(
+            key=f"{parent_key}.{_safe_child_key(child_key)}",
+            label=label(child_key),
+            menu=menu,
+            renderer=renderer,
+            source=lambda payload_cache, key=child_key: source(payload_cache)[key],
+            bounds_source=bounds_source,
         )
-    return tuple(specs)
+        for child_key in child_keys
+    )
 
 
 def _lfp_correlation_payload(payload_cache: Any) -> Mapping[Any, Any]:
@@ -181,14 +203,14 @@ def _lfp_correlation_payload(payload_cache: Any) -> Mapping[Any, Any]:
 
 
 def _lfp_correlation_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    payload = _lfp_correlation_payload(payload_cache)
-    if not isinstance(payload, Mapping) or not payload:
+    child_keys = payload_cache.get_lfp_correlation_keys()
+    if not child_keys:
         return ()
-    return _mapping_child_specs(
+    return _mapping_child_specs_from_keys(
         parent_key="image.lfp_correlation",
         menu="image",
         renderer="image",
-        payload=payload,
+        child_keys=child_keys,
         label=lambda key: f"LFP Correlation ({key})",
         source=_lfp_correlation_payload,
     )
@@ -203,14 +225,14 @@ def _passive_events_payload(payload_cache: Any) -> Mapping[Any, Any]:
 
 
 def _passive_event_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    payload = _passive_events_payload(payload_cache)
-    if not isinstance(payload, Mapping) or not payload:
+    child_keys = payload_cache.get_passive_event_keys()
+    if not child_keys:
         return ()
-    return _mapping_child_specs(
+    return _mapping_child_specs_from_keys(
         parent_key="image.passive_event",
         menu="image",
         renderer="image",
-        payload=payload,
+        child_keys=child_keys,
         label=str,
         source=_passive_events_payload,
     )
@@ -225,17 +247,14 @@ def _lfp_spectrum_payload(payload_cache: Any, format: str) -> Any:
 
 
 def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    value = _lfp_spectrum_payload(payload_cache, "lf")
-    if not isinstance(value, tuple) or len(value) < 2:
+    child_keys = payload_cache.get_lfp_spectrum_probe_keys("lf")
+    if not child_keys:
         return ()
-    payload = value[1]
-    if not isinstance(payload, Mapping) or not payload:
-        return ()
-    return _mapping_child_specs(
+    return _mapping_child_specs_from_keys(
         parent_key="probe.lfp_spectrum",
         menu="probe",
         renderer="probe",
-        payload=payload,
+        child_keys=child_keys,
         label=str,
         source=lambda payload_cache: _lfp_spectrum_payload(payload_cache, "lf")[1],
     )
@@ -250,17 +269,14 @@ def _rfmap_payload(payload_cache: Any) -> Any:
 
 
 def _rfmap_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    value = _rfmap_payload(payload_cache)
-    if not isinstance(value, tuple) or len(value) < 2:
+    child_keys = payload_cache.get_rfmap_keys()
+    if not child_keys:
         return ()
-    payload, _bounds = value
-    if not isinstance(payload, Mapping) or not payload:
-        return ()
-    return _mapping_child_specs(
+    return _mapping_child_specs_from_keys(
         parent_key="probe.rfmap",
         menu="probe",
         renderer="probe",
-        payload=payload,
+        child_keys=child_keys,
         label=lambda key: f"RF Map - {key}",
         source=lambda payload_cache: _rfmap_payload(payload_cache)[0],
         bounds_source=lambda payload_cache: _rfmap_payload(payload_cache)[1],

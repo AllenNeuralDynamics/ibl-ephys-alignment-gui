@@ -64,6 +64,8 @@ class LfpCorrelationPlotDataBuilder:
     def _matrix_rows_for_current_shank(
         self,
         row_channels: dict[str, Any] | None,
+        *,
+        warn: bool = True,
     ) -> np.ndarray | None:
         """Return channel-table rows for the active shank matrix."""
         if not row_channels:
@@ -73,17 +75,19 @@ class LfpCorrelationPlotDataBuilder:
         if entry is None:
             entry = shanks.get(str(self.shank_idx + 1))
         if entry is None:
-            logger.warning(
-                "row_channels.json has no entry for shank %d",
-                self.shank_idx,
-            )
+            if warn:
+                logger.warning(
+                    "row_channels.json has no entry for shank %d",
+                    self.shank_idx,
+                )
             return None
         rows = np.asarray(entry.get("rows", []), dtype=int)
         if rows.size == 0:
-            logger.warning(
-                "row_channels.json entry for shank %d has no rows",
-                self.shank_idx,
-            )
+            if warn:
+                logger.warning(
+                    "row_channels.json entry for shank %d has no rows",
+                    self.shank_idx,
+                )
             return None
         return rows
 
@@ -141,7 +145,11 @@ class LfpCorrelationPlotDataBuilder:
         else:
             scale = 1.0
             offset = float(unique_depths[0]) if unique_depths.size else 0.0
-        return float(scale), float(offset), np.array([offset, offset + scale * n_matrix])
+        return (
+            float(scale),
+            float(offset),
+            np.array([offset, offset + scale * n_matrix]),
+        )
 
     def _full_band_files(self, folder: Path, suffix: str) -> list[Path]:
         """Band files excluding legacy ``_shank<N>`` compatibility views."""
@@ -195,6 +203,59 @@ class LfpCorrelationPlotDataBuilder:
             coherency_files = self._full_band_files(lfp_corr_folder, "_coherency")
         return coherency_files
 
+    def available_keys(self) -> tuple[str, ...]:
+        """Return cheaply discoverable correlation/coherency payload keys."""
+        lfp_corr_folder = self._get_lfp_correlation_folder()
+        if lfp_corr_folder is None:
+            return ()
+
+        row_channels = self._load_row_channels(lfp_corr_folder)
+        matrix_rows = self._matrix_rows_for_current_shank(row_channels, warn=False)
+
+        lfp_corr_files = [
+            file
+            for file in self._correlation_files(lfp_corr_folder, matrix_rows)
+            if self._matrix_file_can_render(file, matrix_rows)
+        ]
+        if not lfp_corr_files:
+            return ()
+
+        keys = {self._band_key_from_file(file, "_mean_corr") for file in lfp_corr_files}
+        keys.update(
+            f"{self._band_key_from_file(file, '_coherency')}_phase"
+            for file in self._coherency_files(lfp_corr_folder, matrix_rows)
+            if self._matrix_file_can_render(file, matrix_rows)
+        )
+        return tuple(self._sort_lfp_correlation_keys(dict.fromkeys(keys)))
+
+    @staticmethod
+    def _band_key_from_file(file: Path, suffix: str) -> str:
+        """Return the registry key represented by one LFP matrix filename."""
+        shank_suffix = re.compile(r"_shank\d+$")
+        return shank_suffix.sub("", file.stem.replace(suffix, ""))
+
+    def _matrix_file_can_render(
+        self,
+        file: Path,
+        matrix_rows: np.ndarray | None,
+    ) -> bool:
+        """Return whether a matrix file has a renderable shape without loading data."""
+        try:
+            matrix = np.load(file, mmap_mode="r")
+        except Exception:
+            logger.warning(
+                "Skipping unreadable LFP matrix file: %s", file, exc_info=True
+            )
+            return False
+
+        if matrix.ndim < 2:
+            return False
+
+        n_rows = matrix.shape[0]
+        if matrix_rows is None:
+            return n_rows > 0
+        return n_rows in {len(self.geometry.chn_coords_all), len(matrix_rows)}
+
     def _load_correlation_files(
         self,
         files: list[Path],
@@ -202,9 +263,8 @@ class LfpCorrelationPlotDataBuilder:
     ) -> dict[str, Any]:
         """Load real-valued LFP correlation matrices."""
         all_data = {}
-        shank_suffix = re.compile(r"_shank\d+$")
         for file in files:
-            band_name = shank_suffix.sub("", file.stem.replace("_mean_corr", ""))
+            band_name = self._band_key_from_file(file, "_mean_corr")
             this_corr, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
             if this_corr is None:
                 continue
@@ -262,10 +322,9 @@ class LfpCorrelationPlotDataBuilder:
         from matplotlib.colors import hsv_to_rgb
 
         all_data = {}
-        shank_suffix = re.compile(r"_shank\d+$")
         for file in self._coherency_files(lfp_corr_folder, matrix_rows):
             try:
-                band_name = shank_suffix.sub("", file.stem.replace("_coherency", ""))
+                band_name = self._band_key_from_file(file, "_coherency")
                 coh, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
                 if coh is None:
                     continue

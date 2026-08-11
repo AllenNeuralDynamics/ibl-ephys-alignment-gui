@@ -117,14 +117,26 @@ class FakePlotPayloadCache:
     def get_lfp_correlation_data_img(self) -> Any:
         return {}
 
+    def get_lfp_correlation_keys(self) -> tuple[str, ...]:
+        return ()
+
     def get_passive_events(self) -> Any:
         return {}
+
+    def get_passive_event_keys(self) -> tuple[str, ...]:
+        return ()
 
     def get_lfp_spectrum_data(self, _format: str) -> Any:
         return None, {}
 
+    def get_lfp_spectrum_probe_keys(self, _format: str) -> tuple[str, ...]:
+        return ()
+
     def get_rfmap_data(self) -> Any:
         return {}, None
+
+    def get_rfmap_keys(self) -> tuple[str, ...]:
+        return ()
 
     def filter_units(self, subset: str) -> None:
         self.filtered_subsets.append(subset)
