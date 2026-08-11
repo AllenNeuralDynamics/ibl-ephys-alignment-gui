@@ -8,7 +8,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok, Requirement
 from ephys_alignment_gui.core.alignment_events import SaveCompleted, SaveFailed
 from ephys_alignment_gui.core.event_bus import EventSubscription
@@ -66,7 +66,7 @@ class DesktopSavePresenter:
         if event.active_choices is not None:
             self.callbacks.render_alignment_choices(list(event.active_choices))
         logger.info(
-            "Channel locations saved to results folder for %d visited alignment(s)",
+            "Channel locations saved to results folder for %d edited alignment(s)",
             event.saved_count,
         )
 
@@ -75,7 +75,7 @@ class DesktopSavePresenter:
         logger.error(event.message)
 
     def save_alignment_outputs(self) -> bool:
-        """Save visited alignment outputs, prompting for output if needed."""
+        """Save edited alignment outputs, prompting for output if needed."""
         save_ready = self.commands.can_save_alignment_output()
         if isinstance(save_ready, Blocked):
             if not self.callbacks.ensure_output_directory(save_ready.first):
@@ -92,7 +92,7 @@ class DesktopSavePresenter:
             "Saved successfully",
             disable_widgets=self.callbacks.complete_button(),
         ):
-            result = self.commands.save_visited_alignment_outputs(
+            result = self.commands.save_edited_alignment_outputs(
                 use_docdb=self.callbacks.use_docdb(),
             )
             if isinstance(result, Blocked):
@@ -100,7 +100,7 @@ class DesktopSavePresenter:
                 return False
             if isinstance(result, Failed):
                 return False
-            assert isinstance(result, VisitedAlignmentOutputsSaved)
+            assert isinstance(result, EditedAlignmentOutputsSaved)
         return True
 
     def display_qc_options(self) -> bool:

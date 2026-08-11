@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
+from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
 )
@@ -69,7 +69,7 @@ class FakeCommands:
         self.ready_calls += 1
         return result
 
-    def save_visited_alignment_outputs(self, *, use_docdb: bool):
+    def save_edited_alignment_outputs(self, *, use_docdb: bool):
         self.save_calls.append({"use_docdb": use_docdb})
         self._emit_save_event(self.save_result)
         return self.save_result
@@ -80,7 +80,7 @@ class FakeCommands:
         if isinstance(result, Failed):
             self.events.emit(SaveFailed(message=result.message))
             return
-        if isinstance(result, VisitedAlignmentOutputsSaved):
+        if isinstance(result, EditedAlignmentOutputsSaved):
             self.events.emit(
                 SaveCompleted(
                     saved_count=result.saved_count,
@@ -113,9 +113,9 @@ def _saved_result(
     *,
     docdb_probe_name: str | None = "probeA_0",
     docdb_error: str | None = None,
-) -> VisitedAlignmentOutputsSaved:
+) -> EditedAlignmentOutputsSaved:
     key = AlignmentKey("rec", "stream", 1)
-    return VisitedAlignmentOutputsSaved(
+    return EditedAlignmentOutputsSaved(
         saved_count=1,
         saved_outputs={
             key: AlignmentOutputsSaved(

@@ -9,8 +9,8 @@ from typing import Any
 
 from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
+    EditedAlignmentOutputsSaved,
     PreviousAlignmentSelected,
-    VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputBuilt,
@@ -26,7 +26,10 @@ from ephys_alignment_gui.core.alignment_events import (
     SaveDocDbStatus,
     SaveFailed,
 )
-from ephys_alignment_gui.core.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
+from ephys_alignment_gui.core.alignment_state import (
+    LEGACY_AUTO_ALIGNMENT_LABEL,
+    AlignmentState,
+)
 from ephys_alignment_gui.core.controller import (
     AlignmentController,
 )
@@ -43,6 +46,17 @@ from ephys_alignment_gui.services.alignment_repository import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AlignmentSaveInput:
+    """Prepared runtime/document data needed to persist one alignment key."""
+
+    state: AlignmentState
+    channel_locations_ras: Any
+    channel_coordinates: Any
+    output_directory: Path
+    multi_shank: bool
 
 
 @dataclass
@@ -143,50 +157,67 @@ class AlignmentPersistenceCommandHandler:
         return self.controller.select_previous_alignment(
             idx,
             shank_idx=self._active_or_given_shank(shank_idx),
+            mark_changed=True,
         )
 
     def can_save_alignment_output(self) -> Ok | Blocked:
-        """Return whether visited alignment outputs can be saved."""
+        """Return whether edited alignment outputs can be saved."""
         return self.controller.can_save_alignment_output()
 
-    def save_visited_alignment_outputs(
+    def save_edited_alignment_outputs(
         self,
         *,
         use_docdb: bool,
-    ) -> VisitedAlignmentOutputsSaved | Blocked | Failed:
-        """Persist outputs for every visited alignment in the active stream."""
+    ) -> EditedAlignmentOutputsSaved | Blocked | Failed:
+        """Persist outputs for every dirty alignment state in the document."""
         ready = self.controller.can_save_alignment_output()
         if isinstance(ready, Blocked):
             return ready
 
-        output_inputs, states_by_key = self._visited_alignment_output_inputs()
-        if not output_inputs:
-            return self._save_failed("No visited alignments are ready to save")
+        save_inputs = self._dirty_alignment_output_inputs()
+        if isinstance(save_inputs, Failed):
+            return self._save_failed(save_inputs.message)
+        if not save_inputs:
+            return self._save_failed("No edited alignments are ready to save")
 
-        outputs = self._build_alignment_outputs(output_inputs)
+        output_inputs = {
+            key: (save_input.channel_locations_ras, save_input.channel_coordinates)
+            for key, save_input in save_inputs.items()
+        }
+        outputs = self._build_alignment_outputs(
+            output_inputs,
+            multi_shank_by_key={
+                key: save_input.multi_shank for key, save_input in save_inputs.items()
+            },
+        )
         if isinstance(outputs, Failed):
-            self._emit_save_failed(outputs.message)
-            return outputs
-
-        for state in states_by_key.values():
-            alignment = state.active_alignment
-            if alignment is not None:
-                state.add_alignment(alignment.feature, alignment.track)
+            return self._save_failed(outputs.message)
 
         logger.info("Saving output files to results folder...")
         saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
         for key, output in outputs.items():
-            state = states_by_key[key]
+            save_input = save_inputs[key]
+            state = save_input.state
+            alignment = state.active_alignment
+            alignments_to_save = state.alignments
+            if alignment is not None:
+                _, alignments_to_save = state.with_alignment_added(
+                    alignment.feature,
+                    alignment.track,
+                )
             saved = self._save_alignment_output(
                 output,
-                state.alignments,
+                alignments_to_save,
                 key.shank_idx,
                 use_docdb,
+                output_directory=save_input.output_directory,
             )
             if isinstance(saved, Failed):
-                self._emit_save_failed(saved.message)
-                return saved
+                return self._save_failed(saved.message)
             saved_outputs[key] = saved
+            state.set_alignments(alignments_to_save)
+            state.mark_saved()
+        self.controller.document.dirty = self.controller.document.has_unsaved_alignments
 
         active_choices: list[str] | None = None
         choices = self.controller.active_alignment_choices(
@@ -197,7 +228,7 @@ class AlignmentPersistenceCommandHandler:
         elif isinstance(choices, Failed):
             logger.error(choices.message)
 
-        result = VisitedAlignmentOutputsSaved(
+        result = EditedAlignmentOutputsSaved(
             saved_count=len(saved_outputs),
             saved_outputs=saved_outputs,
             active_choices=active_choices,
@@ -216,6 +247,7 @@ class AlignmentPersistenceCommandHandler:
         return result
 
     def _save_failed(self, message: str) -> Failed:
+        self.controller.document.dirty = self.controller.document.has_unsaved_alignments
         self._emit_save_failed(message)
         return Failed(message)
 
@@ -224,7 +256,7 @@ class AlignmentPersistenceCommandHandler:
 
     @staticmethod
     def _docdb_statuses(
-        result: VisitedAlignmentOutputsSaved,
+        result: EditedAlignmentOutputsSaved,
     ) -> tuple[SaveDocDbStatus, ...]:
         statuses: list[SaveDocDbStatus] = []
         for saved in result.saved_outputs.values():
@@ -238,51 +270,72 @@ class AlignmentPersistenceCommandHandler:
             )
         return tuple(statuses)
 
-    def _visited_alignment_output_inputs(
+    def _dirty_alignment_output_inputs(
         self,
-    ) -> tuple[
-        dict[AlignmentKey, tuple[Any, Any]],
-        dict[AlignmentKey, Any],
-    ]:
-        """Collect channel-location save inputs for visited shanks."""
-        stream_runtime = self.runtime.active_stream_runtime
-        if stream_runtime is None:
-            return {}, {}
-        probe = self.data_context.probe_info
-        if probe is None:
-            return {}, {}
+    ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
+        """Collect save inputs for every dirty document alignment state."""
+        states_by_key = self.controller.document.dirty_alignment_states()
+        if not states_by_key:
+            return {}
 
-        states_for_probe = self.controller.document.alignment_states_for_current_probe()
-        output_inputs: dict[AlignmentKey, tuple[Any, Any]] = {}
-        states_by_key: dict[AlignmentKey, Any] = {}
-        for shank_idx, shank_runtime in stream_runtime.visited_shank_runtimes().items():
-            key = AlignmentKey(
-                recording_id=probe.recording_id,
-                ephys_collection=probe.ephys_collection,
-                shank_idx=shank_idx,
-            )
-            state = states_for_probe.get(key)
-            if state is None or state.active_alignment is None:
-                continue
-            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
-                logger.info(
-                    "Skipping shank %d during save because it has not been rendered",
-                    shank_idx + 1,
-                )
-                continue
+        save_inputs: dict[AlignmentKey, AlignmentSaveInput] = {}
+        for key, state in sorted(
+            states_by_key.items(),
+            key=lambda item: (
+                item[0].recording_id,
+                item[0].ephys_collection,
+                item[0].shank_idx,
+            ),
+        ):
             alignment = state.active_alignment
+            if alignment is None:
+                continue
+
+            stream_runtime = self._stream_runtime_for_key(key)
+            if stream_runtime is None:
+                return Failed(
+                    "Cannot save edited alignment for "
+                    f"{key.recording_id}/{key.ephys_collection} shank "
+                    f"{key.shank_idx + 1}: stream runtime is not loaded."
+                )
+
+            shank_runtime = stream_runtime.shank_runtime_by_idx.get(key.shank_idx)
+            if shank_runtime is None:
+                return Failed(
+                    "Cannot save edited alignment for "
+                    f"{key.recording_id}/{key.ephys_collection} shank "
+                    f"{key.shank_idx + 1}: shank runtime is not initialized."
+                )
+            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
+                return Failed(
+                    "Cannot save edited alignment for "
+                    f"{key.recording_id}/{key.ephys_collection} shank "
+                    f"{key.shank_idx + 1}: channel geometry is not initialized."
+                )
+
+            output_directory = self._output_directory_for_key(key)
+            if isinstance(output_directory, Failed):
+                return output_directory
+
             channel_locations_ras = self.derived_data_service.compute_channel_locations(
                 ephysalign=shank_runtime.ephysalign,
                 feature=alignment.feature,
                 track=alignment.track,
             )
-            output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
-            states_by_key[key] = state
-        return output_inputs, states_by_key
+            save_inputs[key] = AlignmentSaveInput(
+                state=state,
+                channel_locations_ras=channel_locations_ras,
+                channel_coordinates=shank_runtime.chn_coords,
+                output_directory=output_directory,
+                multi_shank=self._stream_is_multi_shank(stream_runtime),
+            )
+        return save_inputs
 
     def _build_alignment_outputs(
         self,
         alignments: dict[AlignmentKey, tuple[Any, Any]],
+        *,
+        multi_shank_by_key: dict[AlignmentKey, bool] | None = None,
     ) -> dict[AlignmentKey, AlignmentOutputBuilt] | Failed:
         output_builder = self._output_builder()
         if output_builder is None:
@@ -308,7 +361,11 @@ class AlignmentPersistenceCommandHandler:
             key: AlignmentOutputBuilt(
                 channel_results=channel_results,
                 ccf_channel_results=ccf_channel_results,
-                multi_shank=multi_shank,
+                multi_shank=(
+                    multi_shank_by_key.get(key, multi_shank)
+                    if multi_shank_by_key is not None
+                    else multi_shank
+                ),
             )
             for key, (
                 channel_results,
@@ -323,8 +380,10 @@ class AlignmentPersistenceCommandHandler:
         alignments: AlignmentHistory,
         shank_idx: int,
         use_docdb: bool,
+        *,
+        output_directory: Path | None = None,
     ) -> AlignmentOutputsSaved | Failed:
-        output_directory = self.controller.document.output_directory
+        output_directory = output_directory or self.controller.document.output_directory
         if output_directory is None:
             return Failed("Choose an output folder before saving.")
 
@@ -350,6 +409,62 @@ class AlignmentPersistenceCommandHandler:
             saved=saved,
             previous_alignments=persistable_alignments,
         )
+
+    def _stream_runtime_for_key(self, key: AlignmentKey) -> Any | None:
+        stream_key = (key.recording_id, key.ephys_collection)
+        stream_runtime = self.runtime.cached_stream(stream_key)
+        if stream_runtime is not None:
+            return stream_runtime
+        active = self.runtime.active_stream_runtime
+        if active is not None and getattr(active, "stream_key", None) == stream_key:
+            return active
+        if self.runtime.current_stream_key == stream_key:
+            return active
+        return None
+
+    def _output_directory_for_key(self, key: AlignmentKey) -> Path | Failed:
+        document = self.controller.document
+        active_probe = self.data_context.probe_info
+        if (
+            active_probe is not None
+            and active_probe.recording_id == key.recording_id
+            and active_probe.ephys_collection == key.ephys_collection
+            and document.output_directory is not None
+        ):
+            return document.output_directory
+
+        output_root = document.output_root
+        if output_root is None:
+            return Failed(
+                "Choose an output root before saving edited alignments from "
+                "non-active streams."
+            )
+
+        try:
+            probe = self.data_context.probe_for_stream_key(
+                key.recording_id,
+                key.ephys_collection,
+            )
+        except Exception as exc:
+            return Failed(
+                f"Cannot resolve output directory for edited alignment: {exc}"
+            )
+
+        output_directory = output_root / probe.recording_id / probe.probe_name
+        try:
+            output_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return Failed(
+                f"Failed to create probe output directory {output_directory}: {exc}"
+            )
+        return output_directory
+
+    @staticmethod
+    def _stream_is_multi_shank(stream_runtime: Any) -> bool:
+        stream = getattr(stream_runtime, "stream", None)
+        if stream is not None and hasattr(stream, "n_shanks"):
+            return stream.n_shanks > 1
+        return len(stream_runtime.visited_shank_runtimes()) > 1
 
     def _active_or_given_shank(self, shank_idx: int | None) -> int:
         if shank_idx is not None:

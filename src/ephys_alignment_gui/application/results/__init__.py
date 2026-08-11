@@ -147,8 +147,8 @@ class LoadedShankPrepared:
 
 
 @dataclass(frozen=True)
-class VisitedAlignmentOutputsSaved:
-    """Visited alignment outputs were persisted."""
+class EditedAlignmentOutputsSaved:
+    """Edited alignment outputs were persisted."""
 
     saved_count: int
     saved_outputs: Mapping[AlignmentKey, AlignmentOutputsSaved]

@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 
 
@@ -118,6 +119,31 @@ def test_alignment_states_for_current_probe_filters_by_stream() -> None:
         active: active_state,
         same_stream: same_stream_state,
     }
+
+
+def test_dirty_alignment_states_are_tracked_per_key() -> None:
+    doc = AlignmentDocument()
+    clean_key = AlignmentKey("rec1", "streamA", 0)
+    dirty_key = AlignmentKey("rec1", "streamB", 0)
+    clean_state = doc.alignment_state_for(clean_key)
+    dirty_state = doc.alignment_state_for(dirty_key)
+    clean_state.active_alignment = ActiveAlignment(
+        np.array([0.0]),
+        np.array([1.0]),
+    )
+    dirty_state.active_alignment = ActiveAlignment(
+        np.array([2.0]),
+        np.array([3.0]),
+    )
+    dirty_state.mark_alignment_changed()
+
+    assert doc.dirty_alignment_states() == {dirty_key: dirty_state}
+    assert doc.has_unsaved_alignments
+
+    dirty_state.mark_saved()
+
+    assert doc.dirty_alignment_states() == {}
+    assert not doc.has_unsaved_alignments
 
 
 def test_set_selected_shank_updates_active_alignment_key() -> None:

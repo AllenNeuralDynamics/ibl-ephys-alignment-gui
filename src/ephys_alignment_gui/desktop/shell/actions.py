@@ -170,7 +170,7 @@ class DesktopShellActions:
         return self.workbench.reset_button_pressed()
 
     def complete_button_pressed_offline(self, *_args: Any) -> bool:
-        """Save visited alignment outputs."""
+        """Save edited alignment outputs."""
         return self.workbench.save_alignment_outputs()
 
     def display_qc_options(self, *_args: Any) -> bool:

@@ -70,6 +70,39 @@ class AlignmentDataContext:
         probe = self.mouse_root.get_probe(recording_id, probe_name)
         return probe.recording_id, probe.ephys_collection
 
+    def probe_for_stream_key(
+        self,
+        recording_id: str,
+        ephys_collection: str,
+    ) -> ProbeInfo:
+        """Resolve probe metadata for one ``(recording_id, ephys_collection)``."""
+        if (
+            self.probe_info is not None
+            and self.probe_info.recording_id == recording_id
+            and self.probe_info.ephys_collection == ephys_collection
+        ):
+            return self.probe_info
+        if self.mouse_root is None:
+            raise RuntimeError("No mouse root loaded — cannot resolve stream probe")
+
+        matches = [
+            probe
+            for probe in self.mouse_root.probes.get(recording_id, {}).values()
+            if probe.ephys_collection == ephys_collection
+        ]
+        if not matches:
+            raise RuntimeError(
+                "No probe metadata found for stream "
+                f"{recording_id!r}/{ephys_collection!r}"
+            )
+        if len(matches) > 1:
+            probe_names = sorted(probe.probe_name for probe in matches)
+            raise RuntimeError(
+                "Multiple probes map to stream "
+                f"{recording_id!r}/{ephys_collection!r}: {probe_names}"
+            )
+        return matches[0]
+
     def attach_channel_table(self, channel_table: ChannelTable) -> None:
         """Attach stream-level channel metadata for the selected probe."""
         if self.probe_info is None:

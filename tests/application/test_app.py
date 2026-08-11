@@ -15,6 +15,7 @@ from ephys_alignment_gui.application.results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
     CachedEphysDataActivated,
+    EditedAlignmentOutputsSaved,
     FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
@@ -28,7 +29,6 @@ from ephys_alignment_gui.application.results import (
     PreviousAlignmentSelected,
     ShankSelected,
     StreamCacheEvicted,
-    VisitedAlignmentOutputsSaved,
 )
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
@@ -178,7 +178,14 @@ class FakePlotPayloadCache:
 
 
 class FakeStreamRuntime:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        stream_key: tuple[str, str] = ("rec", "stream"),
+        *,
+        n_shanks: int = 2,
+    ) -> None:
+        self.stream = SimpleNamespace(stream_key=stream_key, n_shanks=n_shanks)
+        self.stream_key = stream_key
         self.calls: list[int] = []
         self.shank_runtime_by_idx = {}
         self.plot_payload_cache_by_shank = {
@@ -209,6 +216,7 @@ class FakeAlignmentRepository:
         self.loaded_alignments = None
         self.loaded_kwargs = None
         self.saved_kwargs: list[dict[str, Any]] = []
+        self.save_error: Exception | None = None
 
     def load_previous_alignments(self, **kwargs):
         self.loaded_kwargs = kwargs
@@ -217,6 +225,8 @@ class FakeAlignmentRepository:
         return LoadedAlignmentHistory(self.loaded_alignments)
 
     def save_alignment_outputs(self, **kwargs):
+        if self.save_error is not None:
+            raise self.save_error
         self.saved_kwargs.append(kwargs)
         return SavedAlignmentOutputs(
             channel_results_path=kwargs["output_directory"] / "channels.json",
@@ -980,7 +990,9 @@ def test_commands_start_fresh_load_cancels_previous_execution() -> None:
     ]
 
 
-def test_commands_run_started_load_rejects_stale_execution_without_running_job() -> None:
+def test_commands_run_started_load_rejects_stale_execution_without_running_job() -> (
+    None
+):
     workspace = _workspace_with_probe_state(shank_idx=0)
     load_data_job = FakeLoadDataJob()
     workspace.load_data_commands.load_data_job = load_data_job
@@ -1369,7 +1381,7 @@ def test_commands_activate_cached_ephys_data_failure_does_not_mark_loaded() -> N
     assert stream_runtime.current_shank_idx == 1
 
 
-def test_commands_save_visited_alignment_outputs_batches_active_shanks(
+def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     tmp_path,
 ) -> None:
     repo = FakeAlignmentRepository()
@@ -1391,7 +1403,9 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
         feature=np.array([1.0, 2.0]),
         track=np.array([3.0, 4.0]),
     )
+    active_state.mark_alignment_changed()
     workspace.runtime.active_stream_runtime = FakeStreamRuntime()
+    workspace.runtime.current_stream_key = ("rec", "stream")
     workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
         1: SimpleNamespace(
             ephysalign="aligner",
@@ -1401,11 +1415,11 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
     events: list[SaveCompleted] = []
     workspace.app.events.subscribe(SaveCompleted, events.append)
 
-    result = workspace.app.commands.persistence.save_visited_alignment_outputs(
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=True
     )
 
-    assert isinstance(result, VisitedAlignmentOutputsSaved)
+    assert isinstance(result, EditedAlignmentOutputsSaved)
     assert result.saved_count == 1
     assert result.active_choices == active_state.prev_align
     assert list(result.saved_outputs) == [active_key]
@@ -1429,6 +1443,8 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
         active_state.active_alignment.track,
     )
     assert len(active_state.alignments) == 1
+    assert not active_state.has_unsaved_alignment
+    assert not workspace.document.dirty
     assert repo.saved_kwargs[0]["use_docdb"]
     assert repo.saved_kwargs[0]["shank_idx"] == 1
     assert repo.saved_kwargs[0]["previous_alignments"] == active_state.alignments
@@ -1445,19 +1461,183 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
     ]
 
 
-def test_commands_save_visited_alignment_outputs_emits_failed_event() -> None:
+def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+
+    probe_a = _probe_info()
+    probe_b = ProbeInfo(
+        probe_id="probe-id-b",
+        probe_name="probeB",
+        recording_id="rec",
+        logical_probe="probeB",
+        ephys_collection="streamB",
+        num_shanks=1,
+        ephys_dir=Path("/tmp/ephysB"),
+        channel_table=None,
+        xyz_picks=(),
+    )
+    output_root = tmp_path / "results"
+    active_output_dir = output_root / "rec" / "probeA"
+    active_output_dir.mkdir(parents=True)
+    workspace.document.output_root = output_root
+    workspace.document.output_directory = active_output_dir
+    workspace.data_context.mouse_root = MouseRoot(
+        root=Path("/tmp/mouse"),
+        schema_version="3.1.0",
+        mouse_id="mouse",
+        transforms=None,
+        histology=None,
+        probes={"rec": {"probeA": probe_a, "probeB": probe_b}},
+    )
+    workspace.data_context.probe_info = probe_a
+
+    key_a = AlignmentKey("rec", "stream", 1)
+    state_a = workspace.document.select_alignment_key(key_a)
+    state_a.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state_a.mark_alignment_changed()
+
+    key_b = AlignmentKey("rec", "streamB", 0)
+    state_b = workspace.document.alignment_state_for(key_b)
+    state_b.active_alignment = ActiveAlignment(
+        feature=np.array([5.0, 6.0]),
+        track=np.array([7.0, 8.0]),
+    )
+    state_b.mark_alignment_changed()
+
+    runtime_a = FakeStreamRuntime(("rec", "stream"), n_shanks=2)
+    runtime_a.shank_runtime_by_idx = {
+        1: SimpleNamespace(
+            ephysalign="aligner-a",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+    runtime_b = FakeStreamRuntime(("rec", "streamB"), n_shanks=1)
+    runtime_b.shank_runtime_by_idx = {
+        0: SimpleNamespace(
+            ephysalign="aligner-b",
+            chn_coords=np.array([[30.0, 40.0]]),
+        )
+    }
+    workspace.runtime.stream_cache = {
+        ("rec", "stream"): runtime_a,
+        ("rec", "streamB"): runtime_b,
+    }
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 2
+    assert list(result.saved_outputs) == [key_a, key_b]
+    assert list(output_builder.batched_alignments) == [key_a, key_b]
+    assert [call["ephysalign"] for call in derived.channel_location_calls] == [
+        "aligner-a",
+        "aligner-b",
+    ]
+    assert [kwargs["output_directory"] for kwargs in repo.saved_kwargs] == [
+        active_output_dir,
+        output_root / "rec" / "probeB",
+    ]
+    assert [kwargs["multi_shank"] for kwargs in repo.saved_kwargs] == [True, False]
+    assert not state_a.has_unsaved_alignment
+    assert not state_b.has_unsaved_alignment
+    assert not workspace.document.dirty
+
+
+def test_commands_save_edited_alignment_outputs_fails_for_dirty_missing_runtime(
+    tmp_path,
+) -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.output_directory = tmp_path
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    events: list[SaveFailed] = []
+    workspace.app.events.subscribe(SaveFailed, events.append)
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, Failed)
+    assert "stream runtime is not loaded" in result.message
+    assert state.has_unsaved_alignment
+    assert events == [SaveFailed(message=result.message)]
+
+
+def test_commands_save_edited_alignment_outputs_does_not_commit_history_on_failure(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    repo.save_error = RuntimeError("write failed")
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    active_key = AlignmentKey("rec", "stream", 0)
+    active_state = workspace.document.select_alignment_key(active_key)
+    active_state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    active_state.mark_alignment_changed()
+    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
+    workspace.runtime.current_stream_key = ("rec", "stream")
+    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
+        0: SimpleNamespace(
+            ephysalign="aligner",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, Failed)
+    assert "write failed" in result.message
+    assert active_state.alignments == {}
+    assert active_state.has_unsaved_alignment
+    assert workspace.document.dirty
+
+
+def test_commands_save_edited_alignment_outputs_emits_failed_event() -> None:
     workspace = AlignmentWorkspace()
     workspace.document.output_directory = Path("/tmp/out")
     events: list[SaveFailed] = []
     workspace.app.events.subscribe(SaveFailed, events.append)
 
-    result = workspace.app.commands.persistence.save_visited_alignment_outputs(
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=True
     )
 
     assert isinstance(result, Failed)
-    assert result.message == "No visited alignments are ready to save"
-    assert events == [SaveFailed(message="No visited alignments are ready to save")]
+    assert result.message == "No edited alignments are ready to save"
+    assert events == [SaveFailed(message="No edited alignments are ready to save")]
 
 
 def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) -> None:
@@ -1547,6 +1727,8 @@ def test_commands_select_previous_alignment_defaults_to_active_shank() -> None:
     np.testing.assert_allclose(result.track_prev, [3.0, 4.0])
     active_state = workspace.document.alignment_state_for(active_key)
     np.testing.assert_allclose(active_state.feature_prev, [1.0, 2.0])
+    assert active_state.has_unsaved_alignment
+    assert workspace.document.dirty
     assert workspace.document.alignment_state_for(other_key).feature_prev is None
 
 
@@ -2080,6 +2262,7 @@ def test_commands_prepare_loaded_shank_initializes_histology_runtime() -> None:
     active_state = workspace.document.active_alignment_state
     assert active_state is not None
     assert active_state.active_alignment is not None
+    assert not active_state.has_unsaved_alignment
     np.testing.assert_allclose(active_state.active_alignment.feature, [1.0, 2.0])
     np.testing.assert_allclose(active_state.active_alignment.track, [3.0, 4.0])
 

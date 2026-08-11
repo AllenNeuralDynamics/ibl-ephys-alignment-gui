@@ -195,6 +195,8 @@ class AlignmentController:
         self,
         idx: int,
         shank_idx: int | None = None,
+        *,
+        mark_changed: bool = False,
     ) -> PreviousAlignmentSelected | Failed:
         """Select a previous/original alignment on the active document state."""
         state_or_failed = self._active_state_for_shank(shank_idx)
@@ -205,6 +207,10 @@ class AlignmentController:
             feature_prev, track_prev = self.document.active_select_alignment_idx(idx)
         except Exception as exc:
             return Failed(f"Failed to select alignment: {exc}")
+
+        if mark_changed:
+            state.mark_alignment_changed()
+            self.document.dirty = self.document.has_unsaved_alignments
 
         choices = list(state.prev_align)
         choice = choices[idx] if 0 <= idx < len(choices) else None
@@ -321,7 +327,7 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to offset alignment: {exc}")
 
-        return self._edit_result(result)
+        return self._edit_result(state, result)
 
     def fit_alignment_to_reference_lines(
         self,
@@ -352,7 +358,7 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to fit alignment: {exc}")
 
-        return self._edit_result(result)
+        return self._edit_result(state, result)
 
     def go_next_alignment(
         self,
@@ -369,7 +375,7 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to move to next alignment edit: {exc}")
 
-        return self._edit_result(result)
+        return self._edit_result(state, result)
 
     def go_previous_alignment(
         self,
@@ -386,7 +392,7 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to move to previous alignment edit: {exc}")
 
-        return self._edit_result(result)
+        return self._edit_result(state, result)
 
     def reset_alignment_to_initial(
         self,
@@ -412,7 +418,7 @@ class AlignmentController:
         except Exception as exc:
             return Failed(f"Failed to reset alignment: {exc}")
 
-        return self._edit_result(result)
+        return self._edit_result(state, result)
 
     def _active_state_for_shank(
         self,
@@ -435,10 +441,15 @@ class AlignmentController:
             choices=list(state.prev_align),
         )
 
-    @staticmethod
-    def _edit_result(result: Any) -> AlignmentEditApplied | AlignmentEditNoop:
+    def _edit_result(
+        self,
+        state: AlignmentState,
+        result: Any,
+    ) -> AlignmentEditApplied | AlignmentEditNoop:
         if not result.changed or result.alignment is None:
             return AlignmentEditNoop()
+        state.mark_alignment_changed()
+        self.document.dirty = self.document.has_unsaved_alignments
         return AlignmentEditApplied(
             alignment=result.alignment,
             lin_fit=result.lin_fit,

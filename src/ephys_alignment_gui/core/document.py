@@ -135,6 +135,21 @@ class AlignmentDocument:
             and key.ephys_collection == active.ephys_collection
         }
 
+    def dirty_alignment_states(self) -> dict[AlignmentKey, AlignmentState]:
+        """Return alignment states with unsaved user edits."""
+        return {
+            key: state
+            for key, state in self.alignment_states.items()
+            if state.has_unsaved_alignment
+        }
+
+    @property
+    def has_unsaved_alignments(self) -> bool:
+        """Whether any per-key alignment state has unsaved edits."""
+        return any(
+            state.has_unsaved_alignment for state in self.alignment_states.values()
+        )
+
     @property
     def active_alignment_state(self) -> AlignmentState | None:
         """Editable state for the selected alignment key, if one is active."""

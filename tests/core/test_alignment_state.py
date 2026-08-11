@@ -41,6 +41,33 @@ def test_alignment_state_owns_edit_history_and_active_alignment() -> None:
     assert state.active_alignment is not None
     np.testing.assert_array_equal(state.active_alignment.feature, [0.0, 1.0])
     assert not state.active_alignment.lin_fit
+    assert not state.has_unsaved_alignment
+
+    state.mark_alignment_changed()
+
+    assert state.has_unsaved_alignment
+    assert state.save_state.revision == 1
+    assert state.save_state.saved_revision == 0
+
+    state.mark_saved()
+
+    assert not state.has_unsaved_alignment
+    assert state.save_state.saved_revision == 1
+
+    state.mark_alignment_changed()
+
+    assert not state.has_unsaved_alignment
+    assert state.save_state.revision == 2
+    assert state.save_state.saved_revision == 1
+
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 4.0]),
+        lin_fit=False,
+    )
+    state.mark_alignment_changed()
+
+    assert state.has_unsaved_alignment
 
     state.active_alignment = None
 
@@ -59,6 +86,18 @@ def test_alignment_state_history_roundtrip() -> None:
     f, t = state.get_alignment_idx(0)
     np.testing.assert_array_equal(f, feature)
     np.testing.assert_array_equal(t, track)
+
+
+def test_alignment_state_can_prepare_history_without_mutating() -> None:
+    state = AlignmentState()
+    feature = np.array([0.0, 1.0, 2.0])
+    track = np.array([0.0, 1.5, 3.0])
+
+    key, alignments = state.with_alignment_added(feature, track)
+
+    assert state.alignments == {}
+    assert state.prev_align == ["original"]
+    assert alignments[key] == [feature.tolist(), track.tolist()]
 
 
 def test_alignment_state_same_second_keys_disambiguate(monkeypatch) -> None:
@@ -124,6 +163,7 @@ def test_alignment_state_pending_reference_lines_roundtrip() -> None:
 
     assert state.prev_align == ["original"]
     assert state.pending_reference_lines is lines
+    assert not state.has_unsaved_alignment
     np.testing.assert_array_equal(lines.feature_positions_um, [100.0, 200.0])
     np.testing.assert_array_equal(lines.track_positions_um, [110.0, 210.0])
 

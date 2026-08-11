@@ -55,12 +55,10 @@ class LoadedShankCommandHandler:
         try:
             track_annotations_ras = shank_runtime.track_annotations_ras
             if track_annotations_ras is None:
-                track_annotations_ras = (
-                    self.probe_track_service.load_track_annotations(
-                        probe=probe,
-                        shank_idx=shank_idx,
-                        brain_atlas=brain_atlas,
-                    )
+                track_annotations_ras = self.probe_track_service.load_track_annotations(
+                    probe=probe,
+                    shank_idx=shank_idx,
+                    brain_atlas=brain_atlas,
                 )
         except Exception as exc:
             return Failed(f"Failed to load shank track annotations: {exc}")

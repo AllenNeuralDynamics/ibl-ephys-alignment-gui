@@ -245,6 +245,31 @@ def test_select_previous_alignment_rebases_working_state_and_clears_lines() -> N
     np.testing.assert_array_equal(state.active_alignment.feature, [1.0, 2.0])
     np.testing.assert_array_equal(state.active_alignment.track, [3.0, 4.0])
     assert state.pending_reference_lines is None
+    assert not state.has_unsaved_alignment
+
+
+def test_select_previous_alignment_can_mark_user_selection_dirty() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.active_alignment = ActiveAlignment(
+        np.array([9.0, 10.0]),
+        np.array([11.0, 12.0]),
+    )
+    state.mark_saved()
+    doc.set_active_alignments({"saved": [[1.0, 2.0], [3.0, 4.0]]})
+    controller, _ = make_controller(doc)
+
+    result = controller.select_previous_alignment(
+        0,
+        shank_idx=0,
+        mark_changed=True,
+    )
+
+    assert isinstance(result, PreviousAlignmentSelected)
+    assert state.has_unsaved_alignment
+    assert doc.dirty
 
 
 def test_initialize_shank_runtime_seeds_empty_document_state() -> None:
@@ -418,11 +443,14 @@ def test_go_previous_and_next_alignment_update_active_document_state() -> None:
         lin_fit=True,
     )
     controller, _ = make_controller(doc)
+    state.mark_saved()
     controller.offset_alignment_from_tip(
         tip_position_um=100.0,
         probe_tip_um=0.0,
         lin_fit=False,
     )
+    assert state.has_unsaved_alignment
+    assert doc.dirty
 
     previous_result = controller.go_previous_alignment()
 
@@ -431,6 +459,8 @@ def test_go_previous_and_next_alignment_update_active_document_state() -> None:
     assert previous_result.lin_fit is True
     assert state.active_alignment is not None
     np.testing.assert_array_equal(state.active_alignment.track, [10.0, 14.0])
+    assert not state.has_unsaved_alignment
+    assert not doc.dirty
 
     next_result = controller.go_next_alignment()
 
@@ -439,6 +469,8 @@ def test_go_previous_and_next_alignment_update_active_document_state() -> None:
     assert next_result.lin_fit is False
     assert state.active_alignment is not None
     np.testing.assert_allclose(state.active_alignment.track, [10.0001, 14.0001])
+    assert state.has_unsaved_alignment
+    assert doc.dirty
 
 
 def test_reset_alignment_to_initial_updates_active_document_state() -> None:

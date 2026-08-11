@@ -13,6 +13,31 @@ from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_edit_history import AlignmentEditHistory
 
 LEGACY_AUTO_ALIGNMENT_LABEL = "auto"
+AlignmentSignature = tuple[tuple[float, ...], tuple[float, ...], bool]
+
+
+@dataclass
+class AlignmentSaveState:
+    """Per-alignment save revision metadata."""
+
+    revision: int = 0
+    saved_revision: int = 0
+    saved_signature: AlignmentSignature | None = None
+
+    def is_dirty(self, active_signature: AlignmentSignature | None) -> bool:
+        """Whether the current active alignment differs from the saved state."""
+        if active_signature is None or self.revision == self.saved_revision:
+            return False
+        return active_signature != self.saved_signature
+
+    def mark_changed(self) -> None:
+        """Record that a user edit changed the saveable alignment output."""
+        self.revision += 1
+
+    def mark_saved(self, active_signature: AlignmentSignature | None) -> None:
+        """Record that the current revision was successfully persisted."""
+        self.saved_revision = self.revision
+        self.saved_signature = active_signature
 
 
 @dataclass(frozen=True)
@@ -42,8 +67,7 @@ class PendingReferenceLines:
             raise ValueError("reference-line positions must be 1D arrays")
         if feature_positions_um.shape != track_positions_um.shape:
             raise ValueError(
-                "feature and track reference-line positions must have matching "
-                "shapes"
+                "feature and track reference-line positions must have matching shapes"
             )
         feature_positions_um.setflags(write=False)
         track_positions_um.setflags(write=False)
@@ -81,6 +105,7 @@ class AlignmentState:
     feature_prev: Any = None
     track_prev: Any = None
     pending_reference_lines: PendingReferenceLines | None = None
+    save_state: AlignmentSaveState = field(default_factory=AlignmentSaveState)
     edit_history: AlignmentEditHistory = field(init=False)
 
     def __post_init__(self) -> None:
@@ -99,6 +124,19 @@ class AlignmentState:
             return
         self.edit_history.set_current_alignment(alignment)
 
+    @property
+    def has_unsaved_alignment(self) -> bool:
+        """Whether this state has saveable edits not yet persisted."""
+        return self.save_state.is_dirty(self._active_alignment_signature())
+
+    def mark_alignment_changed(self) -> None:
+        """Record that the current working alignment changed via user edit."""
+        self.save_state.mark_changed()
+
+    def mark_saved(self) -> None:
+        """Record that the current working alignment output was saved."""
+        self.save_state.mark_saved(self._active_alignment_signature())
+
     def set_alignments(self, alignments: dict[str, list[list[float]]]) -> None:
         """Replace persisted alignment history and rebuild dropdown order."""
         self.alignments = {
@@ -110,15 +148,26 @@ class AlignmentState:
 
     def add_alignment(self, feature: NDArray, track: NDArray) -> str:
         """Record a new saved alignment and return its unique timestamp key."""
+        key, alignments = self.with_alignment_added(feature, track)
+        self.alignments = alignments
+        self._refresh_prev_align()
+        return key
+
+    def with_alignment_added(
+        self,
+        feature: NDArray,
+        track: NDArray,
+    ) -> tuple[str, dict[str, list[list[float]]]]:
+        """Return a history copy with one alignment appended."""
+        alignments = dict(self.alignments)
         base = datetime.now().replace(microsecond=0).isoformat()
         date = base
         n = 1
-        while date in self.alignments:
+        while date in alignments:
             date = f"{base}.{n}"
             n += 1
-        self.alignments[date] = [feature.tolist(), track.tolist()]
-        self._refresh_prev_align()
-        return date
+        alignments[date] = [feature.tolist(), track.tolist()]
+        return date, alignments
 
     def select_alignment_idx(
         self,
@@ -164,6 +213,16 @@ class AlignmentState:
 
     def _refresh_prev_align(self) -> None:
         self.prev_align = self._ordered_keys(self.alignments)
+
+    def _active_alignment_signature(self) -> AlignmentSignature | None:
+        alignment = self.active_alignment
+        if alignment is None:
+            return None
+        return (
+            tuple(float(value) for value in alignment.feature),
+            tuple(float(value) for value in alignment.track),
+            alignment.lin_fit,
+        )
 
     @staticmethod
     def _ordered_keys(alignments: dict[str, Any]) -> list[str]:

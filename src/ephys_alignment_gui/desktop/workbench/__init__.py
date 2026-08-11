@@ -302,7 +302,7 @@ class DesktopWorkbench:
         return presenter.load_existing_alignments()
 
     def save_alignment_outputs(self) -> bool:
-        """Save visited alignment outputs."""
+        """Save edited alignment outputs."""
         return self.presenter_cluster.save_presenter.save_alignment_outputs()
 
     def display_qc_options(self) -> bool:
