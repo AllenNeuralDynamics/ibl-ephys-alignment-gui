@@ -18,7 +18,7 @@ def initialize_region_lookup(window, allen) -> None:
     window.struct_list = QtGui.QStandardItemModel()
     window.struct_view = QtWidgets.QTreeView()
     window.struct_view.setModel(window.struct_list)
-    window.struct_view.clicked.connect(window.label_pressed)
+    window.struct_view.clicked.connect(window.shell_actions.label_pressed)
     window.struct_view.setHeaderHidden(True)
 
     unique_levels = np.unique(allen["depth"]).astype(int)

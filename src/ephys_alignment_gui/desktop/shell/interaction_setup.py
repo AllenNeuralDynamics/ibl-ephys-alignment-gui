@@ -26,32 +26,36 @@ def initialize_interaction_features(window) -> None:
 
 
 def _initialize_alignment_buttons(window) -> None:
+    actions = window.shell_actions
+
     window.fit_button = QtWidgets.QPushButton("Fit")
-    window.fit_button.clicked.connect(window.fit_button_pressed)
+    window.fit_button.clicked.connect(actions.fit_button_pressed)
 
     window.offset_button = QtWidgets.QPushButton("Offset")
-    window.offset_button.clicked.connect(window.offset_button_pressed)
+    window.offset_button.clicked.connect(actions.offset_button_pressed)
 
     window.next_button = QtWidgets.QPushButton("Next")
-    window.next_button.clicked.connect(window.next_button_pressed)
+    window.next_button.clicked.connect(actions.next_button_pressed)
 
     window.prev_button = QtWidgets.QPushButton("Previous")
-    window.prev_button.clicked.connect(window.prev_button_pressed)
+    window.prev_button.clicked.connect(actions.prev_button_pressed)
 
     window.idx_string = QtWidgets.QLabel()
     window.tot_idx_string = QtWidgets.QLabel()
 
     window.reset_button = QtWidgets.QPushButton("Reset")
-    window.reset_button.clicked.connect(window.reset_button_pressed)
+    window.reset_button.clicked.connect(actions.reset_button_pressed)
 
     window.complete_button = QtWidgets.QPushButton("Save")
     if not window.offline:
-        window.complete_button.clicked.connect(window.display_qc_options)
+        window.complete_button.clicked.connect(actions.display_qc_options)
     else:
-        window.complete_button.clicked.connect(window.complete_button_pressed_offline)
+        window.complete_button.clicked.connect(actions.complete_button_pressed_offline)
 
 
 def _initialize_input_controls(window) -> None:
+    actions = window.shell_actions
+
     if not window.offline:
         window.subj_list = QtGui.QStandardItemModel()
         window.subj_combobox = QtWidgets.QComboBox()
@@ -61,65 +65,69 @@ def _initialize_input_controls(window) -> None:
         window.subj_combobox.setCompleter(subj_completer)
         window.subj_combobox.setModel(window.subj_list)
         window.subj_combobox.completer().setModel(window.subj_list)
-        window.subj_combobox.activated.connect(window.on_subject_selected)
+        window.subj_combobox.activated.connect(actions.on_subject_selected)
 
         window.sess_list = QtGui.QStandardItemModel()
         window.sess_combobox = QtWidgets.QComboBox()
         window.sess_combobox.setModel(window.sess_list)
-        window.sess_combobox.activated.connect(window.on_session_selected)
+        window.sess_combobox.activated.connect(actions.on_session_selected)
         return
 
     window.mouse_root_line = QtWidgets.QLineEdit()
     window.mouse_root_button = QtWidgets.QToolButton()
     window.mouse_root_button.setText("Mouse Root")
-    window.mouse_root_button.clicked.connect(window.on_mouse_root_selected)
-    window.mouse_root_line.editingFinished.connect(window.on_mouse_root_edited)
+    window.mouse_root_button.clicked.connect(actions.on_mouse_root_selected)
+    window.mouse_root_line.editingFinished.connect(actions.on_mouse_root_edited)
 
     window.session_list = QtGui.QStandardItemModel()
     window.session_combobox = QtWidgets.QComboBox()
     window.session_combobox.setModel(window.session_list)
-    window.session_combobox.activated.connect(window.on_session_combobox_activated)
+    window.session_combobox.activated.connect(actions.on_session_combobox_activated)
 
     window.probe_list = QtGui.QStandardItemModel()
     window.probe_combobox = QtWidgets.QComboBox()
     window.probe_combobox.setModel(window.probe_list)
-    window.probe_combobox.activated.connect(window.on_probe_combobox_activated)
+    window.probe_combobox.activated.connect(actions.on_probe_combobox_activated)
 
     window.reload_folder_line = QtWidgets.QLineEdit()
     window.reload_folder_button = QtWidgets.QToolButton()
     window.reload_folder_button.setText("Load Alignments")
-    window.reload_folder_button.clicked.connect(window.load_existing_alignments)
+    window.reload_folder_button.clicked.connect(actions.load_existing_alignments)
 
 
 def _initialize_alignment_selection_controls(window) -> None:
+    actions = window.shell_actions
+
     window.shank_list = QtGui.QStandardItemModel()
     window.shank_combobox = QtWidgets.QComboBox()
     window.shank_combobox.setModel(window.shank_list)
-    window.shank_combobox.activated.connect(window.on_shank_selected)
+    window.shank_combobox.activated.connect(actions.on_shank_selected)
 
     window.align_list = QtGui.QStandardItemModel()
     window.align_combobox = QtWidgets.QComboBox()
     window.align_combobox.setModel(window.align_list)
-    window.align_combobox.activated.connect(window.on_alignment_selected)
+    window.align_combobox.activated.connect(actions.on_alignment_selected)
 
 
 def _initialize_output_controls(window) -> None:
+    actions = window.shell_actions
+
     window.output_folder_line = QtWidgets.QLineEdit()
     window.output_folder_button = QtWidgets.QToolButton()
     window.output_folder_button.setText("Output Directory")
-    window.output_folder_button.clicked.connect(window.on_output_folder_selected)
-    window.output_folder_line.editingFinished.connect(window.on_output_folder_edited)
+    window.output_folder_button.clicked.connect(actions.on_output_folder_selected)
+    window.output_folder_line.editingFinished.connect(actions.on_output_folder_edited)
 
     window.use_docdb_checkbox = QtWidgets.QCheckBox("DocDB")
     window.use_docdb_checkbox.setChecked(True)
-    window.use_docdb_checkbox.stateChanged.connect(window.on_use_docdb_changed)
+    window.use_docdb_checkbox.stateChanged.connect(actions.on_use_docdb_changed)
 
 
 def _initialize_load_button(window) -> None:
     window.load_data_button = QtWidgets.QToolButton()
     window.load_data_button.setText("Load Data")
     window.load_data_button.setEnabled(False)
-    window.load_data_button.clicked.connect(window.on_load_data_button_pressed)
+    window.load_data_button.clicked.connect(window.shell_actions.on_load_data_button_pressed)
 
 
 def _initialize_interaction_layouts(window) -> None:
@@ -219,7 +227,7 @@ def _initialize_qc_dialog(window) -> None:
     window.qc_dialog = QtWidgets.QDialog(window)
     window.qc_dialog.setWindowTitle("QC assessment")
     window.qc_dialog.resize(300, 150)
-    window.qc_dialog.accepted.connect(window.qc_button_clicked)
+    window.qc_dialog.accepted.connect(window.shell_actions.qc_button_clicked)
     button_box = QtWidgets.QDialogButtonBox(
         QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
     )

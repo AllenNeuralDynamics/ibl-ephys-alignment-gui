@@ -31,34 +31,36 @@ def _attach_plot_menus(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
 
 
 def _add_fit_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    actions = window.shell_actions
     fit_options = menu_bar.addMenu("Fit Options")
     _add_actions(
         fit_options,
         [
-            _action(window, "Fit", "Return", window.fit_button_pressed),
-            _action(window, "Offset", "O", window.offset_button_pressed),
-            _action(window, "Offset + 50um", "Shift+Up", window.moveup_button_pressed),
+            _action(window, "Fit", "Return", actions.fit_button_pressed),
+            _action(window, "Offset", "O", actions.offset_button_pressed),
+            _action(window, "Offset + 50um", "Shift+Up", actions.moveup_button_pressed),
             _action(
                 window,
                 "Offset - 50um",
                 "Shift+Down",
-                window.movedown_button_pressed,
+                actions.movedown_button_pressed,
             ),
             _action(
                 window,
                 "Delete Line",
                 "Shift+D",
-                window.delete_line_button_pressed,
+                actions.delete_line_button_pressed,
             ),
-            _action(window, "Next", "Right", window.next_button_pressed),
-            _action(window, "Previous", "Left", window.prev_button_pressed),
-            _action(window, "Reset", "Ctrl+R", window.reset_button_pressed),
+            _action(window, "Next", "Right", actions.next_button_pressed),
+            _action(window, "Previous", "Left", actions.prev_button_pressed),
+            _action(window, "Reset", "Ctrl+R", actions.reset_button_pressed),
             _save_action(window),
         ],
     )
 
 
 def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    actions = window.shell_actions
     display_options = menu_bar.addMenu("Display Options")
     _add_actions(
         display_options,
@@ -114,70 +116,72 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
             _action(window, "View 1", "Shift+1", lambda: window.set_view(view=1)),
             _action(window, "View 2", "Shift+2", lambda: window.set_view(view=2)),
             _action(window, "View 3", "Shift+3", lambda: window.set_view(view=3)),
-            _action(window, "Reset Axis", "Shift+A", window.reset_axis_button_pressed),
+            _action(window, "Reset Axis", "Shift+A", actions.reset_axis_button_pressed),
             _action(
                 window,
                 "Hide/Show Labels",
                 "Shift+L",
-                window.toggle_labels_button_pressed,
+                actions.toggle_labels_button_pressed,
             ),
             _action(
                 window,
                 "Hide/Show Lines",
                 "Shift+H",
-                window.toggle_line_button_pressed,
+                actions.toggle_line_button_pressed,
             ),
             _action(
                 window,
                 "Hide/Show Channels",
                 "Shift+C",
-                window.toggle_channel_button_pressed,
+                actions.toggle_channel_button_pressed,
             ),
             _action(
                 window,
                 "Hide/Show Nearby Boundaries",
                 "Shift+N",
-                window.toggle_histology_button_pressed,
+                actions.toggle_histology_button_pressed,
             ),
             _action(
                 window,
                 "Change Histology Map",
                 "Shift+M",
-                window.toggle_histology_map_button_pressed,
+                actions.toggle_histology_map_button_pressed,
             ),
             _action(
                 window,
                 "Minimise/Show Cluster Popup",
                 "Alt+M",
-                window.minimise_popups,
+                actions.minimise_popups,
             ),
-            _action(window, "Close Cluster Popup", "Alt+X", window.close_popups),
+            _action(window, "Close Cluster Popup", "Alt+X", actions.close_popups),
             _action(window, "Save Plots", "Ctrl+Shift+S", window.save_plots),
         ],
     )
 
 
 def _add_session_information_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    actions = window.shell_actions
     info_options = menu_bar.addMenu("Session Information")
     _add_actions(
         info_options,
         [
-            _action(window, "Session Notes", None, window.display_session_notes),
-            _action(window, "Region Info", "Shift+I", window.describe_labels_pressed),
+            _action(window, "Session Notes", None, actions.display_session_notes),
+            _action(window, "Region Info", "Shift+I", actions.describe_labels_pressed),
         ],
     )
 
     if not window.offline:
         info_options.addAction(
-            _action(window, "Nearby Sessions", None, window.display_nearby_sessions)
+            _action(window, "Nearby Sessions", None, actions.display_nearby_sessions)
         )
 
 
 def _save_action(window: Any) -> QtWidgets.QAction:
+    actions = window.shell_actions
     callback = (
-        window.display_qc_options
+        actions.display_qc_options
         if not window.offline
-        else window.complete_button_pressed_offline
+        else actions.complete_button_pressed_offline
     )
     return _action(window, "Save", "Ctrl+S", callback)
 

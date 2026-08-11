@@ -103,7 +103,7 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             histology_available=histology_available,
             open_qc_dialog=open_qc_dialog,
             ephys_qc=ephys_qc,
-            selected_qc_descriptions=window._selected_qc_descriptions,
+            selected_qc_descriptions=window.shell_actions.selected_qc_descriptions,
             warning=lambda title, message: QtWidgets.QMessageBox.warning(
                 window,
                 title,

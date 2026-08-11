@@ -80,7 +80,7 @@ class DesktopViews:
             ephys_data_area=displays.ephys.area,
             slice_plot=displays.slice.coronal_plot,
             slice_trajectory_pen=window.rpen_dot,
-            reset_axis=window.reset_axis_button_pressed,
+            reset_axis=window.shell_actions.reset_axis_button_pressed,
             set_view=window.set_view,
             set_axis=window.set_axis,
             set_font=window.set_font,

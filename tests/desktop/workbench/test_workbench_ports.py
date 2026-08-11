@@ -55,7 +55,7 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         _show_empty_state=lambda: None,
         offline=True,
         complete_button=object(),
-        _selected_qc_descriptions=lambda: [],
+        shell_actions=SimpleNamespace(selected_qc_descriptions=lambda: []),
         reload_folder_line=SimpleNamespace(setText=lambda _text: None),
         reload_folder_button=object(),
         export_view=object(),

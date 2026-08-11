@@ -16,16 +16,17 @@ def desktop_ephys_display_config_from_main_window(
     window: Any,
 ) -> DesktopEphysDisplayConfig:
     """Adapt MainWindow callbacks/style to ephys display config."""
+    actions = window.shell_actions
     return DesktopEphysDisplayConfig(
         line_pen=window.kpen_solid,
         depth_guide_pen=window.kpen_dot,
         padding_provider=lambda: window.pad,
         raw_image_payloads=lambda: window.shank_screen_view.raw_image_payload_mapping(),
         set_axis=window.set_axis,
-        reset_axis=window.reset_axis_button_pressed,
-        cluster_clicked=lambda *args: window.desktop_workbench.cluster_clicked(*args),
-        on_mouse_double_clicked=window.on_mouse_double_clicked,
-        on_mouse_hover=window.on_mouse_hover,
+        reset_axis=actions.reset_axis_button_pressed,
+        cluster_clicked=actions.cluster_clicked,
+        on_mouse_double_clicked=actions.on_mouse_double_clicked,
+        on_mouse_hover=actions.on_mouse_hover,
     )
 
 
@@ -33,6 +34,7 @@ def desktop_histology_display_config_from_main_window(
     window: Any,
 ) -> DesktopHistologyDisplayConfig:
     """Adapt MainWindow callbacks/style to histology display config."""
+    actions = window.shell_actions
     histology_available = window.app.queries.workspace.histology_data_loaded
     return DesktopHistologyDisplayConfig(
         dotted_pen=window.kpen_dot,
@@ -41,9 +43,9 @@ def desktop_histology_display_config_from_main_window(
         baseline_pen=window.kpen_dot,
         set_axis=window.set_axis,
         padding_provider=lambda: window.pad,
-        on_linear_fit_changed=window.lin_fit_option_changed,
-        on_mouse_double_clicked=window.on_mouse_double_clicked,
-        on_mouse_hover=window.on_mouse_hover,
+        on_linear_fit_changed=actions.lin_fit_option_changed,
+        on_mouse_double_clicked=actions.on_mouse_double_clicked,
+        on_mouse_hover=actions.on_mouse_hover,
         histology_available=histology_available,
     )
 
