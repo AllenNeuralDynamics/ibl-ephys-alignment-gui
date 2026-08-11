@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Hashable
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +55,7 @@ class EphysPlotPayloadCache:
         # Set by query preparation after alignment-derived brain occupancy exists.
         self.in_brain_depths_um = None
 
-        self._img_cache: dict[tuple[str, tuple[Any, ...]], Any] = {}
+        self._img_cache: dict[Hashable, Any] = {}
         self._current_filter: str | None = None
 
         self.spike_builder = SpikePlotDataBuilder(
@@ -125,11 +126,10 @@ class EphysPlotPayloadCache:
         """Return the maximum spike time, if spike data are loaded."""
         return self.spike_builder.max_spike_time
 
-    def cached(self, method: str, args: tuple[Any, ...] = ()):
-        """Return ``self.<method>(*args)``, memoized per payload cache."""
-        key = (method, args)
+    def get_or_build_payload(self, key: Hashable, build: Callable[[], Any]) -> Any:
+        """Return a memoized plot payload for a typed cache key."""
         if key not in self._img_cache:
-            self._img_cache[key] = getattr(self, method)(*args)
+            self._img_cache[key] = build()
         return self._img_cache[key]
 
     def filter_units(self, subset: str) -> None:

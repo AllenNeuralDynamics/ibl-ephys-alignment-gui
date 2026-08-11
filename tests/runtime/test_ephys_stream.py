@@ -25,11 +25,12 @@ class FakeRegistryPlotPayloadCache:
         self.rows = rows
         self.calls = []
 
-    def cached(self, method: str, args: tuple = ()) -> Any:
-        self.calls.append((method, args))
-        if method == "get_fr_img":
-            return {"rows": self.rows.copy()}
-        return None
+    def get_or_build_payload(self, key: tuple[Any, ...], build):
+        self.calls.append(key)
+        return build()
+
+    def get_fr_img(self) -> Any:
+        return {"rows": self.rows.copy()}
 
 
 class FakeFilterPlotPayloadCache:
@@ -117,7 +118,7 @@ def test_plot_payload_for_shank_resolves_registered_plot_spec() -> None:
     payload = runtime.plot_payload_for_shank(1, "image.fr")
 
     assert payload["rows"].tolist() == [2, 3]
-    assert factory.payload_cache.calls == [("get_fr_img", ())]
+    assert factory.payload_cache.calls == [("fr_img",)]
 
 
 def test_filtered_plot_payload_cache_for_shank_applies_unit_filter() -> None:

@@ -96,18 +96,35 @@ class FakePlotPayloadCache:
             "psd_lf_main": {"exists": False},
         }
 
-    def cached(self, method: str, args: tuple = ()) -> Any:
-        if method == "get_fr_img":
-            return {"label": self.label}
-        if method == "get_lfp_correlation_data_img":
-            return {}
-        if method == "get_passive_events":
-            return {}
-        if method == "get_lfp_spectrum_data":
-            return None, {}
-        if method == "get_rfmap_data":
-            return {}, None
+    def get_fr_img(self) -> Any:
+        return {"label": self.label}
+
+    def get_depth_data_scatter(self) -> Any:
         return None
+
+    def get_spike_correlation_data_img(self) -> Any:
+        return None
+
+    def get_fr_p2t_data_scatter(self) -> Any:
+        return None, None, None
+
+    def get_fr_amp_data_line(self) -> Any:
+        return None, None
+
+    def get_rms_data_img_probe(self, _format: str) -> Any:
+        return None, None
+
+    def get_lfp_correlation_data_img(self) -> Any:
+        return {}
+
+    def get_passive_events(self) -> Any:
+        return {}
+
+    def get_lfp_spectrum_data(self, _format: str) -> Any:
+        return None, {}
+
+    def get_rfmap_data(self) -> Any:
+        return {}, None
 
     def filter_units(self, subset: str) -> None:
         self.filtered_subsets.append(subset)

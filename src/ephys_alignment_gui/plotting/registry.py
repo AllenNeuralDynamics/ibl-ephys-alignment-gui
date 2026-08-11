@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -39,15 +39,31 @@ class DynamicPlotSpec:
     children: Callable[[Any], tuple[PlotSpec, ...]]
 
 
-def _cached(
-    method: str,
-    args: tuple[Any, ...] = (),
+def _memoized_payload(
+    payload_cache: Any,
+    key: Hashable,
+    build: Callable[[], Any],
+) -> Any:
+    """Return a memoized typed plot payload when the cache supports it."""
+    get_or_build = getattr(payload_cache, "get_or_build_payload", None)
+    if callable(get_or_build):
+        return get_or_build(key, build)
+    return build()
+
+
+def _source(
+    key: Hashable,
+    build: Callable[[Any], Any],
     index: int | None = None,
 ) -> Callable[[Any], Any]:
-    """Return a source function backed by payload-cache memoization."""
+    """Return a source function backed by typed payload-cache memoization."""
 
     def source(payload_cache: Any) -> Any:
-        value = payload_cache.cached(method, args)
+        value = _memoized_payload(
+            payload_cache,
+            key,
+            lambda: build(payload_cache),
+        )
         return value if index is None else value[index]
 
     return source
@@ -156,8 +172,16 @@ def _mapping_child_specs(
     return tuple(specs)
 
 
+def _lfp_correlation_payload(payload_cache: Any) -> Mapping[Any, Any]:
+    return _memoized_payload(
+        payload_cache,
+        ("lfp_correlation_data_img",),
+        payload_cache.get_lfp_correlation_data_img,
+    )
+
+
 def _lfp_correlation_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    payload = payload_cache.cached("get_lfp_correlation_data_img")
+    payload = _lfp_correlation_payload(payload_cache)
     if not isinstance(payload, Mapping) or not payload:
         return ()
     return _mapping_child_specs(
@@ -166,14 +190,20 @@ def _lfp_correlation_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
         renderer="image",
         payload=payload,
         label=lambda key: f"LFP Correlation ({key})",
-        source=lambda payload_cache: payload_cache.cached(
-            "get_lfp_correlation_data_img"
-        ),
+        source=_lfp_correlation_payload,
+    )
+
+
+def _passive_events_payload(payload_cache: Any) -> Mapping[Any, Any]:
+    return _memoized_payload(
+        payload_cache,
+        ("passive_events",),
+        payload_cache.get_passive_events,
     )
 
 
 def _passive_event_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    payload = payload_cache.cached("get_passive_events")
+    payload = _passive_events_payload(payload_cache)
     if not isinstance(payload, Mapping) or not payload:
         return ()
     return _mapping_child_specs(
@@ -182,12 +212,20 @@ def _passive_event_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
         renderer="image",
         payload=payload,
         label=str,
-        source=lambda payload_cache: payload_cache.cached("get_passive_events"),
+        source=_passive_events_payload,
+    )
+
+
+def _lfp_spectrum_payload(payload_cache: Any, format: str) -> Any:
+    return _memoized_payload(
+        payload_cache,
+        ("lfp_spectrum_data", format),
+        lambda: payload_cache.get_lfp_spectrum_data(format),
     )
 
 
 def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    value = payload_cache.cached("get_lfp_spectrum_data", ("lf",))
+    value = _lfp_spectrum_payload(payload_cache, "lf")
     if not isinstance(value, tuple) or len(value) < 2:
         return ()
     payload = value[1]
@@ -199,15 +237,20 @@ def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
         renderer="probe",
         payload=payload,
         label=str,
-        source=lambda payload_cache: payload_cache.cached(
-            "get_lfp_spectrum_data",
-            ("lf",),
-        )[1],
+        source=lambda payload_cache: _lfp_spectrum_payload(payload_cache, "lf")[1],
+    )
+
+
+def _rfmap_payload(payload_cache: Any) -> Any:
+    return _memoized_payload(
+        payload_cache,
+        ("rfmap_data",),
+        payload_cache.get_rfmap_data,
     )
 
 
 def _rfmap_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
-    value = payload_cache.cached("get_rfmap_data")
+    value = _rfmap_payload(payload_cache)
     if not isinstance(value, tuple) or len(value) < 2:
         return ()
     payload, _bounds = value
@@ -219,8 +262,8 @@ def _rfmap_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
         renderer="probe",
         payload=payload,
         label=lambda key: f"RF Map - {key}",
-        source=lambda payload_cache: payload_cache.cached("get_rfmap_data")[0],
-        bounds_source=lambda payload_cache: payload_cache.cached("get_rfmap_data")[1],
+        source=lambda payload_cache: _rfmap_payload(payload_cache)[0],
+        bounds_source=lambda payload_cache: _rfmap_payload(payload_cache)[1],
     )
 
 
@@ -230,7 +273,7 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Firing Rate",
         menu="image",
         renderer="image",
-        source=_cached("get_fr_img"),
+        source=_source(("fr_img",), lambda payload_cache: payload_cache.get_fr_img()),
         default=True,
         available=_data_exists("spikes"),
     ),
@@ -239,7 +282,10 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Amplitude",
         menu="image",
         renderer="scatter",
-        source=_cached("get_depth_data_scatter"),
+        source=_source(
+            ("depth_data_scatter",),
+            lambda payload_cache: payload_cache.get_depth_data_scatter(),
+        ),
         available=_data_exists("spikes"),
     ),
     PlotSpec(
@@ -247,7 +293,10 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Spike Correlation",
         menu="image",
         renderer="image",
-        source=_cached("get_spike_correlation_data_img"),
+        source=_source(
+            ("spike_correlation_data_img",),
+            lambda payload_cache: payload_cache.get_spike_correlation_data_img(),
+        ),
         available=_data_exists("spikes"),
     ),
     PlotSpec(
@@ -255,7 +304,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS AP",
         menu="image",
         renderer="image",
-        source=_cached("get_rms_data_img_probe", ("AP",), 0),
+        source=_source(
+            ("rms_data_img_probe", "AP"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("AP"),
+            0,
+        ),
         available=_data_exists("rms_AP"),
     ),
     PlotSpec(
@@ -263,7 +316,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS AP Main Rec",
         menu="image",
         renderer="image",
-        source=_cached("get_rms_data_img_probe", ("AP_main",), 0),
+        source=_source(
+            ("rms_data_img_probe", "AP_main"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("AP_main"),
+            0,
+        ),
         available=_data_exists("rms_AP_main"),
     ),
     PlotSpec(
@@ -271,7 +328,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS LFP",
         menu="image",
         renderer="image",
-        source=_cached("get_rms_data_img_probe", ("LF",), 0),
+        source=_source(
+            ("rms_data_img_probe", "LF"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("LF"),
+            0,
+        ),
         available=_data_exists("rms_LF"),
     ),
     PlotSpec(
@@ -279,7 +340,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS LFP Main Rec",
         menu="image",
         renderer="image",
-        source=_cached("get_rms_data_img_probe", ("LF_main",), 0),
+        source=_source(
+            ("rms_data_img_probe", "LF_main"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("LF_main"),
+            0,
+        ),
         available=_data_exists("rms_LF_main"),
     ),
     PlotSpec(
@@ -287,7 +352,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="LFP Spectrum",
         menu="image",
         renderer="image",
-        source=_cached("get_lfp_spectrum_data", ("lf",), 0),
+        source=_source(
+            ("lfp_spectrum_data", "lf"),
+            lambda payload_cache: payload_cache.get_lfp_spectrum_data("lf"),
+            0,
+        ),
         available=_data_exists("psd_lf"),
     ),
     PlotSpec(
@@ -295,7 +364,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="LFP Spectrum Main Rec",
         menu="image",
         renderer="image",
-        source=_cached("get_lfp_spectrum_data", ("lf_main",), 0),
+        source=_source(
+            ("lfp_spectrum_data", "lf_main"),
+            lambda payload_cache: payload_cache.get_lfp_spectrum_data("lf_main"),
+            0,
+        ),
         available=_data_exists("psd_lf_main"),
     ),
     DynamicPlotSpec(
@@ -308,7 +381,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Cluster Amp vs Depth vs FR",
         menu="image",
         renderer="scatter",
-        source=_cached("get_fr_p2t_data_scatter", index=0),
+        source=_source(
+            ("fr_p2t_data_scatter",),
+            lambda payload_cache: payload_cache.get_fr_p2t_data_scatter(),
+            0,
+        ),
         available=_data_exists("spikes", "clusters"),
     ),
     PlotSpec(
@@ -316,7 +393,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Cluster Amp vs Depth vs Duration",
         menu="image",
         renderer="scatter",
-        source=_cached("get_fr_p2t_data_scatter", index=1),
+        source=_source(
+            ("fr_p2t_data_scatter",),
+            lambda payload_cache: payload_cache.get_fr_p2t_data_scatter(),
+            1,
+        ),
         available=_data_exists("spikes", "clusters"),
     ),
     PlotSpec(
@@ -324,7 +405,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Cluster FR vs Depth vs Amp",
         menu="image",
         renderer="scatter",
-        source=_cached("get_fr_p2t_data_scatter", index=2),
+        source=_source(
+            ("fr_p2t_data_scatter",),
+            lambda payload_cache: payload_cache.get_fr_p2t_data_scatter(),
+            2,
+        ),
         available=_data_exists("spikes", "clusters"),
     ),
     DynamicPlotSpec(
@@ -337,7 +422,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Firing Rate",
         menu="line",
         renderer="line",
-        source=_cached("get_fr_amp_data_line", index=0),
+        source=_source(
+            ("fr_amp_data_line",),
+            lambda payload_cache: payload_cache.get_fr_amp_data_line(),
+            0,
+        ),
         default=True,
         available=_data_exists("spikes"),
     ),
@@ -346,7 +435,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Amplitude",
         menu="line",
         renderer="line",
-        source=_cached("get_fr_amp_data_line", index=1),
+        source=_source(
+            ("fr_amp_data_line",),
+            lambda payload_cache: payload_cache.get_fr_amp_data_line(),
+            1,
+        ),
         available=_data_exists("spikes"),
     ),
     PlotSpec(
@@ -354,7 +447,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS AP",
         menu="probe",
         renderer="probe",
-        source=_cached("get_rms_data_img_probe", ("AP",), 1),
+        source=_source(
+            ("rms_data_img_probe", "AP"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("AP"),
+            1,
+        ),
         default=True,
         available=_data_exists("rms_AP"),
     ),
@@ -363,7 +460,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="RMS LFP",
         menu="probe",
         renderer="probe",
-        source=_cached("get_rms_data_img_probe", ("LF",), 1),
+        source=_source(
+            ("rms_data_img_probe", "LF"),
+            lambda payload_cache: payload_cache.get_rms_data_img_probe("LF"),
+            1,
+        ),
         available=_data_exists("rms_LF"),
     ),
     DynamicPlotSpec(

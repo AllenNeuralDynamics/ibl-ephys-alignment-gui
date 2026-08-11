@@ -21,33 +21,47 @@ class FakePayloadCache:
         self.calls = []
         self.passive_events = passive_events if passive_events is not None else {}
 
-    def cached(self, method: str, args: tuple = ()) -> Any:
-        self.calls.append((method, args))
-        if method == "get_fr_img":
-            return "fr-img"
-        if method == "get_fr_amp_data_line":
-            return "line-fr", "line-amp"
-        if method == "get_rms_data_img_probe":
-            return "image-rms", "probe-rms"
-        if method == "get_lfp_correlation_data_img":
-            return {"theta": "corr-img"}
-        if method == "get_passive_events":
-            return self.passive_events
-        if method == "get_lfp_spectrum_data":
-            return "lfp-img", {"0 - 4 Hz": "probe-lfp"}
-        if method == "get_rfmap_data":
-            return {"left": "rfmap"}, "bounds"
-        return method
+    def get_or_build_payload(self, key: tuple[Any, ...], build):
+        self.calls.append(key)
+        return build()
+
+    def get_fr_img(self) -> Any:
+        return "fr-img"
+
+    def get_depth_data_scatter(self) -> Any:
+        return "depth-scatter"
+
+    def get_spike_correlation_data_img(self) -> Any:
+        return "spike-corr-img"
+
+    def get_fr_p2t_data_scatter(self) -> Any:
+        return "cluster-fr", "cluster-duration", "cluster-amp"
+
+    def get_fr_amp_data_line(self) -> Any:
+        return "line-fr", "line-amp"
+
+    def get_rms_data_img_probe(self, _format: str) -> Any:
+        return "image-rms", "probe-rms"
+
+    def get_lfp_correlation_data_img(self) -> Any:
+        return {"theta": "corr-img"}
+
+    def get_passive_events(self) -> Any:
+        return self.passive_events
+
+    def get_lfp_spectrum_data(self, _format: str) -> Any:
+        return "lfp-img", {"0 - 4 Hz": "probe-lfp"}
+
+    def get_rfmap_data(self) -> Any:
+        return {"left": "rfmap"}, "bounds"
 
 
 class FakeOptionalDependencyMissingPayloadCache(FakePayloadCache):
-    def cached(self, method: str, args: tuple = ()) -> Any:
-        if method == "get_passive_events":
-            raise ModuleNotFoundError(
-                "No module named 'brainbox'",
-                name="brainbox",
-            )
-        return super().cached(method, args)
+    def get_passive_events(self) -> Any:
+        raise ModuleNotFoundError(
+            "No module named 'brainbox'",
+            name="brainbox",
+        )
 
 
 class FakeDataEntry:
@@ -77,12 +91,12 @@ def test_specs_are_grouped_by_menu_in_order() -> None:
     assert "line.fr" not in image_keys
 
 
-def test_resolve_plot_payload_uses_cached_method_args_and_index() -> None:
+def test_resolve_plot_payload_uses_typed_cache_key_and_index() -> None:
     payload_cache = FakePayloadCache()
 
     assert resolve_plot_payload(payload_cache, "probe.rms_ap") == "probe-rms"
 
-    assert payload_cache.calls == [("get_rms_data_img_probe", ("AP",))]
+    assert payload_cache.calls == [("rms_data_img_probe", "AP")]
 
 
 def test_plot_spec_contains_renderer_for_view_dispatch() -> None:

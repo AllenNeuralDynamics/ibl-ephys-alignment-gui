@@ -20,16 +20,17 @@ class FakePayloadCache:
             "psd_lf_main": {"exists": False},
         }
 
-    def cached(self, method: str, args: tuple = ()) -> Any:
-        if method == "get_lfp_correlation_data_img":
-            return {}
-        if method == "get_passive_events":
-            return {}
-        if method == "get_lfp_spectrum_data":
-            return "lfp-img", {}
-        if method == "get_rfmap_data":
-            return {}, None
-        return method
+    def get_lfp_correlation_data_img(self) -> Any:
+        return {}
+
+    def get_passive_events(self) -> Any:
+        return {}
+
+    def get_lfp_spectrum_data(self, _format: str) -> Any:
+        return "lfp-img", {}
+
+    def get_rfmap_data(self) -> Any:
+        return {}, None
 
 
 def test_preserves_previous_selected_key_when_available() -> None:

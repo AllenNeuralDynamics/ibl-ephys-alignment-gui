@@ -10,7 +10,7 @@ from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 def _minimal_payload_cache() -> EphysPlotPayloadCache:
     """A payload cache over a trivial single-shank geometry, no spikes/clusters.
 
-    Enough to exercise ``cached``/``filter_units``/the masking helpers without
+    Enough to exercise payload memoization/filtering without
     synthesizing full ALF spike + rms + psd payloads.
     """
     local_coordinates = np.column_stack(
@@ -29,7 +29,7 @@ def _minimal_payload_cache() -> EphysPlotPayloadCache:
     return EphysPlotPayloadCache("dummy_probe_path", data, 0)
 
 
-def test_cached_memoizes_per_method():
+def test_get_or_build_payload_memoizes_per_key():
     pd = _minimal_payload_cache()
     calls = []
 
@@ -37,37 +37,35 @@ def test_cached_memoizes_per_method():
         calls.append(1)
         return object()
 
-    pd._counting = _counting  # type: ignore[attr-defined]
-    first = pd.cached("_counting")
-    second = pd.cached("_counting")
+    first = pd.get_or_build_payload(("counting",), _counting)
+    second = pd.get_or_build_payload(("counting",), _counting)
     assert first is second
     assert len(calls) == 1
 
 
-def test_cached_keys_on_args():
+def test_get_or_build_payload_keys_on_arguments():
     pd = _minimal_payload_cache()
-    pd._echo = lambda x: (x,)  # type: ignore[attr-defined]
-    a = pd.cached("_echo", ("AP",))
-    b = pd.cached("_echo", ("LF",))
+    a = pd.get_or_build_payload(("echo", "AP"), lambda: ("AP",))
+    b = pd.get_or_build_payload(("echo", "LF"), lambda: ("LF",))
     assert a == ("AP",)
     assert b == ("LF",)
-    assert pd.cached("_echo", ("AP",)) is a
+    assert pd.get_or_build_payload(("echo", "AP"), lambda: ("AP again",)) is a
 
 
 def test_filter_units_idempotent_keeps_cache_warm():
     pd = _minimal_payload_cache()
     pd._current_filter = "all"
-    pd._img_cache[("marker", ())] = "warm"
+    pd._img_cache[("marker",)] = "warm"
     # Same subset -> no-op, cache preserved.
     pd.filter_units("all")
-    assert pd._img_cache.get(("marker", ())) == "warm"
+    assert pd._img_cache.get(("marker",)) == "warm"
 
 
 def test_filter_units_change_clears_cache():
     pd = _minimal_payload_cache()
     pd._current_filter = "all"
-    pd._img_cache[("marker", ())] = "warm"
+    pd._img_cache[("marker",)] = "warm"
     # Genuine change -> cache cleared before recompute.
     pd.filter_units("KS good")
-    assert ("marker", ()) not in pd._img_cache
+    assert ("marker",) not in pd._img_cache
     assert pd._current_filter == "KS good"
