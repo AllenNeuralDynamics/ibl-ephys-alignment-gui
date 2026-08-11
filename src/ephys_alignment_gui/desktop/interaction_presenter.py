@@ -11,7 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtCore, QtWidgets
 
-import ephys_alignment_gui.desktop.setup as ephys_gui
+from ephys_alignment_gui.desktop.widgets import PopupWindow
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class DesktopInteractionPresenter:
     reference_line_display: Any
     widgets: DesktopInteractionWidgets
     callbacks: DesktopInteractionCallbacks
-    popup_window_factory: Callable[..., Any] = ephys_gui.PopupWindow
+    popup_window_factory: Callable[..., Any] = PopupWindow
     text_edit_factory: Callable[[], Any] = QtWidgets.QTextEdit
     plot_item_factory: Callable[[], Any] = pg.PlotItem
     bar_graph_item_factory: Callable[..., Any] = pg.BarGraphItem

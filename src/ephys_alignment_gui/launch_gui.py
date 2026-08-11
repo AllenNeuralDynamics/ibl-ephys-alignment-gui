@@ -14,7 +14,7 @@ import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
-import ephys_alignment_gui.desktop.setup as ephys_gui
+import ephys_alignment_gui.desktop.setup as desktop_setup
 from ephys_alignment_gui.desktop.display_ports import (
     desktop_display_ports_from_main_window,
 )
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 ANTS_DIMENSION = 3
 
 
-class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
+class MainWindow(QtWidgets.QMainWindow):
     @staticmethod
     def _instances():
         app = QtWidgets.QApplication.instance()
@@ -83,7 +83,7 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.init_variables()
         self.offline: bool = offline
         self._empty_state_item: Any = None
-        self.init_layout(self, offline=offline)
+        desktop_setup.initialize_layout(self, offline=offline)
         self.displays = DesktopDisplays.create(
             app=self.app,
             ports=desktop_display_ports_from_main_window(self),
@@ -106,7 +106,9 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
         self.desktop_workbench.connect_events()
         self._set_default_output_root_from_environment()
 
-        self.desktop_workbench.initialize_region_lookup(self.init_region_lookup)
+        self.desktop_workbench.initialize_region_lookup(
+            lambda allen: desktop_setup.initialize_region_lookup(self, allen)
+        )
 
     def closeEvent(self, event) -> None:
         """Disconnect desktop event subscriptions before the Qt window closes."""

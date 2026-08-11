@@ -12,6 +12,7 @@ from ephys_alignment_gui.desktop.depth_plot_view import DesktopDepthPlotView
 from ephys_alignment_gui.desktop.export_view import DesktopExportView
 from ephys_alignment_gui.desktop.path_view import DesktopPathView
 from ephys_alignment_gui.desktop.selection_view import DesktopSelectionView
+from ephys_alignment_gui.desktop.setup import initialize_menubar
 from ephys_alignment_gui.desktop.shank_screen_view import DesktopShankScreenView
 
 
@@ -60,7 +61,7 @@ class DesktopViews:
         )
         shank_screen = DesktopShankScreenView(
             depth_plots=depth,
-            init_menubar=window.init_menubar,
+            init_menubar=lambda: initialize_menubar(window),
             set_view=window.set_view,
         )
         alignment_screen = DesktopAlignmentScreenView(
