@@ -11,6 +11,12 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
 )
 from ephys_alignment_gui.application.workflow import Failed, Ok
+from ephys_alignment_gui.core.alignment_events import (
+    PreviousAlignmentLoadFailed,
+    PreviousAlignmentsLoaded,
+    PreviousAlignmentsUnavailable,
+)
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.presenters.previous_alignment_load_presenter import (
     DesktopPreviousAlignmentLoadPresenter,
     PreviousAlignmentLoadCallbacks,
@@ -30,9 +36,11 @@ class FakeCommands:
     def __init__(
         self,
         *,
+        events: EventBus | None = None,
         ready: Any = Ok(),
         load_result: Any = NoPreviousAlignments(),
     ) -> None:
+        self.events = events
         self.ready = ready
         self.load_result = load_result
         self.load_calls: list[dict[str, Any]] = []
@@ -42,7 +50,28 @@ class FakeCommands:
 
     def load_previous_alignments(self, **kwargs: Any) -> Any:
         self.load_calls.append(kwargs)
+        self._emit_load_result(self.load_result)
         return self.load_result
+
+    def _emit_load_result(self, result: Any) -> None:
+        if self.events is None:
+            return
+        if isinstance(result, Failed):
+            self.events.emit(
+                PreviousAlignmentLoadFailed(
+                    shank_idx=0,
+                    message=result.message,
+                )
+            )
+        elif isinstance(result, AlignmentChoicesUpdated):
+            self.events.emit(
+                PreviousAlignmentsLoaded(
+                    shank_idx=0,
+                    choices=tuple(result.choices),
+                )
+            )
+        elif isinstance(result, NoPreviousAlignments):
+            self.events.emit(PreviousAlignmentsUnavailable(shank_idx=0))
 
 
 def _presenter(
@@ -58,31 +87,37 @@ def _presenter(
         "rendered_choices": [],
         "selected_alignments": [],
     }
+    events = EventBus()
+    commands.events = events
     busy_factory = FakeBusyFactory()
     presenter = DesktopPreviousAlignmentLoadPresenter(
         commands=commands,
+        events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
             select_folder=lambda: selected_folder,
             use_docdb=lambda: use_docdb,
             set_reload_folder_text=calls["reload_text"].append,
             render_alignment_choices=calls["rendered_choices"].append,
             select_alignment=lambda idx: (
-                calls["selected_alignments"].append(idx)
-                or select_alignment_result
+                calls["selected_alignments"].append(idx) or select_alignment_result
             ),
             busy_context=busy_factory,
             reload_button=lambda: reload_button,
         ),
     )
+    presenter.connect_previous_alignment_events()
     calls["busy_factory"] = busy_factory
     return presenter, calls
 
 
 def test_readiness_failure_does_not_prompt_or_load() -> None:
     commands = FakeCommands(ready=Failed("not ready"))
+    events = EventBus()
+    commands.events = events
     prompt_calls: list[str] = []
     presenter = DesktopPreviousAlignmentLoadPresenter(
         commands=commands,
+        events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
             select_folder=lambda: prompt_calls.append("prompt") or "/tmp/history",
             use_docdb=lambda: False,
@@ -93,6 +128,7 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
             reload_button=lambda: None,
         ),
     )
+    presenter.connect_previous_alignment_events()
 
     assert not presenter.load_existing_alignments()
     assert prompt_calls == []

@@ -51,6 +51,9 @@ from ephys_alignment_gui.core.alignment_events import (
     LoadDataCancelled,
     LoadDataFailed,
     LoadDataProgressed,
+    PreviousAlignmentLoadFailed,
+    PreviousAlignmentsLoaded,
+    PreviousAlignmentsUnavailable,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -1373,6 +1376,8 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
         "saved": [[1.0], [2.0]],
     }
     workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
+    events: list[PreviousAlignmentsLoaded] = []
+    workspace.app.events.subscribe(PreviousAlignmentsLoaded, events.append)
 
     result = workspace.app.commands.persistence.load_previous_alignments(
         folder=tmp_path,
@@ -1384,11 +1389,19 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
     assert repo.loaded_kwargs["shank_idx"] == 1
     state = workspace.document.alignment_state_for(AlignmentKey("rec", "stream", 1))
     assert state.alignments == {"saved": [[1.0], [2.0]]}
+    assert events == [
+        PreviousAlignmentsLoaded(
+            shank_idx=1,
+            choices=("saved", "original"),
+        )
+    ]
 
 
 def test_commands_load_previous_alignments_reports_missing_history(tmp_path) -> None:
     repo = FakeAlignmentRepository()
     workspace = _workspace_with_probe_state(repo=repo)
+    events: list[PreviousAlignmentsUnavailable] = []
+    workspace.app.events.subscribe(PreviousAlignmentsUnavailable, events.append)
 
     result = workspace.app.commands.persistence.load_previous_alignments(
         folder=tmp_path,
@@ -1396,6 +1409,32 @@ def test_commands_load_previous_alignments_reports_missing_history(tmp_path) -> 
     )
 
     assert isinstance(result, NoPreviousAlignments)
+    assert events == [PreviousAlignmentsUnavailable(shank_idx=1)]
+
+
+def test_commands_load_previous_alignments_emits_failure_event(tmp_path) -> None:
+    class FailingRepository(FakeAlignmentRepository):
+        def load_previous_alignments(self, **kwargs):
+            raise RuntimeError("repository failed")
+
+    repo = FailingRepository()
+    workspace = _workspace_with_probe_state(repo=repo)
+    events: list[PreviousAlignmentLoadFailed] = []
+    workspace.app.events.subscribe(PreviousAlignmentLoadFailed, events.append)
+
+    result = workspace.app.commands.persistence.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=False,
+    )
+
+    assert isinstance(result, Failed)
+    assert result.message == "Failed to load previous alignments: repository failed"
+    assert events == [
+        PreviousAlignmentLoadFailed(
+            shank_idx=1,
+            message="Failed to load previous alignments: repository failed",
+        )
+    ]
 
 
 def test_commands_select_previous_alignment_defaults_to_active_shank() -> None:

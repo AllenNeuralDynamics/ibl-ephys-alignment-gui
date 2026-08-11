@@ -145,3 +145,26 @@ class SaveFailed:
     """Payload emitted when visited alignment output persistence fails."""
 
     message: str
+
+
+@dataclass(frozen=True)
+class PreviousAlignmentsLoaded:
+    """Payload emitted after previous alignments are loaded into the document."""
+
+    shank_idx: int
+    choices: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PreviousAlignmentsUnavailable:
+    """Payload emitted when no previous alignments are available."""
+
+    shank_idx: int
+
+
+@dataclass(frozen=True)
+class PreviousAlignmentLoadFailed:
+    """Payload emitted when previous-alignment loading fails."""
+
+    shank_idx: int | None
+    message: str

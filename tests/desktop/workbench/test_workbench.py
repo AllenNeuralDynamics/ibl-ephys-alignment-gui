@@ -354,8 +354,14 @@ class FakeSavePresenter:
 
 
 class FakePreviousAlignmentLoadPresenter:
-    def __init__(self) -> None:
+    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
         self.load_count = 0
+        self.subscriptions = subscriptions or []
+        self.connect_count = 0
+
+    def connect_previous_alignment_events(self) -> list[FakeSubscription]:
+        self.connect_count += 1
+        return self.subscriptions
 
     def load_existing_alignments(self) -> bool:
         self.load_count += 1
@@ -586,11 +592,15 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     load_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
     save_sub = FakeSubscription()
+    previous_alignment_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
     load_data = FakeLoadDataPresenter([load_sub])
     lifecycle = FakeLifecyclePresenter([lifecycle_sub])
     save = FakeSavePresenter([save_sub])
+    previous_alignment_load = FakePreviousAlignmentLoadPresenter(
+        [previous_alignment_sub]
+    )
     workbench = _workbench(
         alignment,
         shank,
@@ -598,6 +608,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
         load_data=load_data,
         lifecycle=lifecycle,
         save=save,
+        previous_alignment_load=previous_alignment_load,
     )
 
     subscriptions = workbench.connect_events()
@@ -609,6 +620,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
         load_sub,
         lifecycle_sub,
         save_sub,
+        previous_alignment_sub,
     ]
     assert second_connect == subscriptions
     assert alignment.connect_count == 1
@@ -616,6 +628,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert load_data.connect_count == 1
     assert lifecycle.connect_count == 1
     assert save.connect_count == 1
+    assert previous_alignment_load.connect_count == 1
 
     workbench.disconnect_events()
     workbench.disconnect_events()
@@ -625,6 +638,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert load_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1
     assert save_sub.disconnect_count == 1
+    assert previous_alignment_sub.disconnect_count == 1
 
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:

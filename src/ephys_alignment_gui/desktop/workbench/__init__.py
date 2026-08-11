@@ -85,6 +85,9 @@ class DesktopWorkbench:
         self._event_subscriptions.extend(
             self.presenter_cluster.save_presenter.connect_save_events()
         )
+        self._event_subscriptions.extend(
+            self.presenter_cluster.previous_alignment_load_presenter.connect_previous_alignment_events()
+        )
         return list(self._event_subscriptions)
 
     def disconnect_events(self) -> None:

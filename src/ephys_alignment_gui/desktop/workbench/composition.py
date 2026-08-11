@@ -195,6 +195,7 @@ def build_desktop_workbench_presenter_cluster(
     )
     previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
         commands=app.commands.persistence,
+        events=app.events,
         callbacks=_previous_alignment_load_callbacks(
             ports.previous_alignment_load,
             folder_dialog,

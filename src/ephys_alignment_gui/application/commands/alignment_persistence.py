@@ -19,6 +19,9 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
 )
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.core.alignment_events import (
+    PreviousAlignmentLoadFailed,
+    PreviousAlignmentsLoaded,
+    PreviousAlignmentsUnavailable,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -69,6 +72,12 @@ class AlignmentPersistenceCommandHandler:
         target_shank = self._active_or_given_shank(shank_idx)
         ready = self.controller.can_load_previous_alignments()
         if isinstance(ready, Failed):
+            self.events.emit(
+                PreviousAlignmentLoadFailed(
+                    shank_idx=target_shank,
+                    message=ready.message,
+                )
+            )
             return ready
         probe = self.data_context.probe_info
         assert probe is not None
@@ -83,14 +92,46 @@ class AlignmentPersistenceCommandHandler:
                 use_docdb=use_docdb,
             )
         except Exception as exc:
-            return Failed(f"Failed to load previous alignments: {exc}")
+            return self._previous_alignment_load_failed(
+                target_shank,
+                f"Failed to load previous alignments: {exc}",
+            )
 
         if loaded is None:
+            self.events.emit(PreviousAlignmentsUnavailable(shank_idx=target_shank))
             return NoPreviousAlignments()
-        return self.controller.set_previous_alignments(
+        result = self.controller.set_previous_alignments(
             loaded.alignments,
             shank_idx=target_shank,
         )
+        if isinstance(result, AlignmentChoicesUpdated):
+            self.events.emit(
+                PreviousAlignmentsLoaded(
+                    shank_idx=target_shank,
+                    choices=tuple(result.choices),
+                )
+            )
+        elif isinstance(result, Failed):
+            self.events.emit(
+                PreviousAlignmentLoadFailed(
+                    shank_idx=target_shank,
+                    message=result.message,
+                )
+            )
+        return result
+
+    def _previous_alignment_load_failed(
+        self,
+        shank_idx: int | None,
+        message: str,
+    ) -> Failed:
+        self.events.emit(
+            PreviousAlignmentLoadFailed(
+                shank_idx=shank_idx,
+                message=message,
+            )
+        )
+        return Failed(message)
 
     def select_previous_alignment(
         self,
