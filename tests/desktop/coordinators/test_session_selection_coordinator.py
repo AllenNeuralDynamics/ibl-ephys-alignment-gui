@@ -100,6 +100,10 @@ def _coordinator(
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
+            cancel_active_preload=lambda reason: calls.append(
+                ("cancel-preload", reason)
+            )
+            or True,
             show_empty_state=lambda: calls.append(("empty",)),
             select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
@@ -133,6 +137,7 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
     assert commands.calls == ["rec"]
     assert calls == [
         ("capture",),
+        ("cancel-preload", "session changed"),
         ("evict-app",),
         ("empty",),
         ("populate-probes", ["probeA", "probeB"]),
@@ -168,6 +173,7 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
 
     assert calls == [
         ("capture",),
+        ("cancel-preload", "session changed"),
         ("evict-app",),
         ("empty",),
         ("populate-probes", []),
@@ -184,7 +190,11 @@ def test_session_selected_failure_does_not_mutate_selection_view() -> None:
     assert not coordinator.session_selected()
 
     assert commands.calls == ["rec"]
-    assert calls == [("capture",), ("evict-app",)]
+    assert calls == [
+        ("capture",),
+        ("cancel-preload", "session changed"),
+        ("evict-app",),
+    ]
 
 
 def test_session_selected_stops_when_cache_eviction_is_blocked() -> None:
@@ -195,4 +205,8 @@ def test_session_selected_stops_when_cache_eviction_is_blocked() -> None:
     assert not coordinator.session_selected()
 
     assert commands.calls == []
-    assert calls == [("capture",), ("evict-app",)]
+    assert calls == [
+        ("capture",),
+        ("cancel-preload", "session changed"),
+        ("evict-app",),
+    ]

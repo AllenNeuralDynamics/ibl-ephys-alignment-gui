@@ -50,6 +50,22 @@ class AlignmentDataContext:
             raise RuntimeError("No mouse root loaded — call set_mouse_root() first")
         return self.mouse_root.probes_for_session(recording_id)
 
+    def next_probe_in_session(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> str | None:
+        """Return the next probe label in a recording's stable probe order."""
+        probes = self.list_probes(recording_id)
+        try:
+            idx = probes.index(probe_name)
+        except ValueError:
+            return None
+        next_idx = idx + 1
+        if next_idx >= len(probes):
+            return None
+        return probes[next_idx]
+
     def select_probe(self, recording_id: str, probe_name: str) -> ProbeInfo:
         """Resolve and select a probe, clearing channel-table metadata."""
         if self.mouse_root is None:

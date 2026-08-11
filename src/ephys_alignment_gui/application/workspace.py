@@ -117,6 +117,9 @@ class AlignmentWorkspace:
     load_data_lifecycle: LoadDataExecutionLifecycle = field(
         default_factory=LoadDataExecutionLifecycle
     )
+    preload_data_lifecycle: LoadDataExecutionLifecycle = field(
+        default_factory=LoadDataExecutionLifecycle
+    )
     save_runtime_rehydrator: SaveRuntimeRehydrator = field(init=False)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
@@ -180,6 +183,7 @@ class AlignmentWorkspace:
             runtime=self.runtime,
             load_data_job=self.load_data_job,
             load_lifecycle=self.load_data_lifecycle,
+            preload_lifecycle=self.preload_data_lifecycle,
             histology_runtime_loader=self.histology_runtime_loader,
             plot_payload_cache_factory=self.plot_payload_cache_factory,
             metadata_commands=self.metadata_commands,

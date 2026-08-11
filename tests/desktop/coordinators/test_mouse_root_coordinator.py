@@ -108,6 +108,10 @@ def _coordinator(
                 *args,
                 **kwargs,
             ),
+            cancel_active_preload=lambda reason: calls.append(
+                ("cancel-preload", reason)
+            )
+            or True,
             select_first_session=lambda: calls.append(("select-first-session",)),
         ),
     )
@@ -128,6 +132,7 @@ def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
             {"disable_widgets": ["button", "line"]},
         ),
         ("busy-enter",),
+        ("cancel-preload", "mouse root changed"),
         ("path", Path("/data/mouse")),
         ("sessions", ["rec1"]),
         ("clear-probes",),
@@ -173,6 +178,7 @@ def test_set_mouse_root_failure_does_not_update_views() -> None:
             {"disable_widgets": ["button", "line"]},
         ),
         ("busy-enter",),
+        ("cancel-preload", "mouse root changed"),
         ("busy-exit", None),
     ]
 

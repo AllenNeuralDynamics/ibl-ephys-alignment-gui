@@ -20,6 +20,7 @@ class DesktopMouseRootCallbacks:
     """Non-widget side effects for mouse-root loading."""
 
     busy_context: Callable[..., AbstractContextManager[Any]]
+    cancel_active_preload: Callable[[str], bool]
     select_first_session: Callable[[], None]
 
 
@@ -39,6 +40,7 @@ class DesktopMouseRootCoordinator:
             "Mouse root loaded",
             disable_widgets=self.path_view.mouse_root_widgets(),
         ):
+            self.callbacks.cancel_active_preload("mouse root changed")
             result = self.commands.set_mouse_root(mouse_root)
             if isinstance(result, Failed):
                 logger.error(result.message)

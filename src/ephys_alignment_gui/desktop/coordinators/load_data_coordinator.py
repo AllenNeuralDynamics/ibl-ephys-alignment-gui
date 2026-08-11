@@ -9,12 +9,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ephys_alignment_gui.application.results import (
+    FreshEphysDataLoaded,
     FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
+    LoadDataPreloadSkipped,
     LoadDataStaleResultIgnored,
 )
 from ephys_alignment_gui.application.workflow import Failed
@@ -59,6 +61,7 @@ class DesktopLoadDataCoordinator:
     selection_view: Any
     callbacks: DesktopLoadDataCallbacks
     load_runner: FreshLoadRunner = field(default_factory=QtFreshLoadRunner)
+    preload_runner: FreshLoadRunner = field(default_factory=QtFreshLoadRunner)
     _active_load_context: Any | None = field(default=None, init=False, repr=False)
     _active_load_context_manager: Any | None = field(
         default=None,
@@ -66,6 +69,7 @@ class DesktopLoadDataCoordinator:
         repr=False,
     )
     _active_load_id: int | None = field(default=None, init=False, repr=False)
+    _active_preload_id: int | None = field(default=None, init=False, repr=False)
 
     def connect_load_events(self) -> list[EventSubscription]:
         """Subscribe desktop load coordination to semantic load events."""
@@ -125,6 +129,7 @@ class DesktopLoadDataCoordinator:
             logger.info("Load request ignored because a foreground load is active")
             self.cancel_active_load("superseded by a newer load request")
             return False
+        self.cancel_active_preload("foreground load requested")
 
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
@@ -139,9 +144,11 @@ class DesktopLoadDataCoordinator:
             logger.error(begin_result.message)
             return False
         if isinstance(begin_result, LoadDataAlreadyActiveResult):
+            self.schedule_next_probe_preload(session_name, probe_name)
             return True
         if isinstance(begin_result, LoadDataCachedActivated):
             logger.info("Activated cached stream %s", begin_result.stream_key)
+            self.schedule_next_probe_preload(session_name, probe_name)
             return True
         assert isinstance(begin_result, LoadDataFreshPrepared)
         execution = self.app.commands.load.start_fresh_load_data(begin_result)
@@ -196,6 +203,9 @@ class DesktopLoadDataCoordinator:
         timeout_ms: int = 5000,
     ) -> bool:
         """Cancel and settle any active foreground load before desktop teardown."""
+        if not self.shutdown_active_preload(reason, timeout_ms=timeout_ms):
+            return False
+
         if self._active_load_id is None and not self.load_runner.is_running:
             return True
 
@@ -203,6 +213,98 @@ class DesktopLoadDataCoordinator:
         stopped = self.load_runner.shutdown(reason, timeout_ms=timeout_ms)
         if stopped:
             self._close_load_context(RuntimeError(f"Load cancelled: {reason}"))
+        return stopped
+
+    def schedule_next_probe_preload(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> bool:
+        """Preload the next probe in the same recording, if one exists."""
+        next_probe = self.app.queries.workspace.next_probe_in_recording(
+            recording_id,
+            probe_name,
+        )
+        if not next_probe:
+            return False
+        return self.start_probe_preload(
+            recording_id=recording_id,
+            probe_name=next_probe,
+        )
+
+    def start_probe_preload(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+    ) -> bool:
+        """Start a background preload that only populates the inactive cache."""
+        if self.load_runner.is_running:
+            return False
+        if self.preload_runner.is_running:
+            self.cancel_active_preload("superseded by a newer preload request")
+
+        prepared = self.app.commands.load.begin_preload_data(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            target_shank=0,
+        )
+        if isinstance(prepared, Failed):
+            logger.warning(prepared.message)
+            return False
+        if isinstance(prepared, LoadDataPreloadSkipped):
+            logger.debug("Skipping preload for %s: %s", probe_name, prepared.reason)
+            return False
+
+        assert isinstance(prepared, LoadDataFreshPrepared)
+        execution = self.app.commands.load.start_preload_data(prepared)
+        invocation = self.app.commands.load.preload_job_invocation(execution)
+        if isinstance(invocation, LoadDataJobCancelled):
+            logger.info("Preload cancelled: %s", invocation.reason)
+            return False
+
+        self._active_preload_id = execution.load_id
+        logger.info("Preloading next probe %s/%s", recording_id, probe_name)
+        try:
+            self.preload_runner.start(
+                execution=execution,
+                invocation=invocation,
+                run_job=self.app.commands.load.run_fresh_load_job,
+                on_progress=self._on_preload_worker_progress,
+                on_finished=self._on_preload_worker_finished,
+            )
+        except Exception:
+            self.app.commands.load.cancel_active_preload(
+                "failed to start background preload"
+            )
+            self._active_preload_id = None
+            logger.exception("Failed to start background preload")
+            return False
+        return True
+
+    def cancel_active_preload(self, reason: str) -> bool:
+        """Request cancellation for any active background preload."""
+        if self._active_preload_id is None and not self.preload_runner.is_running:
+            return False
+        self.app.commands.load.cancel_active_preload(reason)
+        if self.preload_runner.is_running:
+            self.preload_runner.cancel(reason)
+        self._active_preload_id = None
+        return True
+
+    def shutdown_active_preload(
+        self,
+        reason: str = "application closing",
+        *,
+        timeout_ms: int = 5000,
+    ) -> bool:
+        """Cancel and settle any active background preload."""
+        if self._active_preload_id is None and not self.preload_runner.is_running:
+            return True
+        self.app.commands.load.cancel_active_preload(reason)
+        stopped = self.preload_runner.shutdown(reason, timeout_ms=timeout_ms)
+        if stopped:
+            self._active_preload_id = None
         return stopped
 
     def _on_load_worker_progress(
@@ -256,6 +358,48 @@ class DesktopLoadDataCoordinator:
         logger.info("Loaded ephys data from %s", stream_runtime.stream.ephys_dir)
         logger.info("=== Heavy data load complete ===")
         self._close_load_context()
+        self.schedule_next_probe_preload(
+            completed.target.recording_id,
+            completed.target.probe_name,
+        )
+
+    def _on_preload_worker_progress(
+        self,
+        execution: FreshLoadExecution,
+        event: LoadDataJobProgress,
+    ) -> None:
+        """Log preload progress without touching active desktop rendering."""
+        if execution.load_id != self._active_preload_id:
+            return
+        logger.debug("Preload progress: %s", event.message)
+
+    def _on_preload_worker_finished(
+        self,
+        execution: FreshLoadExecution,
+        job_result: FreshLoadJobResult,
+    ) -> None:
+        """Cache successful preload results without activating the stream."""
+        if execution.load_id != self._active_preload_id:
+            return
+        try:
+            cached = self.app.commands.load.cache_started_preload_data(
+                execution,
+                job_result,
+            )
+            if isinstance(cached, Failed):
+                logger.warning(cached.message)
+                return
+            if isinstance(cached, LoadDataJobCancelled):
+                logger.info("Preload cancelled: %s", cached.reason)
+                return
+            if isinstance(cached, LoadDataStaleResultIgnored):
+                logger.info("Preload result ignored: %s", cached.reason)
+                return
+            assert isinstance(cached, FreshEphysDataLoaded)
+            logger.info("Preloaded stream %s", cached.stream_runtime.stream_key)
+        finally:
+            if execution.load_id == self._active_preload_id:
+                self._active_preload_id = None
 
     def _open_load_context(self, *args: Any, **kwargs: Any) -> None:
         """Enter and hold the desktop busy context for an async load."""
@@ -296,12 +440,14 @@ class DesktopLoadDataCoordinator:
             return False
         if isinstance(result, LoadDataAlreadyActiveResult):
             self.selection_view.set_load_data_enabled(True)
+            self.schedule_next_probe_preload(session_name, probe_name)
             return True
         if isinstance(result, LoadDataFreshRequiredResult):
             return False
 
         assert isinstance(result, LoadDataCachedActivated)
         logger.info("Activated cached stream %s", result.stream_key)
+        self.schedule_next_probe_preload(session_name, probe_name)
         return True
 
     def _present_activated_stream(self, event: StreamActivated) -> None:

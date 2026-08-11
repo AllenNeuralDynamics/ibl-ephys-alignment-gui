@@ -22,6 +22,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
+    LoadDataPreloadSkipped,
     LoadDataPrepared,
     LoadDataStaleResultIgnored,
     LoadedShankPrepared,
@@ -414,13 +415,18 @@ class FakeLoadDataJob:
         return self.result
 
 
-def _probe_info() -> ProbeInfo:
+def _probe_info(
+    *,
+    probe_name: str = "probeA",
+    ephys_collection: str = "stream",
+    probe_id: str = "probe-id",
+) -> ProbeInfo:
     return ProbeInfo(
-        probe_id="probe-id",
-        probe_name="probeA",
+        probe_id=probe_id,
+        probe_name=probe_name,
         recording_id="rec",
-        logical_probe="probeA",
-        ephys_collection="stream",
+        logical_probe=probe_name,
+        ephys_collection=ephys_collection,
         num_shanks=2,
         ephys_dir=Path("/tmp/ephys"),
         channel_table=None,
@@ -437,6 +443,22 @@ def _mouse_root_with_probe(probe: ProbeInfo | None = None) -> MouseRoot:
         transforms=None,
         histology=None,
         probes={probe.recording_id: {probe.probe_name: probe}},
+    )
+
+
+def _mouse_root_with_probes(*probes: ProbeInfo) -> MouseRoot:
+    return MouseRoot(
+        root=Path("/tmp/mouse"),
+        schema_version="3.1.0",
+        mouse_id="mouse",
+        transforms=None,
+        histology=None,
+        probes={
+            "rec": {
+                probe.probe_name: probe
+                for probe in (probes or (_probe_info(),))
+            }
+        },
     )
 
 
@@ -1062,6 +1084,153 @@ def test_commands_cache_completed_fresh_load_data_without_activation() -> None:
     assert workspace.runtime.stream_cache[("rec", "stream")] is result.stream_runtime
     assert workspace.runtime.active_stream_runtime is None
     assert not workspace.document.data_loaded
+
+
+def test_queries_resolve_next_probe_in_recording() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probes(
+        _probe_info(probe_name="probeA", ephys_collection="streamA"),
+        _probe_info(probe_name="probeB", ephys_collection="streamB"),
+    )
+
+    assert (
+        workspace.app.queries.workspace.next_probe_in_recording("rec", "probeA")
+        == "probeB"
+    )
+    assert workspace.app.queries.workspace.next_probe_in_recording(
+        "rec",
+        "probeB",
+    ) is None
+
+
+def test_commands_begin_preload_data_does_not_mutate_active_probe() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    probe_a = _probe_info(probe_name="probeA", ephys_collection="streamA")
+    probe_b = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe_a, probe_b)
+    workspace.data_context.probe_info = probe_a
+    workspace.document.selected_probe = "probeA"
+    workspace.data_context.channel_table = ChannelTable(
+        local_coordinates=np.array([[0.0, 0.0]]),
+        shank_indices=np.array([0]),
+    )
+    fake_ephys_service = FakeEphysDataService()
+    workspace.metadata_commands.ephys_data_service = fake_ephys_service
+
+    result = workspace.app.commands.load.begin_preload_data(
+        recording_id="rec",
+        probe_name="probeB",
+    )
+
+    assert isinstance(result, LoadDataFreshPrepared)
+    assert result.stream_key == ("rec", "streamB")
+    assert result.target.probe_info is probe_b
+    assert result.target.shank_idx == 0
+    assert fake_ephys_service.loaded_probe is probe_b
+    assert workspace.data_context.probe_info is probe_a
+    assert workspace.document.selected_probe == "probeA"
+
+
+def test_commands_begin_preload_data_skips_cached_stream() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    probe = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe)
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream("streamB"),
+        workspace.plot_payload_cache_factory,
+        shank_idx=0,
+        activate=False,
+    )
+
+    result = workspace.app.commands.load.begin_preload_data(
+        recording_id="rec",
+        probe_name="probeB",
+    )
+
+    assert isinstance(result, LoadDataPreloadSkipped)
+    assert result.stream_key == ("rec", "streamB")
+    assert result.reason == "target stream is already cached"
+
+
+def test_commands_cache_started_preload_data_caches_without_activation() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    probe = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe)
+    workspace.document.selected_recording = "rec"
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "streamB"),
+        shank_idx=0,
+        preserve_plot_selection=True,
+        target=LoadDataJobTarget(
+            recording_id="rec",
+            probe_name="probeB",
+            stream_key=("rec", "streamB"),
+            shank_idx=0,
+            mouse_root=workspace.data_context.mouse_root,
+            probe_info=probe,
+            channel_table=ChannelTable(
+                local_coordinates=np.array([[0.0, 0.0]]),
+                shank_indices=np.array([0]),
+            ),
+        ),
+    )
+    execution = workspace.app.commands.load.start_preload_data(prepared)
+    job_result = LoadDataJobCompleted(
+        target=prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream("streamB")),
+        histology=HistologyDataLoaded(),
+    )
+
+    result = workspace.app.commands.load.cache_started_preload_data(
+        execution,
+        job_result,
+    )
+
+    assert result.shank_idx == 0
+    assert ("rec", "streamB") in workspace.runtime.stream_cache
+    assert workspace.runtime.active_stream_runtime is None
+    assert workspace.runtime.current_stream_key is None
+    assert not workspace.document.data_loaded
+
+
+def test_commands_cache_started_preload_ignores_stale_session() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    probe = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe)
+    workspace.document.selected_recording = "rec"
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "streamB"),
+        shank_idx=0,
+        preserve_plot_selection=True,
+        target=LoadDataJobTarget(
+            recording_id="rec",
+            probe_name="probeB",
+            stream_key=("rec", "streamB"),
+            shank_idx=0,
+            mouse_root=workspace.data_context.mouse_root,
+            probe_info=probe,
+            channel_table=ChannelTable(
+                local_coordinates=np.array([[0.0, 0.0]]),
+                shank_indices=np.array([0]),
+            ),
+        ),
+    )
+    execution = workspace.app.commands.load.start_preload_data(prepared)
+    workspace.document.selected_recording = "other-rec"
+    job_result = LoadDataJobCompleted(
+        target=prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream("streamB")),
+        histology=HistologyDataLoaded(),
+    )
+
+    result = workspace.app.commands.load.cache_started_preload_data(
+        execution,
+        job_result,
+    )
+
+    assert isinstance(result, LoadDataStaleResultIgnored)
+    assert result.reason == "Loaded preload target is stale; selected session changed."
+    assert ("rec", "streamB") not in workspace.runtime.stream_cache
 
 
 def test_commands_reject_stale_fresh_load_activation() -> None:

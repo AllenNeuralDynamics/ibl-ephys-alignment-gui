@@ -24,6 +24,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
+    LoadDataPreloadSkipped,
     LoadDataPrepared,
     LoadDataStaleResultIgnored,
     ProbeSelectionCacheResult,
@@ -97,6 +98,7 @@ class LoadDataCommandHandler:
     runtime: SessionRuntime
     load_data_job: LoadDataJob
     load_lifecycle: LoadDataExecutionLifecycle
+    preload_lifecycle: LoadDataExecutionLifecycle
     histology_runtime_loader: HistologyRuntimeLoader
     plot_payload_cache_factory: EphysPlotPayloadCacheFactory
     metadata_commands: MetadataSelectionCommandHandler
@@ -571,6 +573,118 @@ class LoadDataCommandHandler:
             probe=probe,
         )
 
+    def begin_preload_data(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        target_shank: int = 0,
+    ) -> LoadDataFreshPrepared | LoadDataPreloadSkipped | Failed:
+        """Prepare an inactive background preload for one probe selection."""
+        stream_key = self._stream_key_for_selection(recording_id, probe_name)
+        if stream_key is None:
+            return Failed(
+                f"Preload target could not resolve stream for {recording_id}/{probe_name}"
+            )
+        if self.runtime.cached_stream(stream_key) is not None:
+            return LoadDataPreloadSkipped(
+                stream_key=stream_key,
+                shank_idx=target_shank,
+                reason="target stream is already cached",
+            )
+
+        target = self._fresh_load_target_for_probe(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=stream_key,
+            shank_idx=target_shank,
+        )
+        if isinstance(target, Failed):
+            return target
+
+        return LoadDataFreshPrepared(
+            stream_key=stream_key,
+            shank_idx=target.shank_idx,
+            preserve_plot_selection=True,
+            target=target,
+        )
+
+    def start_preload_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+        *,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> FreshLoadExecution:
+        """Start a tracked background preload execution."""
+        execution, _cancelled = self.preload_lifecycle.start(
+            prepared,
+            cancel_token=cancel_token,
+        )
+        return execution
+
+    def cancel_active_preload(
+        self,
+        reason: str,
+    ) -> LoadDataJobCancelled | None:
+        """Cancel the active background preload execution, if any."""
+        cancelled = self.preload_lifecycle.cancel_active(reason)
+        if cancelled is None:
+            return None
+        return LoadDataJobCancelled(
+            target=cancelled.execution.prepared.target,
+            reason=reason,
+        )
+
+    def preload_job_invocation(
+        self,
+        execution: FreshLoadExecution,
+    ) -> FreshLoadJobInvocation | LoadDataJobCancelled:
+        """Return a runnable job invocation for an active preload execution."""
+        prepared = execution.prepared
+        cancel_token = self.preload_lifecycle.cancel_token_for(execution)
+        if cancel_token is None:
+            return LoadDataJobCancelled(
+                target=prepared.target,
+                reason="Preload request is no longer active.",
+            )
+        return FreshLoadJobInvocation(
+            execution=execution,
+            request=LoadDataJobRequest(prepared.target, load_id=execution.load_id),
+            cancel_token=cancel_token,
+        )
+
+    def cache_started_preload_data(
+        self,
+        execution: FreshLoadExecution,
+        job_result: LoadDataJobCompleted | LoadDataJobCancelled | Failed,
+    ) -> FreshEphysDataLoaded | LoadDataStaleResultIgnored | LoadDataJobCancelled | Failed:
+        """Cache a completed preload only if its request is still useful."""
+        if isinstance(job_result, Failed | LoadDataJobCancelled):
+            self.preload_lifecycle.finish(execution)
+            return job_result
+
+        try:
+            if not self.preload_lifecycle.is_active(execution):
+                return LoadDataStaleResultIgnored(
+                    load_id=execution.load_id,
+                    stream_key=execution.prepared.stream_key,
+                    shank_idx=execution.prepared.shank_idx,
+                    reason="Preload request is no longer active.",
+                )
+
+            stale = self._stale_preload_result_reason(execution.prepared, job_result)
+            if stale is not None:
+                return LoadDataStaleResultIgnored(
+                    load_id=execution.load_id,
+                    stream_key=execution.prepared.stream_key,
+                    shank_idx=execution.prepared.shank_idx,
+                    reason=stale,
+                )
+
+            return self.cache_completed_fresh_load_data(job_result)
+        finally:
+            self.preload_lifecycle.finish(execution)
+
     def _cache_loaded_probe_data(
         self,
         loaded: LoadedEphysSelection,
@@ -628,6 +742,37 @@ class LoadDataCommandHandler:
             channel_table=channel_table,
         )
 
+    def _fresh_load_target_for_probe(
+        self,
+        *,
+        recording_id: str,
+        probe_name: str,
+        stream_key: StreamKey | None,
+        shank_idx: int,
+    ) -> LoadDataJobTarget | Failed:
+        mouse_root = self.data_context.mouse_root
+        if mouse_root is None:
+            return Failed("Preload requires a loaded mouse root.")
+
+        try:
+            probe = mouse_root.get_probe(recording_id, probe_name)
+            channel_table = self.metadata_commands.ephys_data_service.load_channel_table(
+                probe
+            )
+        except Exception as exc:
+            return Failed(f"Failed to prepare preload target {probe_name}: {exc}")
+
+        resolved_stream_key = stream_key or (probe.recording_id, probe.ephys_collection)
+        return LoadDataJobTarget(
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=resolved_stream_key,
+            shank_idx=shank_idx,
+            mouse_root=mouse_root,
+            probe_info=probe,
+            channel_table=channel_table,
+        )
+
     def _stale_fresh_load_reason(
         self,
         prepared: LoadDataFreshPrepared,
@@ -659,6 +804,29 @@ class LoadDataCommandHandler:
             or current_mouse_root.root != prepared.target.mouse_root.root
         ):
             return "Loaded data target is stale; selected mouse root changed."
+
+        return None
+
+    def _stale_preload_result_reason(
+        self,
+        prepared: LoadDataFreshPrepared,
+        job_result: LoadDataJobCompleted,
+    ) -> str | None:
+        if not prepared.target.same_identity(job_result.target):
+            return "Loaded preload target does not match the prepared preload target."
+
+        current_mouse_root = self.data_context.mouse_root
+        if (
+            current_mouse_root is None
+            or current_mouse_root.root != prepared.target.mouse_root.root
+        ):
+            return "Loaded preload target is stale; selected mouse root changed."
+
+        if self.controller.document.selected_recording != prepared.target.recording_id:
+            return "Loaded preload target is stale; selected session changed."
+
+        if self.runtime.cached_stream(prepared.target.stream_key) is not None:
+            return "Loaded preload target is already cached or active."
 
         return None
 

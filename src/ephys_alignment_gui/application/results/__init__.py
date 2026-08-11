@@ -187,7 +187,7 @@ class LoadDataFreshPrepared:
 
 @dataclass(frozen=True)
 class FreshLoadExecution:
-    """Foreground fresh-load execution handle held by UI callers."""
+    """Fresh-load execution handle held by UI callers."""
 
     load_id: int
     prepared: LoadDataFreshPrepared
@@ -218,6 +218,15 @@ class LoadDataFreshRequiredResult:
 
     stream_key: StreamKey | None
     shank_idx: int
+
+
+@dataclass(frozen=True)
+class LoadDataPreloadSkipped:
+    """A background preload request did not need to run."""
+
+    stream_key: StreamKey | None
+    shank_idx: int
+    reason: str
 
 
 @dataclass(frozen=True)

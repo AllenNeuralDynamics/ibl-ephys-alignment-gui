@@ -65,11 +65,18 @@ class FakeBusyContext:
 
 
 class FakeQueries:
-    def __init__(self, *, shank_idx: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        shank_idx: int = 0,
+        next_probe_name: str | None = None,
+    ) -> None:
         self.shank_idx = shank_idx
+        self.next_probe_name = next_probe_name
         self.workspace = SimpleNamespace(
             active_shank_selection=self.active_shank_selection,
             active_probe_selection_state=self.active_probe_selection_state,
+            next_probe_in_recording=self.next_probe_in_recording,
         )
 
     def active_shank_selection(self):
@@ -83,6 +90,9 @@ class FakeQueries:
             n_shanks=2,
             output_directory=Path("/tmp/out"),
         )
+
+    def next_probe_in_recording(self, _recording_id: str, _probe_name: str):
+        return self.next_probe_name
 
 
 class FakeCommands:
@@ -108,6 +118,11 @@ class FakeCommands:
         self.activate_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
         self.invocation_calls: list[LoadDataFreshPrepared] = []
         self.cancel_calls: list[str] = []
+        self.preload_begin_calls: list[dict[str, Any]] = []
+        self.preload_start_calls: list[LoadDataFreshPrepared] = []
+        self.preload_invocation_calls: list[LoadDataFreshPrepared] = []
+        self.preload_cache_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
+        self.preload_cancel_calls: list[str] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
         self._next_load_id = 1
         self.load = self
@@ -271,6 +286,42 @@ class FakeCommands:
 
     def cancel_active_fresh_load(self, reason: str):
         self.cancel_calls.append(reason)
+        return None
+
+    def begin_preload_data(self, **kwargs):
+        self.preload_begin_calls.append(kwargs)
+        return _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+
+    def start_preload_data(self, prepared: LoadDataFreshPrepared):
+        self.preload_start_calls.append(prepared)
+        execution = FreshLoadExecution(self._next_load_id, prepared)
+        self._next_load_id += 1
+        return execution
+
+    def preload_job_invocation(self, execution: FreshLoadExecution):
+        self.preload_invocation_calls.append(execution.prepared)
+        return SimpleNamespace(
+            execution=execution,
+            request=SimpleNamespace(
+                target=execution.prepared.target,
+                load_id=execution.load_id,
+            ),
+            cancel_token=SimpleNamespace(reason=None),
+        )
+
+    def cache_started_preload_data(
+        self,
+        execution: FreshLoadExecution,
+        job_result: Any,
+    ):
+        self.preload_cache_calls.append((execution.prepared, job_result))
+        return FreshEphysDataLoaded(
+            stream_runtime=SimpleNamespace(stream_key=("rec", "stream")),
+            shank_idx=execution.prepared.shank_idx,
+        )
+
+    def cancel_active_preload(self, reason: str):
+        self.preload_cancel_calls.append(reason)
         return None
 
     def _emit_activation_for_result(
@@ -575,7 +626,12 @@ def _fresh_completed(
     )
     return LoadDataFreshCompleted(
         stream_key=("rec", "stream"),
-        target=SimpleNamespace(label="target"),
+        target=SimpleNamespace(
+            recording_id="rec",
+            probe_name="probeA",
+            stream_key=("rec", "stream"),
+            shank_idx=shank_idx,
+        ),
         ephys=FreshEphysDataLoaded(
             stream_runtime=stream_runtime,
             shank_idx=shank_idx,
@@ -603,10 +659,12 @@ def _coordinator(
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     load_runner: Any | None = None,
+    preload_runner: Any | None = None,
+    next_probe_name: str | None = None,
 ) -> tuple[DesktopLoadDataCoordinator, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
-    queries = FakeQueries()
+    queries = FakeQueries(next_probe_name=next_probe_name)
     commands = commands or FakeCommands(begin_result=begin_result)
     commands.events = events
     app = SimpleNamespace(events=events, queries=queries, commands=commands)
@@ -616,6 +674,7 @@ def _coordinator(
         selection_view,
         _callbacks(calls),
         load_runner=load_runner or ImmediateFreshLoadRunner(),
+        preload_runner=preload_runner or ImmediateFreshLoadRunner(),
     )
     coordinator.connect_load_events()
     return (
@@ -755,6 +814,45 @@ def test_load_heavy_data_starts_background_runner_before_completion() -> None:
     assert ("busy-exit", None) in calls
 
 
+def test_load_heavy_data_preloads_next_probe_after_foreground_completion() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    preload_runner = ManualFreshLoadRunner()
+    coordinator, commands, _queries, calls = _coordinator(
+        begin_result=prepared,
+        preload_runner=preload_runner,
+        next_probe_name="probeB",
+    )
+
+    assert coordinator.load_heavy_data()
+
+    assert preload_runner.is_running
+    assert commands.preload_begin_calls == [
+        {"recording_id": "rec", "probe_name": "probeB", "target_shank": 0}
+    ]
+    assert commands.preload_start_calls
+    assert commands.preload_invocation_calls
+    assert commands.preload_cache_calls == []
+    assert ("render-shank", 0, True) in calls
+
+    preload_runner.finish()
+
+    assert commands.preload_cache_calls
+    assert calls.count(("render-shank", 0, True)) == 1
+
+
+def test_load_heavy_data_cancels_active_preload_before_foreground_load() -> None:
+    preload_runner = ManualFreshLoadRunner()
+    preload_runner.active = True
+    coordinator, commands, _queries, _calls = _coordinator(
+        preload_runner=preload_runner,
+    )
+
+    assert coordinator.load_heavy_data()
+
+    assert commands.preload_cancel_calls == ["foreground load requested"]
+    assert preload_runner.cancel_calls == ["foreground load requested"]
+
+
 def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> None:
     runner = ManualFreshLoadRunner()
     runner.active = True
@@ -799,6 +897,20 @@ def test_shutdown_active_load_keeps_context_open_when_runner_does_not_stop() -> 
     assert commands.cancel_calls == ["closing"]
     assert runner.shutdown_calls == [("closing", 123)]
     assert ("busy-exit", RuntimeError) not in calls
+
+
+def test_shutdown_active_load_settles_preload_before_teardown() -> None:
+    preload_runner = ManualFreshLoadRunner()
+    preload_runner.active = True
+    coordinator, commands, _queries, _calls = _coordinator(
+        preload_runner=preload_runner,
+    )
+    coordinator._active_preload_id = 7
+
+    assert coordinator.shutdown_active_load("closing", timeout_ms=123)
+
+    assert commands.preload_cancel_calls == ["closing"]
+    assert preload_runner.shutdown_calls == [("closing", 123)]
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:

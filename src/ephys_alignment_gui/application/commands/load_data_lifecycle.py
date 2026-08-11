@@ -27,14 +27,14 @@ class _ActiveFreshLoadExecution:
 
 @dataclass
 class LoadDataExecutionLifecycle:
-    """Track foreground fresh-load requests independently from desktop code."""
+    """Track fresh-load requests independently from desktop code."""
 
     _next_load_id: int = 1
     _active: _ActiveFreshLoadExecution | None = None
 
     @property
     def active_execution(self) -> FreshLoadExecution | None:
-        """Return the currently active foreground load execution."""
+        """Return the currently active load execution."""
         if self._active is None:
             return None
         return self._active.execution
@@ -46,7 +46,7 @@ class LoadDataExecutionLifecycle:
         cancel_token: LoadDataCancelToken | None = None,
         cancel_previous_reason: str = "superseded by a newer load request",
     ) -> tuple[FreshLoadExecution, CancelledFreshLoadExecution | None]:
-        """Start a foreground load execution and cancel any previous one."""
+        """Start a load execution and cancel any previous one."""
         cancelled = self.cancel_active(cancel_previous_reason)
         execution = FreshLoadExecution(
             load_id=self._next_load_id,

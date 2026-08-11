@@ -135,6 +135,25 @@ class WorkspaceStateQueries:
             )
             return None
 
+    def next_probe_in_recording(
+        self,
+        recording_id: str,
+        probe_name: str,
+    ) -> str | None:
+        """Return the next preload candidate in the same recording/session."""
+        if self.data_context is None:
+            return None
+        try:
+            return self.data_context.next_probe_in_session(recording_id, probe_name)
+        except Exception:
+            logger.warning(
+                "Could not resolve next probe for %s/%s",
+                recording_id,
+                probe_name,
+                exc_info=True,
+            )
+            return None
+
     def histology_data_loaded(self) -> bool:
         """Whether subject-level histology runtime data is already loaded."""
         return (
