@@ -265,7 +265,7 @@ def _previous_alignment_load_callbacks(
 ) -> PreviousAlignmentLoadCallbacks:
     """Build callbacks for previous-alignment loading."""
     return PreviousAlignmentLoadCallbacks(
-        select_folder=lambda: folder_dialog.select_existing_directory_text(
+        select_folder=lambda: folder_dialog.select_existing_directory(
             "Load Existing Alignments",
         ),
         use_docdb=ports.use_docdb,

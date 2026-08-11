@@ -77,7 +77,7 @@ class FakeCommands:
 def _coordinator(
     commands: FakeCommands,
     *,
-    selected_folder: str = "",
+    selected_folder: Path | None = None,
     use_docdb: bool = False,
     reload_button: Any = "reload-button",
     select_alignment_result: bool = True,
@@ -137,7 +137,7 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
 
 def test_cancel_without_docdb_returns_false_without_loading() -> None:
     commands = FakeCommands()
-    coordinator, calls = _coordinator(commands, selected_folder="", use_docdb=False)
+    coordinator, calls = _coordinator(commands, selected_folder=None, use_docdb=False)
 
     assert not coordinator.load_existing_alignments()
     assert commands.load_calls == []
@@ -145,22 +145,23 @@ def test_cancel_without_docdb_returns_false_without_loading() -> None:
     assert calls["busy_factory"].calls == []
 
 
-def test_cancel_with_docdb_loads_without_local_folder() -> None:
+def test_cancel_with_docdb_returns_false_without_loading() -> None:
     commands = FakeCommands(load_result=NoPreviousAlignments())
-    coordinator, calls = _coordinator(commands, selected_folder="", use_docdb=True)
+    coordinator, calls = _coordinator(commands, selected_folder=None, use_docdb=True)
 
-    assert coordinator.load_existing_alignments()
-    assert commands.load_calls == [{"folder": None, "use_docdb": True}]
+    assert not coordinator.load_existing_alignments()
+    assert commands.load_calls == []
     assert calls["reload_text"] == []
     assert calls["rendered_choices"] == []
     assert calls["selected_alignments"] == []
+    assert calls["busy_factory"].calls == []
 
 
 def test_loaded_alignment_choices_fail_when_selection_fails() -> None:
     commands = FakeCommands(load_result=AlignmentChoicesUpdated(["original"]))
     coordinator, calls = _coordinator(
         commands,
-        selected_folder="/tmp/alignments",
+        selected_folder=Path("/tmp/alignments"),
         select_alignment_result=False,
     )
 
@@ -178,7 +179,7 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
     )
     coordinator, calls = _coordinator(
         commands,
-        selected_folder="/tmp/alignments",
+        selected_folder=Path("/tmp/alignments"),
         use_docdb=False,
     )
 
@@ -199,7 +200,7 @@ def test_load_failure_returns_false_after_prompt() -> None:
     commands = FakeCommands(load_result=Failed("load failed"))
     coordinator, calls = _coordinator(
         commands,
-        selected_folder="/tmp/alignments",
+        selected_folder=Path("/tmp/alignments"),
         use_docdb=False,
     )
 
@@ -215,7 +216,7 @@ def test_no_previous_alignments_does_not_render_choices() -> None:
     commands = FakeCommands(load_result=NoPreviousAlignments())
     coordinator, calls = _coordinator(
         commands,
-        selected_folder="/tmp/alignments",
+        selected_folder=Path("/tmp/alignments"),
         use_docdb=False,
     )
 

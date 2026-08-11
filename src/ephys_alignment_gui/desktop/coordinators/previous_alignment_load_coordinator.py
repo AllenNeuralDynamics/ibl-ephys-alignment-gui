@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class PreviousAlignmentLoadCallbacks:
     """Desktop side effects for loading previous alignments."""
 
-    select_folder: Callable[[], str]
+    select_folder: Callable[[], Path | None]
     use_docdb: Callable[[], bool]
     set_reload_folder_text: Callable[[str], None]
     render_alignment_choices: Callable[[list[str]], None]
@@ -95,15 +95,12 @@ class DesktopPreviousAlignmentLoadCoordinator:
             return False
 
         selected = self.callbacks.select_folder()
-        use_docdb = self.callbacks.use_docdb()
-        # Cancel returns "". Keep DocDB cancel semantics: without a local folder,
-        # DocDB mode may still load using repository defaults.
-        if not selected and not use_docdb:
+        if selected is None:
             return False
 
-        folder_path = Path(selected) if selected else None
-        if folder_path is not None:
-            self.callbacks.set_reload_folder_text(str(folder_path))
+        use_docdb = self.callbacks.use_docdb()
+        folder_path = selected
+        self.callbacks.set_reload_folder_text(str(folder_path))
 
         with self.callbacks.busy_context(
             "Loading alignments...",
