@@ -28,6 +28,9 @@ from ephys_alignment_gui.application.commands.shank_selection import (
     ShankSelectionCommandHandler,
 )
 from ephys_alignment_gui.application.queries import AlignmentQueries
+from ephys_alignment_gui.application.save_runtime_rehydration import (
+    SaveRuntimeRehydrator,
+)
 from ephys_alignment_gui.application.workflow import WorkflowPolicy
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
@@ -114,6 +117,7 @@ class AlignmentWorkspace:
     load_data_lifecycle: LoadDataExecutionLifecycle = field(
         default_factory=LoadDataExecutionLifecycle
     )
+    save_runtime_rehydrator: SaveRuntimeRehydrator = field(init=False)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
     load_data_job: LoadDataJob = field(init=False)
@@ -180,6 +184,16 @@ class AlignmentWorkspace:
             metadata_commands=self.metadata_commands,
             events=self.events,
         )
+        self.save_runtime_rehydrator = SaveRuntimeRehydrator(
+            controller=self.controller,
+            runtime=self.runtime,
+            ephys_data_service=self.ephys_data_service,
+            load_data_job=self.load_data_job,
+            histology_runtime_loader=self.histology_runtime_loader,
+            plot_payload_cache_factory=self.plot_payload_cache_factory,
+            histology_context=self.histology_context,
+            probe_track_service=self.probe_track_service,
+        )
         self.loaded_shank_commands = LoadedShankCommandHandler(
             controller=self.controller,
             data_context=self.data_context,
@@ -195,6 +209,7 @@ class AlignmentWorkspace:
             alignment_repository=self.alignment_repository,
             output_builder=self.alignment_output_service,
             events=self.events,
+            save_runtime_rehydrator=self.save_runtime_rehydrator,
         )
         self.edit_commands = AlignmentEditCommandHandler(
             controller=self.controller,

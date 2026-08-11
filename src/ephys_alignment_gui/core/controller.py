@@ -27,7 +27,7 @@ from ephys_alignment_gui.core.alignment_state import (
     AlignmentState,
     PendingReferenceLines,
 )
-from ephys_alignment_gui.core.document import AlignmentDocument
+from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.runtime.shank import ShankRuntime
 from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
 from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
@@ -274,6 +274,48 @@ class AlignmentController:
         if isinstance(state_or_failed, Failed):
             return state_or_failed
         state = state_or_failed
+
+        try:
+            initialized = self.alignment_runtime_service.initialize_shank_runtime(
+                shank_runtime,
+                track_annotations_ras=track_annotations_ras,
+                brain_atlas=brain_atlas,
+                feature_prev=state.feature_prev,
+                track_prev=state.track_prev,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to initialize alignment runtime: {exc}")
+
+        seeded_document_alignment = False
+        if state.active_alignment is None:
+            state.active_alignment = ActiveAlignment(
+                initialized.feature_init,
+                initialized.track_init,
+            )
+            seeded_document_alignment = True
+
+        return ShankRuntimeInitialized(
+            feature_init=initialized.feature_init,
+            track_init=initialized.track_init,
+            track_annos_and_ends_ras=initialized.track_annos_and_ends_ras,
+            seeded_document_alignment=seeded_document_alignment,
+        )
+
+    def initialize_shank_runtime_for_key(
+        self,
+        key: AlignmentKey,
+        shank_runtime: ShankRuntime,
+        *,
+        track_annotations_ras: Any,
+        brain_atlas: Any,
+    ) -> ShankRuntimeInitialized | Failed:
+        """Initialize runtime alignment state for an explicit document key."""
+        if key.shank_idx != shank_runtime.shank_idx:
+            return Failed(
+                "Alignment key does not match runtime shank: "
+                f"{key.shank_idx} != {shank_runtime.shank_idx}"
+            )
+        state = self.document.alignment_state_for(key)
 
         try:
             initialized = self.alignment_runtime_service.initialize_shank_runtime(

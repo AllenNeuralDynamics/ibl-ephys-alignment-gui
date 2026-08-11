@@ -20,6 +20,9 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
 from ephys_alignment_gui.application.save_runtime_dependencies import (
     plan_save_runtime_dependencies,
 )
+from ephys_alignment_gui.application.save_runtime_rehydration import (
+    SaveRuntimeRehydrator,
+)
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
@@ -73,6 +76,7 @@ class AlignmentPersistenceCommandHandler:
     alignment_repository: AlignmentRepository
     output_builder: Any
     events: EventBus
+    save_runtime_rehydrator: SaveRuntimeRehydrator | None = None
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
@@ -286,6 +290,15 @@ class AlignmentPersistenceCommandHandler:
             data_context=self.data_context,
             runtime=self.runtime,
         )
+        if runtime_plan.unavailable and self.save_runtime_rehydrator is not None:
+            rehydrated = self.save_runtime_rehydrator.rehydrate_missing(runtime_plan)
+            if isinstance(rehydrated, Failed):
+                return rehydrated
+            runtime_plan = plan_save_runtime_dependencies(
+                document=self.controller.document,
+                data_context=self.data_context,
+                runtime=self.runtime,
+            )
         if runtime_plan.unavailable:
             return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
         runtime_by_key = runtime_plan.by_key

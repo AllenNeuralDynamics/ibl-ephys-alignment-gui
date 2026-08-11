@@ -27,6 +27,12 @@ def test_workspace_wires_shared_services() -> None:
         workspace.persistence_commands.output_builder
         is workspace.alignment_output_service
     )
+    assert (
+        workspace.persistence_commands.save_runtime_rehydrator
+        is workspace.save_runtime_rehydrator
+    )
+    assert workspace.save_runtime_rehydrator.runtime is workspace.runtime
+    assert workspace.save_runtime_rehydrator.load_data_job is workspace.load_data_job
     assert workspace.edit_commands.runtime is workspace.runtime
     assert workspace.app.commands.paths is workspace.path_commands
     assert workspace.app.commands.metadata is workspace.metadata_commands
