@@ -62,6 +62,20 @@ class StreamActivated:
 
 
 @dataclass(frozen=True)
+class StreamDetached:
+    """Payload emitted after the active stream is detached from runtime state."""
+
+    cached_stream_count: int
+
+
+@dataclass(frozen=True)
+class StreamCacheEvicted:
+    """Payload emitted after cached stream runtimes are evicted."""
+
+    evicted_stream_count: int
+
+
+@dataclass(frozen=True)
 class LoadDataProgressed:
     """Payload emitted as a fresh stream load advances."""
 

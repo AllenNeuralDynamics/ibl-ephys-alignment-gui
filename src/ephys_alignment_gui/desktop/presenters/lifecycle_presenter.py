@@ -6,6 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.core.alignment_events import (
+    StreamCacheEvicted,
+    StreamDetached,
+)
+from ephys_alignment_gui.core.event_bus import EventSubscription
+
 
 @dataclass(frozen=True)
 class DesktopLifecycleCallbacks:
@@ -24,6 +30,24 @@ class DesktopLifecyclePresenter:
     app: Any
     displays: Any
     callbacks: DesktopLifecycleCallbacks
+
+    def connect_lifecycle_events(self) -> list[EventSubscription]:
+        """Subscribe desktop lifecycle cleanup to stream lifecycle events."""
+        return [
+            self.app.events.subscribe(StreamDetached, self.on_stream_detached),
+            self.app.events.subscribe(StreamCacheEvicted, self.on_stream_cache_evicted),
+        ]
+
+    def on_stream_detached(self, _event: StreamDetached) -> None:
+        """Clear desktop presentation after the active stream is detached."""
+        self.clear_active_stream_presentation()
+        self.reset_desktop_stream_state()
+
+    def on_stream_cache_evicted(self, _event: StreamCacheEvicted) -> None:
+        """Clear desktop presentation after cached streams are evicted."""
+        self.clear_active_stream_presentation()
+        self.reset_desktop_stream_state()
+        self.callbacks.collect_garbage()
 
     def reset_desktop_stream_state(self) -> None:
         """Reset desktop-owned per-stream state that is not in the app model."""
@@ -44,10 +68,8 @@ class DesktopLifecyclePresenter:
         self.displays.histology.clear()
 
     def detach_active_stream(self) -> None:
-        """Detach the active app stream and clear its desktop presentation."""
+        """Detach the active app stream; event subscribers clear desktop state."""
         self.app.commands.load.detach_active_stream()
-        self.clear_active_stream_presentation()
-        self.reset_desktop_stream_state()
 
     def prepare_for_fresh_stream_load(self) -> None:
         """Clear desktop presentation after the app prepared a fresh stream load."""
@@ -56,11 +78,8 @@ class DesktopLifecyclePresenter:
         self.callbacks.collect_garbage()
 
     def evict_stream_cache(self) -> None:
-        """Evict app stream cache and clear desktop presentation state."""
+        """Evict app stream cache; event subscribers clear desktop state."""
         self.app.commands.load.evict_stream_cache()
-        self.clear_active_stream_presentation()
-        self.reset_desktop_stream_state()
-        self.callbacks.collect_garbage()
 
     def show_empty_state(self) -> None:
         """Show the desktop empty-state placeholder."""

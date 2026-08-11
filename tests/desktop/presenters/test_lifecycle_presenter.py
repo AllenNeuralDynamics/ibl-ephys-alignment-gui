@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from ephys_alignment_gui.core.alignment_events import (
+    StreamCacheEvicted,
+    StreamDetached,
+)
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.presenters.lifecycle_presenter import (
     DesktopLifecycleCallbacks,
     DesktopLifecyclePresenter,
@@ -11,15 +16,18 @@ from ephys_alignment_gui.desktop.presenters.lifecycle_presenter import (
 
 
 class FakeCommands:
-    def __init__(self, calls: list[tuple]) -> None:
+    def __init__(self, calls: list[tuple], events: EventBus) -> None:
         self.calls = calls
+        self.events = events
         self.load = self
 
     def detach_active_stream(self) -> None:
         self.calls.append(("detach-app",))
+        self.events.emit(StreamDetached(cached_stream_count=1))
 
     def evict_stream_cache(self) -> None:
         self.calls.append(("evict-app",))
+        self.events.emit(StreamCacheEvicted(evicted_stream_count=2))
 
 
 class FakeDisplaySection:
@@ -32,6 +40,7 @@ class FakeDisplaySection:
 
 
 def _presenter(calls: list[tuple]) -> DesktopLifecyclePresenter:
+    events = EventBus()
     displays = SimpleNamespace(
         reference_lines=FakeDisplaySection(calls, "reference-lines"),
         ephys=FakeDisplaySection(calls, "ephys"),
@@ -45,7 +54,7 @@ def _presenter(calls: list[tuple]) -> DesktopLifecyclePresenter:
         collect_garbage=lambda: calls.append(("gc",)),
     )
     return DesktopLifecyclePresenter(
-        app=SimpleNamespace(commands=FakeCommands(calls)),
+        app=SimpleNamespace(events=events, commands=FakeCommands(calls, events)),
         displays=displays,
         callbacks=callbacks,
     )
@@ -54,6 +63,7 @@ def _presenter(calls: list[tuple]) -> DesktopLifecyclePresenter:
 def test_detach_active_stream_clears_desktop_presentation_without_gc() -> None:
     calls: list[tuple] = []
     presenter = _presenter(calls)
+    presenter.connect_lifecycle_events()
 
     presenter.detach_active_stream()
 
@@ -88,6 +98,7 @@ def test_prepare_for_fresh_stream_load_clears_desktop_state_after_app_prepare() 
 def test_evict_stream_cache_clears_app_cache_and_desktop_state() -> None:
     calls: list[tuple] = []
     presenter = _presenter(calls)
+    presenter.connect_lifecycle_events()
 
     presenter.evict_stream_cache()
 

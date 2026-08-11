@@ -43,11 +43,17 @@ class FakeCommands:
     def __init__(self, result: Any | None = None) -> None:
         self.result = result or RecordingSelected("rec", ["probeA", "probeB"])
         self.calls: list[str] = []
+        self.ui_calls: list[tuple] | None = None
         self.metadata = self
+        self.load = self
 
     def select_recording_metadata(self, recording_id: str):
         self.calls.append(recording_id)
         return self.result
+
+    def evict_stream_cache(self) -> None:
+        if self.ui_calls is not None:
+            self.ui_calls.append(("evict-app",))
 
 
 def _presenter(
@@ -59,6 +65,7 @@ def _presenter(
 ) -> tuple[DesktopSessionSelectionPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
+    commands.ui_calls = calls
     selection_view = FakeSelectionView(calls, session_name=session_name)
     app = SimpleNamespace(
         commands=commands,
@@ -73,7 +80,6 @@ def _presenter(
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            evict_stream_cache=lambda: calls.append(("evict",)),
             show_empty_state=lambda: calls.append(("empty",)),
             select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
@@ -107,7 +113,7 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
     assert commands.calls == ["rec"]
     assert calls == [
         ("capture",),
-        ("evict",),
+        ("evict-app",),
         ("empty",),
         ("populate-probes", ["probeA", "probeB"]),
         ("clear-shanks",),
@@ -126,7 +132,7 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
 
     assert calls == [
         ("capture",),
-        ("evict",),
+        ("evict-app",),
         ("empty",),
         ("populate-probes", []),
         ("clear-shanks",),
@@ -142,4 +148,4 @@ def test_session_selected_failure_does_not_mutate_selection_view() -> None:
     assert not presenter.session_selected()
 
     assert commands.calls == ["rec"]
-    assert calls == [("capture",), ("evict",)]
+    assert calls == [("capture",), ("evict-app",)]

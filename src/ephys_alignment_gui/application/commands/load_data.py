@@ -20,7 +20,9 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshRequiredResult,
     LoadDataPrepared,
     ProbeSelectionCacheResult,
-    StreamCacheEvicted,
+)
+from ephys_alignment_gui.application.results import (
+    StreamCacheEvicted as StreamCacheEvictedResult,
 )
 from ephys_alignment_gui.application.workflow import Failed, PolicyResult
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
@@ -31,6 +33,8 @@ from ephys_alignment_gui.core.alignment_events import (
     LoadDataFailed,
     LoadDataProgressed,
     StreamActivated,
+    StreamCacheEvicted,
+    StreamDetached,
 )
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.event_bus import EventBus
@@ -328,16 +332,24 @@ class LoadDataCommandHandler:
         """Detach the active stream while preserving cached runtimes."""
         self.runtime.clear_active_stream()
         self.display_state.reset_for_active_stream()
-        return ActiveStreamDetached(
+        result = ActiveStreamDetached(
             cached_stream_count=len(self.runtime.stream_cache),
         )
+        self.events.emit(StreamDetached(cached_stream_count=result.cached_stream_count))
+        return result
 
-    def evict_stream_cache(self) -> StreamCacheEvicted:
+    def evict_stream_cache(self) -> StreamCacheEvictedResult:
         """Evict cached stream runtimes for a recording/session transition."""
         evicted_stream_count = len(self.runtime.stream_cache)
         self.runtime.clear_stream_cache()
         self.display_state.reset_for_active_stream()
-        return StreamCacheEvicted(evicted_stream_count=evicted_stream_count)
+        result = StreamCacheEvictedResult(evicted_stream_count=evicted_stream_count)
+        self.events.emit(
+            StreamCacheEvicted(
+                evicted_stream_count=result.evicted_stream_count,
+            )
+        )
+        return result
 
     def activate_cached_ephys_data(
         self,

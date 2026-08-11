@@ -21,7 +21,6 @@ class DesktopProbeSelectionCallbacks:
     """Desktop callbacks used by the probe-selection presenter."""
 
     capture_pending_reference_lines: Callable[[], None]
-    detach_active_stream: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
     show_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
@@ -57,7 +56,7 @@ class DesktopProbeSelectionPresenter:
         ):
             return True
 
-        callbacks.detach_active_stream()
+        self.app.commands.load.detach_active_stream()
         return self._prepare_probe_for_fresh_load(session_name, probe_name)
 
     def _prepare_probe_for_fresh_load(

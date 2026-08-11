@@ -18,7 +18,6 @@ class DesktopSessionSelectionCallbacks:
     """Non-widget side effects for session selection."""
 
     capture_pending_reference_lines: Callable[[], None]
-    evict_stream_cache: Callable[[], None]
     show_empty_state: Callable[[], None]
     select_first_probe: Callable[[], None]
 
@@ -42,7 +41,7 @@ class DesktopSessionSelectionPresenter:
             return False
 
         callbacks.capture_pending_reference_lines()
-        callbacks.evict_stream_cache()
+        self.app.commands.load.evict_stream_cache()
         result = self.app.commands.metadata.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)

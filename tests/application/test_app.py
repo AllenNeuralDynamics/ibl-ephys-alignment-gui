@@ -53,6 +53,10 @@ from ephys_alignment_gui.core.alignment_events import (
     LoadDataProgressed,
     ShankChanged,
     StreamActivated,
+    StreamDetached,
+)
+from ephys_alignment_gui.core.alignment_events import (
+    StreamCacheEvicted as StreamCacheEvictedEvent,
 )
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
@@ -1044,6 +1048,8 @@ def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> N
         workspace.plot_payload_cache_factory,
         shank_idx=1,
     )
+    events: list[StreamDetached] = []
+    workspace.app.events.subscribe(StreamDetached, events.append)
 
     result = workspace.app.commands.load.detach_active_stream()
 
@@ -1053,6 +1059,7 @@ def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> N
     assert workspace.runtime.current_stream_key is None
     assert workspace.runtime.stream_cache[("rec", "stream")] is stream_runtime
     assert workspace.display_state.unit_filter == "all"
+    assert events == [StreamDetached(cached_stream_count=1)]
 
 
 def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
@@ -1068,6 +1075,8 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
         workspace.plot_payload_cache_factory,
         shank_idx=0,
     )
+    events: list[StreamCacheEvictedEvent] = []
+    workspace.app.events.subscribe(StreamCacheEvictedEvent, events.append)
 
     result = workspace.app.commands.load.evict_stream_cache()
 
@@ -1077,6 +1086,7 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.current_stream_key is None
     assert workspace.display_state.unit_filter == "all"
+    assert events == [StreamCacheEvictedEvent(evicted_stream_count=2)]
 
 
 def test_commands_path_operations_update_document_and_context(tmp_path) -> None:

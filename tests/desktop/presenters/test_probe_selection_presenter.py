@@ -49,10 +49,12 @@ class FakeCommands:
             output_directory=Path("/tmp/out"),
         )
         self.shank_result = shank_result
+        self.ui_calls: list[tuple] | None = None
         self.calls: list[tuple[str, str]] = []
         self.shank_calls: list[tuple[int, str]] = []
         self.metadata = self
         self.shanks = self
+        self.load = self
 
     def select_probe_metadata(self, session_name: str, probe_name: str):
         self.calls.append((session_name, probe_name))
@@ -67,6 +69,10 @@ class FakeCommands:
             shank_idx=shank_idx,
             data_loaded=False,
         )
+
+    def detach_active_stream(self) -> None:
+        if self.ui_calls is not None:
+            self.ui_calls.append(("detach-app",))
 
 
 class FakeSelectionView:
@@ -109,6 +115,7 @@ def _presenter(
 ) -> tuple[DesktopProbeSelectionPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
+    commands.ui_calls = calls
     selection_view = FakeSelectionView(
         calls,
         session_name=session_name,
@@ -130,7 +137,6 @@ def _presenter(
         selection_view=selection_view,
         callbacks=DesktopProbeSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            detach_active_stream=lambda: calls.append(("detach",)),
             present_cached_probe_selection=lambda session, probe, shank: (
                 calls.append(("cached", session, probe, shank)) or cached
             ),
@@ -182,7 +188,7 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
     assert presenter.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
-    assert ("detach",) in calls
+    assert ("detach-app",) in calls
     assert ("empty",) in calls
     assert (
         "busy",
@@ -204,7 +210,7 @@ def test_probe_selected_failure_disables_load_button() -> None:
 
     assert commands.calls == [("rec", "probeA")]
     assert ("enable", False) in calls
-    assert ("detach",) in calls
+    assert ("detach-app",) in calls
 
 
 def test_probe_selected_shank_selection_failure_disables_load_button() -> None:

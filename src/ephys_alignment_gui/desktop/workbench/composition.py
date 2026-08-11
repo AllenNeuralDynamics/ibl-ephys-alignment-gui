@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -136,7 +137,7 @@ def build_desktop_workbench_presenter_cluster(
             ports.busy,
             output_path_presenter,
             load_data_presenter,
-            lifecycle_presenter,
+            lifecycle_presenter.show_empty_state,
             render_cluster.reference_line_presenter,
         ),
     )
@@ -144,9 +145,9 @@ def build_desktop_workbench_presenter_cluster(
         app=app,
         selection_view=views.selection,
         callbacks=_session_selection_callbacks(
-            lifecycle_presenter,
             render_cluster.reference_line_presenter,
             probe_selection_presenter,
+            lifecycle_presenter.show_empty_state,
         ),
     )
     mouse_root_presenter = DesktopMouseRootPresenter(
@@ -379,7 +380,7 @@ def _probe_selection_callbacks(
     busy_ports: DesktopBusyPorts,
     output_path_presenter: DesktopOutputPathPresenter,
     load_data_presenter: DesktopLoadDataPresenter,
-    lifecycle_presenter: DesktopLifecyclePresenter,
+    show_empty_state: Callable[[], None],
     reference_line_presenter: Any,
 ) -> DesktopProbeSelectionCallbacks:
     """Build callbacks for probe selection."""
@@ -387,7 +388,6 @@ def _probe_selection_callbacks(
         capture_pending_reference_lines=(
             reference_line_presenter.capture_pending_reference_lines
         ),
-        detach_active_stream=lifecycle_presenter.detach_active_stream,
         present_cached_probe_selection=(
             lambda session, probe, shank: (
                 load_data_presenter.present_cached_probe_selection(
@@ -397,24 +397,23 @@ def _probe_selection_callbacks(
                 )
             )
         ),
-        show_empty_state=lifecycle_presenter.show_empty_state,
+        show_empty_state=show_empty_state,
         busy_context=busy_ports.busy_context,
         display_output_directory=output_path_presenter.display_output_directory,
     )
 
 
 def _session_selection_callbacks(
-    lifecycle_presenter: DesktopLifecyclePresenter,
     reference_line_presenter: Any,
     probe_selection_presenter: DesktopProbeSelectionPresenter,
+    show_empty_state: Callable[[], None],
 ) -> DesktopSessionSelectionCallbacks:
     """Build callbacks for session selection."""
     return DesktopSessionSelectionCallbacks(
         capture_pending_reference_lines=(
             reference_line_presenter.capture_pending_reference_lines
         ),
-        evict_stream_cache=lifecycle_presenter.evict_stream_cache,
-        show_empty_state=lifecycle_presenter.show_empty_state,
+        show_empty_state=show_empty_state,
         select_first_probe=probe_selection_presenter.probe_selected,
     )
 
