@@ -30,6 +30,14 @@ class DesktopSelectionView:
         """Return the selected probe label."""
         return self.probe_combobox.currentText()
 
+    def session_at_index(self, idx: int) -> str | None:
+        """Return the session label at a combobox/model index."""
+        return self._text_at_index(self.session_model, idx)
+
+    def probe_at_index(self, idx: int) -> str | None:
+        """Return the probe label at a combobox/model index."""
+        return self._text_at_index(self.probe_model, idx)
+
     def current_shank_index(self) -> int | None:
         """Return the selected zero-based shank index, if the label is valid."""
         text = self.shank_combobox.currentText()
@@ -105,3 +113,20 @@ class DesktopSelectionView:
             QtWidgets.QStyle.PM_ScrollBarExtent
         )
         combobox.view().setMinimumWidth(min_width)
+
+    @staticmethod
+    def _text_at_index(model: Any, idx: int) -> str | None:
+        if idx < 0:
+            return None
+        try:
+            item = model.item(idx)
+        except AttributeError:
+            return None
+        if item is None:
+            return None
+        text = getattr(item, "text", None)
+        if callable(text):
+            return text()
+        if text is not None:
+            return str(text)
+        return None

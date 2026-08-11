@@ -265,18 +265,22 @@ class FakeMouseRootPresenter:
 class FakeSessionSelectionPresenter:
     def __init__(self) -> None:
         self.selected_count = 0
+        self.selected_indices: list[int | None] = []
 
-    def session_selected(self) -> bool:
+    def session_selected(self, idx: int | None = None) -> bool:
         self.selected_count += 1
+        self.selected_indices.append(idx)
         return True
 
 
 class FakeProbeSelectionPresenter:
     def __init__(self) -> None:
         self.selected_count = 0
+        self.selected_indices: list[int | None] = []
 
-    def probe_selected(self) -> bool:
+    def probe_selected(self, idx: int | None = None) -> bool:
         self.selected_count += 1
+        self.selected_indices.append(idx)
         return True
 
 

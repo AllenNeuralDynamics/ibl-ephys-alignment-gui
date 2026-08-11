@@ -19,12 +19,20 @@ class FakeSelectionView:
         calls: list[tuple],
         *,
         session_name: str = "rec",
+        sessions: list[str] | None = None,
     ) -> None:
         self.calls = calls
         self.session_name = session_name
+        self.sessions = sessions or [session_name]
 
     def current_session(self) -> str:
         return self.session_name
+
+    def session_at_index(self, idx: int) -> str | None:
+        try:
+            return self.sessions[idx]
+        except IndexError:
+            return None
 
     def populate_probes(self, probes: list[str]) -> None:
         self.calls.append(("populate-probes", probes))
@@ -69,11 +77,16 @@ def _presenter(
     calls: list[tuple] | None = None,
     mouse_root_loaded: bool = True,
     session_name: str = "rec",
+    sessions: list[str] | None = None,
 ) -> tuple[DesktopSessionSelectionPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
     commands.ui_calls = calls
-    selection_view = FakeSelectionView(calls, session_name=session_name)
+    selection_view = FakeSelectionView(
+        calls,
+        session_name=session_name,
+        sessions=sessions,
+    )
     app = SimpleNamespace(
         commands=commands,
         queries=SimpleNamespace(
@@ -128,6 +141,22 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
         ("select-probe", 0),
         ("select-first-probe",),
     ]
+
+
+def test_session_selected_uses_activated_index_over_stale_current_text() -> None:
+    commands = FakeCommands(
+        result=RecordingSelected("rec2", ["probeC", "probeD"]),
+    )
+    presenter, commands, calls = _presenter(
+        commands=commands,
+        session_name="rec1",
+        sessions=["rec1", "rec2"],
+    )
+
+    assert presenter.session_selected(1)
+
+    assert commands.calls == ["rec2"]
+    assert ("populate-probes", ["probeC", "probeD"]) in calls
 
 
 def test_session_selected_without_probes_does_not_select_first_probe() -> None:

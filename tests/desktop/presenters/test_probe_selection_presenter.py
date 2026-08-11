@@ -82,16 +82,24 @@ class FakeSelectionView:
         *,
         session_name: str = "rec",
         probe_name: str = "probeA",
+        probes: list[str] | None = None,
     ) -> None:
         self.calls = calls
         self.session_name = session_name
         self.probe_name = probe_name
+        self.probes = probes or [probe_name]
 
     def current_session(self) -> str:
         return self.session_name
 
     def current_probe(self) -> str:
         return self.probe_name
+
+    def probe_at_index(self, idx: int) -> str | None:
+        try:
+            return self.probes[idx]
+        except IndexError:
+            return None
 
     def selection_widgets(self) -> list[str]:
         return ["probe", "session"]
@@ -110,6 +118,7 @@ def _presenter(
     mouse_root_loaded: bool = True,
     session_name: str = "rec",
     probe_name: str = "probeA",
+    probes: list[str] | None = None,
     active_shank_idx: int = 1,
     cached: bool = False,
 ) -> tuple[DesktopProbeSelectionPresenter, FakeCommands, list[tuple]]:
@@ -120,6 +129,7 @@ def _presenter(
         calls,
         session_name=session_name,
         probe_name=probe_name,
+        probes=probes,
     )
     app = SimpleNamespace(
         commands=commands,
@@ -179,6 +189,19 @@ def test_probe_selected_presents_cached_probe_without_channel_info_load() -> Non
         ("capture",),
         ("cached", "rec", "probeA", 1),
     ]
+
+
+def test_probe_selected_uses_activated_index_over_stale_current_text() -> None:
+    presenter, commands, calls = _presenter(
+        probe_name="probeA",
+        probes=["probeA", "probeB"],
+        cached=False,
+    )
+
+    assert presenter.probe_selected(1)
+
+    assert commands.calls == [("rec", "probeB")]
+    assert ("cached", "rec", "probeB", 1) in calls
 
 
 def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:

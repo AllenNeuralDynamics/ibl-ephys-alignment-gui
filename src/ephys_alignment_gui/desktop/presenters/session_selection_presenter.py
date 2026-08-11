@@ -30,13 +30,13 @@ class DesktopSessionSelectionPresenter:
     selection_view: Any
     callbacks: DesktopSessionSelectionCallbacks
 
-    def session_selected(self) -> bool:
+    def session_selected(self, idx: int | None = None) -> bool:
         """Select the current recording and render its probe choices."""
         callbacks = self.callbacks
         if not self.app.queries.workspace.mouse_root_loaded():
             return False
 
-        session_name = self.selection_view.current_session()
+        session_name = self._selected_session_name(idx)
         if not session_name:
             return False
 
@@ -59,3 +59,10 @@ class DesktopSessionSelectionPresenter:
             self.selection_view.select_probe_index(0)
             callbacks.select_first_probe()
         return True
+
+    def _selected_session_name(self, idx: int | None) -> str:
+        if idx is not None:
+            session_name = self.selection_view.session_at_index(idx)
+            if session_name:
+                return session_name
+        return self.selection_view.current_session()

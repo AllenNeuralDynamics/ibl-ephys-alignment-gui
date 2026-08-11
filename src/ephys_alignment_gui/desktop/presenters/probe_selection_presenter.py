@@ -33,14 +33,14 @@ class DesktopProbeSelectionPresenter:
     selection_view: Any
     callbacks: DesktopProbeSelectionCallbacks
 
-    def probe_selected(self) -> bool:
+    def probe_selected(self, idx: int | None = None) -> bool:
         """Select the current probe or present its cached stream."""
         callbacks = self.callbacks
         if not self.app.queries.workspace.mouse_root_loaded():
             return False
 
         session_name = self.selection_view.current_session()
-        probe_name = self.selection_view.current_probe()
+        probe_name = self._selected_probe_name(idx)
         if not session_name or not probe_name:
             return False
 
@@ -95,3 +95,10 @@ class DesktopProbeSelectionPresenter:
 
         self.selection_view.set_load_data_enabled(True)
         return True
+
+    def _selected_probe_name(self, idx: int | None) -> str:
+        if idx is not None:
+            probe_name = self.selection_view.probe_at_index(idx)
+            if probe_name:
+                return probe_name
+        return self.selection_view.current_probe()

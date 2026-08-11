@@ -26,6 +26,12 @@ class FakeModel:
     def appendRow(self, item: FakeItem) -> None:
         self.rows.append(item)
 
+    def item(self, idx: int) -> FakeItem | None:
+        try:
+            return self.rows[idx]
+        except IndexError:
+            return None
+
 
 class FakeMetrics:
     def width(self, text: str) -> int:
@@ -104,6 +110,18 @@ def test_selection_view_populates_models_and_sizes_combobox_popup() -> None:
     assert [item.text for item in model.rows] == ["short", "much-longer"]
     assert [item.editable for item in model.rows] == [False, False]
     assert combobox.popup.minimum_width == 115
+
+
+def test_selection_view_reads_session_and_probe_labels_by_index() -> None:
+    view, session_model, _combobox, _button = _view()
+    view.populate_sessions(["rec1", "rec2"])
+    view.populate_probes(["probeA", "probeB"])
+
+    assert view.session_at_index(1) == "rec2"
+    assert view.probe_at_index(1) == "probeB"
+    assert view.session_at_index(-1) is None
+    assert view.probe_at_index(2) is None
+    assert [item.text for item in session_model.rows] == ["rec1", "rec2"]
 
 
 def test_selection_view_handles_empty_population_without_sizing() -> None:

@@ -52,13 +52,13 @@ class DesktopShellActions:
         """Report that legacy ONE/Alyx session selection is unsupported."""
         self.window._show_one_unsupported("Session selection")
 
-    def on_session_combobox_activated(self, _idx: int) -> bool:
+    def on_session_combobox_activated(self, idx: int) -> bool:
         """Populate the probe dropdown for the selected session."""
-        return self.workbench.session_selected()
+        return self.workbench.session_selected(idx)
 
-    def on_probe_combobox_activated(self, _idx: int) -> bool:
+    def on_probe_combobox_activated(self, idx: int) -> bool:
         """Select a probe and derive shank/output state."""
-        return self.workbench.probe_selected()
+        return self.workbench.probe_selected(idx)
 
     def on_use_docdb_changed(self, state: int) -> None:
         """Log DocDB checkbox state changes."""

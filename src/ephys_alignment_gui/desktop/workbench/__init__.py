@@ -187,13 +187,13 @@ class DesktopWorkbench:
         """Handle direct text edits to the mouse-root line edit."""
         return self.presenter_cluster.mouse_root_presenter.mouse_root_edited()
 
-    def session_selected(self) -> bool:
+    def session_selected(self, idx: int | None = None) -> bool:
         """Select the current recording/session from the desktop widgets."""
-        return self.presenter_cluster.session_selection_presenter.session_selected()
+        return self.presenter_cluster.session_selection_presenter.session_selected(idx)
 
-    def probe_selected(self) -> bool:
+    def probe_selected(self, idx: int | None = None) -> bool:
         """Select the current probe from the desktop widgets."""
-        return self.presenter_cluster.probe_selection_presenter.probe_selected()
+        return self.presenter_cluster.probe_selection_presenter.probe_selected(idx)
 
     def shank_selected(self, _idx: int | None = None) -> bool:
         """Select the current shank from the desktop widgets."""
