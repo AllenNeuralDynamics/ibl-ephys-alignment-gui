@@ -278,14 +278,6 @@ class Setup:
             nearby_info.triggered.connect(self.display_nearby_sessions)
             info_options.addAction(nearby_info)
 
-            scaling_info = QtWidgets.QAction("Subject Scaling", self)
-            scaling_info.triggered.connect(self.display_subject_scaling)
-            info_options.addAction(scaling_info)
-
-            feature_info = QtWidgets.QAction("Region Feature", self)
-            feature_info.triggered.connect(self.display_region_features)
-            info_options.addAction(feature_info)
-
     def init_interaction_features(self) -> None:
         """
         Create all interaction widgets that will be added to the GUI

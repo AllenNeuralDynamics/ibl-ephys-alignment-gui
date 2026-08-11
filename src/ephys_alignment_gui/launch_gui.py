@@ -596,12 +596,6 @@ class MainWindow(QtWidgets.QMainWindow, ephys_gui.Setup):
     def cluster_clicked(self, item, point):
         return self.desktop_workbench.cluster_clicked(item, point)
 
-    def display_subject_scaling(self) -> None:
-        self._show_one_unsupported("Subject scaling")
-
-    def display_region_features(self) -> None:
-        self._show_one_unsupported("Region features")
-
     def on_mouse_double_clicked(self, event) -> None:
         """
         Triggered when a double click event is detected on ephys of histology plots. Adds reference

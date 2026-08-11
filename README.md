@@ -1,6 +1,6 @@
 # IBL Ephys Alignment GUI
 
-![GUI Screenshot](src/ephys_alignment_gui/ephys_atlas_image.png)
+![GUI Screenshot](src/ephys_alignment_gui/resources/ephys_atlas_image.png)
 
 GUI developed by the International Brain Laboratory for aligning electrophysiology data with histology data.
 
