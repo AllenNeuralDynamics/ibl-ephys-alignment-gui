@@ -2,228 +2,199 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from PyQt5 import QtWidgets
 
 
 def build_menu_bar(window: Any) -> None:
-    """
-    Create menu bar and add all possible menu options. These are:
-        - Image Plots: possible 2D image/scatter plots
-        - Line Plots: possible 1D line plots
-        - Probe Plots: possible 2D plots arranged according to probe geometry
-        - Slice Plots: possible coronal slice images
-        - Filter Units: filter displayed plots by unit type (All, Good, MUA)
-        - Fit Options: possible keyboard interactions for applying alignment
-        - Display Options: possible keyboard interactions to what is displayed on GUI
-        - Session Information: extra info, session notes and Allen brain regions description
-    """
-    # Create menubar widget and add it to the main GUI window
+    """Create the desktop menu bar and attach plot/action menu groups."""
     menu_bar = QtWidgets.QMenuBar(window)
     menu_bar.setNativeMenuBar(False)
     window.setMenuBar(menu_bar)
 
-    window.displays.ephys.attach_plot_menus(menu_bar)
+    _attach_plot_menus(window, menu_bar)
+    _add_fit_options_menu(window, menu_bar)
+    _add_display_options_menu(window, menu_bar)
+    _add_session_information_menu(window, menu_bar)
 
+
+def _attach_plot_menus(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    window.displays.ephys.attach_plot_menus(menu_bar)
     window.displays.slice.attach_slice_menu(
         menu_bar,
         parent=window,
         offline=window.offline,
     )
-
     window.displays.ephys.attach_unit_filter_menu(menu_bar, window)
 
-    # FIT OPTIONS MENU BAR
-    # Define all possible keyboard shortcut interactions for GUI
 
-    # Shortcut to apply interpolation
-    fit_option = QtWidgets.QAction("Fit", window)
-    fit_option.setShortcut("Return")
-    fit_option.triggered.connect(window.fit_button_pressed)
-
-    # Shortcuts to apply offset
-    offset_option = QtWidgets.QAction("Offset", window)
-    offset_option.setShortcut("O")
-    offset_option.triggered.connect(window.offset_button_pressed)
-    moveup_option = QtWidgets.QAction("Offset + 50um", window)
-    moveup_option.setShortcut("Shift+Up")
-    moveup_option.triggered.connect(window.moveup_button_pressed)
-    movedown_option = QtWidgets.QAction("Offset - 50um", window)
-    movedown_option.setShortcut("Shift+Down")
-    movedown_option.triggered.connect(window.movedown_button_pressed)
-
-    # Shortcut to delete a reference line
-    delete_line_option = QtWidgets.QAction("Delete Line", window)
-    delete_line_option.setShortcut("Shift+D")
-    delete_line_option.triggered.connect(window.delete_line_button_pressed)
-
-    # Shortcut to move between previous/next moves
-    next_option = QtWidgets.QAction("Next", window)
-    next_option.setShortcut("Right")
-    next_option.triggered.connect(window.next_button_pressed)
-    prev_option = QtWidgets.QAction("Previous", window)
-    prev_option.setShortcut("Left")
-    prev_option.triggered.connect(window.prev_button_pressed)
-
-    # Shortcut to reset GUI to initial state
-    reset_option = QtWidgets.QAction("Reset", window)
-    reset_option.setShortcut("Ctrl+R")
-    reset_option.triggered.connect(window.reset_button_pressed)
-
-    # Shortcut to save final state to JSON file
-    complete_option = QtWidgets.QAction("Save", window)
-    complete_option.setShortcut("Ctrl+S")
-    if not window.offline:
-        complete_option.triggered.connect(window.display_qc_options)
-    else:
-        complete_option.triggered.connect(window.complete_button_pressed_offline)
-
-    # Add menu bar with all possible keyboard interactions
+def _add_fit_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
     fit_options = menu_bar.addMenu("Fit Options")
-    fit_options.addAction(fit_option)
-    fit_options.addAction(offset_option)
-    fit_options.addAction(moveup_option)
-    fit_options.addAction(movedown_option)
-    fit_options.addAction(delete_line_option)
-    fit_options.addAction(next_option)
-    fit_options.addAction(prev_option)
-    fit_options.addAction(reset_option)
-    fit_options.addAction(complete_option)
-
-    # DISPLAY OPTIONS MENU BAR
-    # Define all possible keyboard shortcut for visualisation features
-    # Shortcuts to toggle between plots options
-    toggle1_option = QtWidgets.QAction("Toggle Image Plots", window)
-    toggle1_option.setShortcut("Alt+1")
-    toggle1_option.triggered.connect(lambda: window.displays.ephys.toggle_plot("image"))
-    toggle2_option = QtWidgets.QAction("Toggle Line Plots", window)
-    toggle2_option.setShortcut("Alt+2")
-    toggle2_option.triggered.connect(lambda: window.displays.ephys.toggle_plot("line"))
-    toggle3_option = QtWidgets.QAction("Toggle Probe Plots", window)
-    toggle3_option.setShortcut("Alt+3")
-    toggle3_option.triggered.connect(lambda: window.displays.ephys.toggle_plot("probe"))
-    toggle4_option = QtWidgets.QAction("Toggle Slice Plots", window)
-    toggle4_option.setShortcut("Alt+4")
-    toggle4_option.triggered.connect(lambda: window.displays.slice.toggle_slice_plot())
-
-    toggle5_option = QtWidgets.QAction("Toggle Previous Image Plots", window)
-    toggle5_option.setShortcut("Alt+Ctrl+1")
-    toggle5_option.triggered.connect(
-        lambda: window.displays.ephys.toggle_plot("image", reverse=True)
-    )
-    toggle6_option = QtWidgets.QAction("Toggle Previous Line Plots", window)
-    toggle6_option.setShortcut("Alt+Ctrl+2")
-    toggle6_option.triggered.connect(
-        lambda: window.displays.ephys.toggle_plot("line", reverse=True)
-    )
-    toggle7_option = QtWidgets.QAction("Toggle Previous Probe Plots", window)
-    toggle7_option.setShortcut("Alt+Ctrl+3")
-    toggle7_option.triggered.connect(
-        lambda: window.displays.ephys.toggle_plot("probe", reverse=True)
-    )
-    toggle8_option = QtWidgets.QAction("Toggle Previous Slice Plots", window)
-    toggle8_option.setShortcut("Alt+Ctrl+4")
-    toggle8_option.triggered.connect(
-        lambda: window.displays.slice.toggle_slice_plot(reverse=True)
+    _add_actions(
+        fit_options,
+        [
+            _action(window, "Fit", "Return", window.fit_button_pressed),
+            _action(window, "Offset", "O", window.offset_button_pressed),
+            _action(window, "Offset + 50um", "Shift+Up", window.moveup_button_pressed),
+            _action(
+                window,
+                "Offset - 50um",
+                "Shift+Down",
+                window.movedown_button_pressed,
+            ),
+            _action(
+                window,
+                "Delete Line",
+                "Shift+D",
+                window.delete_line_button_pressed,
+            ),
+            _action(window, "Next", "Right", window.next_button_pressed),
+            _action(window, "Previous", "Left", window.prev_button_pressed),
+            _action(window, "Reset", "Ctrl+R", window.reset_button_pressed),
+            _save_action(window),
+        ],
     )
 
-    # Shortcuts to switch order of 3 panels in ephys plot
-    view1_option = QtWidgets.QAction("View 1", window)
-    view1_option.setShortcut("Shift+1")
-    view1_option.triggered.connect(lambda: window.set_view(view=1))
-    view2_option = QtWidgets.QAction("View 2", window)
-    view2_option.setShortcut("Shift+2")
-    view2_option.triggered.connect(lambda: window.set_view(view=2))
-    view3_option = QtWidgets.QAction("View 3", window)
-    view3_option.setShortcut("Shift+3")
-    view3_option.triggered.connect(lambda: window.set_view(view=3))
 
-    # Shortcut to reset axis on figures
-    axis_option = QtWidgets.QAction("Reset Axis", window)
-    axis_option.setShortcut("Shift+A")
-    axis_option.triggered.connect(window.reset_axis_button_pressed)
-
-    # Shortcut to hide/show region labels
-    toggle_labels_option = QtWidgets.QAction("Hide/Show Labels", window)
-    toggle_labels_option.setShortcut("Shift+L")
-    toggle_labels_option.triggered.connect(window.toggle_labels_button_pressed)
-
-    # Shortcut to hide/show reference lines
-    toggle_lines_option = QtWidgets.QAction("Hide/Show Lines", window)
-    toggle_lines_option.setShortcut("Shift+H")
-    toggle_lines_option.triggered.connect(window.toggle_line_button_pressed)
-
-    # Shortcut to hide/show reference lines and channels on slice image
-    toggle_channels_option = QtWidgets.QAction("Hide/Show Channels", window)
-    toggle_channels_option.setShortcut("Shift+C")
-    toggle_channels_option.triggered.connect(window.toggle_channel_button_pressed)
-
-    # Shortcut to change default histology reference image
-    toggle_histology_option = QtWidgets.QAction("Hide/Show Nearby Boundaries", window)
-    toggle_histology_option.setShortcut("Shift+N")
-    toggle_histology_option.triggered.connect(window.toggle_histology_button_pressed)
-
-    # Option to change histology regions from Allen to Franklin Paxinos
-    toggle_histology_map_option = QtWidgets.QAction("Change Histology Map", window)
-    toggle_histology_map_option.setShortcut("Shift+M")
-    toggle_histology_map_option.triggered.connect(
-        window.toggle_histology_map_button_pressed
-    )
-
-    # Shortcuts for cluster popup window
-    popup_minimise = QtWidgets.QAction("Minimise/Show Cluster Popup", window)
-    popup_minimise.setShortcut("Alt+M")
-    popup_minimise.triggered.connect(window.minimise_popups)
-    popup_close = QtWidgets.QAction("Close Cluster Popup", window)
-    popup_close.setShortcut("Alt+X")
-    popup_close.triggered.connect(window.close_popups)
-
-    # Option to save all plots
-    save_plots = QtWidgets.QAction("Save Plots", window)
-    save_plots.setShortcut("Ctrl+Shift+S")
-    save_plots.triggered.connect(window.save_plots)
-
-    # Add menu bar with all possible display options
+def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
     display_options = menu_bar.addMenu("Display Options")
-    display_options.addAction(toggle1_option)
-    display_options.addAction(toggle2_option)
-    display_options.addAction(toggle3_option)
-    display_options.addAction(toggle4_option)
-    display_options.addAction(toggle5_option)
-    display_options.addAction(toggle6_option)
-    display_options.addAction(toggle7_option)
-    display_options.addAction(toggle8_option)
-    display_options.addAction(view1_option)
-    display_options.addAction(view2_option)
-    display_options.addAction(view3_option)
-    display_options.addAction(axis_option)
-    display_options.addAction(toggle_labels_option)
-    display_options.addAction(toggle_lines_option)
-    display_options.addAction(toggle_channels_option)
-    display_options.addAction(toggle_histology_option)
-    display_options.addAction(toggle_histology_map_option)
-    display_options.addAction(popup_minimise)
-    display_options.addAction(popup_close)
-    display_options.addAction(save_plots)
+    _add_actions(
+        display_options,
+        [
+            _action(
+                window,
+                "Toggle Image Plots",
+                "Alt+1",
+                lambda: window.displays.ephys.toggle_plot("image"),
+            ),
+            _action(
+                window,
+                "Toggle Line Plots",
+                "Alt+2",
+                lambda: window.displays.ephys.toggle_plot("line"),
+            ),
+            _action(
+                window,
+                "Toggle Probe Plots",
+                "Alt+3",
+                lambda: window.displays.ephys.toggle_plot("probe"),
+            ),
+            _action(
+                window,
+                "Toggle Slice Plots",
+                "Alt+4",
+                lambda: window.displays.slice.toggle_slice_plot(),
+            ),
+            _action(
+                window,
+                "Toggle Previous Image Plots",
+                "Alt+Ctrl+1",
+                lambda: window.displays.ephys.toggle_plot("image", reverse=True),
+            ),
+            _action(
+                window,
+                "Toggle Previous Line Plots",
+                "Alt+Ctrl+2",
+                lambda: window.displays.ephys.toggle_plot("line", reverse=True),
+            ),
+            _action(
+                window,
+                "Toggle Previous Probe Plots",
+                "Alt+Ctrl+3",
+                lambda: window.displays.ephys.toggle_plot("probe", reverse=True),
+            ),
+            _action(
+                window,
+                "Toggle Previous Slice Plots",
+                "Alt+Ctrl+4",
+                lambda: window.displays.slice.toggle_slice_plot(reverse=True),
+            ),
+            _action(window, "View 1", "Shift+1", lambda: window.set_view(view=1)),
+            _action(window, "View 2", "Shift+2", lambda: window.set_view(view=2)),
+            _action(window, "View 3", "Shift+3", lambda: window.set_view(view=3)),
+            _action(window, "Reset Axis", "Shift+A", window.reset_axis_button_pressed),
+            _action(
+                window,
+                "Hide/Show Labels",
+                "Shift+L",
+                window.toggle_labels_button_pressed,
+            ),
+            _action(
+                window,
+                "Hide/Show Lines",
+                "Shift+H",
+                window.toggle_line_button_pressed,
+            ),
+            _action(
+                window,
+                "Hide/Show Channels",
+                "Shift+C",
+                window.toggle_channel_button_pressed,
+            ),
+            _action(
+                window,
+                "Hide/Show Nearby Boundaries",
+                "Shift+N",
+                window.toggle_histology_button_pressed,
+            ),
+            _action(
+                window,
+                "Change Histology Map",
+                "Shift+M",
+                window.toggle_histology_map_button_pressed,
+            ),
+            _action(
+                window,
+                "Minimise/Show Cluster Popup",
+                "Alt+M",
+                window.minimise_popups,
+            ),
+            _action(window, "Close Cluster Popup", "Alt+X", window.close_popups),
+            _action(window, "Save Plots", "Ctrl+Shift+S", window.save_plots),
+        ],
+    )
 
-    # SESSION INFORMATION MENU BAR
-    # Define all session information options
-    # Display any notes associated with recording session
-    session_notes = QtWidgets.QAction("Session Notes", window)
-    session_notes.triggered.connect(window.display_session_notes)
-    # Shortcut to show label information
-    region_info = QtWidgets.QAction("Region Info", window)
-    region_info.setShortcut("Shift+I")
-    region_info.triggered.connect(window.describe_labels_pressed)
 
-    # Add menu bar with all possible session info options
+def _add_session_information_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
     info_options = menu_bar.addMenu("Session Information")
-    info_options.addAction(session_notes)
-    info_options.addAction(region_info)
+    _add_actions(
+        info_options,
+        [
+            _action(window, "Session Notes", None, window.display_session_notes),
+            _action(window, "Region Info", "Shift+I", window.describe_labels_pressed),
+        ],
+    )
 
-    # Display other sessions that are closeby if online mode
     if not window.offline:
-        nearby_info = QtWidgets.QAction("Nearby Sessions", window)
-        nearby_info.triggered.connect(window.display_nearby_sessions)
-        info_options.addAction(nearby_info)
+        info_options.addAction(
+            _action(window, "Nearby Sessions", None, window.display_nearby_sessions)
+        )
+
+
+def _save_action(window: Any) -> QtWidgets.QAction:
+    callback = (
+        window.display_qc_options
+        if not window.offline
+        else window.complete_button_pressed_offline
+    )
+    return _action(window, "Save", "Ctrl+S", callback)
+
+
+def _action(
+    window: Any,
+    text: str,
+    shortcut: str | None,
+    callback: Callable[..., Any],
+) -> QtWidgets.QAction:
+    action = QtWidgets.QAction(text, window)
+    if shortcut is not None:
+        action.setShortcut(shortcut)
+    action.triggered.connect(callback)
+    return action
+
+
+def _add_actions(menu: QtWidgets.QMenu, actions: list[QtWidgets.QAction]) -> None:
+    for action in actions:
+        menu.addAction(action)

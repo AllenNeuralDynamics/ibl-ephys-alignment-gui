@@ -6,18 +6,19 @@ import pyqtgraph as pg
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread
 
-import ephys_alignment_gui.desktop.setup as desktop_setup
 from ephys_alignment_gui.application.workflow import Requirement
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.settings import (
     OUTPUT_ROOT_ENV_VAR,
     output_root_from_environment,
 )
+from ephys_alignment_gui.desktop import window_setup
 from ephys_alignment_gui.desktop.display_ports import (
     desktop_display_ports_from_main_window,
 )
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.popup_manager import DesktopPopupManager
+from ephys_alignment_gui.desktop.region_lookup_setup import initialize_region_lookup
 from ephys_alignment_gui.desktop.thread_worker import Worker
 from ephys_alignment_gui.desktop.views import DesktopViews
 from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
@@ -73,7 +74,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.init_variables()
         self.offline: bool = offline
         self._empty_state_item: Any = None
-        desktop_setup.initialize_layout(self, offline=offline)
+        window_setup.initialize_layout(self, offline=offline)
         self.displays = DesktopDisplays.create(
             app=self.app,
             ports=desktop_display_ports_from_main_window(self),
@@ -97,7 +98,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_default_output_root_from_environment()
 
         self.desktop_workbench.initialize_region_lookup(
-            lambda allen: desktop_setup.initialize_region_lookup(self, allen)
+            lambda allen: initialize_region_lookup(self, allen)
         )
 
     def closeEvent(self, event) -> None:
