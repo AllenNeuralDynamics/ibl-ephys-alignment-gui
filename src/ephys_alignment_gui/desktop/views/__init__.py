@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.desktop.displays.axis_style import set_axis, set_font
 from ephys_alignment_gui.desktop.shell.menu_setup import build_menu_bar
 from ephys_alignment_gui.desktop.views.alignment_screen_view import (
     DesktopAlignmentScreenView,
@@ -66,7 +67,8 @@ class DesktopViews:
         shank_screen = DesktopShankScreenView(
             depth_plots=depth,
             init_menubar=lambda: build_menu_bar(window),
-            set_view=window.set_view,
+            apply_ephys_view=displays.ephys.apply_view,
+            capture_slice_export_geometry=displays.slice.capture_export_geometry,
         )
         alignment_screen = DesktopAlignmentScreenView(
             depth_plots=depth,
@@ -74,6 +76,8 @@ class DesktopViews:
             lin_fit_checkbox=displays.histology.linear_fit_checkbox,
             current_index_label=window.idx_string,
             total_index_label=window.tot_idx_string,
+            alignment_model=window.align_list,
+            alignment_combobox=window.align_combobox,
         )
         export = DesktopExportView(
             ephys_graphics_layout=displays.ephys.graphics_layout,
@@ -81,9 +85,9 @@ class DesktopViews:
             slice_plot=displays.slice.coronal_plot,
             slice_trajectory_pen=window.rpen_dot,
             reset_axis=window.shell_actions.reset_axis_button_pressed,
-            set_view=window.set_view,
-            set_axis=window.set_axis,
-            set_font=window.set_font,
+            set_view=shank_screen.set_view,
+            set_axis=set_axis,
+            set_font=set_font,
             ephys_sizes=displays.ephys.export_sizes,
             slice_geometry=displays.slice.capture_export_geometry,
         )

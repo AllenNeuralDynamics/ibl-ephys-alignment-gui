@@ -111,6 +111,14 @@ class DesktopEphysDisplay:
         """Clear ephys panel plots."""
         self.panel.clear()
 
+    def show_empty_state(self) -> None:
+        """Show the unloaded placeholder on the feature image plot."""
+        self.panel.show_empty_state()
+
+    def clear_empty_state(self) -> None:
+        """Clear the unloaded placeholder from the feature image plot."""
+        self.panel.clear_empty_state()
+
     def attach_plot_menus(self, menu_bar: Any) -> None:
         """Attach ephys plot menus to a desktop menu bar."""
         self.plot_presenter.attach_plot_menus(menu_bar)

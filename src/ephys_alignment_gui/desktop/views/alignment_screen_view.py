@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
+from PyQt5 import QtGui
+
+from ephys_alignment_gui.desktop.views.choice_list import populate_choice_list
 from ephys_alignment_gui.desktop.views.depth_plot_view import DesktopDepthPlotView
 
 
@@ -18,6 +21,18 @@ class DesktopAlignmentScreenView:
     lin_fit_checkbox: Any
     current_index_label: Any
     total_index_label: Any
+    alignment_model: Any
+    alignment_combobox: Any
+    item_factory: Callable[[str], Any] = field(default=QtGui.QStandardItem)
+
+    def render_alignment_choices(self, choices: Sequence[str]) -> None:
+        """Render previous/original alignment choices."""
+        populate_choice_list(
+            choices,
+            self.alignment_model,
+            self.alignment_combobox,
+            item_factory=self.item_factory,
+        )
 
     def set_linear_fit_checked(self, enabled: bool) -> None:
         """Render the linear-fit checkbox without recursively emitting changes."""

@@ -195,6 +195,10 @@ class DesktopShellActions:
         """Reset feature-depth y-range and feature image x-range."""
         self.workbench.reset_axis()
 
+    def save_plots(self, *_args: Any) -> bool:
+        """Save all desktop plot panels for the active shank."""
+        return self.workbench.save_plots()
+
     def display_session_notes(self, *_args: Any) -> None:
         """Show session notes for the active stream."""
         self.workbench.display_session_notes()

@@ -7,6 +7,7 @@ from typing import Any
 
 from PyQt5 import QtWidgets
 
+from ephys_alignment_gui.desktop.displays.axis_style import set_axis
 from ephys_alignment_gui.desktop.shell.busy_context import BusyContext
 from ephys_alignment_gui.desktop.workbench.port_types import (
     DesktopAlignmentEditActionPorts,
@@ -28,13 +29,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
 
     def busy_context(*args: Any, **kwargs: Any) -> BusyContext:
         return BusyContext(window, *args, **kwargs)
-
-    def render_alignment_choices(choices: list[str]) -> None:
-        window.populate_lists(
-            choices,
-            window.align_list,
-            window.align_combobox,
-        )
 
     def open_qc_dialog() -> None:
         if qc_dialog := getattr(window, "qc_dialog", None):
@@ -58,12 +52,12 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         ),
         busy=DesktopBusyPorts(busy_context=busy_context),
         load_data=DesktopLoadDataPorts(
-            clear_empty_state=window._clear_empty_state,
+            clear_empty_state=window.displays.ephys.clear_empty_state,
         ),
         lifecycle=DesktopLifecyclePorts(
             close_popups=window.popup_manager.close_all,
             reset_raw_image_payloads=window.shank_screen_view.reset_raw_image_payloads,
-            show_empty_state=window._show_empty_state,
+            show_empty_state=window.displays.ephys.show_empty_state,
             collect_garbage=gc.collect,
         ),
         render=DesktopRenderPorts(
@@ -82,7 +76,9 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                         displays=window.displays,
                     )
                 ),
-                render_alignment_choices=render_alignment_choices,
+                render_alignment_choices=(
+                    window.alignment_screen_view.render_alignment_choices
+                ),
                 apply_plot_data_state=window.shank_screen_view.apply_plot_data_state,
                 raw_image_payloads=window.shank_screen_view.raw_image_payload_mapping,
                 render_plot_menus=lambda state: (
@@ -97,7 +93,9 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         ),
         save=DesktopSavePorts(
             use_docdb=use_docdb,
-            render_alignment_choices=render_alignment_choices,
+            render_alignment_choices=(
+                window.alignment_screen_view.render_alignment_choices
+            ),
             busy_context=busy_context,
             complete_button=lambda: window.complete_button,
             histology_available=histology_available,
@@ -113,7 +111,9 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
         previous_alignment_load=DesktopPreviousAlignmentLoadPorts(
             use_docdb=use_docdb,
             set_reload_folder_text=window.reload_folder_line.setText,
-            render_alignment_choices=render_alignment_choices,
+            render_alignment_choices=(
+                window.alignment_screen_view.render_alignment_choices
+            ),
             busy_context=busy_context,
             reload_button=lambda: window.reload_folder_button,
         ),
@@ -131,6 +131,6 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
             line_pen=window.kpen_solid,
             histology_available=histology_available,
             activate_window=window.activateWindow,
-            set_axis=window.set_axis,
+            set_axis=set_axis,
         ),
     )

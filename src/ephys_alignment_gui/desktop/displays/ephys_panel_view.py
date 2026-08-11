@@ -59,6 +59,7 @@ class DesktopEphysPanelView:
     probe_top_lines: list[Any] = field(default_factory=list)
     items: EphysPlotItems = field(default_factory=EphysPlotItems)
     feature_plot: FeaturePlotView = field(default_factory=FeaturePlotView)
+    empty_state_item: tuple[Any, Callable[..., Any]] | None = None
 
     @classmethod
     def create(
@@ -199,6 +200,35 @@ class DesktopEphysPanelView:
         """Clear all ephys plot items and feature-plot interaction metadata."""
         self.feature_plot.clear()
         self.items.detach(self._figures())
+
+    def show_empty_state(self, text: str = "Select and load data") -> None:
+        """Show a centered placeholder in the feature image plot."""
+        if self.empty_state_item is not None:
+            return
+        item = pg.TextItem(text, anchor=(0.5, 0.5), color=(160, 160, 160))
+        view_box = self.plots.image.getViewBox()
+        view_box.addItem(item, ignoreBounds=True)
+
+        def _center(*_args: Any) -> None:
+            (x0, x1), (y0, y1) = view_box.viewRange()
+            item.setPos((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
+        _center()
+        view_box.sigRangeChanged.connect(_center)
+        self.empty_state_item = (item, _center)
+
+    def clear_empty_state(self) -> None:
+        """Remove the feature image placeholder if it is visible."""
+        if self.empty_state_item is None:
+            return
+        item, center = self.empty_state_item
+        view_box = self.plots.image.getViewBox()
+        try:
+            view_box.sigRangeChanged.disconnect(center)
+        except (TypeError, RuntimeError):
+            pass
+        view_box.removeItem(item)
+        self.empty_state_item = None
 
     def feature_y_from_scene(self, scene_pos: Any) -> float | None:
         """Map a scene position to feature-space y in micrometres."""

@@ -113,9 +113,24 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 "Alt+Ctrl+4",
                 lambda: window.displays.slice.toggle_slice_plot(reverse=True),
             ),
-            _action(window, "View 1", "Shift+1", lambda: window.set_view(view=1)),
-            _action(window, "View 2", "Shift+2", lambda: window.set_view(view=2)),
-            _action(window, "View 3", "Shift+3", lambda: window.set_view(view=3)),
+            _action(
+                window,
+                "View 1",
+                "Shift+1",
+                lambda: window.shank_screen_view.set_view(view=1),
+            ),
+            _action(
+                window,
+                "View 2",
+                "Shift+2",
+                lambda: window.shank_screen_view.set_view(view=2),
+            ),
+            _action(
+                window,
+                "View 3",
+                "Shift+3",
+                lambda: window.shank_screen_view.set_view(view=3),
+            ),
             _action(window, "Reset Axis", "Shift+A", actions.reset_axis_button_pressed),
             _action(
                 window,
@@ -154,7 +169,7 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 actions.minimise_popups,
             ),
             _action(window, "Close Cluster Popup", "Alt+X", actions.close_popups),
-            _action(window, "Save Plots", "Ctrl+Shift+S", window.save_plots),
+            _action(window, "Save Plots", "Ctrl+Shift+S", actions.save_plots),
         ],
     )
 

@@ -110,6 +110,7 @@ def test_selection_view_populates_models_and_sizes_combobox_popup() -> None:
     assert [item.text for item in model.rows] == ["short", "much-longer"]
     assert [item.editable for item in model.rows] == [False, False]
     assert combobox.popup.minimum_width == 115
+    assert combobox.current_index == 0
 
 
 def test_selection_view_reads_session_and_probe_labels_by_index() -> None:

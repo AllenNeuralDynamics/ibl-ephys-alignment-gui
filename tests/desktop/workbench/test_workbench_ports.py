@@ -26,6 +26,10 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
             )
         ),
         displays=SimpleNamespace(
+            ephys=SimpleNamespace(
+                clear_empty_state=lambda: None,
+                show_empty_state=lambda: None,
+            ),
             histology=SimpleNamespace(
                 tip_position_um=lambda: 42.0,
                 scale_plot=object(),
@@ -46,13 +50,9 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         alignment_screen_view=SimpleNamespace(
             capture_depth_plot_y_ranges=lambda: None,
             restore_depth_plot_y_ranges=lambda _ranges: None,
+            render_alignment_choices=lambda _choices: None,
         ),
         use_docdb_checkbox=FakeCheckbox(True),
-        align_list=object(),
-        align_combobox=object(),
-        populate_lists=lambda _choices, _list, _combobox: None,
-        _clear_empty_state=lambda: None,
-        _show_empty_state=lambda: None,
         offline=True,
         complete_button=object(),
         shell_actions=SimpleNamespace(selected_qc_descriptions=lambda: []),
@@ -62,7 +62,6 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         bar_colour=object(),
         kpen_solid=object(),
         activateWindow=lambda: None,
-        set_axis=lambda *_args, **_kwargs: None,
     )
 
 

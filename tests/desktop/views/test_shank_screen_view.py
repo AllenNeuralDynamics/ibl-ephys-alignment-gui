@@ -60,7 +60,8 @@ def _view(
     view = DesktopShankScreenView(
         depth_plots=FakeDepthPlotView(calls),
         init_menubar=lambda: calls.append("init-menubar"),
-        set_view=lambda **kwargs: calls.append(("view", kwargs)),
+        apply_ephys_view=lambda **kwargs: calls.append(("view", kwargs)),
+        capture_slice_export_geometry=lambda: calls.append("slice-geometry"),
     )
     view.raw_image_payloads = {"raw": "payload"}
     return view, ephys, calls, displays
@@ -121,6 +122,7 @@ def test_configure_view_after_render_only_configures_first_unpreserved_view() ->
     view.configure_view_after_render(True)
 
     assert calls == [
+        "slice-geometry",
         ("view", {"view": 1, "configure": True}),
         ("view", {"view": 1, "configure": False}),
         ("view", {"view": 1, "configure": False}),

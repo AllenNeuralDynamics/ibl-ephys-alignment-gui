@@ -6,7 +6,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtGui
+
+from ephys_alignment_gui.desktop.views.choice_list import populate_choice_list
 
 
 @dataclass
@@ -93,26 +95,12 @@ class DesktopSelectionView:
         return self.load_data_button
 
     def _populate(self, values: Sequence[str], model: Any, combobox: Any) -> None:
-        model.clear()
-        labels = [str(value) for value in values]
-        for label in labels:
-            item = self.item_factory(label)
-            item.setEditable(False)
-            model.appendRow(item)
-
-        if not labels:
-            return
-
-        metrics = combobox.fontMetrics()
-        width = getattr(metrics, "horizontalAdvance", None)
-        if width is None:
-            width = metrics.width
-        min_width = width(max(labels, key=len))
-        min_width += combobox.view().autoScrollMargin()
-        min_width += combobox.style().pixelMetric(
-            QtWidgets.QStyle.PM_ScrollBarExtent
+        populate_choice_list(
+            values,
+            model,
+            combobox,
+            item_factory=self.item_factory,
         )
-        combobox.view().setMinimumWidth(min_width)
 
     @staticmethod
     def _text_at_index(model: Any, idx: int) -> str | None:

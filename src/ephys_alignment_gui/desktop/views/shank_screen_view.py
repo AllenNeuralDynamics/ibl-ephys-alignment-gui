@@ -19,7 +19,8 @@ class DesktopShankScreenView:
 
     depth_plots: DesktopDepthPlotView
     init_menubar: Callable[[], None]
-    set_view: Callable[..., None]
+    apply_ephys_view: Callable[..., None]
+    capture_slice_export_geometry: Callable[[], Any]
     configure: bool = True
     raw_image_payloads: dict[str, Any] = field(default_factory=dict)
 
@@ -69,3 +70,9 @@ class DesktopShankScreenView:
         self.set_view(view=1, configure=self.configure and not preserve_plot_selection)
         if not preserve_plot_selection:
             self.configure = False
+
+    def set_view(self, view: int = 1, configure: bool = False) -> None:
+        """Apply a desktop ephys panel view and capture export geometry if needed."""
+        if configure:
+            self.capture_slice_export_geometry()
+        self.apply_ephys_view(view=view, configure=configure)
