@@ -41,7 +41,7 @@ class DesktopShankRenderPorts:
 
 @dataclass(frozen=True)
 class DesktopRenderPorts:
-    """MainWindow render ports consumed by focused desktop presenters."""
+    """MainWindow render ports consumed by focused desktop coordinators."""
 
     alignment: DesktopAlignmentRenderPorts
     shank: DesktopShankRenderPorts
@@ -49,21 +49,21 @@ class DesktopRenderPorts:
 
 @dataclass(frozen=True)
 class DesktopBusyPorts:
-    """Desktop busy-state operations shared by command presenters."""
+    """Desktop busy-state operations shared by command coordinators."""
 
     busy_context: Callable[..., AbstractContextManager[Any]]
 
 
 @dataclass(frozen=True)
 class DesktopLoadDataPorts:
-    """Desktop operations needed by heavy data load presentation."""
+    """Desktop operations needed by heavy data load coordination."""
 
     clear_empty_state: Callable[[], None]
 
 
 @dataclass(frozen=True)
 class DesktopSavePorts:
-    """Desktop operations needed by save and QC presentation."""
+    """Desktop operations needed by save and QC coordination."""
 
     use_docdb: Callable[[], bool]
     render_alignment_choices: Callable[[list[str]], None]
@@ -89,7 +89,7 @@ class DesktopPreviousAlignmentLoadPorts:
 
 @dataclass(frozen=True)
 class DesktopInteractionPorts:
-    """Desktop operations and handles needed by interaction presentation."""
+    """Desktop operations and handles needed by interaction coordination."""
 
     popup_manager: Any
     struct_list: Callable[[], Any]
@@ -108,7 +108,7 @@ class DesktopInteractionPorts:
 
 @dataclass(frozen=True)
 class DesktopLifecyclePorts:
-    """Desktop-only operations for stream/session lifecycle presentation."""
+    """Desktop-only operations for stream/session lifecycle coordination."""
 
     close_popups: Callable[[], None]
     reset_raw_image_payloads: Callable[[], None]
@@ -118,7 +118,7 @@ class DesktopLifecyclePorts:
 
 @dataclass(frozen=True)
 class DesktopWorkbenchPorts:
-    """MainWindow ports consumed by Workbench presenter composition."""
+    """MainWindow ports consumed by Workbench coordinator composition."""
 
     render: DesktopRenderPorts
     alignment_edit_actions: DesktopAlignmentEditActionPorts

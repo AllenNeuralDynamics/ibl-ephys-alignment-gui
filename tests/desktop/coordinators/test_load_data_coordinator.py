@@ -1,4 +1,4 @@
-"""Tests for desktop load-data presentation."""
+"""Tests for desktop load-data coordination."""
 
 from __future__ import annotations
 
@@ -27,9 +27,9 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamActivated,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.desktop.presenters.load_data_presenter import (
+from ephys_alignment_gui.desktop.coordinators.load_data_coordinator import (
     DesktopLoadDataCallbacks,
-    DesktopLoadDataPresenter,
+    DesktopLoadDataCoordinator,
 )
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
@@ -597,13 +597,13 @@ def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     )
 
 
-def _presenter(
+def _coordinator(
     *,
     begin_result: Any | None = None,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     load_runner: Any | None = None,
-) -> tuple[DesktopLoadDataPresenter, FakeCommands, FakeQueries, list[tuple]]:
+) -> tuple[DesktopLoadDataCoordinator, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
     queries = FakeQueries()
@@ -611,15 +611,15 @@ def _presenter(
     commands.events = events
     app = SimpleNamespace(events=events, queries=queries, commands=commands)
     selection_view = FakeSelectionView(calls)
-    presenter = DesktopLoadDataPresenter(
+    coordinator = DesktopLoadDataCoordinator(
         app,
         selection_view,
         _callbacks(calls),
         load_runner=load_runner or ImmediateFreshLoadRunner(),
     )
-    presenter.connect_load_events()
+    coordinator.connect_load_events()
     return (
-        presenter,
+        coordinator,
         commands,
         queries,
         calls,
@@ -627,11 +627,11 @@ def _presenter(
 
 
 def test_load_heavy_data_skips_already_active_stream_shank() -> None:
-    presenter, commands, queries, calls = _presenter(
+    coordinator, commands, queries, calls = _coordinator(
         begin_result=LoadDataAlreadyActiveResult(("rec", "stream"), 0)
     )
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert queries.shank_idx == 0
     assert commands.begin_calls == [
@@ -648,11 +648,11 @@ def test_load_heavy_data_skips_already_active_stream_shank() -> None:
 
 
 def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         begin_result=_cached_transaction(shank_idx=0),
     )
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert commands.begin_calls == [
         {
@@ -672,11 +672,11 @@ def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
 
 
 def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         commands=FakeCommands(probe_cache_result=_cached_transaction(shank_idx=1)),
     )
 
-    assert presenter.present_cached_probe_selection(
+    assert coordinator.present_cached_probe_selection(
         session_name="rec",
         probe_name="probeA",
         target_shank=0,
@@ -694,13 +694,13 @@ def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
 
 
 def test_probe_selection_noops_for_already_active_stream_shank() -> None:
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         commands=FakeCommands(
             probe_cache_result=LoadDataAlreadyActiveResult(("rec", "stream"), 0)
         ),
     )
 
-    assert presenter.present_cached_probe_selection(
+    assert coordinator.present_cached_probe_selection(
         session_name="rec",
         probe_name="probeA",
         target_shank=0,
@@ -712,9 +712,9 @@ def test_probe_selection_noops_for_already_active_stream_shank() -> None:
 
 def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
-    presenter, commands, _queries, calls = _presenter(begin_result=prepared)
+    coordinator, commands, _queries, calls = _coordinator(begin_result=prepared)
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert commands.start_calls == [prepared]
     assert commands.invocation_calls == [prepared]
@@ -730,12 +730,12 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
 def test_load_heavy_data_starts_background_runner_before_completion() -> None:
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
     runner = ManualFreshLoadRunner()
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         begin_result=prepared,
         load_runner=runner,
     )
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert runner.is_running
     assert commands.start_calls == [prepared]
@@ -758,9 +758,9 @@ def test_load_heavy_data_starts_background_runner_before_completion() -> None:
 def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> None:
     runner = ManualFreshLoadRunner()
     runner.active = True
-    presenter, commands, _queries, calls = _presenter(load_runner=runner)
+    coordinator, commands, _queries, calls = _coordinator(load_runner=runner)
 
-    assert not presenter.load_heavy_data()
+    assert not coordinator.load_heavy_data()
 
     assert commands.cancel_calls == ["superseded by a newer load request"]
     assert runner.cancel_calls == ["superseded by a newer load request"]
@@ -771,13 +771,13 @@ def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> N
 def test_shutdown_active_load_cancels_runner_and_closes_busy_context() -> None:
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
     runner = ManualFreshLoadRunner()
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         begin_result=prepared,
         load_runner=runner,
     )
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
-    assert presenter.shutdown_active_load("closing", timeout_ms=123)
+    assert coordinator.shutdown_active_load("closing", timeout_ms=123)
 
     assert commands.cancel_calls == ["closing"]
     assert runner.shutdown_calls == [("closing", 123)]
@@ -788,13 +788,13 @@ def test_shutdown_active_load_keeps_context_open_when_runner_does_not_stop() -> 
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
     runner = ManualFreshLoadRunner()
     runner.shutdown_result = False
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         begin_result=prepared,
         load_runner=runner,
     )
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
-    assert not presenter.shutdown_active_load("closing", timeout_ms=123)
+    assert not coordinator.shutdown_active_load("closing", timeout_ms=123)
 
     assert commands.cancel_calls == ["closing"]
     assert runner.shutdown_calls == [("closing", 123)]
@@ -803,7 +803,7 @@ def test_shutdown_active_load_keeps_context_open_when_runner_does_not_stop() -> 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
-    presenter, _commands, _queries, calls = _presenter(
+    coordinator, _commands, _queries, calls = _coordinator(
         begin_result=prepared,
         commands=FakeCommands(
             begin_result=prepared,
@@ -814,14 +814,14 @@ def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:
         ),
     )
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert ("render-shank", 0, True) in calls
 
 
 def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
     prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         begin_result=prepared,
         commands=FakeCommands(
             begin_result=prepared,
@@ -832,7 +832,7 @@ def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
         ),
     )
 
-    assert presenter.load_heavy_data()
+    assert coordinator.load_heavy_data()
 
     assert commands.run_calls == [prepared]
     assert commands.activate_calls == []
@@ -840,9 +840,9 @@ def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
 
 
 def test_load_events_ignore_stale_load_ids() -> None:
-    presenter, commands, _queries, calls = _presenter()
-    presenter._active_load_context = FakeBusyContext(calls, "loading")
-    presenter._active_load_id = 2
+    coordinator, commands, _queries, calls = _coordinator()
+    coordinator._active_load_context = FakeBusyContext(calls, "loading")
+    coordinator._active_load_id = 2
 
     assert commands.events is not None
     commands.events.emit(
@@ -871,11 +871,11 @@ def test_load_events_ignore_stale_load_ids() -> None:
 
 
 def test_probe_selection_returns_false_on_cached_command_failure() -> None:
-    presenter, commands, _queries, calls = _presenter(
+    coordinator, commands, _queries, calls = _coordinator(
         commands=FakeCommands(probe_cache_result=Failed("missing cache")),
     )
 
-    assert not presenter.present_cached_probe_selection(
+    assert not coordinator.present_cached_probe_selection(
         session_name="rec",
         probe_name="probeA",
         target_shank=0,

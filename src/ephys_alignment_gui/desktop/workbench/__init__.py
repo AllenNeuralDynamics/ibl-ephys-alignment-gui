@@ -1,4 +1,4 @@
-"""Desktop composition shell for focused presenters."""
+"""Desktop composition shell for focused coordinators."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.views import DesktopViews
 from ephys_alignment_gui.desktop.workbench.composition import (
-    DesktopWorkbenchPresenterCluster,
-    build_desktop_workbench_presenter_cluster,
+    DesktopWorkbenchCoordinatorCluster,
+    build_desktop_workbench_coordinator_cluster,
 )
 from ephys_alignment_gui.desktop.workbench.port_types import (
     DesktopWorkbenchPorts,
@@ -24,13 +24,13 @@ from ephys_alignment_gui.desktop.workbench.render_composition import (
 
 @dataclass
 class DesktopWorkbench:
-    """Own focused desktop presenters and desktop event subscription lifecycle."""
+    """Own focused desktop coordinators and desktop event subscription lifecycle."""
 
     app: Any
     views: DesktopViews
     displays: DesktopDisplays
     render_cluster: DesktopRenderCluster
-    presenter_cluster: DesktopWorkbenchPresenterCluster
+    coordinator_cluster: DesktopWorkbenchCoordinatorCluster
     _event_subscriptions: list[EventSubscription] = field(default_factory=list)
 
     @classmethod
@@ -43,14 +43,14 @@ class DesktopWorkbench:
         displays: DesktopDisplays,
         ports: DesktopWorkbenchPorts,
     ) -> DesktopWorkbench:
-        """Build and configure the focused desktop presenters."""
+        """Build and configure the focused desktop coordinators."""
         render_cluster = build_desktop_render_cluster(
             app=app,
             views=views,
             displays=displays,
             ports=ports,
         )
-        presenter_cluster = build_desktop_workbench_presenter_cluster(
+        coordinator_cluster = build_desktop_workbench_coordinator_cluster(
             app=app,
             parent=parent,
             views=views,
@@ -63,11 +63,11 @@ class DesktopWorkbench:
             views=views,
             displays=displays,
             render_cluster=render_cluster,
-            presenter_cluster=presenter_cluster,
+            coordinator_cluster=coordinator_cluster,
         )
 
     def connect_events(self) -> list[EventSubscription]:
-        """Subscribe desktop presenters to semantic app events."""
+        """Subscribe desktop coordinators to semantic app events."""
         if self._event_subscriptions:
             return list(self._event_subscriptions)
         self._event_subscriptions.extend(
@@ -77,19 +77,19 @@ class DesktopWorkbench:
             self.render_cluster.shank_presenter.connect_shank_events()
         )
         self._event_subscriptions.extend(
-            self.presenter_cluster.load_data_presenter.connect_load_events()
+            self.coordinator_cluster.load_data_coordinator.connect_load_events()
         )
         self._event_subscriptions.extend(
-            self.presenter_cluster.output_path_presenter.connect_path_events()
+            self.coordinator_cluster.output_path_coordinator.connect_path_events()
         )
         self._event_subscriptions.extend(
-            self.presenter_cluster.lifecycle_presenter.connect_lifecycle_events()
+            self.coordinator_cluster.lifecycle_coordinator.connect_lifecycle_events()
         )
         self._event_subscriptions.extend(
-            self.presenter_cluster.save_presenter.connect_save_events()
+            self.coordinator_cluster.save_coordinator.connect_save_events()
         )
         self._event_subscriptions.extend(
-            self.presenter_cluster.previous_alignment_load_presenter.connect_previous_alignment_events()
+            self.coordinator_cluster.previous_alignment_load_coordinator.connect_previous_alignment_events()
         )
         return list(self._event_subscriptions)
 
@@ -101,7 +101,7 @@ class DesktopWorkbench:
 
     def shutdown(self, *, timeout_ms: int = 5000) -> bool:
         """Settle foreground desktop work before the workbench is torn down."""
-        stopped = self.presenter_cluster.load_data_presenter.shutdown_active_load(
+        stopped = self.coordinator_cluster.load_data_coordinator.shutdown_active_load(
             timeout_ms=timeout_ms,
         )
         if not stopped:
@@ -111,11 +111,11 @@ class DesktopWorkbench:
 
     def initialize_startup_stream_state(self) -> None:
         """Initialize stream-dependent app and desktop state at startup."""
-        self.presenter_cluster.lifecycle_presenter.initialize_startup_stream_state()
+        self.coordinator_cluster.lifecycle_coordinator.initialize_startup_stream_state()
 
     def initialize_region_lookup(self, init_region_lookup: Any) -> None:
         """Populate desktop region lookup widgets from app atlas metadata."""
-        self.presenter_cluster.interaction_presenter.initialize_region_lookup(
+        self.coordinator_cluster.interaction_coordinator.initialize_region_lookup(
             init_region_lookup
         )
 
@@ -172,28 +172,28 @@ class DesktopWorkbench:
 
     def render_loaded_shank_histology(self, shank_idx: int | None = None) -> bool:
         """Render loaded-shank histology, perpendicular slice, and line overlays."""
-        presenter = self.render_cluster.histology_refresh_presenter
-        return presenter.render_loaded_shank_histology(shank_idx)
+        coordinator = self.render_cluster.histology_refresh_presenter
+        return coordinator.render_loaded_shank_histology(shank_idx)
 
     def load_heavy_data(self) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
-        return self.presenter_cluster.load_data_presenter.load_heavy_data()
+        return self.coordinator_cluster.load_data_coordinator.load_heavy_data()
 
     def set_mouse_root(self, mouse_root: Any) -> bool:
-        """Load a mouse-root datapackage through the desktop presenter."""
-        return self.presenter_cluster.mouse_root_presenter.set_mouse_root(mouse_root)
+        """Load a mouse-root datapackage through the desktop coordinator."""
+        return self.coordinator_cluster.mouse_root_coordinator.set_mouse_root(mouse_root)
 
     def mouse_root_edited(self) -> bool:
         """Handle direct text edits to the mouse-root line edit."""
-        return self.presenter_cluster.mouse_root_presenter.mouse_root_edited()
+        return self.coordinator_cluster.mouse_root_coordinator.mouse_root_edited()
 
     def session_selected(self, idx: int | None = None) -> bool:
         """Select the current recording/session from the desktop widgets."""
-        return self.presenter_cluster.session_selection_presenter.session_selected(idx)
+        return self.coordinator_cluster.session_selection_coordinator.session_selected(idx)
 
     def probe_selected(self, idx: int | None = None) -> bool:
         """Select the current probe from the desktop widgets."""
-        return self.presenter_cluster.probe_selection_presenter.probe_selected(idx)
+        return self.coordinator_cluster.probe_selection_coordinator.probe_selected(idx)
 
     def shank_selected(self, _idx: int | None = None) -> bool:
         """Select the current shank from the desktop widgets."""
@@ -206,7 +206,7 @@ class DesktopWorkbench:
     def load_data_button_pressed(self) -> bool:
         """Run desktop load preflight policy and load data when allowed."""
         return (
-            self.presenter_cluster.load_preflight_presenter.load_data_button_pressed()
+            self.coordinator_cluster.load_preflight_coordinator.load_data_button_pressed()
         )
 
     def fit_button_pressed(self) -> bool:
@@ -281,105 +281,105 @@ class DesktopWorkbench:
 
     def ensure_output_directory_for_save(self, requirement: Any | None = None) -> bool:
         """Require a save location before writing alignment outputs."""
-        return self.presenter_cluster.output_folder_prompt.ensure_for_save(requirement)
+        return self.coordinator_cluster.output_folder_prompt.ensure_for_save(requirement)
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
-        return self.presenter_cluster.output_path_presenter.set_save_root(save_root)
+        return self.coordinator_cluster.output_path_coordinator.set_save_root(save_root)
 
     def select_mouse_root(self) -> bool:
         """Prompt for a mouse-root directory."""
-        return self.presenter_cluster.path_dialog_presenter.select_mouse_root()
+        return self.coordinator_cluster.path_dialog_coordinator.select_mouse_root()
 
     def select_output_root(self) -> bool:
         """Prompt for a save-root directory."""
-        return self.presenter_cluster.path_dialog_presenter.select_output_root()
+        return self.coordinator_cluster.path_dialog_coordinator.select_output_root()
 
     def output_folder_edited(self) -> bool:
         """Handle direct edits to the output-folder text field."""
-        return self.presenter_cluster.output_path_presenter.output_folder_edited()
+        return self.coordinator_cluster.output_path_coordinator.output_folder_edited()
 
     def log_load_requirement(self, requirement: Any) -> None:
         """Log a load policy requirement that has no desktop prompt action."""
-        self.presenter_cluster.load_preflight_presenter.log_requirement(requirement)
+        self.coordinator_cluster.load_preflight_coordinator.log_requirement(requirement)
 
     def select_existing_directory_text(self, title: str) -> str:
         """Prompt for an existing directory and return Qt-style text."""
-        return self.presenter_cluster.folder_dialog.select_existing_directory_text(
+        return self.coordinator_cluster.folder_dialog.select_existing_directory_text(
             title
         )
 
     def load_existing_alignments(self) -> bool:
         """Prompt for and load previous alignments."""
-        presenter = self.presenter_cluster.previous_alignment_load_presenter
-        return presenter.load_existing_alignments()
+        coordinator = self.coordinator_cluster.previous_alignment_load_coordinator
+        return coordinator.load_existing_alignments()
 
     def save_alignment_outputs(self) -> bool:
         """Save edited alignment outputs."""
-        return self.presenter_cluster.save_presenter.save_alignment_outputs()
+        return self.coordinator_cluster.save_coordinator.save_alignment_outputs()
 
     def display_qc_options(self) -> bool:
         """Display alignment QC choices."""
-        return self.presenter_cluster.save_presenter.display_qc_options()
+        return self.coordinator_cluster.save_coordinator.display_qc_options()
 
     def qc_button_clicked(self) -> bool:
         """Handle the QC save button."""
-        return self.presenter_cluster.save_presenter.qc_button_clicked()
+        return self.coordinator_cluster.save_coordinator.qc_button_clicked()
 
     def export_plots(self, output_dir: Path, *, sess_info: str = "") -> None:
         """Export all desktop plot panels for the active shank."""
-        self.presenter_cluster.plot_exporter.export(output_dir, sess_info=sess_info)
+        self.coordinator_cluster.plot_exporter.export(output_dir, sess_info=sess_info)
 
     def save_plots(self, save_path: Any = None) -> bool:
         """Save all desktop plot panels to an explicit or app-derived folder."""
-        return self.presenter_cluster.plot_export_presenter.save_plots(save_path)
+        return self.coordinator_cluster.plot_export_coordinator.save_plots(save_path)
 
     def display_session_notes(self) -> None:
         """Show session notes for the active stream."""
-        self.presenter_cluster.interaction_presenter.display_session_notes()
+        self.coordinator_cluster.interaction_coordinator.display_session_notes()
 
     def popup_closed(self, popup: Any) -> None:
         """Forget a closed cluster popup."""
-        self.presenter_cluster.interaction_presenter.popup_closed(popup)
+        self.coordinator_cluster.interaction_coordinator.popup_closed(popup)
 
     def popup_moved(self) -> None:
         """Bring the main window back to front after popup movement."""
-        self.presenter_cluster.interaction_presenter.popup_moved()
+        self.coordinator_cluster.interaction_coordinator.popup_moved()
 
     def close_popups(self) -> None:
         """Close cluster detail popups."""
-        self.presenter_cluster.interaction_presenter.close_popups()
+        self.coordinator_cluster.interaction_coordinator.close_popups()
 
     def minimise_popups(self) -> None:
         """Toggle cluster detail popups between minimized and normal."""
-        self.presenter_cluster.interaction_presenter.minimise_popups()
+        self.coordinator_cluster.interaction_coordinator.minimise_popups()
 
     def cluster_clicked(self, item: Any, point: Any) -> Any | None:
         """Open cluster detail popup for a clicked ephys cluster point."""
-        return self.presenter_cluster.interaction_presenter.cluster_clicked(item, point)
+        return self.coordinator_cluster.interaction_coordinator.cluster_clicked(item, point)
 
     def describe_labels_pressed(self) -> bool:
         """Show region information for the selected histology label."""
-        return self.presenter_cluster.interaction_presenter.describe_labels_pressed()
+        return self.coordinator_cluster.interaction_coordinator.describe_labels_pressed()
 
     def label_closed(self, popup: Any) -> None:
         """Hide the label popup without forgetting reusable widgets."""
-        self.presenter_cluster.interaction_presenter.label_closed(popup)
+        self.coordinator_cluster.interaction_coordinator.label_closed(popup)
 
     def label_moved(self) -> None:
         """Bring the main window back to front after label popup movement."""
-        self.presenter_cluster.interaction_presenter.label_moved()
+        self.coordinator_cluster.interaction_coordinator.label_moved()
 
     def label_pressed(self, item: Any) -> None:
         """Render region information for a clicked structure tree item."""
-        self.presenter_cluster.interaction_presenter.label_pressed(item)
+        self.coordinator_cluster.interaction_coordinator.label_pressed(item)
 
     def on_mouse_double_clicked(self, event: Any) -> bool:
         """Add a reference line from a double-clicked feature plot position."""
-        return self.presenter_cluster.interaction_presenter.on_mouse_double_clicked(
+        return self.coordinator_cluster.interaction_coordinator.on_mouse_double_clicked(
             event
         )
 
     def on_mouse_hover(self, items: list[Any]) -> None:
         """Dispatch hover interactions to reference-line and histology views."""
-        self.presenter_cluster.interaction_presenter.on_mouse_hover(items)
+        self.coordinator_cluster.interaction_coordinator.on_mouse_hover(items)

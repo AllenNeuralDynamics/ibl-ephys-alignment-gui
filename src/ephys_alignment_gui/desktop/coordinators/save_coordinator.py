@@ -1,4 +1,4 @@
-"""Desktop presentation shell for save and QC commands."""
+"""Desktop coordination shell for save and QC commands."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class DesktopSaveCallbacks:
 
 
 @dataclass
-class DesktopSavePresenter:
+class DesktopSaveCoordinator:
     """Coordinate desktop save and QC button behavior."""
 
     commands: Any
@@ -42,7 +42,7 @@ class DesktopSavePresenter:
     callbacks: DesktopSaveCallbacks
 
     def connect_save_events(self) -> list[EventSubscription]:
-        """Subscribe desktop save presentation to semantic save events."""
+        """Subscribe desktop save coordination to semantic save events."""
         return [
             self.events.subscribe(SaveCompleted, self.on_save_completed),
             self.events.subscribe(SaveFailed, self.on_save_failed),

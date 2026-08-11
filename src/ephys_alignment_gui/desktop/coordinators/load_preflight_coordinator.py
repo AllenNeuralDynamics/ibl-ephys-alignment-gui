@@ -110,7 +110,7 @@ class DesktopOutputFolderPrompt:
 
 
 @dataclass
-class DesktopLoadPreflightPresenter:
+class DesktopLoadPreflightCoordinator:
     """Own desktop preflight handling for the Load Data button."""
 
     can_load_data: Callable[[], PolicyResult]

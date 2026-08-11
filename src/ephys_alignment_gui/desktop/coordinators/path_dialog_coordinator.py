@@ -1,4 +1,4 @@
-"""Desktop presentation shell for path-selection dialogs."""
+"""Desktop coordination shell for path-selection dialogs."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class DesktopPathDialogCallbacks:
 
 
 @dataclass
-class DesktopPathDialogPresenter:
+class DesktopPathDialogCoordinator:
     """Coordinate mouse-root and output-root desktop folder dialogs."""
 
     folder_dialog: Any

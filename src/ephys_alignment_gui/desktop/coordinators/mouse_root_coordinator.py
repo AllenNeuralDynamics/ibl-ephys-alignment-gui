@@ -1,4 +1,4 @@
-"""Desktop presentation shell for loading a mouse-root datapackage."""
+"""Desktop coordination shell for loading a mouse-root datapackage."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class DesktopMouseRootCallbacks:
 
 
 @dataclass
-class DesktopMouseRootPresenter:
+class DesktopMouseRootCoordinator:
     """Coordinate desktop behavior for loading a mouse root."""
 
     commands: Any

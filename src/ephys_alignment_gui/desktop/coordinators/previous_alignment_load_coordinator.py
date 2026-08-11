@@ -37,7 +37,7 @@ class PreviousAlignmentLoadCallbacks:
 
 
 @dataclass
-class DesktopPreviousAlignmentLoadPresenter:
+class DesktopPreviousAlignmentLoadCoordinator:
     """Own desktop shell behavior for the previous-alignment load command."""
 
     commands: Any
@@ -46,7 +46,7 @@ class DesktopPreviousAlignmentLoadPresenter:
     _last_selection_result: bool = field(default=True, init=False, repr=False)
 
     def connect_previous_alignment_events(self) -> list[EventSubscription]:
-        """Subscribe desktop presentation to previous-alignment load events."""
+        """Subscribe desktop coordination to previous-alignment load events."""
         return [
             self.events.subscribe(
                 PreviousAlignmentsLoaded,

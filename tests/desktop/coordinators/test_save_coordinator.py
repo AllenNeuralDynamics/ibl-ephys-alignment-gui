@@ -1,4 +1,4 @@
-"""Tests for desktop save/QC presentation."""
+"""Tests for desktop save/QC coordination."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ from ephys_alignment_gui.core.alignment_events import (
 )
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.desktop.presenters.save_presenter import (
+from ephys_alignment_gui.desktop.coordinators.save_coordinator import (
     DesktopSaveCallbacks,
-    DesktopSavePresenter,
+    DesktopSaveCoordinator,
 )
 from ephys_alignment_gui.services.alignment_repository import SavedAlignmentOutputs
 
@@ -133,7 +133,7 @@ def _saved_result(
     )
 
 
-def _presenter(
+def _coordinator(
     *,
     commands: FakeCommands | None = None,
     ensure_output: bool = True,
@@ -141,12 +141,12 @@ def _presenter(
     histology_available: bool = True,
     ephys_qc: str = "Pass",
     selected_descriptions: list[str] | None = None,
-) -> tuple[DesktopSavePresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
     events = EventBus()
     commands = commands or FakeCommands()
     commands.events = events
-    presenter = DesktopSavePresenter(
+    coordinator = DesktopSaveCoordinator(
         commands=commands,
         events=events,
         callbacks=DesktopSaveCallbacks(
@@ -171,17 +171,17 @@ def _presenter(
             warning=lambda title, message: calls.append(("warning", title, message)),
         ),
     )
-    presenter.connect_save_events()
-    return presenter, commands, calls
+    coordinator.connect_save_events()
+    return coordinator, commands, calls
 
 
 def test_save_prompts_for_output_then_saves() -> None:
     blocked = Blocked((_requirement(),))
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(ready_results=[blocked, Ok()]),
     )
 
-    assert presenter.save_alignment_outputs()
+    assert coordinator.save_alignment_outputs()
 
     assert commands.ready_calls == 2
     assert commands.save_calls == [{"use_docdb": True}]
@@ -200,23 +200,23 @@ def test_save_prompts_for_output_then_saves() -> None:
 
 def test_save_returns_false_when_output_prompt_is_cancelled() -> None:
     blocked = Blocked((_requirement(),))
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(ready_results=[blocked]),
         ensure_output=False,
     )
 
-    assert not presenter.save_alignment_outputs()
+    assert not coordinator.save_alignment_outputs()
 
     assert commands.save_calls == []
     assert calls == [("ensure-output", blocked.first)]
 
 
 def test_save_logs_failed_command() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(save_result=Failed("save failed")),
     )
 
-    assert not presenter.save_alignment_outputs()
+    assert not coordinator.save_alignment_outputs()
 
     assert commands.save_calls == [{"use_docdb": True}]
     assert calls == [
@@ -231,25 +231,25 @@ def test_save_logs_failed_command() -> None:
 
 
 def test_display_qc_options_opens_dialog_when_histology_available() -> None:
-    presenter, _commands, calls = _presenter()
+    coordinator, _commands, calls = _coordinator()
 
-    assert presenter.display_qc_options()
+    assert coordinator.display_qc_options()
 
     assert calls == [("open-qc",)]
 
 
 def test_display_qc_options_noops_without_histology() -> None:
-    presenter, _commands, calls = _presenter(histology_available=False)
+    coordinator, _commands, calls = _coordinator(histology_available=False)
 
-    assert not presenter.display_qc_options()
+    assert not coordinator.display_qc_options()
 
     assert calls == []
 
 
 def test_qc_button_requires_description_for_failing_qc() -> None:
-    presenter, commands, calls = _presenter(ephys_qc="Fail")
+    coordinator, commands, calls = _coordinator(ephys_qc="Fail")
 
-    assert not presenter.qc_button_clicked()
+    assert not coordinator.qc_button_clicked()
 
     assert commands.save_calls == []
     assert calls == [
@@ -259,12 +259,12 @@ def test_qc_button_requires_description_for_failing_qc() -> None:
 
 
 def test_qc_button_saves_when_description_is_selected() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         ephys_qc="Fail",
         selected_descriptions=["noise"],
     )
 
-    assert presenter.qc_button_clicked()
+    assert coordinator.qc_button_clicked()
 
     assert commands.save_calls == [{"use_docdb": True}]
     assert ("choices", ["saved", "original"]) in calls

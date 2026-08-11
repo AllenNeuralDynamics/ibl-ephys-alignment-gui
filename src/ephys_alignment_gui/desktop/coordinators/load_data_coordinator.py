@@ -1,4 +1,4 @@
-"""Desktop presentation shell for loading ephys/histology data."""
+"""Desktop coordination shell for loading ephys/histology data."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DesktopLoadDataCallbacks:
-    """Desktop callbacks used by the load-data presenter."""
+    """Desktop callbacks used by the load-data coordinator."""
 
     reference_line_positions: Callable[[], Any]
     prepare_for_fresh_stream_load: Callable[[], None]
@@ -52,7 +52,7 @@ class DesktopLoadDataCallbacks:
 
 
 @dataclass
-class DesktopLoadDataPresenter:
+class DesktopLoadDataCoordinator:
     """Coordinate desktop behavior for cached and fresh data loads."""
 
     app: Any
@@ -68,7 +68,7 @@ class DesktopLoadDataPresenter:
     _active_load_id: int | None = field(default=None, init=False, repr=False)
 
     def connect_load_events(self) -> list[EventSubscription]:
-        """Subscribe desktop load presentation to semantic load events."""
+        """Subscribe desktop load coordination to semantic load events."""
         return [
             self.app.events.subscribe(LoadDataProgressed, self.on_load_data_progressed),
             self.app.events.subscribe(LoadDataFailed, self.on_load_data_failed),
@@ -85,7 +85,7 @@ class DesktopLoadDataPresenter:
         return self.connect_load_events()
 
     def on_load_data_progressed(self, event: LoadDataProgressed) -> None:
-        """Update desktop progress presentation for an active load context."""
+        """Update desktop progress coordination for an active load context."""
         if not self._event_matches_active_load(event.load_id):
             return
         if self._active_load_context is not None:

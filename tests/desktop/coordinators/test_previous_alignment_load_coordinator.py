@@ -17,8 +17,8 @@ from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentsUnavailable,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.desktop.presenters.previous_alignment_load_presenter import (
-    DesktopPreviousAlignmentLoadPresenter,
+from ephys_alignment_gui.desktop.coordinators.previous_alignment_load_coordinator import (
+    DesktopPreviousAlignmentLoadCoordinator,
     PreviousAlignmentLoadCallbacks,
 )
 
@@ -74,14 +74,14 @@ class FakeCommands:
             self.events.emit(PreviousAlignmentsUnavailable(shank_idx=0))
 
 
-def _presenter(
+def _coordinator(
     commands: FakeCommands,
     *,
     selected_folder: str = "",
     use_docdb: bool = False,
     reload_button: Any = "reload-button",
     select_alignment_result: bool = True,
-) -> tuple[DesktopPreviousAlignmentLoadPresenter, dict[str, Any]]:
+) -> tuple[DesktopPreviousAlignmentLoadCoordinator, dict[str, Any]]:
     calls: dict[str, Any] = {
         "reload_text": [],
         "rendered_choices": [],
@@ -90,7 +90,7 @@ def _presenter(
     events = EventBus()
     commands.events = events
     busy_factory = FakeBusyFactory()
-    presenter = DesktopPreviousAlignmentLoadPresenter(
+    coordinator = DesktopPreviousAlignmentLoadCoordinator(
         commands=commands,
         events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
@@ -105,9 +105,9 @@ def _presenter(
             reload_button=lambda: reload_button,
         ),
     )
-    presenter.connect_previous_alignment_events()
+    coordinator.connect_previous_alignment_events()
     calls["busy_factory"] = busy_factory
-    return presenter, calls
+    return coordinator, calls
 
 
 def test_readiness_failure_does_not_prompt_or_load() -> None:
@@ -115,7 +115,7 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
     events = EventBus()
     commands.events = events
     prompt_calls: list[str] = []
-    presenter = DesktopPreviousAlignmentLoadPresenter(
+    coordinator = DesktopPreviousAlignmentLoadCoordinator(
         commands=commands,
         events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
@@ -128,18 +128,18 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
             reload_button=lambda: None,
         ),
     )
-    presenter.connect_previous_alignment_events()
+    coordinator.connect_previous_alignment_events()
 
-    assert not presenter.load_existing_alignments()
+    assert not coordinator.load_existing_alignments()
     assert prompt_calls == []
     assert commands.load_calls == []
 
 
 def test_cancel_without_docdb_returns_false_without_loading() -> None:
     commands = FakeCommands()
-    presenter, calls = _presenter(commands, selected_folder="", use_docdb=False)
+    coordinator, calls = _coordinator(commands, selected_folder="", use_docdb=False)
 
-    assert not presenter.load_existing_alignments()
+    assert not coordinator.load_existing_alignments()
     assert commands.load_calls == []
     assert calls["reload_text"] == []
     assert calls["busy_factory"].calls == []
@@ -147,9 +147,9 @@ def test_cancel_without_docdb_returns_false_without_loading() -> None:
 
 def test_cancel_with_docdb_loads_without_local_folder() -> None:
     commands = FakeCommands(load_result=NoPreviousAlignments())
-    presenter, calls = _presenter(commands, selected_folder="", use_docdb=True)
+    coordinator, calls = _coordinator(commands, selected_folder="", use_docdb=True)
 
-    assert presenter.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
     assert commands.load_calls == [{"folder": None, "use_docdb": True}]
     assert calls["reload_text"] == []
     assert calls["rendered_choices"] == []
@@ -158,13 +158,13 @@ def test_cancel_with_docdb_loads_without_local_folder() -> None:
 
 def test_loaded_alignment_choices_fail_when_selection_fails() -> None:
     commands = FakeCommands(load_result=AlignmentChoicesUpdated(["original"]))
-    presenter, calls = _presenter(
+    coordinator, calls = _coordinator(
         commands,
         selected_folder="/tmp/alignments",
         select_alignment_result=False,
     )
 
-    assert not presenter.load_existing_alignments()
+    assert not coordinator.load_existing_alignments()
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
@@ -176,13 +176,13 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
     commands = FakeCommands(
         load_result=AlignmentChoicesUpdated(["original", "2026-07-09T12:00:00"])
     )
-    presenter, calls = _presenter(
+    coordinator, calls = _coordinator(
         commands,
         selected_folder="/tmp/alignments",
         use_docdb=False,
     )
 
-    assert presenter.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
@@ -197,13 +197,13 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
 
 def test_load_failure_returns_false_after_prompt() -> None:
     commands = FakeCommands(load_result=Failed("load failed"))
-    presenter, calls = _presenter(
+    coordinator, calls = _coordinator(
         commands,
         selected_folder="/tmp/alignments",
         use_docdb=False,
     )
 
-    assert not presenter.load_existing_alignments()
+    assert not coordinator.load_existing_alignments()
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
@@ -213,13 +213,13 @@ def test_load_failure_returns_false_after_prompt() -> None:
 
 def test_no_previous_alignments_does_not_render_choices() -> None:
     commands = FakeCommands(load_result=NoPreviousAlignments())
-    presenter, calls = _presenter(
+    coordinator, calls = _coordinator(
         commands,
         selected_folder="/tmp/alignments",
         use_docdb=False,
     )
 
-    assert presenter.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]

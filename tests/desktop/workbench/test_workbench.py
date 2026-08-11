@@ -15,7 +15,7 @@ from ephys_alignment_gui.desktop.views import DesktopViews
 from ephys_alignment_gui.desktop.views.export_view import DesktopExportView
 from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop.workbench.composition import (
-    DesktopWorkbenchPresenterCluster,
+    DesktopWorkbenchCoordinatorCluster,
 )
 from ephys_alignment_gui.desktop.workbench.port_types import (
     DesktopAlignmentEditActionPorts,
@@ -544,7 +544,7 @@ def _workbench(
     save: Any | None = None,
     previous_alignment_load: Any | None = None,
     plot_exporter: Any | None = None,
-    plot_export_presenter: Any | None = None,
+    plot_export_coordinator: Any | None = None,
     interaction: Any | None = None,
     lifecycle: Any | None = None,
     reference_line_presenter: Any | None = None,
@@ -577,33 +577,33 @@ def _workbench(
             alignment_selection_actions or FakeAlignmentSelectionActions()
         ),
     )
-    presenter_cluster = DesktopWorkbenchPresenterCluster(
-        load_data_presenter=load_data or FakeLoadDataPresenter(),
-        probe_selection_presenter=probe_selection or FakeProbeSelectionPresenter(),
-        session_selection_presenter=(
+    coordinator_cluster = DesktopWorkbenchCoordinatorCluster(
+        load_data_coordinator=load_data or FakeLoadDataPresenter(),
+        probe_selection_coordinator=probe_selection or FakeProbeSelectionPresenter(),
+        session_selection_coordinator=(
             session_selection or FakeSessionSelectionPresenter()
         ),
-        mouse_root_presenter=mouse_root or FakeMouseRootPresenter(),
-        output_path_presenter=output_path or FakeOutputPathPresenter(),
-        path_dialog_presenter=path_dialog or FakePathDialogPresenter(),
-        load_preflight_presenter=load_preflight or FakeLoadPreflightPresenter(),
+        mouse_root_coordinator=mouse_root or FakeMouseRootPresenter(),
+        output_path_coordinator=output_path or FakeOutputPathPresenter(),
+        path_dialog_coordinator=path_dialog or FakePathDialogPresenter(),
+        load_preflight_coordinator=load_preflight or FakeLoadPreflightPresenter(),
         output_folder_prompt=output_folder_prompt or FakeOutputFolderPrompt(),
         folder_dialog=folder_dialog or FakeFolderDialog(),
-        save_presenter=save or FakeSavePresenter(),
-        previous_alignment_load_presenter=(
+        save_coordinator=save or FakeSavePresenter(),
+        previous_alignment_load_coordinator=(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
-        plot_export_presenter=plot_export_presenter or FakePlotExportPresenter(),
-        interaction_presenter=interaction or FakeInteractionPresenter(),
-        lifecycle_presenter=lifecycle or FakeLifecyclePresenter(),
+        plot_export_coordinator=plot_export_coordinator or FakePlotExportPresenter(),
+        interaction_coordinator=interaction or FakeInteractionPresenter(),
+        lifecycle_coordinator=lifecycle or FakeLifecyclePresenter(),
     )
     return DesktopWorkbench(
         app=object(),
         views=object(),
         displays=displays,
         render_cluster=render_cluster,
-        presenter_cluster=presenter_cluster,
+        coordinator_cluster=coordinator_cluster,
     )
 
 
@@ -758,7 +758,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     save = FakeSavePresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
     plot_exporter = FakePlotExporter()
-    plot_export_presenter = FakePlotExportPresenter()
+    plot_export_coordinator = FakePlotExportPresenter()
     interaction = FakeInteractionPresenter()
     alignment_edit_actions = FakeAlignmentEditActions()
     display_actions = FakeDisplayActions()
@@ -780,7 +780,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         save=save,
         previous_alignment_load=previous_alignment_load,
         plot_exporter=plot_exporter,
-        plot_export_presenter=plot_export_presenter,
+        plot_export_coordinator=plot_export_coordinator,
         interaction=interaction,
         alignment_edit_actions=alignment_edit_actions,
         display_actions=display_actions,
@@ -857,7 +857,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
-    assert plot_export_presenter.saved_paths == ["save-plots"]
+    assert plot_export_coordinator.saved_paths == ["save-plots"]
     assert display_actions.calls == [
         "toggle-histology-boundaries",
         "toggle-region-annotation-source",
@@ -1052,24 +1052,24 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
 
     render_cluster = workbench.render_cluster
-    presenter_cluster = workbench.presenter_cluster
+    coordinator_cluster = workbench.coordinator_cluster
 
     assert workbench.views is views
     assert workbench.displays.histology is panel
     assert render_cluster.alignment_presenter.callbacks is not None
     assert render_cluster.shank_presenter.callbacks is not None
-    assert presenter_cluster.load_data_presenter.callbacks is not None
-    assert presenter_cluster.probe_selection_presenter.callbacks is not None
-    assert presenter_cluster.session_selection_presenter.callbacks is not None
-    assert presenter_cluster.mouse_root_presenter.callbacks is not None
-    assert presenter_cluster.output_path_presenter.commands is commands.paths
-    assert presenter_cluster.path_dialog_presenter.callbacks.active_mouse_root is (
+    assert coordinator_cluster.load_data_coordinator.callbacks is not None
+    assert coordinator_cluster.probe_selection_coordinator.callbacks is not None
+    assert coordinator_cluster.session_selection_coordinator.callbacks is not None
+    assert coordinator_cluster.mouse_root_coordinator.callbacks is not None
+    assert coordinator_cluster.output_path_coordinator.commands is commands.paths
+    assert coordinator_cluster.path_dialog_coordinator.callbacks.active_mouse_root is (
         queries.workspace.active_mouse_root_path
     )
-    assert presenter_cluster.output_folder_prompt.callbacks.has_output_directory is (
+    assert coordinator_cluster.output_folder_prompt.callbacks.has_output_directory is (
         queries.workspace.has_output_directory
     )
-    assert presenter_cluster.load_preflight_presenter.can_load_data is (
+    assert coordinator_cluster.load_preflight_coordinator.can_load_data is (
         commands.load.can_load_data
     )
     assert render_cluster.alignment_edit_actions.commands is commands.edit
@@ -1088,23 +1088,23 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert render_cluster.shank_presenter.callbacks.render_alignment_choices is (
         ports.render.shank.render_alignment_choices
     )
-    assert presenter_cluster.save_presenter.callbacks.use_docdb is (
+    assert coordinator_cluster.save_coordinator.callbacks.use_docdb is (
         ports.save.use_docdb
     )
-    assert presenter_cluster.previous_alignment_load_presenter.callbacks.use_docdb is (
+    assert coordinator_cluster.previous_alignment_load_coordinator.callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
     assert (
-        presenter_cluster.previous_alignment_load_presenter.callbacks.select_alignment.__self__
+        coordinator_cluster.previous_alignment_load_coordinator.callbacks.select_alignment.__self__
         is render_cluster.alignment_selection_actions
     )
     assert (
-        presenter_cluster.mouse_root_presenter.callbacks.select_first_session.__self__
-        is presenter_cluster.session_selection_presenter
+        coordinator_cluster.mouse_root_coordinator.callbacks.select_first_session.__self__
+        is coordinator_cluster.session_selection_coordinator
     )
     assert (
-        presenter_cluster.session_selection_presenter.callbacks.select_first_probe.__self__
-        is presenter_cluster.probe_selection_presenter
+        coordinator_cluster.session_selection_coordinator.callbacks.select_first_probe.__self__
+        is coordinator_cluster.probe_selection_coordinator
     )
     assert workbench.displays.ephys is ephys_display
     assert workbench.displays.slice is slice_display
@@ -1131,23 +1131,23 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         "label",
     )
     assert slice_display.restored == [("menu", "selection", "label")]
-    assert presenter_cluster.plot_exporter.ephys_exporter.presenter is (
+    assert coordinator_cluster.plot_exporter.ephys_exporter.presenter is (
         ephys_display.plot_presenter
     )
-    assert presenter_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
-    assert presenter_cluster.plot_exporter.slice_handles.slice_display is slice_display
-    presenter_cluster.plot_exporter.add_lines_points()
+    assert coordinator_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
+    assert coordinator_cluster.plot_exporter.slice_handles.slice_display is slice_display
+    coordinator_cluster.plot_exporter.add_lines_points()
     assert reference_line_display.add_count == 1
-    assert presenter_cluster.plot_exporter.callbacks.set_axis is ports.export.set_axis
-    assert presenter_cluster.plot_exporter.ephys_exporter.callbacks.set_view is (
+    assert coordinator_cluster.plot_exporter.callbacks.set_axis is ports.export.set_axis
+    assert coordinator_cluster.plot_exporter.ephys_exporter.callbacks.set_view is (
         ports.export.set_view
     )
-    assert presenter_cluster.interaction_presenter.popup_manager is (
+    assert coordinator_cluster.interaction_coordinator.popup_manager is (
         ports.interaction.popup_manager
     )
-    assert presenter_cluster.interaction_presenter.reference_line_display is (
+    assert coordinator_cluster.interaction_coordinator.reference_line_display is (
         reference_line_display
     )
-    assert presenter_cluster.interaction_presenter.callbacks.set_axis is (
+    assert coordinator_cluster.interaction_coordinator.callbacks.set_axis is (
         ports.interaction.set_axis
     )

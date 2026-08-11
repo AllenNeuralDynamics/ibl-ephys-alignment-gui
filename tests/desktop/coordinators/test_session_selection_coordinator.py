@@ -1,4 +1,4 @@
-"""Tests for desktop session-selection presentation."""
+"""Tests for desktop session-selection coordination."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any
 
 from ephys_alignment_gui.application.results.metadata import RecordingSelected
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.desktop.presenters.session_selection_presenter import (
+from ephys_alignment_gui.desktop.coordinators.session_selection_coordinator import (
     DesktopSessionSelectionCallbacks,
-    DesktopSessionSelectionPresenter,
+    DesktopSessionSelectionCoordinator,
 )
 
 
@@ -71,14 +71,14 @@ class FakeCommands:
         return self.evict_result
 
 
-def _presenter(
+def _coordinator(
     *,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     mouse_root_loaded: bool = True,
     session_name: str = "rec",
     sessions: list[str] | None = None,
-) -> tuple[DesktopSessionSelectionPresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopSessionSelectionCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
     commands.ui_calls = calls
@@ -95,7 +95,7 @@ def _presenter(
             )
         ),
     )
-    presenter = DesktopSessionSelectionPresenter(
+    coordinator = DesktopSessionSelectionCoordinator(
         app=app,
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
@@ -104,31 +104,31 @@ def _presenter(
             select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
     )
-    return presenter, commands, calls
+    return coordinator, commands, calls
 
 
 def test_session_selected_noops_without_mouse_root() -> None:
-    presenter, commands, calls = _presenter(mouse_root_loaded=False)
+    coordinator, commands, calls = _coordinator(mouse_root_loaded=False)
 
-    assert not presenter.session_selected()
+    assert not coordinator.session_selected()
 
     assert commands.calls == []
     assert calls == []
 
 
 def test_session_selected_noops_without_session_name() -> None:
-    presenter, commands, calls = _presenter(session_name="")
+    coordinator, commands, calls = _coordinator(session_name="")
 
-    assert not presenter.session_selected()
+    assert not coordinator.session_selected()
 
     assert commands.calls == []
     assert calls == []
 
 
 def test_session_selected_populates_probes_and_selects_first_probe() -> None:
-    presenter, commands, calls = _presenter()
+    coordinator, commands, calls = _coordinator()
 
-    assert presenter.session_selected()
+    assert coordinator.session_selected()
 
     assert commands.calls == ["rec"]
     assert calls == [
@@ -147,24 +147,24 @@ def test_session_selected_uses_activated_index_over_stale_current_text() -> None
     commands = FakeCommands(
         result=RecordingSelected("rec2", ["probeC", "probeD"]),
     )
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=commands,
         session_name="rec1",
         sessions=["rec1", "rec2"],
     )
 
-    assert presenter.session_selected(1)
+    assert coordinator.session_selected(1)
 
     assert commands.calls == ["rec2"]
     assert ("populate-probes", ["probeC", "probeD"]) in calls
 
 
 def test_session_selected_without_probes_does_not_select_first_probe() -> None:
-    presenter, _commands, calls = _presenter(
+    coordinator, _commands, calls = _coordinator(
         commands=FakeCommands(result=RecordingSelected("rec", []))
     )
 
-    assert presenter.session_selected()
+    assert coordinator.session_selected()
 
     assert calls == [
         ("capture",),
@@ -177,22 +177,22 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
 
 
 def test_session_selected_failure_does_not_mutate_selection_view() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(result=Failed("recording failed"))
     )
 
-    assert not presenter.session_selected()
+    assert not coordinator.session_selected()
 
     assert commands.calls == ["rec"]
     assert calls == [("capture",), ("evict-app",)]
 
 
 def test_session_selected_stops_when_cache_eviction_is_blocked() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(evict_result=Failed("dirty runtime"))
     )
 
-    assert not presenter.session_selected()
+    assert not coordinator.session_selected()
 
     assert commands.calls == []
     assert calls == [("capture",), ("evict-app",)]

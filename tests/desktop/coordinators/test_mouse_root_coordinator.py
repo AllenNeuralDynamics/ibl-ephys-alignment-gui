@@ -1,4 +1,4 @@
-"""Tests for desktop mouse-root presentation."""
+"""Tests for desktop mouse-root coordination."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Any
 
 from ephys_alignment_gui.application.results.metadata import MouseRootLoaded
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.desktop.presenters.mouse_root_presenter import (
+from ephys_alignment_gui.desktop.coordinators.mouse_root_coordinator import (
     DesktopMouseRootCallbacks,
-    DesktopMouseRootPresenter,
+    DesktopMouseRootCoordinator,
 )
 
 
@@ -90,15 +90,15 @@ class FakeCommands:
         self.clear_histology_calls += 1
 
 
-def _presenter(
+def _coordinator(
     *,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     path_text: str = "/data/mouse",
-) -> tuple[DesktopMouseRootPresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopMouseRootCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
-    presenter = DesktopMouseRootPresenter(
+    coordinator = DesktopMouseRootCoordinator(
         commands=commands,
         path_view=FakePathView(calls, text=path_text),
         selection_view=FakeSelectionView(calls),
@@ -111,13 +111,13 @@ def _presenter(
             select_first_session=lambda: calls.append(("select-first-session",)),
         ),
     )
-    return presenter, commands, calls
+    return coordinator, commands, calls
 
 
 def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
-    presenter, commands, calls = _presenter()
+    coordinator, commands, calls = _coordinator()
 
-    assert presenter.set_mouse_root(Path("/data/mouse"))
+    assert coordinator.set_mouse_root(Path("/data/mouse"))
 
     assert commands.calls == [Path("/data/mouse")]
     assert commands.clear_histology_calls == 1
@@ -149,9 +149,9 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
         ),
         root_changed=False,
     )
-    presenter, _commands, calls = _presenter(commands=FakeCommands(result=result))
+    coordinator, _commands, calls = _coordinator(commands=FakeCommands(result=result))
 
-    assert presenter.set_mouse_root(Path("/data/mouse"))
+    assert coordinator.set_mouse_root(Path("/data/mouse"))
 
     assert _commands.clear_histology_calls == 0
     assert ("select-session", 0) not in calls
@@ -159,11 +159,11 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
 
 
 def test_set_mouse_root_failure_does_not_update_views() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(result=Failed("bad root"))
     )
 
-    assert not presenter.set_mouse_root(Path("/data/missing"))
+    assert not coordinator.set_mouse_root(Path("/data/missing"))
 
     assert commands.calls == [Path("/data/missing")]
     assert calls == [
@@ -178,9 +178,9 @@ def test_set_mouse_root_failure_does_not_update_views() -> None:
 
 
 def test_mouse_root_edited_disables_load_data_for_empty_text() -> None:
-    presenter, commands, calls = _presenter(path_text=" ")
+    coordinator, commands, calls = _coordinator(path_text=" ")
 
-    assert not presenter.mouse_root_edited()
+    assert not coordinator.mouse_root_edited()
 
     assert commands.calls == []
     assert calls == [("enable-load", False)]

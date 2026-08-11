@@ -1,4 +1,4 @@
-"""Compose non-render desktop Workbench presenter clusters."""
+"""Compose non-render desktop Workbench coordinator clusters."""
 
 from __future__ import annotations
 
@@ -6,6 +6,54 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.desktop.coordinators.interaction_coordinator import (
+    DesktopInteractionCallbacks,
+    DesktopInteractionCoordinator,
+    DesktopInteractionWidgets,
+)
+from ephys_alignment_gui.desktop.coordinators.lifecycle_coordinator import (
+    DesktopLifecycleCallbacks,
+    DesktopLifecycleCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.load_data_coordinator import (
+    DesktopLoadDataCallbacks,
+    DesktopLoadDataCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.load_preflight_coordinator import (
+    DesktopLoadPreflightCoordinator,
+    DesktopOutputFolderPrompt,
+    OutputFolderPromptCallbacks,
+)
+from ephys_alignment_gui.desktop.coordinators.mouse_root_coordinator import (
+    DesktopMouseRootCallbacks,
+    DesktopMouseRootCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.output_path_coordinator import (
+    DesktopOutputPathCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.path_dialog_coordinator import (
+    DesktopPathDialogCallbacks,
+    DesktopPathDialogCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.plot_export_coordinator import (
+    DesktopPlotExportCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.previous_alignment_load_coordinator import (
+    DesktopPreviousAlignmentLoadCoordinator,
+    PreviousAlignmentLoadCallbacks,
+)
+from ephys_alignment_gui.desktop.coordinators.probe_selection_coordinator import (
+    DesktopProbeSelectionCallbacks,
+    DesktopProbeSelectionCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.save_coordinator import (
+    DesktopSaveCallbacks,
+    DesktopSaveCoordinator,
+)
+from ephys_alignment_gui.desktop.coordinators.session_selection_coordinator import (
+    DesktopSessionSelectionCallbacks,
+    DesktopSessionSelectionCoordinator,
+)
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.displays.ephys_plot_exporter import (
     DesktopEphysPlotExporter,
@@ -13,54 +61,6 @@ from ephys_alignment_gui.desktop.displays.ephys_plot_exporter import (
 from ephys_alignment_gui.desktop.displays.plot_exporter import (
     DesktopPlotExporter,
     HistologyExportHandles,
-)
-from ephys_alignment_gui.desktop.presenters.interaction_presenter import (
-    DesktopInteractionCallbacks,
-    DesktopInteractionPresenter,
-    DesktopInteractionWidgets,
-)
-from ephys_alignment_gui.desktop.presenters.lifecycle_presenter import (
-    DesktopLifecycleCallbacks,
-    DesktopLifecyclePresenter,
-)
-from ephys_alignment_gui.desktop.presenters.load_data_presenter import (
-    DesktopLoadDataCallbacks,
-    DesktopLoadDataPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.load_preflight_presenter import (
-    DesktopLoadPreflightPresenter,
-    DesktopOutputFolderPrompt,
-    OutputFolderPromptCallbacks,
-)
-from ephys_alignment_gui.desktop.presenters.mouse_root_presenter import (
-    DesktopMouseRootCallbacks,
-    DesktopMouseRootPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.output_path_presenter import (
-    DesktopOutputPathPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.path_dialog_presenter import (
-    DesktopPathDialogCallbacks,
-    DesktopPathDialogPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.plot_export_presenter import (
-    DesktopPlotExportPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.previous_alignment_load_presenter import (
-    DesktopPreviousAlignmentLoadPresenter,
-    PreviousAlignmentLoadCallbacks,
-)
-from ephys_alignment_gui.desktop.presenters.probe_selection_presenter import (
-    DesktopProbeSelectionCallbacks,
-    DesktopProbeSelectionPresenter,
-)
-from ephys_alignment_gui.desktop.presenters.save_presenter import (
-    DesktopSaveCallbacks,
-    DesktopSavePresenter,
-)
-from ephys_alignment_gui.desktop.presenters.session_selection_presenter import (
-    DesktopSessionSelectionCallbacks,
-    DesktopSessionSelectionPresenter,
 )
 from ephys_alignment_gui.desktop.shell.folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop.views import DesktopViews
@@ -79,27 +79,27 @@ from ephys_alignment_gui.desktop.workbench.render_composition import (
 
 
 @dataclass(frozen=True)
-class DesktopWorkbenchPresenterCluster:
-    """Non-render presenters and helpers owned by DesktopWorkbench."""
+class DesktopWorkbenchCoordinatorCluster:
+    """Non-render coordinators and helpers owned by DesktopWorkbench."""
 
-    load_data_presenter: DesktopLoadDataPresenter
-    probe_selection_presenter: DesktopProbeSelectionPresenter
-    session_selection_presenter: DesktopSessionSelectionPresenter
-    mouse_root_presenter: DesktopMouseRootPresenter
-    output_path_presenter: DesktopOutputPathPresenter
-    path_dialog_presenter: DesktopPathDialogPresenter
-    load_preflight_presenter: DesktopLoadPreflightPresenter
+    load_data_coordinator: DesktopLoadDataCoordinator
+    probe_selection_coordinator: DesktopProbeSelectionCoordinator
+    session_selection_coordinator: DesktopSessionSelectionCoordinator
+    mouse_root_coordinator: DesktopMouseRootCoordinator
+    output_path_coordinator: DesktopOutputPathCoordinator
+    path_dialog_coordinator: DesktopPathDialogCoordinator
+    load_preflight_coordinator: DesktopLoadPreflightCoordinator
     output_folder_prompt: DesktopOutputFolderPrompt
     folder_dialog: DesktopFolderDialog
-    save_presenter: DesktopSavePresenter
-    previous_alignment_load_presenter: DesktopPreviousAlignmentLoadPresenter
+    save_coordinator: DesktopSaveCoordinator
+    previous_alignment_load_coordinator: DesktopPreviousAlignmentLoadCoordinator
     plot_exporter: DesktopPlotExporter
-    plot_export_presenter: DesktopPlotExportPresenter
-    interaction_presenter: DesktopInteractionPresenter
-    lifecycle_presenter: DesktopLifecyclePresenter
+    plot_export_coordinator: DesktopPlotExportCoordinator
+    interaction_coordinator: DesktopInteractionCoordinator
+    lifecycle_coordinator: DesktopLifecycleCoordinator
 
 
-def build_desktop_workbench_presenter_cluster(
+def build_desktop_workbench_coordinator_cluster(
     *,
     app: Any,
     parent: Any,
@@ -107,94 +107,94 @@ def build_desktop_workbench_presenter_cluster(
     displays: DesktopDisplays,
     ports: DesktopWorkbenchPorts,
     render_cluster: DesktopRenderCluster,
-) -> DesktopWorkbenchPresenterCluster:
-    """Build desktop Workbench presenters outside the Workbench class."""
-    output_path_presenter = DesktopOutputPathPresenter(
+) -> DesktopWorkbenchCoordinatorCluster:
+    """Build desktop Workbench coordinators outside the Workbench class."""
+    output_path_coordinator = DesktopOutputPathCoordinator(
         commands=app.commands.paths,
         events=app.events,
         path_view=views.path,
     )
-    lifecycle_presenter = DesktopLifecyclePresenter(
+    lifecycle_coordinator = DesktopLifecycleCoordinator(
         app=app,
         displays=displays,
         callbacks=_lifecycle_callbacks(ports.lifecycle),
     )
-    load_data_presenter = DesktopLoadDataPresenter(
+    load_data_coordinator = DesktopLoadDataCoordinator(
         app=app,
         selection_view=views.selection,
         callbacks=_load_data_callbacks(
             ports.load_data,
             ports.busy,
-            output_path_presenter,
+            output_path_coordinator,
             render_cluster.shank_presenter,
-            lifecycle_presenter,
+            lifecycle_coordinator,
             render_cluster.reference_line_presenter,
         ),
     )
-    probe_selection_presenter = DesktopProbeSelectionPresenter(
+    probe_selection_coordinator = DesktopProbeSelectionCoordinator(
         app=app,
         selection_view=views.selection,
         callbacks=_probe_selection_callbacks(
             ports.busy,
-            output_path_presenter,
-            load_data_presenter,
-            lifecycle_presenter.show_empty_state,
+            output_path_coordinator,
+            load_data_coordinator,
+            lifecycle_coordinator.show_empty_state,
             render_cluster.reference_line_presenter,
         ),
     )
-    session_selection_presenter = DesktopSessionSelectionPresenter(
+    session_selection_coordinator = DesktopSessionSelectionCoordinator(
         app=app,
         selection_view=views.selection,
         callbacks=_session_selection_callbacks(
             render_cluster.reference_line_presenter,
-            probe_selection_presenter,
-            lifecycle_presenter.show_empty_state,
+            probe_selection_coordinator,
+            lifecycle_coordinator.show_empty_state,
         ),
     )
-    mouse_root_presenter = DesktopMouseRootPresenter(
+    mouse_root_coordinator = DesktopMouseRootCoordinator(
         commands=app.commands.metadata,
         path_view=views.path,
         selection_view=views.selection,
         callbacks=_mouse_root_callbacks(
             ports.busy,
-            session_selection_presenter,
+            session_selection_coordinator,
         ),
     )
     folder_dialog = DesktopFolderDialog(parent=None)
-    path_dialog_presenter = DesktopPathDialogPresenter(
+    path_dialog_coordinator = DesktopPathDialogCoordinator(
         folder_dialog=folder_dialog,
         callbacks=DesktopPathDialogCallbacks(
             active_mouse_root=app.queries.workspace.active_mouse_root_path,
-            set_mouse_root=mouse_root_presenter.set_mouse_root,
+            set_mouse_root=mouse_root_coordinator.set_mouse_root,
             active_output_root=app.queries.workspace.active_output_root,
-            set_save_root=output_path_presenter.set_save_root,
+            set_save_root=output_path_coordinator.set_save_root,
         ),
     )
     output_folder_prompt = DesktopOutputFolderPrompt(
         parent=parent,
         callbacks=OutputFolderPromptCallbacks(
             derive_output_directory_from_save_root=(
-                output_path_presenter.derive_output_directory_from_save_root
+                output_path_coordinator.derive_output_directory_from_save_root
             ),
             has_output_directory=app.queries.workspace.has_output_directory,
-            select_output_folder=path_dialog_presenter.select_output_root,
+            select_output_folder=path_dialog_coordinator.select_output_root,
         ),
     )
-    load_preflight_presenter = DesktopLoadPreflightPresenter(
+    load_preflight_coordinator = DesktopLoadPreflightCoordinator(
         can_load_data=app.commands.load.can_load_data,
-        load_heavy_data=load_data_presenter.load_heavy_data,
+        load_heavy_data=load_data_coordinator.load_heavy_data,
         output_folder_prompt=output_folder_prompt,
     )
-    save_presenter = DesktopSavePresenter(
+    save_coordinator = DesktopSaveCoordinator(
         commands=app.commands.persistence,
         events=app.events,
         callbacks=_save_callbacks(
             ports.save,
             output_folder_prompt,
-            load_preflight_presenter,
+            load_preflight_coordinator,
         ),
     )
-    previous_alignment_load_presenter = DesktopPreviousAlignmentLoadPresenter(
+    previous_alignment_load_coordinator = DesktopPreviousAlignmentLoadCoordinator(
         commands=app.commands.persistence,
         events=app.events,
         callbacks=_previous_alignment_load_callbacks(
@@ -203,7 +203,7 @@ def build_desktop_workbench_presenter_cluster(
             render_cluster.alignment_selection_actions,
         ),
     )
-    interaction_presenter = _interaction_presenter(
+    interaction_coordinator = _interaction_coordinator(
         ports.interaction,
         app=app,
         displays=displays,
@@ -213,39 +213,39 @@ def build_desktop_workbench_presenter_cluster(
         ports.export,
         displays=displays,
     )
-    plot_export_presenter = DesktopPlotExportPresenter(
+    plot_export_coordinator = DesktopPlotExportCoordinator(
         app=app,
         plot_exporter=plot_exporter,
         output_folder_prompt=output_folder_prompt,
     )
-    return DesktopWorkbenchPresenterCluster(
-        load_data_presenter=load_data_presenter,
-        probe_selection_presenter=probe_selection_presenter,
-        session_selection_presenter=session_selection_presenter,
-        mouse_root_presenter=mouse_root_presenter,
-        output_path_presenter=output_path_presenter,
-        path_dialog_presenter=path_dialog_presenter,
-        load_preflight_presenter=load_preflight_presenter,
+    return DesktopWorkbenchCoordinatorCluster(
+        load_data_coordinator=load_data_coordinator,
+        probe_selection_coordinator=probe_selection_coordinator,
+        session_selection_coordinator=session_selection_coordinator,
+        mouse_root_coordinator=mouse_root_coordinator,
+        output_path_coordinator=output_path_coordinator,
+        path_dialog_coordinator=path_dialog_coordinator,
+        load_preflight_coordinator=load_preflight_coordinator,
         output_folder_prompt=output_folder_prompt,
         folder_dialog=folder_dialog,
-        save_presenter=save_presenter,
-        previous_alignment_load_presenter=previous_alignment_load_presenter,
+        save_coordinator=save_coordinator,
+        previous_alignment_load_coordinator=previous_alignment_load_coordinator,
         plot_exporter=plot_exporter,
-        plot_export_presenter=plot_export_presenter,
-        interaction_presenter=interaction_presenter,
-        lifecycle_presenter=lifecycle_presenter,
+        plot_export_coordinator=plot_export_coordinator,
+        interaction_coordinator=interaction_coordinator,
+        lifecycle_coordinator=lifecycle_coordinator,
     )
 
 
 def _save_callbacks(
     ports: DesktopSavePorts,
     output_folder_prompt: DesktopOutputFolderPrompt,
-    load_preflight_presenter: DesktopLoadPreflightPresenter,
+    load_preflight_coordinator: DesktopLoadPreflightCoordinator,
 ) -> DesktopSaveCallbacks:
-    """Build callbacks for save/QC presentation."""
+    """Build callbacks for save/QC coordination."""
     return DesktopSaveCallbacks(
         ensure_output_directory=output_folder_prompt.ensure_for_save,
-        log_requirement=load_preflight_presenter.log_requirement,
+        log_requirement=load_preflight_coordinator.log_requirement,
         use_docdb=ports.use_docdb,
         render_alignment_choices=ports.render_alignment_choices,
         busy_context=ports.busy_context,
@@ -303,15 +303,15 @@ def _plot_exporter(
     )
 
 
-def _interaction_presenter(
+def _interaction_coordinator(
     ports: DesktopInteractionPorts,
     *,
     app: Any,
     displays: DesktopDisplays,
     render_cluster: DesktopRenderCluster,
-) -> DesktopInteractionPresenter:
-    """Build the desktop interaction presenter."""
-    return DesktopInteractionPresenter(
+) -> DesktopInteractionCoordinator:
+    """Build the desktop interaction coordinator."""
+    return DesktopInteractionCoordinator(
         app=app,
         popup_manager=ports.popup_manager,
         ephys_panel=displays.ephys.panel,
@@ -342,7 +342,7 @@ def _interaction_presenter(
 def _lifecycle_callbacks(
     ports: DesktopLifecyclePorts,
 ) -> DesktopLifecycleCallbacks:
-    """Build callbacks for desktop lifecycle presentation."""
+    """Build callbacks for desktop lifecycle coordination."""
     return DesktopLifecycleCallbacks(
         close_popups=ports.close_popups,
         reset_raw_image_payloads=ports.reset_raw_image_payloads,
@@ -354,9 +354,9 @@ def _lifecycle_callbacks(
 def _load_data_callbacks(
     load_data_ports: DesktopLoadDataPorts,
     busy_ports: DesktopBusyPorts,
-    output_path_presenter: DesktopOutputPathPresenter,
+    output_path_coordinator: DesktopOutputPathCoordinator,
     shank_presenter: Any,
-    lifecycle_presenter: DesktopLifecyclePresenter,
+    lifecycle_coordinator: DesktopLifecycleCoordinator,
     reference_line_presenter: Any,
 ) -> DesktopLoadDataCallbacks:
     """Build callbacks for cached/fresh data loading."""
@@ -365,7 +365,7 @@ def _load_data_callbacks(
             reference_line_presenter.reference_line_display.positions
         ),
         prepare_for_fresh_stream_load=(
-            lifecycle_presenter.prepare_for_fresh_stream_load
+            lifecycle_coordinator.prepare_for_fresh_stream_load
         ),
         render_loaded_shank=lambda shank_idx, preserve: (
             shank_presenter.render_loaded_shank(
@@ -380,8 +380,8 @@ def _load_data_callbacks(
 
 def _probe_selection_callbacks(
     busy_ports: DesktopBusyPorts,
-    output_path_presenter: DesktopOutputPathPresenter,
-    load_data_presenter: DesktopLoadDataPresenter,
+    output_path_coordinator: DesktopOutputPathCoordinator,
+    load_data_coordinator: DesktopLoadDataCoordinator,
     show_empty_state: Callable[[], None],
     reference_line_presenter: Any,
 ) -> DesktopProbeSelectionCallbacks:
@@ -392,7 +392,7 @@ def _probe_selection_callbacks(
         ),
         present_cached_probe_selection=(
             lambda session, probe, shank: (
-                load_data_presenter.present_cached_probe_selection(
+                load_data_coordinator.present_cached_probe_selection(
                     session_name=session,
                     probe_name=probe,
                     target_shank=shank,
@@ -406,7 +406,7 @@ def _probe_selection_callbacks(
 
 def _session_selection_callbacks(
     reference_line_presenter: Any,
-    probe_selection_presenter: DesktopProbeSelectionPresenter,
+    probe_selection_coordinator: DesktopProbeSelectionCoordinator,
     show_empty_state: Callable[[], None],
 ) -> DesktopSessionSelectionCallbacks:
     """Build callbacks for session selection."""
@@ -415,16 +415,16 @@ def _session_selection_callbacks(
             reference_line_presenter.capture_pending_reference_lines
         ),
         show_empty_state=show_empty_state,
-        select_first_probe=probe_selection_presenter.probe_selected,
+        select_first_probe=probe_selection_coordinator.probe_selected,
     )
 
 
 def _mouse_root_callbacks(
     busy_ports: DesktopBusyPorts,
-    session_selection_presenter: DesktopSessionSelectionPresenter,
+    session_selection_coordinator: DesktopSessionSelectionCoordinator,
 ) -> DesktopMouseRootCallbacks:
     """Build callbacks for mouse-root loading."""
     return DesktopMouseRootCallbacks(
         busy_context=busy_ports.busy_context,
-        select_first_session=session_selection_presenter.session_selected,
+        select_first_session=session_selection_coordinator.session_selected,
     )

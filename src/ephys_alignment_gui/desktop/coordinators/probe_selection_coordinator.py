@@ -1,4 +1,4 @@
-"""Desktop presentation shell for probe selection."""
+"""Desktop coordination shell for probe selection."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DesktopProbeSelectionCallbacks:
-    """Desktop callbacks used by the probe-selection presenter."""
+    """Desktop callbacks used by the probe-selection coordinator."""
 
     capture_pending_reference_lines: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
@@ -26,7 +26,7 @@ class DesktopProbeSelectionCallbacks:
 
 
 @dataclass
-class DesktopProbeSelectionPresenter:
+class DesktopProbeSelectionCoordinator:
     """Coordinate desktop behavior for selecting a probe."""
 
     app: Any

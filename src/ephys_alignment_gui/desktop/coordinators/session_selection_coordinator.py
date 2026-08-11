@@ -1,4 +1,4 @@
-"""Desktop presentation shell for recording/session selection."""
+"""Desktop coordination shell for recording/session selection."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class DesktopSessionSelectionCallbacks:
 
 
 @dataclass
-class DesktopSessionSelectionPresenter:
+class DesktopSessionSelectionCoordinator:
     """Coordinate desktop behavior for selecting a recording/session."""
 
     app: Any

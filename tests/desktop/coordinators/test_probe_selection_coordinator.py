@@ -1,4 +1,4 @@
-"""Tests for desktop probe-selection presentation."""
+"""Tests for desktop probe-selection coordination."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from typing import Any
 from ephys_alignment_gui.application.results import ShankSelected
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.application.workflow import Failed
-from ephys_alignment_gui.desktop.presenters.probe_selection_presenter import (
+from ephys_alignment_gui.desktop.coordinators.probe_selection_coordinator import (
     DesktopProbeSelectionCallbacks,
-    DesktopProbeSelectionPresenter,
+    DesktopProbeSelectionCoordinator,
 )
 
 
@@ -111,7 +111,7 @@ class FakeSelectionView:
         self.calls.append(("enable", enabled))
 
 
-def _presenter(
+def _coordinator(
     *,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
@@ -121,7 +121,7 @@ def _presenter(
     probes: list[str] | None = None,
     active_shank_idx: int = 1,
     cached: bool = False,
-) -> tuple[DesktopProbeSelectionPresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopProbeSelectionCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
     commands.ui_calls = calls
@@ -142,7 +142,7 @@ def _presenter(
             )
         ),
     )
-    presenter = DesktopProbeSelectionPresenter(
+    coordinator = DesktopProbeSelectionCoordinator(
         app=app,
         selection_view=selection_view,
         callbacks=DesktopProbeSelectionCallbacks(
@@ -158,31 +158,31 @@ def _presenter(
             ),
         ),
     )
-    return presenter, commands, calls
+    return coordinator, commands, calls
 
 
 def test_probe_selected_noops_without_mouse_root() -> None:
-    presenter, commands, calls = _presenter(mouse_root_loaded=False)
+    coordinator, commands, calls = _coordinator(mouse_root_loaded=False)
 
-    assert not presenter.probe_selected()
+    assert not coordinator.probe_selected()
 
     assert commands.calls == []
     assert calls == []
 
 
 def test_probe_selected_noops_without_session_or_probe() -> None:
-    presenter, commands, calls = _presenter(session_name="")
+    coordinator, commands, calls = _coordinator(session_name="")
 
-    assert not presenter.probe_selected()
+    assert not coordinator.probe_selected()
 
     assert commands.calls == []
     assert calls == []
 
 
 def test_probe_selected_presents_cached_probe_without_channel_info_load() -> None:
-    presenter, commands, calls = _presenter(cached=True)
+    coordinator, commands, calls = _coordinator(cached=True)
 
-    assert presenter.probe_selected()
+    assert coordinator.probe_selected()
 
     assert commands.calls == []
     assert calls == [
@@ -192,22 +192,22 @@ def test_probe_selected_presents_cached_probe_without_channel_info_load() -> Non
 
 
 def test_probe_selected_uses_activated_index_over_stale_current_text() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         probe_name="probeA",
         probes=["probeA", "probeB"],
         cached=False,
     )
 
-    assert presenter.probe_selected(1)
+    assert coordinator.probe_selected(1)
 
     assert commands.calls == [("rec", "probeB")]
     assert ("cached", "rec", "probeB", 1) in calls
 
 
 def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
-    presenter, commands, calls = _presenter(cached=False)
+    coordinator, commands, calls = _coordinator(cached=False)
 
-    assert presenter.probe_selected()
+    assert coordinator.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
     assert ("detach-app",) in calls
@@ -223,11 +223,11 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
 
 
 def test_probe_selected_failure_disables_load_button() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(probe_result=Failed("channel info failed"))
     )
 
-    assert not presenter.probe_selected()
+    assert not coordinator.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
     assert ("enable", False) in calls
@@ -235,11 +235,11 @@ def test_probe_selected_failure_disables_load_button() -> None:
 
 
 def test_probe_selected_shank_selection_failure_disables_load_button() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(shank_result=Failed("bad shank"))
     )
 
-    assert not presenter.probe_selected()
+    assert not coordinator.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
     assert commands.shank_calls == [(0, "probe-selected")]

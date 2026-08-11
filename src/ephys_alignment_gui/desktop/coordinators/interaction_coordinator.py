@@ -1,4 +1,4 @@
-"""Desktop popup and mouse-interaction presentation."""
+"""Desktop popup and mouse-interaction coordination."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DesktopInteractionWidgets:
-    """Desktop widgets/plots used by interaction presentation."""
+    """Desktop widgets/plots used by interaction coordination."""
 
     struct_list: Any
     struct_view: Any
@@ -42,7 +42,7 @@ class DesktopInteractionCallbacks:
 
 
 @dataclass
-class DesktopInteractionPresenter:
+class DesktopInteractionCoordinator:
     """Coordinate desktop popups, hover dispatch, and reference-line clicks."""
 
     app: Any

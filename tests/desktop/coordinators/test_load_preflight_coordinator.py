@@ -10,8 +10,8 @@ from ephys_alignment_gui.application.workflow import (
     Ok,
     Requirement,
 )
-from ephys_alignment_gui.desktop.presenters.load_preflight_presenter import (
-    DesktopLoadPreflightPresenter,
+from ephys_alignment_gui.desktop.coordinators.load_preflight_coordinator import (
+    DesktopLoadPreflightCoordinator,
     DesktopOutputFolderPrompt,
     OutputFolderPromptCallbacks,
 )
@@ -127,14 +127,14 @@ def test_output_prompt_cancel_blocks_load() -> None:
     assert box.exec_count == 1
 
 
-def test_load_presenter_retries_policy_after_output_prompt() -> None:
+def test_load_coordinator_retries_policy_after_output_prompt() -> None:
     results = [
         Blocked((_output_requirement(),)),
         Ok(),
     ]
     prompt_calls: list[Requirement] = []
     heavy_loads: list[str] = []
-    presenter = DesktopLoadPreflightPresenter(
+    coordinator = DesktopLoadPreflightCoordinator(
         can_load_data=lambda: results.pop(0),
         load_heavy_data=lambda: heavy_loads.append("loaded"),
         output_folder_prompt=type(
@@ -144,14 +144,14 @@ def test_load_presenter_retries_policy_after_output_prompt() -> None:
         )(),
     )
 
-    assert presenter.load_data_button_pressed()
+    assert coordinator.load_data_button_pressed()
     assert prompt_calls == [_output_requirement()]
     assert heavy_loads == ["loaded"]
 
 
-def test_load_presenter_does_not_load_when_prompt_is_cancelled() -> None:
+def test_load_coordinator_does_not_load_when_prompt_is_cancelled() -> None:
     heavy_loads: list[str] = []
-    presenter = DesktopLoadPreflightPresenter(
+    coordinator = DesktopLoadPreflightCoordinator(
         can_load_data=lambda: Blocked((_output_requirement(),)),
         load_heavy_data=lambda: heavy_loads.append("loaded"),
         output_folder_prompt=type(
@@ -161,13 +161,13 @@ def test_load_presenter_does_not_load_when_prompt_is_cancelled() -> None:
         )(),
     )
 
-    assert not presenter.load_data_button_pressed()
+    assert not coordinator.load_data_button_pressed()
     assert heavy_loads == []
 
 
-def test_load_presenter_logs_non_actionable_requirement(caplog) -> None:
+def test_load_coordinator_logs_non_actionable_requirement(caplog) -> None:
     requirement = Requirement(code="probe_required", message="Select a probe first.")
-    presenter = DesktopLoadPreflightPresenter(
+    coordinator = DesktopLoadPreflightCoordinator(
         can_load_data=lambda: Blocked((requirement,)),
         load_heavy_data=lambda: None,
         output_folder_prompt=type(
@@ -177,5 +177,5 @@ def test_load_presenter_logs_non_actionable_requirement(caplog) -> None:
         )(),
     )
 
-    assert not presenter.load_data_button_pressed()
+    assert not coordinator.load_data_button_pressed()
     assert "Select a probe first." in caplog.text

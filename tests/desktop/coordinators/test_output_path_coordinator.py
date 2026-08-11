@@ -1,4 +1,4 @@
-"""Tests for desktop output-path presentation."""
+"""Tests for desktop output-path coordination."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from ephys_alignment_gui.core.alignment_events import (
     OutputRootChanged,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.desktop.presenters.output_path_presenter import (
-    DesktopOutputPathPresenter,
+from ephys_alignment_gui.desktop.coordinators.output_path_coordinator import (
+    DesktopOutputPathCoordinator,
 )
 
 
@@ -82,103 +82,103 @@ class FakeCommands:
         return self.set_result
 
 
-def _presenter(
+def _coordinator(
     *,
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     output_text: str = "/results",
-) -> tuple[DesktopOutputPathPresenter, FakeCommands, list[tuple]]:
+) -> tuple[DesktopOutputPathCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
     commands = commands or FakeCommands(events=events)
     commands.events = events
-    presenter = DesktopOutputPathPresenter(
+    coordinator = DesktopOutputPathCoordinator(
         commands=commands,
         events=events,
         path_view=FakePathView(calls, output_text=output_text),
     )
-    presenter.connect_path_events()
-    return presenter, commands, calls
+    coordinator.connect_path_events()
+    return coordinator, commands, calls
 
 
 def test_derive_output_directory_renders_probe_output_path() -> None:
-    presenter, commands, calls = _presenter()
+    coordinator, commands, calls = _coordinator()
 
-    assert presenter.derive_output_directory_from_save_root()
+    assert coordinator.derive_output_directory_from_save_root()
 
     assert commands.derive_calls == 1
     assert calls == [("output-dir", Path("/results/rec/probe"))]
 
 
 def test_derive_output_directory_returns_false_without_probe_output() -> None:
-    presenter, _commands, calls = _presenter(
+    coordinator, _commands, calls = _coordinator(
         commands=FakeCommands(derive_result=OutputDirectoryDerived(None))
     )
 
-    assert not presenter.derive_output_directory_from_save_root()
+    assert not coordinator.derive_output_directory_from_save_root()
 
     assert calls == [("output-root", Path("/results"))]
 
 
 def test_set_save_root_renders_probe_output_when_available() -> None:
-    presenter, commands, calls = _presenter()
+    coordinator, commands, calls = _coordinator()
 
-    assert presenter.set_save_root(Path("/results"))
+    assert coordinator.set_save_root(Path("/results"))
 
     assert commands.set_calls == [Path("/results")]
     assert calls == [("output-dir", Path("/results/rec/probe"))]
 
 
 def test_set_save_root_renders_root_when_no_probe_output_exists() -> None:
-    presenter, _commands, calls = _presenter(
+    coordinator, _commands, calls = _coordinator(
         commands=FakeCommands(
             set_result=OutputRootSet(Path("/results"), None),
         )
     )
 
-    assert presenter.set_save_root(Path("/results"))
+    assert coordinator.set_save_root(Path("/results"))
 
     assert calls == [("output-root", Path("/results"))]
 
 
 def test_set_save_root_failure_does_not_render_path() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(set_result=Failed("bad output"))
     )
 
-    assert not presenter.set_save_root(Path("/bad"))
+    assert not coordinator.set_save_root(Path("/bad"))
 
     assert commands.set_calls == [Path("/bad")]
     assert calls == []
 
 
 def test_output_folder_edited_sets_save_root_from_text() -> None:
-    presenter, commands, calls = _presenter(output_text=" /edited/results ")
+    coordinator, commands, calls = _coordinator(output_text=" /edited/results ")
 
-    assert presenter.output_folder_edited()
+    assert coordinator.output_folder_edited()
 
     assert commands.set_calls == [Path("/edited/results")]
     assert calls == [("output-dir", Path("/results/rec/probe"))]
 
 
 def test_output_folder_edited_ignores_empty_text() -> None:
-    presenter, commands, calls = _presenter(output_text=" ")
+    coordinator, commands, calls = _coordinator(output_text=" ")
 
-    assert not presenter.output_folder_edited()
+    assert not coordinator.output_folder_edited()
 
     assert commands.set_calls == []
     assert calls == []
 
 
 def test_output_directory_event_clears_path_when_no_root_or_directory() -> None:
-    presenter, commands, calls = _presenter(
+    coordinator, commands, calls = _coordinator(
         commands=FakeCommands(
             derive_result=OutputDirectoryDerived(None),
             output_root=None,
         )
     )
 
-    assert not presenter.derive_output_directory_from_save_root()
+    assert not coordinator.derive_output_directory_from_save_root()
 
     assert commands.derive_calls == 1
     assert calls == [("output-dir", None)]

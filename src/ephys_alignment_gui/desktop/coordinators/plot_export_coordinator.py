@@ -1,4 +1,4 @@
-"""Desktop presentation for plot export commands."""
+"""Desktop coordination for plot export commands."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 
 @dataclass
-class DesktopPlotExportPresenter:
+class DesktopPlotExportCoordinator:
     """Resolve desktop export paths and delegate plot rendering/export."""
 
     app: Any

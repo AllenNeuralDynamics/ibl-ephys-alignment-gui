@@ -1,4 +1,4 @@
-"""Tests for desktop lifecycle presentation."""
+"""Tests for desktop lifecycle coordination."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamDetached,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.desktop.presenters.lifecycle_presenter import (
+from ephys_alignment_gui.desktop.coordinators.lifecycle_coordinator import (
     DesktopLifecycleCallbacks,
-    DesktopLifecyclePresenter,
+    DesktopLifecycleCoordinator,
 )
 
 
@@ -49,11 +49,11 @@ class FakeDisplaySection:
         self.calls.append(("clear", self.name))
 
 
-def _presenter(
+def _coordinator(
     calls: list[tuple],
     *,
     evict_result=None,
-) -> DesktopLifecyclePresenter:
+) -> DesktopLifecycleCoordinator:
     events = EventBus()
     displays = SimpleNamespace(
         reference_lines=FakeDisplaySection(calls, "reference-lines"),
@@ -67,7 +67,7 @@ def _presenter(
         show_empty_state=lambda: calls.append(("empty",)),
         collect_garbage=lambda: calls.append(("gc",)),
     )
-    return DesktopLifecyclePresenter(
+    return DesktopLifecycleCoordinator(
         app=SimpleNamespace(
             events=events,
             commands=FakeCommands(calls, events, evict_result=evict_result),
@@ -77,12 +77,12 @@ def _presenter(
     )
 
 
-def test_detach_active_stream_clears_desktop_presentation_without_gc() -> None:
+def test_detach_active_stream_clears_desktop_coordination_without_gc() -> None:
     calls: list[tuple] = []
-    presenter = _presenter(calls)
-    presenter.connect_lifecycle_events()
+    coordinator = _coordinator(calls)
+    coordinator.connect_lifecycle_events()
 
-    presenter.detach_active_stream()
+    coordinator.detach_active_stream()
 
     assert calls == [
         ("detach-app",),
@@ -97,9 +97,9 @@ def test_detach_active_stream_clears_desktop_presentation_without_gc() -> None:
 
 def test_prepare_for_fresh_stream_load_clears_desktop_state_after_app_prepare() -> None:
     calls: list[tuple] = []
-    presenter = _presenter(calls)
+    coordinator = _coordinator(calls)
 
-    presenter.prepare_for_fresh_stream_load()
+    coordinator.prepare_for_fresh_stream_load()
 
     assert calls == [
         ("clear", "reference-lines"),
@@ -114,10 +114,10 @@ def test_prepare_for_fresh_stream_load_clears_desktop_state_after_app_prepare() 
 
 def test_evict_stream_cache_clears_app_cache_and_desktop_state() -> None:
     calls: list[tuple] = []
-    presenter = _presenter(calls)
-    presenter.connect_lifecycle_events()
+    coordinator = _coordinator(calls)
+    coordinator.connect_lifecycle_events()
 
-    presenter.evict_stream_cache()
+    coordinator.evict_stream_cache()
 
     assert calls == [
         ("evict-app",),
@@ -133,9 +133,9 @@ def test_evict_stream_cache_clears_app_cache_and_desktop_state() -> None:
 
 def test_evict_stream_cache_blocked_does_not_clear_desktop_state() -> None:
     calls: list[tuple] = []
-    presenter = _presenter(calls, evict_result=Failed("dirty runtime"))
-    presenter.connect_lifecycle_events()
+    coordinator = _coordinator(calls, evict_result=Failed("dirty runtime"))
+    coordinator.connect_lifecycle_events()
 
-    presenter.evict_stream_cache()
+    coordinator.evict_stream_cache()
 
     assert calls == [("evict-app",)]

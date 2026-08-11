@@ -1,4 +1,4 @@
-"""Desktop presentation shell for output-root path workflows."""
+"""Desktop coordination shell for output-root path workflows."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DesktopOutputPathPresenter:
+class DesktopOutputPathCoordinator:
     """Coordinate desktop behavior for save/output root paths."""
 
     commands: Any
@@ -30,7 +30,7 @@ class DesktopOutputPathPresenter:
     path_view: Any
 
     def connect_path_events(self) -> list[EventSubscription]:
-        """Subscribe desktop path presentation to semantic path events."""
+        """Subscribe desktop path coordination to semantic path events."""
         return [
             self.events.subscribe(OutputRootChanged, self.on_output_root_changed),
             self.events.subscribe(

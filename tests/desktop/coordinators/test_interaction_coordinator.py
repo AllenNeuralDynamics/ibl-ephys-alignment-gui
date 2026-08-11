@@ -1,4 +1,4 @@
-"""Tests for desktop popup and mouse-interaction presentation."""
+"""Tests for desktop popup and mouse-interaction coordination."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any
 
 import numpy as np
 
-from ephys_alignment_gui.desktop.presenters.interaction_presenter import (
+from ephys_alignment_gui.desktop.coordinators.interaction_coordinator import (
     DesktopInteractionCallbacks,
-    DesktopInteractionPresenter,
+    DesktopInteractionCoordinator,
     DesktopInteractionWidgets,
 )
 from ephys_alignment_gui.desktop.shell.popup_manager import DesktopPopupManager
@@ -232,12 +232,12 @@ class FakeLinearRegion:
     pass
 
 
-def _presenter(
+def _coordinator(
     *,
     histology_available: bool = True,
     active_cluster_detail: Any | None = None,
     active_region_id: int | None = 42,
-) -> tuple[DesktopInteractionPresenter, dict[str, Any]]:
+) -> tuple[DesktopInteractionCoordinator, dict[str, Any]]:
     calls: dict[str, Any] = {"axis": [], "activate": 0, "capture": 0}
     popup_manager = DesktopPopupManager()
     ephys_panel = FakeEphysPanel()
@@ -281,7 +281,7 @@ def _presenter(
         ),
     )
     app = SimpleNamespace(queries=queries)
-    presenter = DesktopInteractionPresenter(
+    coordinator = DesktopInteractionCoordinator(
         app=app,
         popup_manager=popup_manager,
         ephys_panel=ephys_panel,
@@ -308,7 +308,7 @@ def _presenter(
         infinite_line_type=FakeInfiniteLine,
         linear_region_type=FakeLinearRegion,
     )
-    return presenter, {
+    return coordinator, {
         "calls": calls,
         "popup_manager": popup_manager,
         "ephys_panel": ephys_panel,
@@ -324,9 +324,9 @@ def _presenter(
 
 
 def test_display_session_notes_creates_notes_popup() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
 
-    presenter.display_session_notes()
+    coordinator.display_session_notes()
 
     notes_window = state["popup_manager"].notes_window
     assert notes_window.kwargs["title"] == "Session notes from Alyx"
@@ -336,10 +336,10 @@ def test_display_session_notes_creates_notes_popup() -> None:
 
 
 def test_cluster_clicked_renders_cluster_popup() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
     point = [SimpleNamespace(pos=lambda: SimpleNamespace(x=lambda: 12.0))]
 
-    cluster_no = presenter.cluster_clicked(None, point)
+    cluster_no = coordinator.cluster_clicked(None, point)
 
     assert cluster_no == 13
     assert state["ephys_panel"].cluster_x_calls == [12.0]
@@ -352,20 +352,20 @@ def test_cluster_clicked_renders_cluster_popup() -> None:
 
 
 def test_cluster_clicked_fails_closed_without_cluster_index() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
     state["ephys_panel"].cluster_idx = None
     point = [SimpleNamespace(pos=lambda: SimpleNamespace(x=lambda: 12.0))]
 
-    assert presenter.cluster_clicked(None, point) is None
+    assert coordinator.cluster_clicked(None, point) is None
 
     assert state["popup_manager"].cluster_popups == []
 
 
 def test_double_click_creates_reference_line_and_captures_pending() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
     event = SimpleNamespace(double=lambda: True, scenePos=lambda: "scene-pos")
 
-    assert presenter.on_mouse_double_clicked(event)
+    assert coordinator.on_mouse_double_clicked(event)
 
     assert state["ephys_panel"].scene_pos_calls == ["scene-pos"]
     assert state["reference_line_display"].created == [[125.0]]
@@ -373,25 +373,25 @@ def test_double_click_creates_reference_line_and_captures_pending() -> None:
 
 
 def test_double_click_noops_without_histology() -> None:
-    presenter, state = _presenter(histology_available=False)
+    coordinator, state = _coordinator(histology_available=False)
     event = SimpleNamespace(double=lambda: True, scenePos=lambda: "scene-pos")
 
-    assert not presenter.on_mouse_double_clicked(event)
+    assert not coordinator.on_mouse_double_clicked(event)
 
     assert state["reference_line_display"].created == []
 
 
 def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
     line = FakeInfiniteLine()
     scale_region = FakeLinearRegion()
     hist_region = FakeLinearRegion()
     ref_region = FakeLinearRegion()
 
-    presenter.on_mouse_hover([line, object()])
-    presenter.on_mouse_hover([state["widgets"].scale_plot, scale_region])
-    presenter.on_mouse_hover([state["widgets"].histology_plot, hist_region])
-    presenter.on_mouse_hover([state["widgets"].histology_reference_plot, ref_region])
+    coordinator.on_mouse_hover([line, object()])
+    coordinator.on_mouse_hover([state["widgets"].scale_plot, scale_region])
+    coordinator.on_mouse_hover([state["widgets"].histology_plot, hist_region])
+    coordinator.on_mouse_hover([state["widgets"].histology_reference_plot, ref_region])
 
     assert state["reference_line_display"].clear_calls == 4
     assert state["reference_line_display"].selected == [line]
@@ -400,9 +400,9 @@ def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
 
 
 def test_describe_labels_pressed_creates_region_popup() -> None:
-    presenter, state = _presenter(active_region_id=314)
+    coordinator, state = _coordinator(active_region_id=314)
 
-    assert presenter.describe_labels_pressed()
+    assert coordinator.describe_labels_pressed()
 
     assert state["region_lookup"].calls == [314]
     assert state["struct_view"].collapse_calls == 1
@@ -419,9 +419,9 @@ def test_describe_labels_pressed_creates_region_popup() -> None:
 
 
 def test_label_pressed_updates_region_selection() -> None:
-    presenter, state = _presenter()
+    coordinator, state = _coordinator()
 
-    presenter.label_pressed(FakeTreeItem(region_id=101))
+    coordinator.label_pressed(FakeTreeItem(region_id=101))
 
     assert state["region_lookup"].calls == [101]
     assert state["struct_view"].current == "model-index"

@@ -1,4 +1,4 @@
-"""Desktop lifecycle presentation for stream/session transitions."""
+"""Desktop lifecycle coordination for stream/session transitions."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ class DesktopLifecycleCallbacks:
 
 
 @dataclass
-class DesktopLifecyclePresenter:
+class DesktopLifecycleCoordinator:
     """Coordinate desktop cleanup around app-owned lifecycle transitions."""
 
     app: Any
@@ -43,13 +43,13 @@ class DesktopLifecyclePresenter:
         ]
 
     def on_stream_detached(self, _event: StreamDetached) -> None:
-        """Clear desktop presentation after the active stream is detached."""
-        self.clear_active_stream_presentation()
+        """Clear desktop coordination after the active stream is detached."""
+        self.clear_active_stream_coordination()
         self.reset_desktop_stream_state()
 
     def on_stream_cache_evicted(self, _event: StreamCacheEvicted) -> None:
-        """Clear desktop presentation after cached streams are evicted."""
-        self.clear_active_stream_presentation()
+        """Clear desktop coordination after cached streams are evicted."""
+        self.clear_active_stream_coordination()
         self.reset_desktop_stream_state()
         self.callbacks.collect_garbage()
 
@@ -63,8 +63,8 @@ class DesktopLifecyclePresenter:
         self.callbacks.reset_raw_image_payloads()
         self.app.commands.load.detach_active_stream()
 
-    def clear_active_stream_presentation(self) -> None:
-        """Clear plot handles and popups for the active stream presentation."""
+    def clear_active_stream_coordination(self) -> None:
+        """Clear plot handles and popups for the active stream coordination."""
         self.displays.reference_lines.clear()
         self.callbacks.close_popups()
         self.displays.ephys.clear()
@@ -76,8 +76,8 @@ class DesktopLifecyclePresenter:
         self.app.commands.load.detach_active_stream()
 
     def prepare_for_fresh_stream_load(self) -> None:
-        """Clear desktop presentation after the app prepared a fresh stream load."""
-        self.clear_active_stream_presentation()
+        """Clear desktop coordination after the app prepared a fresh stream load."""
+        self.clear_active_stream_coordination()
         self.reset_desktop_stream_state()
         self.callbacks.collect_garbage()
 
