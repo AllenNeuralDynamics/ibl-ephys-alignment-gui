@@ -7,30 +7,29 @@ from typing import Any
 
 from ephys_alignment_gui.desktop.ephys_display import (
     DesktopEphysDisplay,
-    DesktopEphysDisplayPorts,
+    DesktopEphysDisplayConfig,
 )
 from ephys_alignment_gui.desktop.histology_display import (
     DesktopHistologyDisplay,
-    DesktopHistologyDisplayPorts,
+    DesktopHistologyDisplayConfig,
 )
 from ephys_alignment_gui.desktop.reference_line_display import (
     DesktopReferenceLineDisplay,
-    DesktopReferenceLineDisplayPorts,
+    ReferenceLinePlotBindings,
 )
 from ephys_alignment_gui.desktop.slice_display import (
     DesktopSliceDisplay,
-    DesktopSliceDisplayPorts,
+    DesktopSliceDisplayConfig,
 )
 
 
 @dataclass(frozen=True)
-class DesktopDisplayPorts:
-    """Desktop handles and callbacks needed to build display regions."""
+class DesktopDisplayConfig:
+    """External style/callback dependencies needed to build display regions."""
 
-    ephys: DesktopEphysDisplayPorts
-    histology: DesktopHistologyDisplayPorts
-    reference_lines: DesktopReferenceLineDisplayPorts
-    slice: DesktopSliceDisplayPorts
+    ephys: DesktopEphysDisplayConfig
+    histology: DesktopHistologyDisplayConfig
+    slice: DesktopSliceDisplayConfig
 
 
 @dataclass(frozen=True)
@@ -47,14 +46,49 @@ class DesktopDisplays:
         cls,
         *,
         app: Any,
-        ports: DesktopDisplayPorts,
+        config: DesktopDisplayConfig,
     ) -> DesktopDisplays:
-        """Build all desktop display regions from desktop ports."""
-        return cls(
-            ephys=DesktopEphysDisplay.create(app=app, ports=ports.ephys),
-            histology=DesktopHistologyDisplay.create(app=app, ports=ports.histology),
-            reference_lines=DesktopReferenceLineDisplay.create(
-                ports=ports.reference_lines,
-            ),
-            slice=DesktopSliceDisplay.create(app=app, ports=ports.slice),
+        """Build all desktop display regions from desktop dependencies."""
+        ephys = DesktopEphysDisplay.create(app=app, config=config.ephys)
+        slice_display = DesktopSliceDisplay.create(app=app, config=config.slice)
+        histology = DesktopHistologyDisplay.create(
+            app=app,
+            config=config.histology,
+            perpendicular_plot=slice_display.perpendicular_plot,
+            scale_factor_y_range=ephys.panel.feature_y_range,
         )
+        _link_depth_plots(
+            ephys=ephys,
+            histology=histology,
+            slice_display=slice_display,
+        )
+        reference_lines = DesktopReferenceLineDisplay.create(
+            bindings=ReferenceLinePlotBindings(
+                histology_plot=histology.aligned_plot,
+                image_plot=ephys.panel.plots.image,
+                line_plot=ephys.panel.plots.line,
+                probe_plot=ephys.panel.plots.probe,
+                perpendicular_plot=slice_display.perpendicular_plot,
+                fit_plot=histology.fit_plot,
+            )
+        )
+        return cls(
+            ephys=ephys,
+            histology=histology,
+            reference_lines=reference_lines,
+            slice=slice_display,
+        )
+
+
+def _link_depth_plots(
+    *,
+    ephys: DesktopEphysDisplay,
+    histology: DesktopHistologyDisplay,
+    slice_display: DesktopSliceDisplay,
+) -> None:
+    """Link pyqtgraph y-axes across the desktop depth plots."""
+    ephys.panel.plots.image.setYLink(ephys.panel.plots.line)
+    ephys.panel.plots.image.setYLink(histology.aligned_plot)
+    ephys.panel.plots.line.setYLink(histology.aligned_plot)
+    ephys.panel.plots.probe.setYLink(ephys.panel.plots.image)
+    slice_display.set_perpendicular_depth_link(histology.aligned_plot)

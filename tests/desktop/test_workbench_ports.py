@@ -26,7 +26,13 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
             )
         ),
         displays=SimpleNamespace(
-            histology=SimpleNamespace(tip_position_um=lambda: 42.0)
+            histology=SimpleNamespace(
+                tip_position_um=lambda: 42.0,
+                scale_plot=object(),
+                aligned_plot=object(),
+                reference_plot=object(),
+                scale_axis=object(),
+            )
         ),
         popup_manager=SimpleNamespace(close_all=lambda: None),
         shank_screen_view=SimpleNamespace(
@@ -53,10 +59,6 @@ def _fake_window_without_qc_widgets() -> SimpleNamespace:
         reload_folder_line=SimpleNamespace(setText=lambda _text: None),
         reload_folder_button=object(),
         export_view=object(),
-        fig_scale=object(),
-        fig_hist=object(),
-        fig_hist_ref=object(),
-        fig_scale_ax=object(),
         bar_colour=object(),
         kpen_solid=object(),
         activateWindow=lambda: None,

@@ -10,12 +10,9 @@ from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenStat
 from ephys_alignment_gui.desktop.ephys_panel_layout import (
     DesktopEphysPanelLayout,
     EphysPanelLayoutCallbacks,
-    EphysPanelLayoutSizes,
 )
 from ephys_alignment_gui.desktop.ephys_panel_view import (
     DesktopEphysPanelView,
-    EphysPanelPlots,
-    EphysPanelStyle,
 )
 from ephys_alignment_gui.desktop.ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
@@ -26,20 +23,18 @@ from ephys_alignment_gui.plotting.registry import PlotMenu
 
 
 @dataclass(frozen=True)
-class DesktopEphysDisplayPorts:
-    """Desktop handles and callbacks needed to build the ephys display."""
+class DesktopEphysDisplayConfig:
+    """External style/callback dependencies needed to build the ephys display."""
 
-    image_plot: Any
-    image_colorbar: Any
-    line_plot: Any
-    probe_plot: Any
-    probe_colorbar: Any
-    graphics_layout: Any
     line_pen: Any
+    depth_guide_pen: Any
+    padding_provider: Callable[[], float]
     raw_image_payloads: Callable[[], Mapping[Any, Any]]
     set_axis: Callable[..., Any]
     reset_axis: Callable[[], None]
     cluster_clicked: Callable[..., Any]
+    on_mouse_double_clicked: Callable[..., Any]
+    on_mouse_hover: Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -55,25 +50,23 @@ class DesktopEphysDisplay:
         cls,
         *,
         app: Any,
-        ports: DesktopEphysDisplayPorts,
+        config: DesktopEphysDisplayConfig,
     ) -> DesktopEphysDisplay:
-        """Build the ephys display cluster from desktop ports."""
-        panel = DesktopEphysPanelView(
-            plots=EphysPanelPlots(
-                image=ports.image_plot,
-                image_colorbar=ports.image_colorbar,
-                line=ports.line_plot,
-                probe=ports.probe_plot,
-                probe_colorbar=ports.probe_colorbar,
-            ),
-            style=EphysPanelStyle(line_pen=ports.line_pen),
-            set_axis=ports.set_axis,
-            cluster_clicked=ports.cluster_clicked,
+        """Build the ephys display cluster from desktop dependencies."""
+        panel = DesktopEphysPanelView.create(
+            depth_view=app.queries.workspace.depth_view_settings(),
+            padding=config.padding_provider(),
+            line_pen=config.line_pen,
+            depth_guide_pen=config.depth_guide_pen,
+            set_axis=config.set_axis,
+            cluster_clicked=config.cluster_clicked,
+            on_mouse_double_clicked=config.on_mouse_double_clicked,
+            on_mouse_hover=config.on_mouse_hover,
         )
         plot_presenter = DesktopEphysPlotPresenter(
             app=app,
             callbacks=EphysPlotRenderCallbacks(
-                raw_image_payloads=ports.raw_image_payloads,
+                raw_image_payloads=config.raw_image_payloads,
                 render_image=panel.render_image,
                 render_scatter=panel.render_scatter,
                 render_line=panel.render_line,
@@ -82,10 +75,10 @@ class DesktopEphysDisplay:
         )
         layout = DesktopEphysPanelLayout(
             panel=panel,
-            graphics_layout=ports.graphics_layout,
+            graphics_layout=panel.widgets.graphics_layout,
             callbacks=EphysPanelLayoutCallbacks(
-                set_axis=ports.set_axis,
-                reset_axis=ports.reset_axis,
+                set_axis=config.set_axis,
+                reset_axis=config.reset_axis,
             ),
         )
         return cls(
@@ -98,6 +91,21 @@ class DesktopEphysDisplay:
     def feature_xrange(self) -> Any:
         """Return the active feature-plot x-range, if one is known."""
         return self.panel.feature_xrange
+
+    @property
+    def area(self) -> Any:
+        """Return the top-level ephys panel widget."""
+        return self.panel.widgets.area
+
+    @property
+    def graphics_layout(self) -> Any:
+        """Return the ephys panel graphics layout."""
+        return self.panel.widgets.graphics_layout
+
+    @property
+    def image_plot(self) -> Any:
+        """Return the feature image/scatter plot handle."""
+        return self.panel.plots.image
 
     def clear(self) -> None:
         """Clear ephys panel plots."""
@@ -119,21 +127,19 @@ class DesktopEphysDisplay:
         self,
         *,
         view: int,
-        axis_width: float,
-        image_width: float,
-        line_width: float,
-        probe_width: float,
+        configure: bool = False,
     ) -> None:
         """Apply one of the desktop ephys panel layouts."""
-        self.layout.apply_view(
-            view,
-            EphysPanelLayoutSizes(
-                axis_width=axis_width,
-                image_width=image_width,
-                line_width=line_width,
-                probe_width=probe_width,
-            ),
-        )
+        if configure:
+            self.layout.capture_sizes()
+        self.layout.apply_view(view)
+
+    def export_sizes(self) -> tuple[float, float]:
+        """Return ephys sizes needed by plot export."""
+        sizes = self.layout.sizes
+        if sizes is None:
+            sizes = self.layout.capture_sizes()
+        return sizes.probe_width, sizes.axis_width
 
     def current_plot_keys(self) -> dict[PlotMenu, str | None]:
         """Return selected plot-spec keys for each ephys plot menu."""

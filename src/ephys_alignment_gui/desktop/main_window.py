@@ -13,8 +13,8 @@ from ephys_alignment_gui.core.settings import (
     output_root_from_environment,
 )
 from ephys_alignment_gui.desktop import window_setup
-from ephys_alignment_gui.desktop.display_ports import (
-    desktop_display_ports_from_main_window,
+from ephys_alignment_gui.desktop.display_config import (
+    desktop_display_config_from_main_window,
 )
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.popup_manager import DesktopPopupManager
@@ -74,11 +74,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.init_variables()
         self.offline: bool = offline
         self._empty_state_item: Any = None
-        window_setup.initialize_layout(self, offline=offline)
+        window_setup.initialize_shell(self, offline=offline)
         self.displays = DesktopDisplays.create(
             app=self.app,
-            ports=desktop_display_ports_from_main_window(self),
+            config=desktop_display_config_from_main_window(self),
         )
+        window_setup.install_main_layout(self, displays=self.displays)
         self.views = DesktopViews.from_main_window(self, displays=self.displays)
         self.selection_view = self.views.selection
         self.path_view = self.views.path
@@ -152,10 +153,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Padding to add to figures to make sure always same size viewbox
         self.pad = 0.05
-
-        # Guide the user before any data is loaded / after clearing.
-        if hasattr(self, "fig_img"):
-            self._show_empty_state()
 
     def set_axis(self, fig, ax, show=True, label=None, pen="k", ticks=True):
         """
@@ -248,21 +245,9 @@ class MainWindow(QtWidgets.QMainWindow):
         :type configure: bool
         """
         if configure:
-            self.fig_ax_width = self.fig_data_ax.width()
-            self.fig_img_width = self.fig_img.width() - self.fig_ax_width
-            self.fig_line_width = self.fig_line.width()
-            self.fig_probe_width = self.fig_probe.width()
-            self.slice_width = self.fig_slice.width()
-            self.slice_height = self.fig_slice.height()
-            self.slice_rect = self.fig_slice.viewRect()
+            self.displays.slice.capture_export_geometry()
 
-        self.displays.ephys.apply_view(
-            view=view,
-            axis_width=self.fig_ax_width,
-            image_width=self.fig_img_width,
-            line_width=self.fig_line_width,
-            probe_width=self.fig_probe_width,
-        )
+        self.displays.ephys.apply_view(view=view, configure=configure)
 
     def save_plots(self, save_path=None) -> None:
         """
@@ -297,10 +282,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Compatibility wrapper for nearby histology boundary rendering."""
         self.desktop_workbench.render_active_nearby_histology(fig, movable=movable)
 
-    def _scale_factor_y_range(self) -> tuple[float, float]:
-        y_min, y_max = self.fig_img.viewRange()[1]
-        return float(y_min), float(y_max)
-
     def plot_scale_factor(self) -> None:
         """
         Plots the scale factor applied to brain regions along probe track, displayed
@@ -333,7 +314,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._empty_state_item is not None:
             return
         item = pg.TextItem(text, anchor=(0.5, 0.5), color=(160, 160, 160))
-        vb = self.fig_img.getViewBox()
+        if not hasattr(self, "displays"):
+            return
+        vb = self.displays.ephys.image_plot.getViewBox()
         vb.addItem(item, ignoreBounds=True)
 
         def _center(*_args):
@@ -348,7 +331,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._empty_state_item is None:
             return
         item, center = self._empty_state_item
-        vb = self.fig_img.getViewBox()
+        vb = self.displays.ephys.image_plot.getViewBox()
         try:
             vb.sigRangeChanged.disconnect(center)
         except (TypeError, RuntimeError):
@@ -608,14 +591,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def tip_line_moved(self) -> None:
         """
-        Triggered when dotted line indicating probe tip on self.fig_hist moved. Gets the y pos of
+        Triggered when the aligned histology probe-tip line moves. Gets the y pos of
         probe tip line and ensures the probe top line is set to probe tip line y pos + 3840
         """
         self.desktop_workbench.sync_histology_top_to_tip()
 
     def top_line_moved(self) -> None:
         """
-        Triggered when dotted line indicating probe top on self.fig_hist moved. Gets the y pos of
+        Triggered when the aligned histology probe-top line moves. Gets the y pos of
         probe top line and ensures the probe tip line is set to probe top line y pos - 3840
         """
         self.desktop_workbench.sync_histology_tip_to_top()

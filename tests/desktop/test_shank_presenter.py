@@ -224,13 +224,13 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
         ("apply_plot_data", app.queries.plot_data_state),
         ("menus", "plot-menu"),
         ("ephys", app.queries.screen_state),
-        ("render_histology", 2),
         (
             "slice_selection",
             "slice-menu",
             SliceSelection("slice_data", "ccf"),
             "CCF",
         ),
+        ("render_histology", 2),
         ("configure", True),
     ]
 

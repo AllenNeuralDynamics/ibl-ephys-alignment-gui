@@ -30,10 +30,20 @@ class EphysPanelPlots:
 
 
 @dataclass(frozen=True)
+class EphysPanelWidgets:
+    """Top-level widgets/layout owned by the desktop ephys panel."""
+
+    area: Any
+    graphics_layout: Any
+    image_axis: Any
+
+
+@dataclass(frozen=True)
 class EphysPanelStyle:
     """Desktop styling handles for ephys panel rendering."""
 
     line_pen: Any
+    depth_guide_pen: Any
 
 
 @dataclass
@@ -41,11 +51,124 @@ class DesktopEphysPanelView:
     """Own ephys pyqtgraph items and render ephys plot payloads."""
 
     plots: EphysPanelPlots
+    widgets: EphysPanelWidgets
     style: EphysPanelStyle
     set_axis: Callable[..., Any]
     cluster_clicked: Callable[..., Any]
+    probe_tip_lines: list[Any] = field(default_factory=list)
+    probe_top_lines: list[Any] = field(default_factory=list)
     items: EphysPlotItems = field(default_factory=EphysPlotItems)
     feature_plot: FeaturePlotView = field(default_factory=FeaturePlotView)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        depth_view: Any,
+        padding: float,
+        line_pen: Any,
+        depth_guide_pen: Any,
+        set_axis: Callable[..., Any],
+        cluster_clicked: Callable[..., Any],
+        on_mouse_double_clicked: Callable[..., Any],
+        on_mouse_hover: Callable[..., Any],
+    ) -> DesktopEphysPanelView:
+        """Create the desktop ephys panel and all of its plot handles."""
+        probe_tip_lines: list[Any] = []
+        probe_top_lines: list[Any] = []
+
+        image = pg.PlotItem()
+        _set_depth_range(image, depth_view, padding)
+        image.setMouseEnabled(x=False, y=True)
+        _add_depth_guides(
+            image,
+            depth_view,
+            depth_guide_pen=depth_guide_pen,
+            probe_tip_lines=probe_tip_lines,
+            probe_top_lines=probe_top_lines,
+        )
+        set_axis(image, "bottom")
+        image_axis = set_axis(image, "left", label="Distance from probe tip (uV)")
+
+        image_colorbar = pg.PlotItem()
+        image_colorbar.setMaximumHeight(70)
+        image_colorbar.setMouseEnabled(x=False, y=False)
+        set_axis(image_colorbar, "bottom", show=False)
+        set_axis(image_colorbar, "left", pen="w")
+        set_axis(image_colorbar, "top", pen="w")
+
+        line = pg.PlotItem()
+        line.setMouseEnabled(x=False, y=True)
+        _set_depth_range(line, depth_view, padding)
+        _add_depth_guides(
+            line,
+            depth_view,
+            depth_guide_pen=depth_guide_pen,
+            probe_tip_lines=probe_tip_lines,
+            probe_top_lines=probe_top_lines,
+        )
+        set_axis(line, "bottom")
+        set_axis(line, "left", show=False)
+
+        probe = pg.PlotItem()
+        probe.setMouseEnabled(x=False, y=False)
+        probe.setMaximumWidth(50)
+        _set_depth_range(probe, depth_view, padding)
+        _add_depth_guides(
+            probe,
+            depth_view,
+            depth_guide_pen=depth_guide_pen,
+            probe_tip_lines=probe_tip_lines,
+            probe_top_lines=probe_top_lines,
+        )
+        set_axis(probe, "bottom", pen="w")
+        set_axis(probe, "left", show=False)
+
+        probe_colorbar = pg.PlotItem()
+        probe_colorbar.setMouseEnabled(x=False, y=False)
+        probe_colorbar.setMaximumHeight(70)
+        set_axis(probe_colorbar, "bottom", show=False)
+        set_axis(probe_colorbar, "left", show=False)
+        set_axis(probe_colorbar, "top", pen="w")
+
+        area = pg.GraphicsLayoutWidget()
+        area.scene().sigMouseClicked.connect(on_mouse_double_clicked)
+        area.scene().sigMouseHover.connect(on_mouse_hover)
+        graphics_layout = pg.GraphicsLayout()
+        graphics_layout.addItem(image_colorbar, 0, 0)
+        graphics_layout.addItem(probe_colorbar, 0, 1, 1, 2)
+        graphics_layout.addItem(image, 1, 0)
+        graphics_layout.addItem(line, 1, 1)
+        graphics_layout.addItem(probe, 1, 2)
+        graphics_layout.layout.setColumnStretchFactor(0, 6)
+        graphics_layout.layout.setColumnStretchFactor(1, 1)
+        graphics_layout.layout.setColumnStretchFactor(2, 1)
+        graphics_layout.layout.setRowStretchFactor(0, 1)
+        graphics_layout.layout.setRowStretchFactor(1, 10)
+        area.addItem(graphics_layout)
+
+        return cls(
+            plots=EphysPanelPlots(
+                image=image,
+                image_colorbar=image_colorbar,
+                line=line,
+                probe=probe,
+                probe_colorbar=probe_colorbar,
+            ),
+            widgets=EphysPanelWidgets(
+                area=area,
+                graphics_layout=graphics_layout,
+                image_axis=image_axis,
+            ),
+            style=EphysPanelStyle(
+                line_pen=line_pen,
+                depth_guide_pen=depth_guide_pen,
+            ),
+            set_axis=set_axis,
+            cluster_clicked=cluster_clicked,
+            probe_tip_lines=probe_tip_lines,
+            probe_top_lines=probe_top_lines,
+        )
 
     @property
     def feature_xrange(self) -> Any:
@@ -56,6 +179,21 @@ class DesktopEphysPanelView:
     def probe_colorbars(self) -> list[Any]:
         """Return currently rendered probe colorbar items."""
         return self.items.probe_colorbars
+
+    def capture_layout_sizes(self) -> dict[str, float]:
+        """Capture stable dimensions used when reordering ephys panels."""
+        axis_width = self.widgets.image_axis.width()
+        return {
+            "axis_width": axis_width,
+            "image_width": self.plots.image.width() - axis_width,
+            "line_width": self.plots.line.width(),
+            "probe_width": self.plots.probe.width(),
+        }
+
+    def feature_y_range(self) -> tuple[float, float]:
+        """Return the current feature-depth y-range."""
+        y_min, y_max = self.plots.image.viewRange()[1]
+        return float(y_min), float(y_max)
 
     def clear(self) -> None:
         """Clear all ephys plot items and feature-plot interaction metadata."""
@@ -305,3 +443,24 @@ class DesktopEphysPanelView:
         cbar_img = pg.ImageItem()
         cbar_img.setImage(combined, autoLevels=False)
         return cbar_img
+
+
+def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:
+    y_min, y_max = depth_view.plot_y_range_um
+    plot.setYRange(min=y_min, max=y_max, padding=padding)
+
+
+def _add_depth_guides(
+    plot: Any,
+    depth_view: Any,
+    *,
+    depth_guide_pen: Any,
+    probe_tip_lines: list[Any],
+    probe_top_lines: list[Any],
+) -> None:
+    probe_tip_lines.append(
+        plot.addLine(y=depth_view.probe_tip_um, pen=depth_guide_pen, z=50)
+    )
+    probe_top_lines.append(
+        plot.addLine(y=depth_view.probe_top_um, pen=depth_guide_pen, z=50)
+    )

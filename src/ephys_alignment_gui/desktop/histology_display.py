@@ -9,10 +9,6 @@ from typing import Any
 
 from ephys_alignment_gui.core.alignment_read_models import ActiveAlignmentRenderState
 from ephys_alignment_gui.desktop.histology_panel_view import (
-    FitPanelItems,
-    HistologyPanelAxes,
-    HistologyPanelPlots,
-    HistologyPanelStyle,
     HistologyPanelView,
 )
 from ephys_alignment_gui.desktop.histology_presenter import (
@@ -24,24 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class DesktopHistologyDisplayPorts:
-    """Desktop handles and callbacks needed to build the histology display."""
+class DesktopHistologyDisplayConfig:
+    """External style/callback dependencies needed to build histology displays."""
 
-    aligned_plot: Any
-    reference_plot: Any
-    scale_plot: Any
-    scale_colorbar: Any
-    aligned_axis: Any
-    reference_axis: Any
-    layout: Any
-    extra_y_axis: Any
     dotted_pen: Any
-    fit_curve: Any
-    fit_scatter: Any
-    linear_fit_curve: Any
+    fit_pen: Any
+    linear_fit_pen: Any
+    baseline_pen: Any
     set_axis: Callable[..., Any]
     padding_provider: Callable[[], float]
-    scale_factor_y_range: Callable[[], tuple[float, float]]
+    on_linear_fit_changed: Callable[..., Any]
+    on_mouse_double_clicked: Callable[..., Any]
+    on_mouse_hover: Callable[..., Any]
     histology_available: Callable[[], bool]
 
 
@@ -51,35 +41,32 @@ class DesktopHistologyDisplay:
 
     panel: HistologyPanelView
     presenter: DesktopHistologyPresenter
-    ports: DesktopHistologyDisplayPorts
+    histology_available: Callable[[], bool]
 
     @classmethod
     def create(
         cls,
         *,
         app: Any,
-        ports: DesktopHistologyDisplayPorts,
+        config: DesktopHistologyDisplayConfig,
+        perpendicular_plot: Any,
+        scale_factor_y_range: Callable[[], tuple[float, float]],
+        view_factory: Callable[..., HistologyPanelView] = HistologyPanelView.create,
     ) -> DesktopHistologyDisplay:
-        """Build the histology display cluster from desktop ports."""
-        panel = HistologyPanelView(
-            plots=HistologyPanelPlots(
-                aligned=ports.aligned_plot,
-                reference=ports.reference_plot,
-                scale=ports.scale_plot,
-                scale_colorbar=ports.scale_colorbar,
-            ),
-            axes=HistologyPanelAxes(
-                aligned=ports.aligned_axis,
-                reference=ports.reference_axis,
-            ),
-            style=HistologyPanelStyle(dotted_pen=ports.dotted_pen),
-            set_axis=ports.set_axis,
-            padding_provider=ports.padding_provider,
-            fit_items=FitPanelItems(
-                fit_curve=ports.fit_curve,
-                fit_scatter=ports.fit_scatter,
-                linear_fit_curve=ports.linear_fit_curve,
-            ),
+        """Build the histology display cluster from desktop dependencies."""
+        panel = view_factory(
+            depth_view=app.queries.workspace.depth_view_settings(),
+            padding=config.padding_provider(),
+            set_axis=config.set_axis,
+            dotted_pen=config.dotted_pen,
+            fit_pen=config.fit_pen,
+            linear_fit_pen=config.linear_fit_pen,
+            baseline_pen=config.baseline_pen,
+            perpendicular_plot=perpendicular_plot,
+            linear_fit_enabled=app.queries.workspace.linear_fit_enabled,
+            on_linear_fit_changed=config.on_linear_fit_changed,
+            on_mouse_double_clicked=config.on_mouse_double_clicked,
+            on_mouse_hover=config.on_mouse_hover,
         )
         presenter = DesktopHistologyPresenter(
             app=app,
@@ -88,15 +75,49 @@ class DesktopHistologyDisplay:
                 probe_extent_query_kwargs=lambda: _probe_extent_query_kwargs(app),
                 fit_depth_um=app.queries.workspace.fit_depth_um,
                 lin_fit_enabled=app.queries.workspace.linear_fit_enabled,
-                scale_factor_y_range=ports.scale_factor_y_range,
+                scale_factor_y_range=scale_factor_y_range,
             ),
         )
-        return cls(panel=panel, presenter=presenter, ports=ports)
+        return cls(
+            panel=panel,
+            presenter=presenter,
+            histology_available=config.histology_available,
+        )
+
+    @property
+    def area(self) -> Any:
+        """Return the top-level histology panel widget."""
+        return self.panel.plots.area
+
+    @property
+    def layout(self) -> Any:
+        """Return the histology graphics layout."""
+        return self.panel.plots.layout
 
     @property
     def extra_y_axis(self) -> Any:
         """Return the extra histology y-axis used during plot export."""
-        return self.ports.extra_y_axis
+        return self.panel.plots.extra_y_axis
+
+    @property
+    def scale_plot(self) -> Any:
+        """Return the scale-factor strip plot handle."""
+        return self.panel.plots.scale
+
+    @property
+    def scale_axis(self) -> Any:
+        """Return the scale-factor colourbar axis."""
+        return self.panel.plots.scale_axis
+
+    @property
+    def fit_plot(self) -> Any:
+        """Return the fit plot widget."""
+        return self.panel.fit_plot
+
+    @property
+    def linear_fit_checkbox(self) -> Any:
+        """Return the linear-fit checkbox."""
+        return self.panel.linear_fit_checkbox
 
     @property
     def aligned_plot(self) -> Any:
@@ -110,7 +131,7 @@ class DesktopHistologyDisplay:
 
     def export_scene(self) -> Any:
         """Return the scene that contains the histology export layout."""
-        return self.ports.layout.scene()
+        return self.layout.scene()
 
     def clear(self) -> None:
         """Clear histology-panel plot items and forget desktop handles."""
@@ -157,7 +178,7 @@ class DesktopHistologyDisplay:
         movable: bool = False,
     ) -> bool:
         """Render nearby histology boundary distances."""
-        if not self.ports.histology_available():
+        if not self.histology_available():
             return False
         return self.presenter.render_active_nearby(fig, movable=movable)
 

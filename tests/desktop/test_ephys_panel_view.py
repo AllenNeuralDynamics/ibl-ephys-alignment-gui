@@ -10,6 +10,7 @@ from ephys_alignment_gui.desktop.ephys_panel_view import (
     DesktopEphysPanelView,
     EphysPanelPlots,
     EphysPanelStyle,
+    EphysPanelWidgets,
 )
 
 
@@ -148,7 +149,15 @@ def _view(monkeypatch) -> tuple[DesktopEphysPanelView, dict[str, FakePlot], list
     return (
         DesktopEphysPanelView(
             plots=EphysPanelPlots(**plots),
-            style=EphysPanelStyle(line_pen="line-pen"),
+            widgets=EphysPanelWidgets(
+                area=object(),
+                graphics_layout=object(),
+                image_axis=object(),
+            ),
+            style=EphysPanelStyle(
+                line_pen="line-pen",
+                depth_guide_pen="depth-guide-pen",
+            ),
             set_axis=lambda *args, **kwargs: axis_calls.append((args, kwargs)),
             cluster_clicked=lambda *_args: None,
         ),

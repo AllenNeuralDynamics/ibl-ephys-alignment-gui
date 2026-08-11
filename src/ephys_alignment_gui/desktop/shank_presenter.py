@@ -131,13 +131,13 @@ class DesktopShankPresenter:
         screen_state = self._require_screen_state(screen_preparation)
         callbacks.render_plot_menus(screen_state.plot_menu)
         callbacks.render_ephys_plots(screen_state)
-        if prepared.histology_available:
-            callbacks.render_histology_plots(shank_idx)
         callbacks.restore_slice_selection(
             screen_state.slice_menu,
             selections.previous_slice_selection,
             selections.previous_slice_label,
         )
+        if prepared.histology_available:
+            callbacks.render_histology_plots(shank_idx)
         callbacks.configure_view(preserve)
         logger.info("Shank view setup complete")
 

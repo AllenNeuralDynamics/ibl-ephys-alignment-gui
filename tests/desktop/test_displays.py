@@ -2,36 +2,78 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import ephys_alignment_gui.desktop.displays as module
-from ephys_alignment_gui.desktop.displays import DesktopDisplayPorts, DesktopDisplays
+from ephys_alignment_gui.desktop.displays import DesktopDisplayConfig, DesktopDisplays
+
+
+class FakePlot:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.y_links: list[object] = []
+
+    def setYLink(self, plot: object) -> None:
+        self.y_links.append(plot)
 
 
 def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
-    calls: list[tuple[str, Any, Any]] = []
-    displays = {
-        "ephys": object(),
-        "histology": object(),
-        "reference_lines": object(),
-        "slice": object(),
-    }
+    calls: list[tuple[str, Any, Any, Any]] = []
+    image_plot = FakePlot("image")
+    line_plot = FakePlot("line")
+    probe_plot = FakePlot("probe")
+    aligned_plot = FakePlot("aligned")
+    perpendicular_plot = FakePlot("perpendicular")
+    ephys = SimpleNamespace(
+        panel=SimpleNamespace(
+            plots=SimpleNamespace(
+                image=image_plot,
+                line=line_plot,
+                probe=probe_plot,
+            ),
+            feature_y_range=lambda: (0.0, 1.0),
+        ),
+    )
+    histology = SimpleNamespace(
+        aligned_plot=aligned_plot,
+        fit_plot="fit-plot",
+    )
+    slice_display = SimpleNamespace(
+        perpendicular_plot=perpendicular_plot,
+        set_perpendicular_depth_link=lambda plot: perpendicular_plot.setYLink(plot),
+    )
+    reference_lines = object()
 
-    def create_ephys(*, app: Any, ports: Any) -> Any:
-        calls.append(("ephys", app, ports))
-        return displays["ephys"]
+    def create_ephys(*, app: Any, config: Any) -> Any:
+        calls.append(("ephys", app, config, None))
+        return ephys
 
-    def create_histology(*, app: Any, ports: Any) -> Any:
-        calls.append(("histology", app, ports))
-        return displays["histology"]
+    def create_histology(
+        *,
+        app: Any,
+        config: Any,
+        perpendicular_plot: Any,
+        scale_factor_y_range: Any,
+    ) -> Any:
+        calls.append(("histology", app, config, perpendicular_plot))
+        assert perpendicular_plot is slice_display.perpendicular_plot
+        assert scale_factor_y_range() == (0.0, 1.0)
+        return histology
 
-    def create_reference_lines(*, ports: Any) -> Any:
-        calls.append(("reference_lines", None, ports))
-        return displays["reference_lines"]
+    def create_reference_lines(*, bindings: Any) -> Any:
+        calls.append(("reference_lines", None, bindings, None))
+        assert bindings.histology_plot is aligned_plot
+        assert bindings.image_plot is image_plot
+        assert bindings.line_plot is line_plot
+        assert bindings.probe_plot is probe_plot
+        assert bindings.perpendicular_plot is perpendicular_plot
+        assert bindings.fit_plot == "fit-plot"
+        return reference_lines
 
-    def create_slice(*, app: Any, ports: Any) -> Any:
-        calls.append(("slice", app, ports))
-        return displays["slice"]
+    def create_slice(*, app: Any, config: Any) -> Any:
+        calls.append(("slice", app, config, None))
+        return slice_display
 
     monkeypatch.setattr(
         module.DesktopEphysDisplay,
@@ -53,22 +95,25 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
         "create",
         staticmethod(create_slice),
     )
-    ports = DesktopDisplayPorts(
+    config = DesktopDisplayConfig(
         ephys="ephys-ports",
         histology="histology-ports",
-        reference_lines="reference-line-ports",
         slice="slice-ports",
     )
 
-    result = DesktopDisplays.create(app="app", ports=ports)
+    result = DesktopDisplays.create(app="app", config=config)
 
-    assert result.ephys is displays["ephys"]
-    assert result.histology is displays["histology"]
-    assert result.reference_lines is displays["reference_lines"]
-    assert result.slice is displays["slice"]
-    assert calls == [
-        ("ephys", "app", "ephys-ports"),
-        ("histology", "app", "histology-ports"),
-        ("reference_lines", None, "reference-line-ports"),
-        ("slice", "app", "slice-ports"),
+    assert result.ephys is ephys
+    assert result.histology is histology
+    assert result.reference_lines is reference_lines
+    assert result.slice is slice_display
+    assert image_plot.y_links == [line_plot, aligned_plot]
+    assert line_plot.y_links == [aligned_plot]
+    assert probe_plot.y_links == [image_plot]
+    assert perpendicular_plot.y_links == [aligned_plot]
+    assert calls[:3] == [
+        ("ephys", "app", "ephys-ports", None),
+        ("slice", "app", "slice-ports", None),
+        ("histology", "app", "histology-ports", perpendicular_plot),
     ]
+    assert calls[3][0] == "reference_lines"

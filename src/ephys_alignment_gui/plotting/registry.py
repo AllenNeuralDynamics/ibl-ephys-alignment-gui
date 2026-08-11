@@ -12,6 +12,9 @@ PlotRenderer = Literal["image", "scatter", "line", "probe"]
 
 logger = logging.getLogger(__name__)
 
+_OPTIONAL_PLOT_DEPENDENCIES = frozenset({"brainbox"})
+_LOGGED_MISSING_DYNAMIC_DEPENDENCIES: set[tuple[str, str]] = set()
+
 
 @dataclass(frozen=True)
 class PlotSpec:
@@ -88,6 +91,36 @@ def _plot_spec_available(payload_cache: Any, spec: PlotSpec) -> bool:
             exc_info=True,
         )
         return False
+
+
+def _missing_optional_dependency(exc: Exception) -> str | None:
+    """Return optional dependency name when an unavailable plot dependency is missing."""
+    if not isinstance(exc, ModuleNotFoundError):
+        return None
+    name = getattr(exc, "name", None)
+    return name if name in _OPTIONAL_PLOT_DEPENDENCIES else None
+
+
+def _log_dynamic_plot_unavailable(entry_key: str, exc: Exception) -> None:
+    """Log unavailable dynamic plot entries without traceback spam for optionals."""
+    dependency = _missing_optional_dependency(exc)
+    if dependency is not None:
+        log_key = (entry_key, dependency)
+        if log_key not in _LOGGED_MISSING_DYNAMIC_DEPENDENCIES:
+            _LOGGED_MISSING_DYNAMIC_DEPENDENCIES.add(log_key)
+            logger.warning(
+                "Skipping unavailable dynamic plot menu entries for %s: "
+                "optional dependency '%s' is not installed",
+                entry_key,
+                dependency,
+            )
+        return
+
+    logger.warning(
+        "Skipping unavailable dynamic plot menu entries for %s",
+        entry_key,
+        exc_info=True,
+    )
 
 
 def _safe_child_key(value: Any) -> str:
@@ -377,12 +410,8 @@ def available_plot_specs_for_menu(
             continue
         try:
             specs.extend(entry.children(payload_cache))
-        except Exception:
-            logger.warning(
-                "Skipping unavailable dynamic plot menu entries for %s",
-                entry.key,
-                exc_info=True,
-            )
+        except Exception as exc:
+            _log_dynamic_plot_unavailable(entry.key, exc)
     return tuple(specs)
 
 

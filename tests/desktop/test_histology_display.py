@@ -7,7 +7,14 @@ from typing import Any
 
 from ephys_alignment_gui.desktop.histology_display import (
     DesktopHistologyDisplay,
-    DesktopHistologyDisplayPorts,
+    DesktopHistologyDisplayConfig,
+)
+from ephys_alignment_gui.desktop.histology_panel_view import (
+    FitPanelItems,
+    HistologyPanelAxes,
+    HistologyPanelPlots,
+    HistologyPanelStyle,
+    HistologyPanelView,
 )
 
 
@@ -47,26 +54,49 @@ def _display(
     brain_atlas: Any = "atlas",
 ) -> DesktopHistologyDisplay:
     queries = queries or FakeQueries(brain_atlas=brain_atlas)
-    return DesktopHistologyDisplay.create(
-        app=SimpleNamespace(queries=queries),
-        ports=DesktopHistologyDisplayPorts(
-            aligned_plot="aligned",
-            reference_plot="reference",
-            scale_plot="scale",
+    panel = HistologyPanelView(
+        plots=HistologyPanelPlots(
+            aligned="aligned",
+            reference="reference",
+            scale="scale",
             scale_colorbar="scale-colorbar",
-            aligned_axis="aligned-axis",
-            reference_axis="reference-axis",
+            area="area",
             layout=FakeLayout(),
             extra_y_axis="extra-y-axis",
-            dotted_pen="dotted",
+            scale_axis="scale-axis",
+        ),
+        axes=HistologyPanelAxes(
+            aligned="aligned-axis",
+            reference="reference-axis",
+        ),
+        style=HistologyPanelStyle(dotted_pen="dotted"),
+        set_axis=lambda *_args, **_kwargs: None,
+        padding_provider=lambda: 0.05,
+        fit_items=FitPanelItems(
             fit_curve=SimpleNamespace(setData=lambda **_kwargs: None),
             fit_scatter=SimpleNamespace(setData=lambda **_kwargs: None),
             linear_fit_curve=SimpleNamespace(setData=lambda **_kwargs: None),
+            plot_widget="fit-plot",
+            linear_fit_checkbox="linear-fit-checkbox",
+        ),
+    )
+    return DesktopHistologyDisplay.create(
+        app=SimpleNamespace(queries=queries),
+        config=DesktopHistologyDisplayConfig(
+            dotted_pen="dotted",
+            fit_pen="fit-pen",
+            linear_fit_pen="linear-fit-pen",
+            baseline_pen="baseline-pen",
             set_axis=lambda *_args, **_kwargs: None,
             padding_provider=lambda: 0.05,
-            scale_factor_y_range=lambda: (0.0, 1.0),
+            on_linear_fit_changed=lambda *_args, **_kwargs: None,
+            on_mouse_double_clicked=lambda *_args, **_kwargs: None,
+            on_mouse_hover=lambda *_args, **_kwargs: None,
             histology_available=lambda: histology_available,
         ),
+        perpendicular_plot="perpendicular",
+        scale_factor_y_range=lambda: (0.0, 1.0),
+        view_factory=lambda **_kwargs: panel,
     )
 
 

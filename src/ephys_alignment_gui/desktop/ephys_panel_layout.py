@@ -34,9 +34,25 @@ class DesktopEphysPanelLayout:
     panel: DesktopEphysPanelView
     graphics_layout: Any
     callbacks: EphysPanelLayoutCallbacks
+    sizes: EphysPanelLayoutSizes | None = None
 
-    def apply_view(self, view: int, sizes: EphysPanelLayoutSizes) -> None:
+    def capture_sizes(self) -> EphysPanelLayoutSizes:
+        """Capture current panel dimensions for stable layout switching."""
+        values = self.panel.capture_layout_sizes()
+        self.sizes = EphysPanelLayoutSizes(
+            axis_width=values["axis_width"],
+            image_width=values["image_width"],
+            line_width=values["line_width"],
+            probe_width=values["probe_width"],
+        )
+        return self.sizes
+
+    def apply_view(self, view: int, sizes: EphysPanelLayoutSizes | None = None) -> None:
         """Apply one of the three ephys data-panel layouts."""
+        if sizes is None:
+            sizes = self.sizes
+        if sizes is None:
+            sizes = self.capture_sizes()
         if view == 1:
             self._apply_image_line_probe(sizes)
         elif view == 2:

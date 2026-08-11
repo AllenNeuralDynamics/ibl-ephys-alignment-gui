@@ -6,7 +6,7 @@ from typing import Any
 
 from ephys_alignment_gui.desktop.reference_line_display import (
     DesktopReferenceLineDisplay,
-    DesktopReferenceLineDisplayPorts,
+    ReferenceLinePlotBindings,
 )
 
 
@@ -54,10 +54,10 @@ class FakeLayer:
         return True
 
 
-def test_reference_line_display_constructs_layer_from_ports() -> None:
+def test_reference_line_display_constructs_layer_from_bindings() -> None:
     changed: list[str] = []
     display = DesktopReferenceLineDisplay.create(
-        ports=DesktopReferenceLineDisplayPorts(
+        bindings=ReferenceLinePlotBindings(
             histology_plot="histology",
             image_plot="image",
             line_plot="line",

@@ -17,8 +17,8 @@ from ephys_alignment_gui.desktop.reference_line_layer import (
 
 
 @dataclass(frozen=True)
-class DesktopReferenceLineDisplayPorts:
-    """Desktop handles and callbacks needed to build reference-line overlays."""
+class ReferenceLinePlotBindings:
+    """Sibling display plot handles that receive linked reference-line overlays."""
 
     histology_plot: Any
     image_plot: Any
@@ -38,18 +38,18 @@ class DesktopReferenceLineDisplay:
     def create(
         cls,
         *,
-        ports: DesktopReferenceLineDisplayPorts,
+        bindings: ReferenceLinePlotBindings,
     ) -> DesktopReferenceLineDisplay:
         """Build reference-line overlays from desktop plot handles."""
         return cls(
             layer=ReferenceLineLayer(
                 plots=ReferenceLinePlots(
-                    histology=ports.histology_plot,
-                    image=ports.image_plot,
-                    line=ports.line_plot,
-                    probe=ports.probe_plot,
-                    perpendicular=ports.perpendicular_plot,
-                    fit=ports.fit_plot,
+                    histology=bindings.histology_plot,
+                    image=bindings.image_plot,
+                    line=bindings.line_plot,
+                    probe=bindings.probe_plot,
+                    perpendicular=bindings.perpendicular_plot,
+                    fit=bindings.fit_plot,
                 ),
                 style_factory=default_reference_line_style,
                 on_lines_changed=lambda: None,

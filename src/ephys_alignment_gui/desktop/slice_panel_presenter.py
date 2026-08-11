@@ -30,6 +30,7 @@ class SlicePanelPlots:
     coronal_layout: Any
     histogram_alt: Any
     perpendicular: Any
+    area: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,53 @@ class SlicePanelView:
     histology_exists: Callable[[], bool]
     view_state: SlicePanelViewState = field(default_factory=SlicePanelViewState)
     slice_item: Any = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        depth_view: Any,
+        padding: float,
+        set_axis: Callable[..., Any],
+        dotted_pen: Any,
+        solid_pen: Any,
+        reference_line_pen: Any,
+        histology_exists: Callable[[], bool],
+    ) -> SlicePanelView:
+        """Create the desktop slice panel and all of its plot handles."""
+        area = pg.GraphicsLayoutWidget()
+        coronal_layout = pg.GraphicsLayout()
+        histogram_alt = pg.ViewBox()
+        coronal = pg.ViewBox()
+        coronal_layout.addItem(coronal, 0, 0)
+        coronal_layout.addItem(histogram_alt, 0, 1)
+        coronal_layout.layout.setColumnStretchFactor(0, 3)
+        coronal_layout.layout.setColumnStretchFactor(1, 1)
+        area.addItem(coronal_layout)
+
+        perpendicular = pg.PlotItem()
+        perpendicular.setContentsMargins(0, 0, 0, 0)
+        perpendicular.setMouseEnabled(x=False)
+        y_min, y_max = depth_view.plot_y_range_um
+        perpendicular.setYRange(min=y_min, max=y_max, padding=padding)
+        set_axis(perpendicular, "bottom", pen="w")
+        set_axis(perpendicular, "left", show=False)
+        return cls(
+            plots=SlicePanelPlots(
+                coronal=coronal,
+                coronal_layout=coronal_layout,
+                histogram_alt=histogram_alt,
+                perpendicular=perpendicular,
+                area=area,
+            ),
+            style=SlicePanelStyle(
+                dotted_pen=dotted_pen,
+                solid_pen=solid_pen,
+                reference_line_pen=reference_line_pen,
+            ),
+            histology_exists=histology_exists,
+            slice_item=histogram_alt,
+        )
 
     def __post_init__(self) -> None:
         if self.view_state.slice_item is None:
@@ -270,6 +318,23 @@ class SlicePanelView:
         if projection is None:
             return None
         return projection.channel_locations_ras
+
+    def set_perpendicular_depth_link(self, linked_plot: Any) -> None:
+        """Link the perpendicular slice y-axis to the histology depth plot."""
+        self.plots.perpendicular.setYLink(linked_plot)
+
+    def set_perpendicular_depth_range(self, depth_view: Any, padding: float) -> None:
+        """Set the starting y-range for the perpendicular slice plot."""
+        y_min, y_max = depth_view.plot_y_range_um
+        self.plots.perpendicular.setYRange(min=y_min, max=y_max, padding=padding)
+
+    def capture_export_geometry(self) -> tuple[float, float, Any]:
+        """Capture slice plot geometry for zoomed plot export."""
+        return (
+            self.plots.coronal.width(),
+            self.plots.coronal.height(),
+            self.plots.coronal.viewRect(),
+        )
 
     def _render_scalar_slice_controls(
         self,

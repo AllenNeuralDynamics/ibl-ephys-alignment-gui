@@ -1,4 +1,4 @@
-"""Desktop view aggregate built from MainWindow-owned Qt handles."""
+"""Desktop view aggregate built from desktop-owned Qt handles."""
 
 from __future__ import annotations
 
@@ -45,18 +45,22 @@ class DesktopViews:
             output_folder_line=window.output_folder_line,
         )
         depth = DesktopDepthPlotView(
-            default_range_plots=(window.fig_hist, window.fig_hist_ref, window.fig_img),
+            default_range_plots=(
+                displays.histology.aligned_plot,
+                displays.histology.reference_plot,
+                displays.ephys.panel.plots.image,
+            ),
             range_plots={
-                "fig_img": window.fig_img,
-                "fig_line": window.fig_line,
-                "fig_probe": window.fig_probe,
-                "fig_hist": window.fig_hist,
-                "fig_hist_ref": window.fig_hist_ref,
-                "fig_hist_perp": window.fig_hist_perp,
-                "fig_scale": window.fig_scale,
+                "fig_img": displays.ephys.panel.plots.image,
+                "fig_line": displays.ephys.panel.plots.line,
+                "fig_probe": displays.ephys.panel.plots.probe,
+                "fig_hist": displays.histology.aligned_plot,
+                "fig_hist_ref": displays.histology.reference_plot,
+                "fig_hist_perp": displays.slice.perpendicular_plot,
+                "fig_scale": displays.histology.scale_plot,
             },
-            probe_tip_lines=window.probe_tip_lines,
-            probe_top_lines=window.probe_top_lines,
+            probe_tip_lines=displays.ephys.panel.probe_tip_lines,
+            probe_top_lines=displays.ephys.panel.probe_top_lines,
             padding=lambda: window.pad,
         )
         shank_screen = DesktopShankScreenView(
@@ -67,28 +71,21 @@ class DesktopViews:
         alignment_screen = DesktopAlignmentScreenView(
             depth_plots=depth,
             reference_lines=displays.reference_lines,
-            lin_fit_checkbox=window.lin_fit_option,
+            lin_fit_checkbox=displays.histology.linear_fit_checkbox,
             current_index_label=window.idx_string,
             total_index_label=window.tot_idx_string,
         )
         export = DesktopExportView(
-            ephys_graphics_layout=window.fig_data_layout,
-            ephys_data_area=window.fig_data_area,
-            slice_plot=window.fig_slice,
+            ephys_graphics_layout=displays.ephys.graphics_layout,
+            ephys_data_area=displays.ephys.area,
+            slice_plot=displays.slice.coronal_plot,
             slice_trajectory_pen=window.rpen_dot,
             reset_axis=window.reset_axis_button_pressed,
             set_view=window.set_view,
             set_axis=window.set_axis,
             set_font=window.set_font,
-            ephys_sizes=lambda: (
-                window.fig_probe_width,
-                window.fig_ax_width,
-            ),
-            slice_geometry=lambda: (
-                window.slice_width,
-                window.slice_height,
-                window.slice_rect,
-            ),
+            ephys_sizes=displays.ephys.export_sizes,
+            slice_geometry=displays.slice.capture_export_geometry,
         )
         return cls(
             selection=selection,

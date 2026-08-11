@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ephys_alignment_gui.plotting.registry import (
@@ -37,6 +38,16 @@ class FakePayloadCache:
         if method == "get_rfmap_data":
             return {"left": "rfmap"}, "bounds"
         return method
+
+
+class FakeOptionalDependencyMissingPayloadCache(FakePayloadCache):
+    def cached(self, method: str, args: tuple = ()) -> Any:
+        if method == "get_passive_events":
+            raise ModuleNotFoundError(
+                "No module named 'brainbox'",
+                name="brainbox",
+            )
+        return super().cached(method, args)
 
 
 class FakeDataEntry:
@@ -137,6 +148,24 @@ def test_available_plot_specs_include_passive_events_when_present() -> None:
         payload_cache,
         spec_by_key["image.passive_event.stim"],
     ) == "stim-img"
+
+
+def test_available_plot_specs_logs_missing_optional_dependency_once(caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="ephys_alignment_gui.plotting.registry")
+    payload_cache = FakeOptionalDependencyMissingPayloadCache()
+
+    assert available_plot_specs_for_menu(payload_cache, "image")
+    assert available_plot_specs_for_menu(payload_cache, "image")
+
+    messages = [record.getMessage() for record in caplog.records]
+    optional_messages = [
+        message for message in messages if "image.passive_event" in message
+    ]
+    assert optional_messages == [
+        "Skipping unavailable dynamic plot menu entries for image.passive_event: "
+        "optional dependency 'brainbox' is not installed"
+    ]
+    assert "Traceback" not in caplog.text
 
 
 def test_mapping_plot_specs_resolve_existing_mapping_payloads() -> None:

@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtGui
+from PyQt5 import QtGui, QtWidgets
 
 from ephys_alignment_gui.core.alignment_read_models import (
     FitPlotRenderState,
@@ -18,7 +18,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.desktop.plot_elements import ColorBar
+from ephys_alignment_gui.desktop.plot_elements import ColorBar, replace_axis
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,10 @@ class HistologyPanelPlots:
     reference: Any
     scale: Any | None = None
     scale_colorbar: Any | None = None
+    area: Any | None = None
+    layout: Any | None = None
+    extra_y_axis: Any | None = None
+    scale_axis: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,8 @@ class FitPanelItems:
     fit_curve: Any
     fit_scatter: Any
     linear_fit_curve: Any
+    plot_widget: Any | None = None
+    linear_fit_checkbox: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,158 @@ class HistologyPanelView:
     hist_label_items: list[Any] = field(default_factory=list)
     hist_ref_label_items: list[Any] = field(default_factory=list)
     _probe_extent: ProbeExtentRenderState | None = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        depth_view: Any,
+        padding: float,
+        set_axis: Callable[..., Any],
+        dotted_pen: Any,
+        fit_pen: Any,
+        linear_fit_pen: Any,
+        baseline_pen: Any,
+        perpendicular_plot: Any,
+        linear_fit_enabled: Callable[[], bool],
+        on_linear_fit_changed: Callable[..., Any],
+        on_mouse_double_clicked: Callable[..., Any],
+        on_mouse_hover: Callable[..., Any],
+    ) -> HistologyPanelView:
+        """Create the histology/scale/fit panel and all of its plot handles."""
+        aligned = pg.PlotItem()
+        aligned.setContentsMargins(0, 0, 0, 0)
+        aligned.setMouseEnabled(x=False)
+        _set_depth_range(aligned, depth_view, padding)
+        set_axis(aligned, "bottom", pen="w")
+        replace_axis(aligned)
+        aligned_axis = set_axis(aligned, "left", pen=None)
+        aligned_axis.setWidth(0)
+
+        scale = pg.PlotItem()
+        scale.setMaximumWidth(50)
+        scale.setMouseEnabled(x=False)
+        set_axis(scale, "bottom", pen="w")
+        set_axis(scale, "left", show=False)
+        scale.setYLink(aligned)
+
+        scale_colorbar = pg.PlotItem()
+        scale_colorbar.setMouseEnabled(x=False, y=False)
+        scale_colorbar.setMaximumHeight(70)
+        set_axis(scale_colorbar, "bottom", show=False)
+        set_axis(scale_colorbar, "left", show=False)
+        scale_axis = set_axis(scale_colorbar, "top", pen="w")
+        set_axis(scale_colorbar, "right", show=False)
+
+        reference = pg.PlotItem()
+        reference.setMouseEnabled(x=False)
+        _set_depth_range(reference, depth_view, padding)
+        reference.setYLink(aligned)
+        set_axis(reference, "bottom", pen="w")
+        set_axis(reference, "left", show=False)
+        replace_axis(reference, orientation="right", pos=(2, 2))
+        reference_axis = set_axis(reference, "right", pen=None)
+        reference_axis.setWidth(0)
+
+        perpendicular_plot.setYLink(aligned)
+
+        area = pg.GraphicsLayoutWidget()
+        area.setMouseTracking(True)
+        area.scene().sigMouseClicked.connect(on_mouse_double_clicked)
+        area.scene().sigMouseHover.connect(on_mouse_hover)
+
+        extra_y_axis = pg.PlotItem()
+        extra_y_axis.setMouseEnabled(x=False, y=False)
+        extra_y_axis.setMaximumWidth(2)
+        _set_depth_range(extra_y_axis, depth_view, padding)
+        set_axis(extra_y_axis, "bottom", pen="w")
+        extra_axis = set_axis(extra_y_axis, "left", pen=None)
+        extra_axis.setWidth(10)
+
+        layout = pg.GraphicsLayout()
+        layout.addItem(scale_colorbar, 0, 0, 1, 5)
+        layout.addItem(extra_y_axis, 1, 0)
+        layout.addItem(aligned, 1, 1)
+        layout.addItem(perpendicular_plot, 1, 2)
+        layout.addItem(scale, 1, 3)
+        layout.addItem(reference, 1, 4)
+        layout.layout.setColumnStretchFactor(0, 1)
+        layout.layout.setColumnStretchFactor(1, 4)
+        layout.layout.setColumnStretchFactor(2, 5)
+        layout.layout.setColumnStretchFactor(3, 1)
+        layout.layout.setColumnStretchFactor(4, 4)
+        layout.layout.setRowStretchFactor(0, 1)
+        layout.layout.setRowStretchFactor(1, 10)
+        area.addItem(layout)
+
+        fit_plot = pg.PlotWidget(background="w")
+        fit_plot.setMouseEnabled(x=False, y=False)
+        view_min, view_max = depth_view.view_range_um
+        fit_plot.setXRange(min=view_min, max=view_max)
+        fit_plot.setYRange(min=view_min, max=view_max)
+        set_axis(fit_plot, "bottom", label="Ephys reference depth (μm)")
+        set_axis(fit_plot, "left", label="Atlas reference depth (μm)")
+        baseline = pg.PlotCurveItem()
+        baseline.setData(
+            x=depth_view.fit_depth_um,
+            y=depth_view.fit_depth_um,
+            pen=baseline_pen,
+        )
+        fit_curve = pg.PlotCurveItem(pen=fit_pen)
+        fit_scatter = pg.ScatterPlotItem(size=7, symbol="o", brush="w", pen="b")
+        linear_fit_curve = pg.PlotCurveItem(pen=linear_fit_pen)
+        fit_plot.addItem(baseline)
+        fit_plot.addItem(fit_curve)
+        fit_plot.addItem(linear_fit_curve)
+        fit_plot.addItem(fit_scatter)
+
+        linear_fit_checkbox = QtWidgets.QCheckBox("Linear fit", fit_plot)
+        linear_fit_checkbox.setChecked(linear_fit_enabled())
+        linear_fit_checkbox.stateChanged.connect(on_linear_fit_changed)
+        fit_items = FitPanelItems(
+            fit_curve=fit_curve,
+            fit_scatter=fit_scatter,
+            linear_fit_curve=linear_fit_curve,
+            plot_widget=fit_plot,
+            linear_fit_checkbox=linear_fit_checkbox,
+        )
+        fit_plot.sigDeviceRangeChanged.connect(
+            lambda *args: position_linear_fit_checkbox(fit_items)
+        )
+        position_linear_fit_checkbox(fit_items)
+
+        return cls(
+            plots=HistologyPanelPlots(
+                aligned=aligned,
+                reference=reference,
+                scale=scale,
+                scale_colorbar=scale_colorbar,
+                area=area,
+                layout=layout,
+                extra_y_axis=extra_y_axis,
+                scale_axis=scale_axis,
+            ),
+            axes=HistologyPanelAxes(
+                aligned=aligned_axis,
+                reference=reference_axis,
+            ),
+            style=HistologyPanelStyle(dotted_pen=dotted_pen),
+            set_axis=set_axis,
+            padding_provider=lambda: padding,
+            fit_items=fit_items,
+        )
+
+    @property
+    def fit_plot(self) -> Any:
+        """Return the fit plot widget owned by this panel."""
+        return None if self.fit_items is None else self.fit_items.plot_widget
+
+    @property
+    def linear_fit_checkbox(self) -> Any:
+        """Return the linear-fit checkbox owned by this panel."""
+        if self.fit_items is None:
+            return None
+        return self.fit_items.linear_fit_checkbox
 
     def clear(self) -> None:
         """Clear histology-panel plot items and forget desktop handles."""
@@ -477,3 +635,15 @@ class HistologyPanelView:
         if regions.shape[0] >= 2:
             return regions[-2, 0]
         return regions[-1, 0]
+
+
+def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:
+    y_min, y_max = depth_view.plot_y_range_um
+    plot.setYRange(min=y_min, max=y_max, padding=padding)
+
+
+def position_linear_fit_checkbox(fit_items: FitPanelItems) -> None:
+    """Position the linear-fit checkbox inside the fit plot."""
+    if fit_items.linear_fit_checkbox is None:
+        return
+    fit_items.linear_fit_checkbox.move(70, 10)

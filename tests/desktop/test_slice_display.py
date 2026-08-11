@@ -15,7 +15,12 @@ from ephys_alignment_gui.core.slice_display_policy import (
 )
 from ephys_alignment_gui.desktop.slice_display import (
     DesktopSliceDisplay,
-    DesktopSliceDisplayPorts,
+    DesktopSliceDisplayConfig,
+)
+from ephys_alignment_gui.desktop.slice_panel_presenter import (
+    SlicePanelPlots,
+    SlicePanelStyle,
+    SlicePanelView,
 )
 
 
@@ -89,9 +94,16 @@ class FakeMenu:
     def __init__(self, title: str) -> None:
         self.title = title
         self.actions: list[FakeAction] = []
+        self.enabled = True
+
+    def clear(self) -> None:
+        self.actions.clear()
 
     def addAction(self, action: FakeAction) -> None:
         self.actions.append(action)
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
 
 
 class FakeMenuBar:
@@ -111,8 +123,15 @@ class FakeQueries:
         self.slices = SimpleNamespace(
             active_slice_menu_state=self.active_slice_menu_state,
         )
+        self.workspace = SimpleNamespace(
+            depth_view_settings=lambda: SimpleNamespace(plot_y_range_um=(0.0, 1.0)),
+        )
 
-    def active_slice_menu_state(self, *, offline: bool) -> ActiveSliceMenuState | None:
+    def active_slice_menu_state(
+        self,
+        *,
+        offline: bool,
+    ) -> ActiveSliceMenuState | None:
         self.offline_values.append(offline)
         return self.menu_state
 
@@ -142,20 +161,34 @@ def _display(
     menu_state: ActiveSliceMenuState | None,
 ) -> tuple[DesktopSliceDisplay, FakeQueries, list[SliceSelection]]:
     queries = FakeQueries(menu_state)
-    display = DesktopSliceDisplay.create(
-        app=SimpleNamespace(queries=queries),
-        ports=DesktopSliceDisplayPorts(
-            coronal_plot=None,
-            coronal_layout=None,
-            histogram_alt=None,
-            perpendicular_plot=None,
+    view = SlicePanelView(
+        plots=SlicePanelPlots(
+            coronal=object(),
+            coronal_layout=object(),
+            histogram_alt=object(),
+            perpendicular=object(),
+            area=object(),
+        ),
+        style=SlicePanelStyle(
             dotted_pen=None,
             solid_pen=None,
             reference_line_pen=None,
+        ),
+        histology_exists=lambda: True,
+    )
+    display = DesktopSliceDisplay.create(
+        app=SimpleNamespace(queries=queries),
+        config=DesktopSliceDisplayConfig(
+            dotted_pen=None,
+            solid_pen=None,
+            reference_line_pen=None,
+            set_axis=lambda *args, **kwargs: None,
+            padding_provider=lambda: 0.0,
             histology_exists=lambda: True,
         ),
         action_factory=FakeAction,
         action_group_factory=FakeActionGroup,
+        view_factory=lambda **kwargs: view,
     )
     calls: list[SliceSelection] = []
     display.panel.plot_slice_selection = calls.append
@@ -203,6 +236,34 @@ def test_slice_display_restores_selection_and_reports_fallback(caplog) -> None:
     assert "falling back to 'CCF'" in caplog.text
 
 
+def test_slice_display_rerenders_actions_before_restore() -> None:
+    previous_state = _menu_state(
+        default=_selection("ccf"),
+        selected=_selection("ccf"),
+    )
+    fallback = _selection("histology_registration")
+    next_state = _menu_state(
+        default=fallback,
+        selected=fallback,
+    )
+    display, queries, calls = _display(previous_state)
+    display.attach_slice_menu(FakeMenuBar(), parent=object(), offline=True)
+    queries.menu_state = next_state
+
+    display.restore_selection(
+        next_state,
+        _selection("old_channel"),
+        "Old channel",
+    )
+
+    assert [action.text() for action in display.action_group.actions()] == [
+        "CCF",
+        "Registration",
+    ]
+    assert calls == [fallback]
+    assert display.action_group.checkedAction().text() == "Registration"
+
+
 def test_slice_display_toggles_slice_actions() -> None:
     display, _queries, calls = _display(
         _menu_state(
@@ -217,7 +278,7 @@ def test_slice_display_toggles_slice_actions() -> None:
     display.toggle_slice_plot(reverse=True)
 
     assert calls == [
-        _selection("ccf"),
         _selection("histology_registration"),
         _selection("ccf"),
+        _selection("histology_registration"),
     ]

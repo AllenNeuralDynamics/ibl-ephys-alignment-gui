@@ -12,9 +12,7 @@ from PyQt5 import QtWidgets
 from ephys_alignment_gui.core.alignment_read_models import ActiveSliceMenuState
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
 from ephys_alignment_gui.desktop.slice_panel_presenter import (
-    SlicePanelPlots,
     SlicePanelPresenter,
-    SlicePanelStyle,
     SlicePanelView,
 )
 
@@ -22,18 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class DesktopSliceDisplayPorts:
-    """Desktop handles and callbacks needed to build the slice display."""
+class DesktopSliceDisplayConfig:
+    """External style/callback dependencies needed to build the slice display."""
 
-    coronal_plot: Any
-    coronal_layout: Any
-    histogram_alt: Any
-    perpendicular_plot: Any
     dotted_pen: Any
     solid_pen: Any
     reference_line_pen: Any
+    set_axis: Callable[..., Any]
+    padding_provider: Callable[[], float]
     histology_exists: Callable[[], bool]
-    slice_item: Any = None
 
 
 @dataclass(frozen=True)
@@ -46,8 +41,10 @@ class SliceSelectionSnapshot:
 
 @dataclass
 class _SliceMenuHandles:
+    menu: Any = None
     action_group: Any = None
     initial_action: Any = None
+    parent: Any = None
 
 
 @dataclass
@@ -63,19 +60,35 @@ class DesktopSliceMenuPresenter:
     def attach_menu(self, menu_bar: Any, *, parent: Any, offline: bool) -> None:
         """Create the Slice Plots menu on a desktop menu bar."""
         slice_options = menu_bar.addMenu("Slice Plots")
-        action_group = self.action_group_factory(slice_options)
+        self.handles.menu = slice_options
+        self.handles.parent = parent
+
+        menu_state = self.app.queries.slices.active_slice_menu_state(offline=offline)
+        self.render_menu(menu_state)
+
+    def render_menu(self, menu_state: ActiveSliceMenuState | None) -> None:
+        """Render Slice Plots menu actions from the current slice-menu state."""
+        menu = self.handles.menu
+        if menu is None:
+            return
+        clear = getattr(menu, "clear", None)
+        if callable(clear):
+            clear()
+        action_group = self.action_group_factory(menu)
         action_group.setExclusive(True)
         self.handles.action_group = action_group
         self.handles.initial_action = None
 
-        menu_state = self.app.queries.slices.active_slice_menu_state(offline=offline)
         if menu_state is None:
+            self._set_menu_enabled(False)
             return
 
+        selected_selection = menu_state.selection.selection
+        selected_action = None
         for item in menu_state.items:
             action = self.action_factory(
                 item.label,
-                parent,
+                self.handles.parent,
                 checkable=True,
                 checked=False,
             )
@@ -85,13 +98,21 @@ class DesktopSliceMenuPresenter:
                     self.panel.plot_slice_selection(selection)
                 )
             )
-            slice_options.addAction(action)
+            menu.addAction(action)
             action_group.addAction(action)
             if item.selection == menu_state.default_selection:
                 self.handles.initial_action = action
+            if item.selection == selected_selection:
+                selected_action = action
 
-        if self.handles.initial_action is None and action_group.actions():
-            self.handles.initial_action = action_group.actions()[0]
+        actions = action_group.actions()
+        if self.handles.initial_action is None and actions:
+            self.handles.initial_action = actions[0]
+        if selected_action is None:
+            selected_action = self.handles.initial_action
+        if selected_action is not None:
+            selected_action.setChecked(True)
+        self._set_menu_enabled(bool(actions))
 
     def capture_selection(self) -> SliceSelectionSnapshot:
         """Capture the checked slice menu action, if one exists."""
@@ -114,6 +135,7 @@ class DesktopSliceMenuPresenter:
             logger.warning("No default slice selection is available")
             return
 
+        self.render_menu(slice_menu_state)
         choice = slice_menu_state.selection
         selected_action = self.panel.action_for_selection(choice.selection)
         if selected_action is None:
@@ -139,6 +161,12 @@ class DesktopSliceMenuPresenter:
         selected_selection = SliceSelection.from_payload(selected_action.data())
         if selected_selection is not None:
             self.panel.plot_slice_selection(selected_selection)
+
+    def _set_menu_enabled(self, enabled: bool) -> None:
+        menu = self.handles.menu
+        set_enabled = getattr(menu, "setEnabled", None)
+        if callable(set_enabled):
+            set_enabled(enabled)
 
     def checked_action(self) -> Any:
         """Return the checked slice QAction, if the menu exists."""
@@ -188,26 +216,21 @@ class DesktopSliceDisplay:
         cls,
         *,
         app: Any,
-        ports: DesktopSliceDisplayPorts,
+        config: DesktopSliceDisplayConfig,
         action_factory: Callable[..., Any] = QtWidgets.QAction,
         action_group_factory: Callable[..., Any] = QtWidgets.QActionGroup,
+        view_factory: Callable[..., SlicePanelView] = SlicePanelView.create,
     ) -> DesktopSliceDisplay:
-        """Build the slice display cluster from desktop ports."""
+        """Build the slice display cluster from desktop dependencies."""
         handles = _SliceMenuHandles()
-        view = SlicePanelView(
-            plots=SlicePanelPlots(
-                coronal=ports.coronal_plot,
-                coronal_layout=ports.coronal_layout,
-                histogram_alt=ports.histogram_alt,
-                perpendicular=ports.perpendicular_plot,
-            ),
-            style=SlicePanelStyle(
-                dotted_pen=ports.dotted_pen,
-                solid_pen=ports.solid_pen,
-                reference_line_pen=ports.reference_line_pen,
-            ),
-            histology_exists=ports.histology_exists,
-            slice_item=ports.slice_item,
+        view = view_factory(
+            depth_view=app.queries.workspace.depth_view_settings(),
+            padding=config.padding_provider(),
+            set_axis=config.set_axis,
+            dotted_pen=config.dotted_pen,
+            solid_pen=config.solid_pen,
+            reference_line_pen=config.reference_line_pen,
+            histology_exists=config.histology_exists,
         )
         panel = SlicePanelPresenter(
             app=app,
@@ -232,6 +255,29 @@ class DesktopSliceDisplay:
         """Return the Slice Plots QActionGroup, if menus have been attached."""
         return self.handles.action_group
 
+    @property
+    def area(self) -> Any:
+        """Return the top-level coronal slice panel widget."""
+        return self.panel.view.plots.area
+
+    @property
+    def coronal_plot(self) -> Any:
+        """Return the coronal slice plot handle."""
+        return self.panel.view.plots.coronal
+
+    @property
+    def perpendicular_plot(self) -> Any:
+        """Return the perpendicular slice plot handle."""
+        return self.panel.view.plots.perpendicular
+
+    def set_perpendicular_depth_link(self, linked_plot: Any) -> None:
+        """Link the perpendicular slice y-axis to the histology depth plot."""
+        self.panel.view.set_perpendicular_depth_link(linked_plot)
+
+    def capture_export_geometry(self) -> tuple[float, float, Any]:
+        """Capture slice plot geometry for zoomed plot export."""
+        return self.panel.view.capture_export_geometry()
+
     def clear(self) -> None:
         """Clear slice-panel plot items and forget desktop handles."""
         self.panel.clear()
@@ -239,6 +285,10 @@ class DesktopSliceDisplay:
     def attach_slice_menu(self, menu_bar: Any, *, parent: Any, offline: bool) -> None:
         """Attach the Slice Plots menu to a desktop menu bar."""
         self.menu_presenter.attach_menu(menu_bar, parent=parent, offline=offline)
+
+    def render_slice_menu(self, slice_menu_state: ActiveSliceMenuState | None) -> None:
+        """Render Slice Plots menu actions from the active shank menu state."""
+        self.menu_presenter.render_menu(slice_menu_state)
 
     def capture_selection(self) -> SliceSelectionSnapshot:
         """Capture the selected slice menu entry."""
