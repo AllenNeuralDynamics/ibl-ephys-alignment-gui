@@ -160,6 +160,7 @@ class AlignmentWorkspace:
         self.path_commands = PathCommandHandler(
             controller=self.controller,
             data_context=self.data_context,
+            events=self.events,
         )
         self.metadata_commands = MetadataSelectionCommandHandler(
             controller=self.controller,

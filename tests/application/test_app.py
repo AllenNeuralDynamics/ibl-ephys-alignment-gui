@@ -53,6 +53,8 @@ from ephys_alignment_gui.core.alignment_events import (
     LoadDataCancelled,
     LoadDataFailed,
     LoadDataProgressed,
+    OutputDirectoryChanged,
+    OutputRootChanged,
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
@@ -1246,6 +1248,9 @@ def test_commands_evict_stream_cache_allows_dirty_missing_runtime() -> None:
 
 def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     workspace = AlignmentWorkspace()
+    path_events: list[object] = []
+    workspace.app.events.subscribe(OutputRootChanged, path_events.append)
+    workspace.app.events.subscribe(OutputDirectoryChanged, path_events.append)
     loaded_root = SimpleNamespace(root=tmp_path / "mouse", mouse_id="mouse")
     loaded_root.root.mkdir()
     probe = _probe_info()
@@ -1270,6 +1275,16 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     assert isinstance(derived_result, OutputDirectoryDerived)
     assert derived_result.output_directory == tmp_path / "results" / "rec" / "probeA"
     assert workspace.document.output_directory == derived_result.output_directory
+    assert path_events == [
+        OutputRootChanged(
+            output_root=tmp_path / "results",
+            output_directory=tmp_path / "results" / "rec" / "probeA",
+        ),
+        OutputDirectoryChanged(
+            output_root=tmp_path / "results",
+            output_directory=tmp_path / "results" / "rec" / "probeA",
+        ),
+    ]
 
 
 def test_commands_can_load_data_delegates_to_workflow_policy() -> None:

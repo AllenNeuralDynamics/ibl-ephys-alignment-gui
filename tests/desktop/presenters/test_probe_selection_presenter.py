@@ -146,7 +146,6 @@ def _presenter(
                 *args,
                 **kwargs,
             ),
-            display_output_directory=lambda path: calls.append(("output", path)),
         ),
     )
     return presenter, commands, calls
@@ -197,7 +196,6 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
     ) in calls
     assert ("populate", ["1/2", "2/2"]) in calls
     assert commands.shank_calls == [(0, "probe-selected")]
-    assert ("output", Path("/tmp/out")) in calls
     assert calls[-1] == ("enable", True)
 
 
@@ -223,4 +221,3 @@ def test_probe_selected_shank_selection_failure_disables_load_button() -> None:
     assert commands.calls == [("rec", "probeA")]
     assert commands.shank_calls == [(0, "probe-selected")]
     assert ("enable", False) in calls
-    assert ("output", Path("/tmp/out")) not in calls

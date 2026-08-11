@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
 SCHEMA_NAME = "aind-ibl-ephys-alignment-datapackage"
-SUPPORTED_SCHEMA_VERSIONS = ("3.1.0", "3.2.0", "4.0.0")
+SUPPORTED_SCHEMA_VERSIONS = ("3.0.0", "3.1.0", "3.2.0", "4.0.0")
 SCHEMA_RESOURCE_PARTS = ("schemas", SCHEMA_NAME)
 
 

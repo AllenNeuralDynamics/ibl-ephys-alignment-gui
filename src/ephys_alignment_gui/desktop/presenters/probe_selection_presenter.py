@@ -6,7 +6,6 @@ import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.results import ShankSelected
@@ -24,7 +23,6 @@ class DesktopProbeSelectionCallbacks:
     present_cached_probe_selection: Callable[[str, str, int], bool]
     show_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
-    display_output_directory: Callable[[Path | None], None]
 
 
 @dataclass
@@ -94,8 +92,6 @@ class DesktopProbeSelectionPresenter:
             if not isinstance(selected, ShankSelected):
                 self.selection_view.set_load_data_enabled(False)
                 return False
-
-            callbacks.display_output_directory(result.output_directory)
 
         self.selection_view.set_load_data_enabled(True)
         return True

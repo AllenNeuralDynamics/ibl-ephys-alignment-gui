@@ -10,6 +10,11 @@ from ephys_alignment_gui.application.results.path import (
     OutputRootSet,
 )
 from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.alignment_events import (
+    OutputDirectoryChanged,
+    OutputRootChanged,
+)
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.presenters.output_path_presenter import (
     DesktopOutputPathPresenter,
 )
@@ -36,6 +41,8 @@ class FakeCommands:
         *,
         derive_result: Any | None = None,
         set_result: Any | None = None,
+        events: EventBus | None = None,
+        output_root: Path | None = Path("/results"),
     ) -> None:
         self.derive_result = derive_result or OutputDirectoryDerived(
             Path("/results/rec/probe")
@@ -44,15 +51,34 @@ class FakeCommands:
             Path("/results"),
             Path("/results/rec/probe"),
         )
+        self.events = events
+        self.output_root = output_root
         self.derive_calls = 0
         self.set_calls: list[Path] = []
 
     def derive_output_directory(self):
         self.derive_calls += 1
+        if self.events is not None and isinstance(
+            self.derive_result,
+            OutputDirectoryDerived,
+        ):
+            self.events.emit(
+                OutputDirectoryChanged(
+                    output_root=self.output_root,
+                    output_directory=self.derive_result.output_directory,
+                )
+            )
         return self.derive_result
 
     def set_output_root(self, output_root: Path):
         self.set_calls.append(output_root)
+        if self.events is not None and isinstance(self.set_result, OutputRootSet):
+            self.events.emit(
+                OutputRootChanged(
+                    output_root=self.set_result.output_root,
+                    output_directory=self.set_result.output_directory,
+                )
+            )
         return self.set_result
 
 
@@ -63,11 +89,15 @@ def _presenter(
     output_text: str = "/results",
 ) -> tuple[DesktopOutputPathPresenter, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
-    commands = commands or FakeCommands()
+    events = EventBus()
+    commands = commands or FakeCommands(events=events)
+    commands.events = events
     presenter = DesktopOutputPathPresenter(
         commands=commands,
+        events=events,
         path_view=FakePathView(calls, output_text=output_text),
     )
+    presenter.connect_path_events()
     return presenter, commands, calls
 
 
@@ -87,7 +117,7 @@ def test_derive_output_directory_returns_false_without_probe_output() -> None:
 
     assert not presenter.derive_output_directory_from_save_root()
 
-    assert calls == []
+    assert calls == [("output-root", Path("/results"))]
 
 
 def test_set_save_root_renders_probe_output_when_available() -> None:
@@ -138,3 +168,17 @@ def test_output_folder_edited_ignores_empty_text() -> None:
 
     assert commands.set_calls == []
     assert calls == []
+
+
+def test_output_directory_event_clears_path_when_no_root_or_directory() -> None:
+    presenter, commands, calls = _presenter(
+        commands=FakeCommands(
+            derive_result=OutputDirectoryDerived(None),
+            output_root=None,
+        )
+    )
+
+    assert not presenter.derive_output_directory_from_save_root()
+
+    assert commands.derive_calls == 1
+    assert calls == [("output-dir", None)]

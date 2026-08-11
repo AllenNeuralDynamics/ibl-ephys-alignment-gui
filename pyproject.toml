@@ -41,6 +41,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 ephys_alignment_gui = [
+  "io/schemas/aind-ibl-ephys-alignment-datapackage/3.0.0/datapackage.schema.json",
   "io/schemas/aind-ibl-ephys-alignment-datapackage/3.1.0/datapackage.schema.json",
   "io/schemas/aind-ibl-ephys-alignment-datapackage/3.2.0/datapackage.schema.json",
   "io/schemas/aind-ibl-ephys-alignment-datapackage/4.0.0/datapackage.schema.json",

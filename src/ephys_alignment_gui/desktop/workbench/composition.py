@@ -111,6 +111,7 @@ def build_desktop_workbench_presenter_cluster(
     """Build desktop Workbench presenters outside the Workbench class."""
     output_path_presenter = DesktopOutputPathPresenter(
         commands=app.commands.paths,
+        events=app.events,
         path_view=views.path,
     )
     lifecycle_presenter = DesktopLifecyclePresenter(
@@ -366,7 +367,6 @@ def _load_data_callbacks(
         prepare_for_fresh_stream_load=(
             lifecycle_presenter.prepare_for_fresh_stream_load
         ),
-        display_output_directory=output_path_presenter.display_output_directory,
         render_loaded_shank=lambda shank_idx, preserve: (
             shank_presenter.render_loaded_shank(
                 shank_idx=shank_idx,
@@ -401,7 +401,6 @@ def _probe_selection_callbacks(
         ),
         show_empty_state=show_empty_state,
         busy_context=busy_ports.busy_context,
-        display_output_directory=output_path_presenter.display_output_directory,
     )
 
 

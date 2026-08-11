@@ -247,6 +247,36 @@ def test_histology_paths_are_absolute(tmp_path):
     assert mr.histology.additional_channels["Ex_561_Em_600"].is_file()
 
 
+def test_loads_3_0_external_reference_datapackage(tmp_path):
+    root = _make_mouse_root(tmp_path, schema_version="3.0.0")
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["histology"]["image_space"]["registration"] = {
+        "path": "image_space_histology/histology_registration.nrrd"
+    }
+    dp_path.write_text(json.dumps(data))
+
+    mr = _load(root)
+
+    assert mr.schema_version == "3.0.0"
+    assert mr.histology.registration == (
+        root / "image_space_histology" / "histology_registration.nrrd"
+    )
+
+
+def test_3_0_requires_ccf_pick(tmp_path):
+    root = _make_mouse_root(
+        tmp_path,
+        schema_version="3.0.0",
+        ccf_null=True,
+    )
+    with pytest.raises(
+        DataPackageError,
+        match="does not match vendored schema 3.0.0",
+    ):
+        _load(root)
+
+
 def test_loads_3_2_pipeline_geometry_sidecar(tmp_path):
     root = _make_mouse_root(
         tmp_path,
@@ -447,15 +477,6 @@ def test_rejects_older_schema(tmp_path):
     """Pre-3.0.0 datapackages used string paths and must be regenerated."""
     root = _make_mouse_root(tmp_path, schema_version="2.1.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
-        _load(root)
-
-
-def test_rejects_unvendored_schema_version(tmp_path):
-    root = _make_mouse_root(tmp_path, schema_version="3.0.0")
-    with pytest.raises(
-        DataPackageError,
-        match="GUI supports bundled schemas: 3.1.0, 3.2.0, 4.0.0",
-    ):
         _load(root)
 
 

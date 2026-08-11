@@ -589,7 +589,6 @@ def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
     return DesktopLoadDataCallbacks(
         reference_line_positions=lambda: calls.append(("positions",)) or ([1.0], [2.0]),
         prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
-        display_output_directory=lambda path: calls.append(("output", path)),
         render_loaded_shank=lambda shank_idx, preserve: calls.append(
             ("render-shank", shank_idx, preserve)
         ),
@@ -667,7 +666,6 @@ def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
         ("positions",),
         ("clear-empty",),
         ("populate", ["1/2", "2/2"], 0),
-        ("output", Path("/tmp/out")),
         ("render-shank", 0, True),
         ("enable-load", True),
     ]

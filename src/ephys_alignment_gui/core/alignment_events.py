@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
@@ -42,6 +43,22 @@ class ShankChanged:
     active_key: AlignmentKey | None
     data_loaded: bool
     preserve_plot_selection: bool | None = None
+
+
+@dataclass(frozen=True)
+class OutputRootChanged:
+    """Payload emitted after the output root path changes."""
+
+    output_root: Path
+    output_directory: Path | None
+
+
+@dataclass(frozen=True)
+class OutputDirectoryChanged:
+    """Payload emitted after the active per-probe output directory is refreshed."""
+
+    output_root: Path | None
+    output_directory: Path | None
 
 
 StreamActivationSource = Literal["cached", "fresh"]

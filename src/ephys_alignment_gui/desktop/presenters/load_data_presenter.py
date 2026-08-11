@@ -6,7 +6,6 @@ import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.results import (
@@ -47,7 +46,6 @@ class DesktopLoadDataCallbacks:
 
     reference_line_positions: Callable[[], Any]
     prepare_for_fresh_stream_load: Callable[[], None]
-    display_output_directory: Callable[[Path | None], None]
     render_loaded_shank: Callable[[int, bool | None], None]
     clear_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
@@ -318,9 +316,6 @@ class DesktopLoadDataPresenter:
                 selection_state.shanks,
                 event.shank_idx,
             )
-        if selection_state is not None:
-            callbacks.display_output_directory(selection_state.output_directory)
-
         callbacks.render_loaded_shank(
             event.shank_idx,
             event.preserve_plot_selection,

@@ -281,9 +281,15 @@ class FakeProbeSelectionPresenter:
 
 
 class FakeOutputPathPresenter:
-    def __init__(self) -> None:
+    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
+        self.subscriptions = subscriptions or []
+        self.connect_count = 0
         self.save_roots: list[Any] = []
         self.edited_count = 0
+
+    def connect_path_events(self) -> list[FakeSubscription]:
+        self.connect_count += 1
+        return self.subscriptions
 
     def set_save_root(self, save_root: Any) -> bool:
         self.save_roots.append(save_root)
@@ -601,12 +607,14 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     alignment_sub = FakeSubscription()
     shank_sub = FakeSubscription()
     load_sub = FakeSubscription()
+    output_path_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
     save_sub = FakeSubscription()
     previous_alignment_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
     load_data = FakeLoadDataPresenter([load_sub])
+    output_path = FakeOutputPathPresenter([output_path_sub])
     lifecycle = FakeLifecyclePresenter([lifecycle_sub])
     save = FakeSavePresenter([save_sub])
     previous_alignment_load = FakePreviousAlignmentLoadPresenter(
@@ -617,6 +625,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
         shank,
         FakeHistologyDisplay(),
         load_data=load_data,
+        output_path=output_path,
         lifecycle=lifecycle,
         save=save,
         previous_alignment_load=previous_alignment_load,
@@ -629,6 +638,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
         alignment_sub,
         shank_sub,
         load_sub,
+        output_path_sub,
         lifecycle_sub,
         save_sub,
         previous_alignment_sub,
@@ -637,6 +647,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert alignment.connect_count == 1
     assert shank.connect_count == 1
     assert load_data.connect_count == 1
+    assert output_path.connect_count == 1
     assert lifecycle.connect_count == 1
     assert save.connect_count == 1
     assert previous_alignment_load.connect_count == 1
@@ -647,6 +658,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
+    assert output_path_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1
     assert save_sub.disconnect_count == 1
     assert previous_alignment_sub.disconnect_count == 1
@@ -656,15 +668,18 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     alignment_sub = FakeSubscription()
     shank_sub = FakeSubscription()
     load_sub = FakeSubscription()
+    output_path_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
     save_sub = FakeSubscription()
     previous_alignment_sub = FakeSubscription()
     load_data = FakeLoadDataPresenter([load_sub])
+    output_path = FakeOutputPathPresenter([output_path_sub])
     workbench = _workbench(
         FakeAlignmentPresenter([alignment_sub]),
         FakeShankPresenter([shank_sub]),
         FakeHistologyDisplay(),
         load_data=load_data,
+        output_path=output_path,
         lifecycle=FakeLifecyclePresenter([lifecycle_sub]),
         save=FakeSavePresenter([save_sub]),
         previous_alignment_load=FakePreviousAlignmentLoadPresenter(
@@ -679,6 +694,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
+    assert output_path_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1
     assert save_sub.disconnect_count == 1
     assert previous_alignment_sub.disconnect_count == 1

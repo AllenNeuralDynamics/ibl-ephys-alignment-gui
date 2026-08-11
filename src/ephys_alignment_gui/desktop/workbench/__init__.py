@@ -80,6 +80,9 @@ class DesktopWorkbench:
             self.presenter_cluster.load_data_presenter.connect_load_events()
         )
         self._event_subscriptions.extend(
+            self.presenter_cluster.output_path_presenter.connect_path_events()
+        )
+        self._event_subscriptions.extend(
             self.presenter_cluster.lifecycle_presenter.connect_lifecycle_events()
         )
         self._event_subscriptions.extend(
