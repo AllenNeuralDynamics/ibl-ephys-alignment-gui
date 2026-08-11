@@ -264,3 +264,27 @@ def test_ephys_plot_presenter_renders_defaults_for_new_shank() -> None:
         ("probe", {"payload": "probe.depth"}, [1, 2]),
         ("line", {"payload": "line.depth"}),
     ]
+
+
+def test_ephys_plot_presenter_redraws_preserved_selections() -> None:
+    calls: list[Any] = []
+    presenter, _queries, commands = _presenter(calls)
+    state = ActiveShankScreenState(
+        shank_idx=0,
+        shank_id=1,
+        alignment_key=None,
+        data_loaded=True,
+        preserve_plot_selection=True,
+        unit_filter="KS good",
+        plot_menu=_plot_menu_state(),
+        slice_menu=None,
+    )
+
+    presenter.render_shank_ephys_plots(state)
+
+    assert commands.unit_filters == []
+    assert calls == [
+        ("image", {"payload": "image.second"}),
+        ("line", {"payload": "line.depth"}),
+        ("probe", {"payload": "probe.depth"}, [1, 2]),
+    ]

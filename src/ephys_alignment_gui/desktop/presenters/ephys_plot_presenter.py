@@ -160,6 +160,7 @@ class DesktopEphysPlotPresenter:
                 action = self.checked_action(menu)
                 if action is not None:
                     action.setChecked(True)
+            self.update_plot()
             return
 
         self.set_initial_actions_checked()
