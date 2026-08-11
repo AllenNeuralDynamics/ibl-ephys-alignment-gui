@@ -182,6 +182,24 @@ class LoadDataFreshPrepared:
 
 
 @dataclass(frozen=True)
+class FreshLoadExecution:
+    """Foreground fresh-load execution handle held by UI callers."""
+
+    load_id: int
+    prepared: LoadDataFreshPrepared
+
+
+@dataclass(frozen=True)
+class LoadDataStaleResultIgnored:
+    """A completed load result was ignored because the request is obsolete."""
+
+    load_id: int
+    stream_key: StreamKey | None
+    shank_idx: int
+    reason: str
+
+
+@dataclass(frozen=True)
 class LoadDataFreshRequiredResult:
     """The requested stream is not cached and requires an explicit fresh load."""
 

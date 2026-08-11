@@ -59,6 +59,7 @@ class StreamActivated:
     shank_idx: int
     active_key: AlignmentKey | None
     preserve_plot_selection: bool | None = None
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class LoadDataProgressed:
     phase: LoadDataPhase
     status: LoadDataStatus
     message: str
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,7 @@ class FreshLoadCompleted:
     stream_key: tuple[str, str] | None
     shank_idx: int
     warning_messages: tuple[str, ...] = ()
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +105,7 @@ class LoadDataFailed:
     stream_key: tuple[str, str] | None
     shank_idx: int
     message: str
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,7 @@ class LoadDataCancelled:
     stream_key: tuple[str, str] | None
     shank_idx: int
     reason: str
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +126,7 @@ class HistologyLoadReported:
     shank_idx: int
     status: HistologyLoadStatus
     message: str | None = None
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)

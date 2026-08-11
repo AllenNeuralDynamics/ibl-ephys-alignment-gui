@@ -9,6 +9,7 @@ from typing import Any
 from ephys_alignment_gui.application.results import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
+    FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
@@ -101,15 +102,23 @@ class FakeCommands:
             ("rec", "stream"), 0
         )
         self.begin_calls: list[dict[str, Any]] = []
+        self.start_calls: list[LoadDataFreshPrepared] = []
         self.run_calls: list[LoadDataFreshPrepared] = []
         self.activate_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
+        self._next_load_id = 1
         self.load = self
 
     def begin_load_data(self, **kwargs):
         self.begin_calls.append(kwargs)
         self._emit_activation_for_result(self.begin_result)
         return self.begin_result
+
+    def start_fresh_load_data(self, prepared: LoadDataFreshPrepared):
+        self.start_calls.append(prepared)
+        execution = FreshLoadExecution(self._next_load_id, prepared)
+        self._next_load_id += 1
+        return execution
 
     def run_fresh_load_data(self, prepared: LoadDataFreshPrepared, **kwargs):
         self.run_calls.append(prepared)
@@ -129,6 +138,36 @@ class FakeCommands:
             self._emit_fresh_load_completed(prepared)
         return self.job_result
 
+    def run_started_fresh_load_data(self, execution: FreshLoadExecution, **kwargs):
+        self.run_calls.append(execution.prepared)
+        self._emit_load_data_progress(
+            LoadDataJobProgress(
+                target=execution.prepared.target,
+                phase="ephys",
+                status="started",
+                message="Loading ephys data...",
+                load_id=execution.load_id,
+            )
+        )
+        if isinstance(self.job_result, Failed):
+            self._emit_load_data_failed(
+                self.job_result.message,
+                execution.prepared,
+                load_id=execution.load_id,
+            )
+        elif isinstance(self.job_result, LoadDataJobCancelled):
+            self._emit_load_data_cancelled(
+                self.job_result.reason,
+                execution.prepared,
+                load_id=execution.load_id,
+            )
+        else:
+            self._emit_fresh_load_completed(
+                execution.prepared,
+                load_id=execution.load_id,
+            )
+        return self.job_result
+
     def activate_completed_fresh_load_data(
         self,
         prepared: LoadDataFreshPrepared,
@@ -142,12 +181,38 @@ class FakeCommands:
         self._emit_activation_for_result(self.complete_result)
         return self.complete_result
 
+    def activate_started_fresh_load_data(
+        self,
+        execution: FreshLoadExecution,
+        job_result: Any,
+    ):
+        self.activate_calls.append((execution.prepared, job_result))
+        if isinstance(self.complete_result, Failed):
+            self._emit_load_data_failed(
+                self.complete_result.message,
+                execution.prepared,
+                load_id=execution.load_id,
+            )
+            return self.complete_result
+        self._emit_histology_report(
+            self.complete_result,
+            execution.prepared,
+            load_id=execution.load_id,
+        )
+        self._emit_activation_for_result(self.complete_result, load_id=execution.load_id)
+        return self.complete_result
+
     def activate_cached_probe_selection(self, **kwargs):
         self.probe_cache_calls.append(kwargs)
         self._emit_activation_for_result(self.probe_cache_result)
         return self.probe_cache_result
 
-    def _emit_activation_for_result(self, result: Any) -> None:
+    def _emit_activation_for_result(
+        self,
+        result: Any,
+        *,
+        load_id: int | None = None,
+    ) -> None:
         if self.events is None:
             return
         if isinstance(result, LoadDataCachedActivated):
@@ -158,6 +223,7 @@ class FakeCommands:
                     shank_idx=result.activated.shank_idx,
                     active_key=None,
                     preserve_plot_selection=True,
+                    load_id=load_id,
                 )
             )
         if isinstance(result, LoadDataFreshCompleted):
@@ -168,6 +234,7 @@ class FakeCommands:
                     shank_idx=result.ephys.shank_idx,
                     active_key=None,
                     preserve_plot_selection=result.preserve_plot_selection,
+                    load_id=load_id,
                 )
             )
 
@@ -181,16 +248,23 @@ class FakeCommands:
                 phase=progress.phase,
                 status=progress.status,
                 message=progress.message,
+                load_id=progress.load_id,
             )
         )
 
-    def _emit_fresh_load_completed(self, prepared: LoadDataFreshPrepared) -> None:
+    def _emit_fresh_load_completed(
+        self,
+        prepared: LoadDataFreshPrepared,
+        *,
+        load_id: int | None = None,
+    ) -> None:
         if self.events is None:
             return
         self.events.emit(
             FreshLoadCompleted(
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
+                load_id=load_id,
             )
         )
 
@@ -198,6 +272,8 @@ class FakeCommands:
         self,
         message: str,
         prepared: LoadDataFreshPrepared,
+        *,
+        load_id: int | None = None,
     ) -> None:
         if self.events is None:
             return
@@ -206,6 +282,7 @@ class FakeCommands:
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
                 message=message,
+                load_id=load_id,
             )
         )
 
@@ -213,6 +290,8 @@ class FakeCommands:
         self,
         reason: str,
         prepared: LoadDataFreshPrepared,
+        *,
+        load_id: int | None = None,
     ) -> None:
         if self.events is None:
             return
@@ -221,6 +300,7 @@ class FakeCommands:
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
                 reason=reason,
+                load_id=load_id,
             )
         )
 
@@ -228,6 +308,8 @@ class FakeCommands:
         self,
         result: LoadDataFreshCompleted,
         prepared: LoadDataFreshPrepared,
+        *,
+        load_id: int | None = None,
     ) -> None:
         if self.events is None:
             return
@@ -238,6 +320,7 @@ class FakeCommands:
                     shank_idx=prepared.shank_idx,
                     status="unavailable",
                     message=result.histology.message,
+                    load_id=load_id,
                 )
             )
             return
@@ -246,6 +329,7 @@ class FakeCommands:
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
                 status="loaded",
+                load_id=load_id,
             )
         )
 
@@ -469,6 +553,7 @@ def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:
 
     assert presenter.load_heavy_data()
 
+    assert commands.start_calls == [prepared]
     assert commands.run_calls == [prepared]
     assert commands.activate_calls == [(prepared, commands.job_result)]
     assert ("prepare-fresh",) in calls
@@ -513,6 +598,37 @@ def test_load_heavy_data_returns_false_when_fresh_job_is_cancelled() -> None:
 
     assert commands.run_calls == [prepared]
     assert commands.activate_calls == []
+    assert ("render-shank", 0, True) not in calls
+
+
+def test_load_events_ignore_stale_load_ids() -> None:
+    presenter, commands, _queries, calls = _presenter()
+    presenter._active_load_context = FakeBusyContext(calls, "loading")
+    presenter._active_load_id = 2
+
+    assert commands.events is not None
+    commands.events.emit(
+        LoadDataProgressed(
+            stream_key=("rec", "stream"),
+            shank_idx=0,
+            phase="ephys",
+            status="started",
+            message="stale progress",
+            load_id=1,
+        )
+    )
+    commands.events.emit(
+        StreamActivated(
+            source="fresh",
+            stream_key=("rec", "stream"),
+            shank_idx=0,
+            active_key=None,
+            preserve_plot_selection=True,
+            load_id=1,
+        )
+    )
+
+    assert ("message", "stale progress") not in calls
     assert ("render-shank", 0, True) not in calls
 
 

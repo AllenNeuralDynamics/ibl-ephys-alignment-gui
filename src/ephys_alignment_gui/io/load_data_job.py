@@ -28,6 +28,7 @@ class LoadDataJobRequest:
     """Inputs for one fresh ephys/histology load job."""
 
     target: LoadDataJobTarget
+    load_id: int | None = None
 
 
 @dataclass
@@ -54,6 +55,7 @@ class LoadDataJobProgress:
     phase: LoadDataJobPhase
     status: LoadDataJobStatus
     message: str
+    load_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -99,9 +101,10 @@ class LoadDataJob:
     ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
         """Load fresh ephys data and best-effort histology runtime data."""
         target = request.target
+        load_id = request.load_id
         cancel_token = cancel_token or LoadDataCancelToken()
 
-        cancelled = self._cancelled(target, cancel_token, progress)
+        cancelled = self._cancelled(target, cancel_token, progress, load_id)
         if cancelled is not None:
             return cancelled
 
@@ -112,6 +115,7 @@ class LoadDataJob:
                 phase="ephys",
                 status="started",
                 message="Loading ephys data...",
+                load_id=load_id,
             ),
         )
         ephys_result = self._load_ephys(target)
@@ -124,10 +128,11 @@ class LoadDataJob:
                 phase="ephys",
                 status="completed",
                 message="Ephys data loaded",
+                load_id=load_id,
             ),
         )
 
-        cancelled = self._cancelled(target, cancel_token, progress)
+        cancelled = self._cancelled(target, cancel_token, progress, load_id)
         if cancelled is not None:
             return cancelled
 
@@ -138,6 +143,7 @@ class LoadDataJob:
                 phase="histology",
                 status="started",
                 message="Loading atlas and histology data...",
+                load_id=load_id,
             ),
         )
         histology = self.histology_runtime_loader.load_for_mouse_root(
@@ -153,6 +159,7 @@ class LoadDataJob:
                     phase=warning.phase,
                     status="warning",
                     message=warning.message,
+                    load_id=load_id,
                 ),
             )
 
@@ -163,10 +170,11 @@ class LoadDataJob:
                 phase="histology",
                 status="completed",
                 message="Atlas and histology load step complete",
+                load_id=load_id,
             ),
         )
 
-        cancelled = self._cancelled(target, cancel_token, progress)
+        cancelled = self._cancelled(target, cancel_token, progress, load_id)
         if cancelled is not None:
             return cancelled
 
@@ -177,6 +185,7 @@ class LoadDataJob:
                 phase="complete",
                 status="completed",
                 message="Fresh load job complete",
+                load_id=load_id,
             ),
         )
         return LoadDataJobCompleted(
@@ -200,6 +209,7 @@ class LoadDataJob:
         target: LoadDataJobTarget,
         cancel_token: LoadDataCancelToken,
         progress: LoadDataProgressCallback | None,
+        load_id: int | None,
     ) -> LoadDataJobCancelled | None:
         if not cancel_token.cancelled:
             return None
@@ -211,6 +221,7 @@ class LoadDataJob:
                 phase="cancelled",
                 status="cancelled",
                 message=f"Load cancelled: {reason}",
+                load_id=load_id,
             ),
         )
         return LoadDataJobCancelled(target=target, reason=reason)

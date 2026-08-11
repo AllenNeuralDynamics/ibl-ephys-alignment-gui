@@ -14,6 +14,9 @@ from ephys_alignment_gui.application.commands.alignment_persistence import (
 )
 from ephys_alignment_gui.application.commands.display import DisplayCommandHandler
 from ephys_alignment_gui.application.commands.load_data import LoadDataCommandHandler
+from ephys_alignment_gui.application.commands.load_data_lifecycle import (
+    LoadDataExecutionLifecycle,
+)
 from ephys_alignment_gui.application.commands.loaded_shank import (
     LoadedShankCommandHandler,
 )
@@ -108,6 +111,9 @@ class AlignmentWorkspace:
     )
     runtime: SessionRuntime = field(default_factory=SessionRuntime)
     events: EventBus = field(default_factory=EventBus)
+    load_data_lifecycle: LoadDataExecutionLifecycle = field(
+        default_factory=LoadDataExecutionLifecycle
+    )
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
     load_data_job: LoadDataJob = field(init=False)
@@ -168,6 +174,7 @@ class AlignmentWorkspace:
             display_state=self.display_state,
             runtime=self.runtime,
             load_data_job=self.load_data_job,
+            load_lifecycle=self.load_data_lifecycle,
             histology_runtime_loader=self.histology_runtime_loader,
             plot_payload_cache_factory=self.plot_payload_cache_factory,
             metadata_commands=self.metadata_commands,

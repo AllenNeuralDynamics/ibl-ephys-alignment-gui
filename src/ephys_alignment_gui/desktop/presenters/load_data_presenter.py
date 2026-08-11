@@ -15,6 +15,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
+    LoadDataStaleResultIgnored,
 )
 from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
@@ -50,6 +51,7 @@ class DesktopLoadDataPresenter:
     selection_view: Any
     callbacks: DesktopLoadDataCallbacks
     _active_load_context: Any | None = field(default=None, init=False, repr=False)
+    _active_load_id: int | None = field(default=None, init=False, repr=False)
 
     def connect_load_events(self) -> list[EventSubscription]:
         """Subscribe desktop load presentation to semantic load events."""
@@ -70,19 +72,27 @@ class DesktopLoadDataPresenter:
 
     def on_load_data_progressed(self, event: LoadDataProgressed) -> None:
         """Update desktop progress presentation for an active load context."""
+        if not self._event_matches_active_load(event.load_id):
+            return
         if self._active_load_context is not None:
             self._active_load_context.update_message(event.message)
 
     def on_load_data_failed(self, event: LoadDataFailed) -> None:
         """Log fresh-load failures reported by the app layer."""
+        if not self._event_matches_active_load(event.load_id):
+            return
         logger.error(event.message)
 
     def on_load_data_cancelled(self, event: LoadDataCancelled) -> None:
         """Log fresh-load cancellation reported by the app layer."""
+        if not self._event_matches_active_load(event.load_id):
+            return
         logger.info("Load cancelled: %s", event.reason)
 
     def on_histology_load_reported(self, event: HistologyLoadReported) -> None:
         """Log non-fatal histology availability for a fresh load."""
+        if not self._event_matches_active_load(event.load_id):
+            return
         if event.status in {"already_loaded", "loaded"}:
             logger.info("Atlas and histology loaded successfully")
         elif event.status == "unavailable" and event.message is not None:
@@ -90,6 +100,8 @@ class DesktopLoadDataPresenter:
 
     def on_stream_activated(self, event: StreamActivated) -> None:
         """Render desktop state for an activated stream/shank."""
+        if not self._event_matches_active_load(event.load_id):
+            return
         self._present_activated_stream(event)
 
     def load_heavy_data(self) -> bool:
@@ -113,6 +125,7 @@ class DesktopLoadDataPresenter:
             logger.info("Activated cached stream %s", begin_result.stream_key)
             return True
         assert isinstance(begin_result, LoadDataFreshPrepared)
+        execution = self.app.commands.load.start_fresh_load_data(begin_result)
 
         with callbacks.busy_context(
             "Loading heavy data...",
@@ -122,22 +135,25 @@ class DesktopLoadDataPresenter:
             logger.info("=== Starting heavy data load ===")
             callbacks.prepare_for_fresh_stream_load()
             self._active_load_context = ctx
+            self._active_load_id = execution.load_id
 
             try:
                 logger.info(
                     "Loading probe data, active shank index %s",
                     begin_result.shank_idx,
                 )
-                job_result = self.app.commands.load.run_fresh_load_data(begin_result)
+                job_result = self.app.commands.load.run_started_fresh_load_data(
+                    execution,
+                )
                 if isinstance(job_result, Failed | LoadDataJobCancelled):
                     return False
 
                 ctx.update_message("Setting up visualization...")
-                completed = self.app.commands.load.activate_completed_fresh_load_data(
-                    begin_result,
+                completed = self.app.commands.load.activate_started_fresh_load_data(
+                    execution,
                     job_result,
                 )
-                if isinstance(completed, Failed):
+                if isinstance(completed, Failed | LoadDataStaleResultIgnored):
                     return False
                 assert isinstance(completed, LoadDataFreshCompleted)
                 stream_runtime = completed.ephys.stream_runtime
@@ -149,6 +165,7 @@ class DesktopLoadDataPresenter:
                 logger.info("=== Heavy data load complete ===")
             finally:
                 self._active_load_context = None
+                self._active_load_id = None
         return True
 
     def present_cached_probe_selection(
@@ -197,3 +214,7 @@ class DesktopLoadDataPresenter:
             event.preserve_plot_selection,
         )
         self.selection_view.set_load_data_enabled(True)
+
+    def _event_matches_active_load(self, load_id: int | None) -> bool:
+        """Return whether a load event should affect the current desktop state."""
+        return load_id is None or load_id == self._active_load_id

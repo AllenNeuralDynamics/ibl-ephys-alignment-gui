@@ -15,12 +15,14 @@ from ephys_alignment_gui.application.results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
     CachedEphysDataActivated,
+    FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataCachedActivated,
     LoadDataFreshCompleted,
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
     LoadDataPrepared,
+    LoadDataStaleResultIgnored,
     LoadedShankPrepared,
     PendingReferenceLinesUpdated,
     PreviousAlignmentSelected,
@@ -384,6 +386,7 @@ class FakeLoadDataJob:
                     phase="ephys",
                     status="started",
                     message="Loading ephys data...",
+                    load_id=request.load_id,
                 )
             )
         if self.result is None:
@@ -835,7 +838,7 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
     assert result.preserve_plot_selection
     assert result.ephys.shank_idx == 1
     assert isinstance(result.histology, HistologyDataLoaded)
-    assert load_data_job.calls == [LoadDataJobRequest(prepared.target)]
+    assert load_data_job.calls == [LoadDataJobRequest(prepared.target, load_id=1)]
     assert workspace.document.data_loaded
     assert progress_events == [
         LoadDataProgressed(
@@ -844,12 +847,14 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
             phase="ephys",
             status="started",
             message="Loading ephys data...",
+            load_id=1,
         )
     ]
     assert completed_events == [
         FreshLoadCompleted(
             stream_key=("rec", "stream"),
             shank_idx=1,
+            load_id=1,
         )
     ]
     assert histology_events == [
@@ -857,6 +862,7 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
             stream_key=("rec", "stream"),
             shank_idx=1,
             status="loaded",
+            load_id=1,
         )
     ]
     assert events == [
@@ -866,6 +872,7 @@ def test_commands_complete_fresh_load_data_returns_typed_transaction_result() ->
             shank_idx=1,
             active_key=AlignmentKey("rec", "stream", 1),
             preserve_plot_selection=True,
+            load_id=1,
         )
     ]
 
@@ -891,7 +898,7 @@ def test_commands_run_fresh_load_data_does_not_activate_result() -> None:
 
     assert isinstance(result, LoadDataJobCompleted)
     assert result.target is prepared.target
-    assert load_data_job.calls == [LoadDataJobRequest(prepared.target)]
+    assert load_data_job.calls == [LoadDataJobRequest(prepared.target, load_id=1)]
     assert not workspace.document.data_loaded
     assert workspace.runtime.active_stream_runtime is None
     assert progress_events == [
@@ -901,12 +908,14 @@ def test_commands_run_fresh_load_data_does_not_activate_result() -> None:
             phase="ephys",
             status="started",
             message="Loading ephys data...",
+            load_id=1,
         )
     ]
     assert completed_events == [
         FreshLoadCompleted(
             stream_key=("rec", "stream"),
             shank_idx=1,
+            load_id=1,
         )
     ]
     assert stream_events == []
@@ -934,8 +943,90 @@ def test_commands_run_fresh_load_data_emits_cancelled_event() -> None:
             stream_key=("rec", "stream"),
             shank_idx=1,
             reason="new probe selected",
+            load_id=1,
         )
     ]
+
+
+def test_commands_start_fresh_load_cancels_previous_execution() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    first = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=0,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=0),
+    )
+    second = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    events: list[LoadDataCancelled] = []
+    workspace.app.events.subscribe(LoadDataCancelled, events.append)
+
+    first_execution = workspace.app.commands.load.start_fresh_load_data(first)
+    second_execution = workspace.app.commands.load.start_fresh_load_data(second)
+
+    assert first_execution == FreshLoadExecution(load_id=1, prepared=first)
+    assert second_execution == FreshLoadExecution(load_id=2, prepared=second)
+    assert events == [
+        LoadDataCancelled(
+            stream_key=("rec", "stream"),
+            shank_idx=0,
+            reason="superseded by a newer load request",
+            load_id=1,
+        )
+    ]
+
+
+def test_commands_run_started_load_rejects_stale_execution_without_running_job() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    load_data_job = FakeLoadDataJob()
+    workspace.load_data_commands.load_data_job = load_data_job
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    execution = workspace.app.commands.load.start_fresh_load_data(prepared)
+    workspace.app.commands.load.cancel_active_fresh_load("new probe selected")
+
+    result = workspace.app.commands.load.run_started_fresh_load_data(execution)
+
+    assert isinstance(result, LoadDataJobCancelled)
+    assert result.reason == "Fresh load request is no longer active."
+    assert load_data_job.calls == []
+
+
+def test_commands_activate_started_load_ignores_stale_result() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    job_result = LoadDataJobCompleted(
+        target=prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream()),
+        histology=HistologyDataLoaded(),
+    )
+    workspace.data_context.mouse_root = prepared.target.mouse_root
+    execution = workspace.app.commands.load.start_fresh_load_data(prepared)
+    workspace.app.commands.load.cancel_active_fresh_load("new probe selected")
+
+    result = workspace.app.commands.load.activate_started_fresh_load_data(
+        execution,
+        job_result,
+    )
+
+    assert isinstance(result, LoadDataStaleResultIgnored)
+    assert result.load_id == 1
+    assert result.reason == "Fresh load request is no longer active."
+    assert not workspace.document.data_loaded
+    assert workspace.runtime.active_stream_runtime is None
 
 
 def test_commands_cache_completed_fresh_load_data_without_activation() -> None:

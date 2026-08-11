@@ -5,6 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, replace
 
+from ephys_alignment_gui.application.commands.load_data_lifecycle import (
+    CancelledFreshLoadExecution,
+    LoadDataExecutionLifecycle,
+)
 from ephys_alignment_gui.application.commands.metadata_selection import (
     MetadataSelectionCommandHandler,
 )
@@ -12,6 +16,7 @@ from ephys_alignment_gui.application.results import (
     ActiveStreamDetached,
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
+    FreshLoadExecution,
     LoadDataAlreadyActiveResult,
     LoadDataBeginResult,
     LoadDataCachedActivated,
@@ -19,6 +24,7 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshPrepared,
     LoadDataFreshRequiredResult,
     LoadDataPrepared,
+    LoadDataStaleResultIgnored,
     ProbeSelectionCacheResult,
 )
 from ephys_alignment_gui.application.results import (
@@ -84,6 +90,7 @@ class LoadDataCommandHandler:
     display_state: AlignmentDisplayState
     runtime: SessionRuntime
     load_data_job: LoadDataJob
+    load_lifecycle: LoadDataExecutionLifecycle
     histology_runtime_loader: HistologyRuntimeLoader
     plot_payload_cache_factory: EphysPlotPayloadCacheFactory
     metadata_commands: MetadataSelectionCommandHandler
@@ -207,14 +214,46 @@ class LoadDataCommandHandler:
         cancel_token: LoadDataCancelToken | None = None,
     ) -> LoadDataFreshCompleted | LoadDataJobCancelled | Failed:
         """Run and activate a fresh load transaction synchronously."""
-        job_result = self.run_fresh_load_data(
-            prepared,
-            progress=progress,
-            cancel_token=cancel_token,
-        )
+        execution = self.start_fresh_load_data(prepared, cancel_token=cancel_token)
+        job_result = self.run_started_fresh_load_data(execution, progress=progress)
         if isinstance(job_result, Failed | LoadDataJobCancelled):
             return job_result
-        return self.activate_completed_fresh_load_data(prepared, job_result)
+        activated = self.activate_started_fresh_load_data(execution, job_result)
+        if isinstance(activated, LoadDataStaleResultIgnored):
+            return LoadDataJobCancelled(
+                target=prepared.target,
+                reason=activated.reason,
+            )
+        return activated
+
+    def start_fresh_load_data(
+        self,
+        prepared: LoadDataFreshPrepared,
+        *,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> FreshLoadExecution:
+        """Start a tracked foreground fresh-load execution."""
+        execution, cancelled = self.load_lifecycle.start(
+            prepared,
+            cancel_token=cancel_token,
+        )
+        if cancelled is not None:
+            self._emit_cancelled_execution(cancelled)
+        return execution
+
+    def cancel_active_fresh_load(
+        self,
+        reason: str,
+    ) -> LoadDataJobCancelled | None:
+        """Cancel the active foreground fresh-load execution, if present."""
+        cancelled = self.load_lifecycle.cancel_active(reason)
+        if cancelled is None:
+            return None
+        self._emit_cancelled_execution(cancelled)
+        return LoadDataJobCancelled(
+            target=cancelled.execution.prepared.target,
+            reason=reason,
+        )
 
     def run_fresh_load_data(
         self,
@@ -224,28 +263,62 @@ class LoadDataCommandHandler:
         cancel_token: LoadDataCancelToken | None = None,
     ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
         """Run the fresh load job without activating the loaded stream."""
+        execution = self.start_fresh_load_data(prepared, cancel_token=cancel_token)
+        job_result = self.run_started_fresh_load_data(execution, progress=progress)
+        if isinstance(job_result, LoadDataJobCompleted):
+            self.load_lifecycle.finish(execution)
+        return job_result
+
+    def run_started_fresh_load_data(
+        self,
+        execution: FreshLoadExecution,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+    ) -> LoadDataJobCompleted | LoadDataJobCancelled | Failed:
+        """Run a tracked fresh-load job without activating its result."""
+        prepared = execution.prepared
+        cancel_token = self.load_lifecycle.cancel_token_for(execution)
+        if cancel_token is None:
+            return LoadDataJobCancelled(
+                target=prepared.target,
+                reason="Fresh load request is no longer active.",
+            )
+
         job_result = self.load_data_job.run(
-            LoadDataJobRequest(prepared.target),
-            progress=self._fresh_load_progress_callback(prepared, progress),
+            LoadDataJobRequest(prepared.target, load_id=execution.load_id),
+            progress=self._fresh_load_progress_callback(
+                prepared,
+                progress,
+                load_id=execution.load_id,
+            ),
             cancel_token=cancel_token,
         )
         if isinstance(job_result, Failed):
+            self.load_lifecycle.finish(execution)
             self.events.emit(
                 LoadDataFailed(
                     stream_key=prepared.stream_key,
                     shank_idx=prepared.shank_idx,
                     message=job_result.message,
+                    load_id=execution.load_id,
                 )
             )
         elif isinstance(job_result, LoadDataJobCancelled):
+            self.load_lifecycle.finish(execution)
             self.events.emit(
                 LoadDataCancelled(
                     stream_key=prepared.stream_key,
                     shank_idx=prepared.shank_idx,
                     reason=job_result.reason,
+                    load_id=execution.load_id,
                 )
             )
         else:
+            if not self.load_lifecycle.is_active(execution):
+                return LoadDataJobCancelled(
+                    target=prepared.target,
+                    reason="Fresh load result is stale and was ignored.",
+                )
             self.events.emit(
                 FreshLoadCompleted(
                     stream_key=prepared.stream_key,
@@ -253,14 +326,40 @@ class LoadDataCommandHandler:
                     warning_messages=tuple(
                         warning.message for warning in job_result.warnings
                     ),
+                    load_id=execution.load_id,
                 )
             )
         return job_result
+
+    def activate_started_fresh_load_data(
+        self,
+        execution: FreshLoadExecution,
+        job_result: LoadDataJobCompleted,
+    ) -> LoadDataFreshCompleted | LoadDataStaleResultIgnored | Failed:
+        """Activate a completed load only if its request is still current."""
+        if not self.load_lifecycle.is_active(execution):
+            return LoadDataStaleResultIgnored(
+                load_id=execution.load_id,
+                stream_key=execution.prepared.stream_key,
+                shank_idx=execution.prepared.shank_idx,
+                reason="Fresh load request is no longer active.",
+            )
+
+        try:
+            return self.activate_completed_fresh_load_data(
+                execution.prepared,
+                job_result,
+                load_id=execution.load_id,
+            )
+        finally:
+            self.load_lifecycle.finish(execution)
 
     def activate_completed_fresh_load_data(
         self,
         prepared: LoadDataFreshPrepared,
         job_result: LoadDataJobCompleted,
+        *,
+        load_id: int | None = None,
     ) -> LoadDataFreshCompleted | Failed:
         """Cache/activate completed fresh-load data if its target is still current."""
         stale = self._stale_fresh_load_reason(prepared, job_result)
@@ -270,6 +369,7 @@ class LoadDataCommandHandler:
                     stream_key=prepared.stream_key,
                     shank_idx=prepared.shank_idx,
                     message=stale,
+                    load_id=load_id,
                 )
             )
             return Failed(stale)
@@ -278,7 +378,7 @@ class LoadDataCommandHandler:
             job_result.histology,
             mouse_root=prepared.target.mouse_root,
         )
-        self._emit_histology_report(prepared, job_result.histology)
+        self._emit_histology_report(prepared, job_result.histology, load_id=load_id)
         ephys_result = self._cache_loaded_probe_data(
             job_result.ephys,
             shank_idx=prepared.shank_idx,
@@ -291,6 +391,7 @@ class LoadDataCommandHandler:
                 shank_idx=prepared.shank_idx,
                 active_key=self.controller.document.selected_alignment_key,
                 preserve_plot_selection=prepared.preserve_plot_selection,
+                load_id=load_id,
             )
         )
         return LoadDataFreshCompleted(
@@ -491,6 +592,8 @@ class LoadDataCommandHandler:
         self,
         prepared: LoadDataFreshPrepared,
         progress: LoadDataProgressCallback | None,
+        *,
+        load_id: int | None = None,
     ) -> LoadDataProgressCallback:
         """Return a progress callback that also emits app-level load events."""
 
@@ -502,6 +605,7 @@ class LoadDataCommandHandler:
                     phase=event.phase,
                     status=event.status,
                     message=event.message,
+                    load_id=event.load_id if event.load_id is not None else load_id,
                 )
             )
             if progress is not None:
@@ -513,6 +617,8 @@ class LoadDataCommandHandler:
         self,
         prepared: LoadDataFreshPrepared,
         histology: HistologyLoadResult,
+        *,
+        load_id: int | None = None,
     ) -> None:
         """Emit a semantic event for non-fatal histology load availability."""
         if isinstance(histology, HistologyDataAlreadyLoaded):
@@ -520,12 +626,14 @@ class LoadDataCommandHandler:
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
                 status="already_loaded",
+                load_id=load_id,
             )
         elif isinstance(histology, HistologyDataLoaded):
             event = HistologyLoadReported(
                 stream_key=prepared.stream_key,
                 shank_idx=prepared.shank_idx,
                 status="loaded",
+                load_id=load_id,
             )
         elif isinstance(histology, HistologyDataUnavailable):
             event = HistologyLoadReported(
@@ -533,10 +641,25 @@ class LoadDataCommandHandler:
                 shank_idx=prepared.shank_idx,
                 status="unavailable",
                 message=histology.message,
+                load_id=load_id,
             )
         else:
             return
         self.events.emit(event)
+
+    def _emit_cancelled_execution(
+        self,
+        cancelled: CancelledFreshLoadExecution,
+    ) -> None:
+        execution = cancelled.execution
+        self.events.emit(
+            LoadDataCancelled(
+                stream_key=execution.prepared.stream_key,
+                shank_idx=execution.prepared.shank_idx,
+                reason=cancelled.reason,
+                load_id=execution.load_id,
+            )
+        )
 
     def _stream_key_for_selection(
         self,
