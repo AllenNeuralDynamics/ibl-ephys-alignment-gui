@@ -220,8 +220,8 @@ class DesktopLoadDataCoordinator:
         recording_id: str,
         probe_name: str,
     ) -> bool:
-        """Preload the next probe in the same recording, if one exists."""
-        next_probe = self.app.queries.workspace.next_probe_in_recording(
+        """Preload the next unloaded probe in the same recording, if one exists."""
+        next_probe = self.app.queries.workspace.next_unloaded_probe_in_recording(
             recording_id,
             probe_name,
         )

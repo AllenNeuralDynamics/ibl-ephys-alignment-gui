@@ -76,7 +76,7 @@ class FakeQueries:
         self.workspace = SimpleNamespace(
             active_shank_selection=self.active_shank_selection,
             active_probe_selection_state=self.active_probe_selection_state,
-            next_probe_in_recording=self.next_probe_in_recording,
+            next_unloaded_probe_in_recording=self.next_unloaded_probe_in_recording,
         )
 
     def active_shank_selection(self):
@@ -91,7 +91,11 @@ class FakeQueries:
             output_directory=Path("/tmp/out"),
         )
 
-    def next_probe_in_recording(self, _recording_id: str, _probe_name: str):
+    def next_unloaded_probe_in_recording(
+        self,
+        _recording_id: str,
+        _probe_name: str,
+    ):
         return self.next_probe_name
 
 
@@ -838,6 +842,35 @@ def test_load_heavy_data_preloads_next_probe_after_foreground_completion() -> No
 
     assert commands.preload_cache_calls
     assert calls.count(("render-shank", 0, True)) == 1
+
+
+def test_load_heavy_data_does_not_preload_without_unloaded_candidate() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    coordinator, commands, _queries, _calls = _coordinator(
+        begin_result=prepared,
+        next_probe_name=None,
+    )
+
+    assert coordinator.load_heavy_data()
+
+    assert commands.preload_begin_calls == []
+    assert commands.preload_start_calls == []
+
+
+def test_probe_preload_does_not_start_while_foreground_load_is_running() -> None:
+    load_runner = ManualFreshLoadRunner()
+    load_runner.active = True
+    coordinator, commands, _queries, _calls = _coordinator(
+        load_runner=load_runner,
+        next_probe_name="probeB",
+    )
+
+    assert not coordinator.start_probe_preload(
+        recording_id="rec",
+        probe_name="probeB",
+    )
+
+    assert commands.preload_begin_calls == []
 
 
 def test_load_heavy_data_cancels_active_preload_before_foreground_load() -> None:

@@ -135,24 +135,37 @@ class WorkspaceStateQueries:
             )
             return None
 
-    def next_probe_in_recording(
+    def next_unloaded_probe_in_recording(
         self,
         recording_id: str,
         probe_name: str,
     ) -> str | None:
-        """Return the next preload candidate in the same recording/session."""
+        """Return the next same-session probe whose stream is not cached."""
         if self.data_context is None:
             return None
         try:
-            return self.data_context.next_probe_in_session(recording_id, probe_name)
+            probes = self.data_context.list_probes(recording_id)
+            start_idx = probes.index(probe_name) + 1
+        except ValueError:
+            return None
         except Exception:
             logger.warning(
-                "Could not resolve next probe for %s/%s",
+                "Could not list preload candidates for %s/%s",
                 recording_id,
                 probe_name,
                 exc_info=True,
             )
             return None
+
+        for candidate in probes[start_idx:]:
+            stream_key = self.stream_key_for_selection(recording_id, candidate)
+            if stream_key is None:
+                continue
+            if stream_key == self.context.runtime.current_stream_key:
+                continue
+            if self.context.runtime.cached_stream(stream_key) is None:
+                return candidate
+        return None
 
     def histology_data_loaded(self) -> bool:
         """Whether subject-level histology runtime data is already loaded."""

@@ -1086,21 +1086,49 @@ def test_commands_cache_completed_fresh_load_data_without_activation() -> None:
     assert not workspace.document.data_loaded
 
 
-def test_queries_resolve_next_probe_in_recording() -> None:
+def test_queries_resolve_next_unloaded_probe_in_recording() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.data_context.mouse_root = _mouse_root_with_probes(
+        _probe_info(probe_name="probeA", ephys_collection="streamA"),
+        _probe_info(probe_name="probeB", ephys_collection="streamB"),
+        _probe_info(probe_name="probeC", ephys_collection="streamC"),
+    )
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream("streamB"),
+        workspace.plot_payload_cache_factory,
+        shank_idx=0,
+        activate=False,
+    )
+
+    assert (
+        workspace.app.queries.workspace.next_unloaded_probe_in_recording(
+            "rec",
+            "probeA",
+        )
+        == "probeC"
+    )
+
+
+def test_queries_next_unloaded_probe_returns_none_when_remaining_probes_cached() -> None:
     workspace = AlignmentWorkspace()
     workspace.data_context.mouse_root = _mouse_root_with_probes(
         _probe_info(probe_name="probeA", ephys_collection="streamA"),
         _probe_info(probe_name="probeB", ephys_collection="streamB"),
     )
+    workspace.runtime.cache_loaded_stream_data(
+        _ephys_stream("streamB"),
+        workspace.plot_payload_cache_factory,
+        shank_idx=0,
+        activate=False,
+    )
 
     assert (
-        workspace.app.queries.workspace.next_probe_in_recording("rec", "probeA")
-        == "probeB"
+        workspace.app.queries.workspace.next_unloaded_probe_in_recording(
+            "rec",
+            "probeA",
+        )
+        is None
     )
-    assert workspace.app.queries.workspace.next_probe_in_recording(
-        "rec",
-        "probeB",
-    ) is None
 
 
 def test_commands_begin_preload_data_does_not_mutate_active_probe() -> None:
