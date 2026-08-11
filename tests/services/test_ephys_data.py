@@ -96,6 +96,17 @@ def test_channel_table_rejects_invalid_shank_index():
         table.rows_for_shank(1)
 
 
+def test_channel_table_normalizes_absolute_shank_ids_to_local_indices():
+    table = ChannelTable(
+        local_coordinates=np.array([[250.0, 0.0], [250.0, 20.0]]),
+        shank_indices=np.array([1, 1]),
+    )
+
+    assert table.n_shanks == 1
+    assert table.shank_indices.tolist() == [0, 0]
+    assert table.rows_for_shank(0).tolist() == [0, 1]
+
+
 def test_ephys_data_service_loads_channel_table_from_probe_paths(tmp_path):
     local_coordinates = np.array([[0.0, 0.0], [0.0, 20.0], [250.0, 0.0], [250.0, 20.0]])
     channel_paths = _write_channel_table_files(

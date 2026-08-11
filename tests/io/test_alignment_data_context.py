@@ -65,6 +65,23 @@ def test_context_selects_probe_and_attaches_channel_table(tmp_path) -> None:
     assert context.shank_labels() == ["1/2", "2/2"]
 
 
+def test_single_stream_with_absolute_shank_id_still_lists_one_local_shank(
+    tmp_path,
+) -> None:
+    probe = _probe(num_shanks=1)
+    context = AlignmentDataContext(mouse_root=_mouse_root(tmp_path, probe))
+    context.select_probe("rec1", "probeA")
+    context.attach_channel_table(
+        ChannelTable(
+            local_coordinates=np.array([[250.0, 0.0], [250.0, 20.0]]),
+            shank_indices=np.array([1, 1]),
+        )
+    )
+
+    assert context.n_shanks == 1
+    assert context.shank_labels() == ["1/1"]
+
+
 def test_select_probe_clears_previous_channel_table(tmp_path) -> None:
     probe = _probe()
     context = AlignmentDataContext(mouse_root=_mouse_root(tmp_path, probe))

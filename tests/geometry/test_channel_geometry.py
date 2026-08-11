@@ -31,6 +31,28 @@ def test_rows_for_shank_uses_explicit_shank_ind():
     )
 
 
+def test_explicit_shank_ids_are_normalized_to_local_indices():
+    coords = np.array(
+        [
+            [250.0, 0.0],
+            [250.0, 20.0],
+            [500.0, 0.0],
+            [500.0, 20.0],
+        ]
+    )
+    shank_ind = np.array([2, 2, 4, 4])
+
+    assert n_shanks_from_geometry(coords, shank_ind) == 2
+    np.testing.assert_array_equal(
+        rows_for_shank(coords, shank_ind, shank_idx=0, n_shanks=2),
+        np.array([0, 1]),
+    )
+    np.testing.assert_array_equal(
+        rows_for_shank(coords, shank_ind, shank_idx=1, n_shanks=2),
+        np.array([2, 3]),
+    )
+
+
 def test_plot_data_uses_channel_table_rows_not_raw_ind():
     pytest.importorskip("PyQt5")
     from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache

@@ -10,13 +10,16 @@ def valid_shank_indices(
     shank_ind: NDArray | None,
     n_channels: int,
 ) -> NDArray | None:
-    """Return validated 0-based shank indices, or None for legacy data."""
+    """Return validated local 0-based shank indices, or None for legacy data."""
     if shank_ind is None:
         return None
     arr = np.asarray(shank_ind, dtype=int)
     if arr.ndim != 1 or arr.shape[0] != n_channels:
         return None
-    return arr
+    if np.any(arr < 0):
+        return None
+    _unique, inverse = np.unique(arr, return_inverse=True)
+    return inverse.astype(int, copy=False)
 
 
 def n_shanks_from_geometry(

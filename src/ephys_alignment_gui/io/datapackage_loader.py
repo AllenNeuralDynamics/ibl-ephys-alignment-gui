@@ -178,19 +178,39 @@ class ProbeInfo:
 
     def picks_for_shank(self, shank_idx: int) -> XyzPicks:
         """Return the xyz-picks entry for a given 0-based shank index."""
-        for pk in self.xyz_picks:
-            if pk.ephys_shank == shank_idx:
-                return pk
         if self.num_shanks == 1:
             return self.xyz_picks[0]
-        want = shank_idx + 1  # datapackage uses 1-based `shank` field
-        for pk in self.xyz_picks:
-            if pk.shank == want:
-                return pk
+
+        for field_name in ("ephys_shank", "shank"):
+            picks_by_index = self._picks_by_normalized_shank_field(field_name)
+            if picks_by_index and shank_idx in picks_by_index:
+                return picks_by_index[shank_idx]
+
+        want = shank_idx + 1
         raise DataPackageError(
             f"Probe {self.probe_name!r} has no shank {want} "
             f"(shanks available: {[pk.shank for pk in self.xyz_picks]})"
         )
+
+    def _picks_by_normalized_shank_field(
+        self,
+        field_name: str,
+    ) -> dict[int, XyzPicks]:
+        values = [getattr(pk, field_name) for pk in self.xyz_picks]
+        if any(value is None for value in values):
+            return {}
+        unique_values = sorted(set(int(value) for value in values))
+        value_to_local = {value: idx for idx, value in enumerate(unique_values)}
+        picks_by_index: dict[int, XyzPicks] = {}
+        for pick, value in zip(self.xyz_picks, values, strict=True):
+            local_idx = value_to_local[int(value)]
+            if local_idx in picks_by_index:
+                raise DataPackageError(
+                    f"Probe {self.probe_name!r} has duplicate {field_name} "
+                    f"value {value!r} in xyz_picks"
+                )
+            picks_by_index[local_idx] = pick
+        return picks_by_index
 
 
 @dataclass(frozen=True)

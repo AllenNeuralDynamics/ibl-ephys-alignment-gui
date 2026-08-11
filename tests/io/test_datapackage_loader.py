@@ -10,6 +10,8 @@ import pytest
 from ephys_alignment_gui.io.datapackage_loader import (
     AssetNotFound,
     DataPackageError,
+    ProbeInfo,
+    XyzPicks,
     load_mouse_root,
 )
 
@@ -748,6 +750,50 @@ def test_multi_shank_probe_picks_by_index(tmp_path):
     assert probe.picks_for_shank(1).shank == 2
     with pytest.raises(DataPackageError, match="no shank 3"):
         probe.picks_for_shank(2)
+
+
+def test_multi_shank_probe_picks_normalize_absolute_ephys_shank_labels() -> None:
+    picks = (
+        XyzPicks(image_space=Path("shank2.json"), ephys_shank=2, shank=2),
+        XyzPicks(image_space=Path("shank3.json"), ephys_shank=3, shank=3),
+        XyzPicks(image_space=Path("shank4.json"), ephys_shank=4, shank=4),
+        XyzPicks(image_space=Path("shank5.json"), ephys_shank=5, shank=5),
+    )
+    probe = ProbeInfo(
+        probe_id="p-quad",
+        probe_name="46116",
+        recording_id="rec1",
+        logical_probe="46116",
+        ephys_collection="46116",
+        num_shanks=4,
+        ephys_dir=None,
+        channel_table=None,
+        xyz_picks=picks,
+    )
+
+    assert probe.picks_for_shank(0).image_space == Path("shank2.json")
+    assert probe.picks_for_shank(3).image_space == Path("shank5.json")
+
+
+def test_multi_shank_probe_picks_fall_back_to_normalized_shank_labels() -> None:
+    picks = (
+        XyzPicks(image_space=Path("shank2.json"), shank=2),
+        XyzPicks(image_space=Path("shank3.json"), shank=3),
+    )
+    probe = ProbeInfo(
+        probe_id="p-quad",
+        probe_name="46116",
+        recording_id="rec1",
+        logical_probe="46116",
+        ephys_collection="46116",
+        num_shanks=2,
+        ephys_dir=None,
+        channel_table=None,
+        xyz_picks=picks,
+    )
+
+    assert probe.picks_for_shank(0).image_space == Path("shank2.json")
+    assert probe.picks_for_shank(1).image_space == Path("shank3.json")
 
 
 def test_sessions_are_distinct_recordings(tmp_path):
