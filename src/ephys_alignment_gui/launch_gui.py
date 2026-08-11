@@ -10,7 +10,7 @@ if platform.system() == "Darwin":
 import matplotlib.pyplot as mpl  # noqa: F401  # Needed to make Qt show properly.
 from PyQt5 import QtWidgets
 
-from ephys_alignment_gui.desktop.main_window import MainWindow
+from ephys_alignment_gui.desktop.shell.main_window import MainWindow
 
 logger = logging.getLogger(__name__)
 
