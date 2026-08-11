@@ -75,7 +75,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.offline: bool = offline
         window_setup.initialize_shell(self, offline=offline)
         self.displays = DesktopDisplays.create(
-            app=self.app,
             config=desktop_display_config_from_main_window(self),
         )
         window_setup.install_main_layout(self, displays=self.displays)

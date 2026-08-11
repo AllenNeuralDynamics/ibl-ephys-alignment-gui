@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from ephys_alignment_gui.desktop.displays.ephys_display import (
     DesktopEphysDisplay,
@@ -45,17 +44,14 @@ class DesktopDisplays:
     def create(
         cls,
         *,
-        app: Any,
         config: DesktopDisplayConfig,
     ) -> DesktopDisplays:
         """Build all desktop display regions from desktop dependencies."""
-        ephys = DesktopEphysDisplay.create(app=app, config=config.ephys)
-        slice_display = DesktopSliceDisplay.create(app=app, config=config.slice)
+        ephys = DesktopEphysDisplay.create(config=config.ephys)
+        slice_display = DesktopSliceDisplay.create(config=config.slice)
         histology = DesktopHistologyDisplay.create(
-            app=app,
             config=config.histology,
             perpendicular_plot=slice_display.perpendicular_plot,
-            scale_factor_y_range=ephys.panel.feature_y_range,
         )
         _link_depth_plots(
             ephys=ephys,

@@ -62,23 +62,35 @@ class FakeEphysExporter:
         self.calls.append(("ephys", output_dir, sess_info))
 
 
-class FakeSliceDisplay:
+class FakeSliceMenuCoordinator:
     def __init__(self, action_group: FakeActionGroup) -> None:
         self.action_group = action_group
+
+    def current_selection(self) -> str:
+        return "slice-selection"
+
+
+class FakeSlicePanelPresenter:
+    def __init__(self) -> None:
         self.toggles = 0
-        self.trajectory_pens: list[Any] = []
-        self.plot_channels_calls = 0
+        self.trajectory_calls: list[tuple[Any, Any]] = []
+        self.plot_channels_calls: list[Any] = []
 
     def toggle_channel_visibility(self) -> None:
         self.toggles += 1
 
-    def render_export_trajectory_overlay(self, pen: Any) -> None:
-        self.trajectory_pens.append(pen)
+    def render_export_trajectory_overlay(
+        self,
+        pen: Any,
+        *,
+        selection: Any = None,
+    ) -> None:
+        self.trajectory_calls.append((pen, selection))
 
-    def plot_channels(self) -> None:
-        self.plot_channels_calls += 1
+    def plot_channels(self, *, selection: Any = None) -> None:
+        self.plot_channels_calls.append(selection)
 
-    def current_channel_locations_ras(self) -> np.ndarray:
+    def current_channel_locations_ras(self, selection: Any = None) -> np.ndarray:
         return np.array(
             [
                 [1.0, 0.0, 10.0],
@@ -129,13 +141,14 @@ def _exporter() -> tuple[
     DesktopPlotExporter,
     list[Any],
     list[FakeAction],
-    FakeSliceDisplay,
+    FakeSlicePanelPresenter,
     FakeSlicePlot,
 ]:
     calls: list[Any] = []
     actions = [FakeAction("ccf"), FakeAction("registration")]
     action_group = FakeActionGroup(actions)
-    slice_display = FakeSliceDisplay(action_group)
+    slice_menu = FakeSliceMenuCoordinator(action_group)
+    slice_panel = FakeSlicePanelPresenter()
     slice_plot = FakeSlicePlot()
 
     def image_exporter_factory(item: Any) -> FakeImageExporter:
@@ -144,7 +157,9 @@ def _exporter() -> tuple[
     exporter = DesktopPlotExporter(
         ephys_exporter=FakeEphysExporter(calls),
         slice_handles=SliceExportHandles(
-            slice_display=slice_display,
+            slice_display=object(),
+            slice_panel_presenter=slice_panel,
+            slice_menu_coordinator=slice_menu,
             slice_plot=slice_plot,
         ),
         slice_style=SliceExportStyle(trajectory_pen="trajectory-pen"),
@@ -166,7 +181,7 @@ def _exporter() -> tuple[
         add_lines_points=lambda: calls.append(("add_lines_points",)),
         image_exporter_factory=image_exporter_factory,
     )
-    return exporter, calls, actions, slice_display, slice_plot
+    return exporter, calls, actions, slice_panel, slice_plot
 
 
 def test_desktop_plot_exporter_exports_all_plot_groups() -> None:
@@ -195,8 +210,10 @@ def test_desktop_plot_exporter_exports_all_plot_groups() -> None:
     )
     assert calls[-1] == ("add_lines_points",)
     assert slice_display.toggles == 4
-    assert slice_display.trajectory_pens == ["trajectory-pen"] * 4
-    assert slice_display.plot_channels_calls == 4
+    assert slice_display.trajectory_calls == [
+        ("trajectory-pen", "slice-selection")
+    ] * 4
+    assert slice_display.plot_channels_calls == ["slice-selection"] * 4
     assert [action.triggers for action in actions] == [2, 2]
 
 

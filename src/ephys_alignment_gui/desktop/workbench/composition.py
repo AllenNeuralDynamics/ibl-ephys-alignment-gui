@@ -212,6 +212,7 @@ def build_desktop_workbench_coordinator_cluster(
     plot_exporter = _plot_exporter(
         ports.export,
         displays=displays,
+        render_cluster=render_cluster,
     )
     plot_export_coordinator = DesktopPlotExportCoordinator(
         app=app,
@@ -281,10 +282,11 @@ def _plot_exporter(
     export_view: Any,
     *,
     displays: DesktopDisplays,
+    render_cluster: DesktopRenderCluster,
 ) -> DesktopPlotExporter:
     """Build the desktop plot exporter cluster."""
     ephys_exporter = DesktopEphysPlotExporter(
-        presenter=displays.ephys.plot_presenter,
+        presenter=render_cluster.ephys_plot_presenter,
         panel=displays.ephys.panel,
         layout=export_view.ephys_layout(),
         callbacks=export_view.ephys_callbacks(
@@ -293,7 +295,11 @@ def _plot_exporter(
     )
     return DesktopPlotExporter(
         ephys_exporter=ephys_exporter,
-        slice_handles=export_view.slice_handles(displays.slice),
+        slice_handles=export_view.slice_handles(
+            displays.slice,
+            slice_panel_presenter=render_cluster.slice_panel_presenter,
+            slice_menu_coordinator=render_cluster.slice_menu_coordinator,
+        ),
         slice_style=export_view.slice_style(),
         histology_handles=HistologyExportHandles(
             histology_display=displays.histology,

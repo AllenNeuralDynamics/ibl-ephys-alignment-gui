@@ -11,8 +11,9 @@ class DesktopHistologyRefreshPresenter:
     """Coordinate histology, perpendicular slice, and line-overlay refresh."""
 
     app: Any
-    histology_display: Any
-    slice_display: Any
+    histology_presenter: Any
+    slice_panel_presenter: Any
+    slice_menu_coordinator: Any
     reference_line_display: Any
 
     def render_loaded_shank_histology(self, shank_idx: int | None = None) -> bool:
@@ -20,9 +21,11 @@ class DesktopHistologyRefreshPresenter:
         if shank_idx is None:
             shank_idx = self.app.queries.workspace.active_shank_selection().shank_idx
 
-        if not self.histology_display.render_active_panels():
+        if not self.histology_presenter.render_active_panels():
             return False
-        self.slice_display.refresh_perpendicular_histology()
+        self.slice_panel_presenter.refresh_perpendicular_histology(
+            self.slice_menu_coordinator.current_selection()
+        )
 
         line_state = self.app.queries.workspace.active_reference_line_state(shank_idx)
         if line_state is not None:

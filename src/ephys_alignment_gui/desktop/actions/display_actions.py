@@ -13,6 +13,8 @@ class DesktopDisplayActions:
 
     app: Any
     displays: Any
+    histology_presenter: Any
+    slice_panel_presenter: Any
     alignment_screen: Any
     fit_alignment: Callable[[], bool]
     histology_available: Callable[[], bool]
@@ -23,15 +25,15 @@ class DesktopDisplayActions:
             self.app.commands.display.toggle_histology_boundaries_visible()
         )
         if not boundaries_visible:
-            return self.displays.histology.render_active_nearby()
-        return self.displays.histology.render_active_reference()
+            return self.histology_presenter.render_active_nearby()
+        return self.histology_presenter.render_active_reference()
 
     def toggle_region_annotation_source(self) -> None:
         """Toggle region annotation source and refresh histology panels."""
         self.app.commands.display.toggle_region_annotation_source()
-        self.displays.histology.render_active_aligned()
-        self.displays.histology.render_active_reference()
-        self.displays.histology.render_active_scale_factor()
+        self.histology_presenter.render_active_aligned()
+        self.histology_presenter.render_active_reference()
+        self.histology_presenter.render_active_scale_factor()
         self.displays.reference_lines.reattach()
 
     def toggle_labels(self) -> None:
@@ -48,7 +50,7 @@ class DesktopDisplayActions:
 
     def toggle_channels(self) -> None:
         """Toggle channel overlays on slice panels."""
-        self.displays.slice.toggle_channel_visibility()
+        self.slice_panel_presenter.toggle_channel_visibility()
 
     def delete_selected_reference_line(self) -> None:
         """Delete the currently selected reference line, if any."""

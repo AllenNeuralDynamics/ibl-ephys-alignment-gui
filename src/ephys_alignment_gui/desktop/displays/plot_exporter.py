@@ -33,6 +33,8 @@ class SliceExportHandles:
     """Desktop slice plot handles needed by plot export."""
 
     slice_display: Any
+    slice_panel_presenter: Any
+    slice_menu_coordinator: Any
     slice_plot: Any
 
 
@@ -112,8 +114,8 @@ class DesktopPlotExporter:
             slice_action = action_group.checkedAction()
             if slice_action is None:
                 break
-            channel_locations_ras = (
-                self.slice_handles.slice_display.current_channel_locations_ras()
+            channel_locations_ras = self.slice_handles.slice_panel_presenter.current_channel_locations_ras(
+                self.slice_handles.slice_menu_coordinator.current_selection()
             )
             if channel_locations_ras is None:
                 self._toggle_action_group(action_group)
@@ -131,14 +133,18 @@ class DesktopPlotExporter:
             plot = action_group.checkedAction()
 
     def _prepare_slice_export_overlay(self) -> None:
-        self.slice_handles.slice_display.toggle_channel_visibility()
-        self.slice_handles.slice_display.render_export_trajectory_overlay(
-            self.slice_style.trajectory_pen
+        self.slice_handles.slice_panel_presenter.toggle_channel_visibility()
+        current_selection = self.slice_handles.slice_menu_coordinator.current_selection()
+        self.slice_handles.slice_panel_presenter.render_export_trajectory_overlay(
+            self.slice_style.trajectory_pen,
+            selection=current_selection,
         )
-        self.slice_handles.slice_display.plot_channels()
+        self.slice_handles.slice_panel_presenter.plot_channels(
+            selection=current_selection
+        )
 
     def _slice_action_group(self) -> Any | None:
-        action_group = self.slice_handles.slice_display.action_group
+        action_group = self.slice_handles.slice_menu_coordinator.action_group
         if action_group is None:
             logger.warning("No available slice plot actions to export")
             return None

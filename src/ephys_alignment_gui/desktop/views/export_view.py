@@ -64,10 +64,18 @@ class DesktopExportView:
             axis_width=axis_width,
         )
 
-    def slice_handles(self, slice_display: Any) -> SliceExportHandles:
+    def slice_handles(
+        self,
+        slice_display: Any,
+        *,
+        slice_panel_presenter: Any,
+        slice_menu_coordinator: Any,
+    ) -> SliceExportHandles:
         """Return slice display handles needed by plot export."""
         return SliceExportHandles(
             slice_display=slice_display,
+            slice_panel_presenter=slice_panel_presenter,
+            slice_menu_coordinator=slice_menu_coordinator,
             slice_plot=self.slice_plot,
         )
 

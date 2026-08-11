@@ -75,6 +75,7 @@ class FakeShankPresenter:
 class FakeHistologyDisplay:
     def __init__(self) -> None:
         self.calls: list[Any] = []
+        self.panel = object()
 
     def render_active_aligned(
         self,
@@ -248,6 +249,43 @@ class FakeDisplayActions:
         self.calls.append("sync-histology-tip-to-top")
 
 
+class FakeEphysPlotPresenter:
+    def __init__(self) -> None:
+        self.rendered_states: list[Any] = []
+
+    def render_shank_ephys_plots(self, state: Any) -> None:
+        self.rendered_states.append(state)
+
+
+class FakeSlicePanelPresenter:
+    def __init__(self) -> None:
+        self.plotted_channels: list[Any] = []
+        self.perpendicular_refreshes = 0
+
+    def plot_channels(self, projection: Any = None) -> None:
+        self.plotted_channels.append(projection)
+
+    def refresh_perpendicular_histology(self, selection: Any = None) -> None:
+        self.perpendicular_refreshes += 1
+
+
+class FakeSliceMenuCoordinator:
+    def __init__(self) -> None:
+        self.restored: list[tuple[Any, Any, Any]] = []
+        self.selection = "slice-selection"
+
+    def current_selection(self) -> Any:
+        return self.selection
+
+    def restore_selection(
+        self,
+        slice_menu_state: Any,
+        previous_selection: Any,
+        previous_label: Any,
+    ) -> None:
+        self.restored.append((slice_menu_state, previous_selection, previous_label))
+
+
 class FakeMouseRootPresenter:
     def __init__(self) -> None:
         self.set_roots: list[Any] = []
@@ -408,12 +446,16 @@ class FakePlotExportPresenter:
 
 class FakeEphysDisplay:
     def __init__(self) -> None:
-        self.panel = object()
-        self.plot_presenter = object()
+        self.panel = SimpleNamespace(
+            render_image=lambda data: self.rendered_states.append(("image", data)),
+            render_scatter=lambda data: self.rendered_states.append(("scatter", data)),
+            render_line=lambda data: self.rendered_states.append(("line", data)),
+            render_probe=lambda data, bounds: self.rendered_states.append(
+                ("probe", data, bounds)
+            ),
+            feature_y_range=lambda: (0.0, 1.0),
+        )
         self.rendered_states: list[Any] = []
-
-    def render_shank_ephys_plots(self, state: Any) -> None:
-        self.rendered_states.append(state)
 
 
 class FakeSliceDisplay:
@@ -421,6 +463,12 @@ class FakeSliceDisplay:
         self.restored: list[tuple[Any, Any, Any]] = []
         self.plotted_channels: list[Any] = []
         self.perpendicular_refreshes = 0
+        self.view = SimpleNamespace(
+            plot_channels=lambda projection: self.plotted_channels.append(projection),
+            toggle_channel_visibility=lambda: None,
+            current_channel_locations_ras=lambda: None,
+            render_export_trajectory_overlay=lambda *args, **kwargs: None,
+        )
 
     def restore_selection(
         self,
@@ -549,6 +597,10 @@ def _workbench(
     lifecycle: Any | None = None,
     reference_line_presenter: Any | None = None,
     histology_refresh_presenter: Any | None = None,
+    ephys_plot_presenter: Any | None = None,
+    histology_presenter: Any | None = None,
+    slice_panel_presenter: Any | None = None,
+    slice_menu_coordinator: Any | None = None,
     alignment_edit_actions: Any | None = None,
     display_actions: Any | None = None,
     shank_selection_actions: Any | None = None,
@@ -565,6 +617,10 @@ def _workbench(
     )
     render_cluster = DesktopRenderCluster(
         alignment_presenter=alignment,
+        ephys_plot_presenter=ephys_plot_presenter or FakeEphysPlotPresenter(),
+        histology_presenter=histology_presenter or histology or FakeHistologyDisplay(),
+        slice_panel_presenter=slice_panel_presenter or FakeSlicePanelPresenter(),
+        slice_menu_coordinator=slice_menu_coordinator or FakeSliceMenuCoordinator(),
         shank_presenter=shank,
         reference_line_presenter=reference_line_presenter or object(),
         histology_refresh_presenter=histology_refresh_presenter or object(),
@@ -1002,6 +1058,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
             track_positions_um=[2.0],
         ),
         active_shank_selection=lambda: SimpleNamespace(shank_idx=0),
+        fit_depth_um=lambda: [],
+        linear_fit_enabled=lambda: False,
         mouse_root_loaded=lambda: True,
     )
     queries = SimpleNamespace(workspace=workspace_queries)
@@ -1038,7 +1096,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         selection=object(),
         path=object(),
         depth=object(),
-        shank_screen=object(),
+        shank_screen=SimpleNamespace(raw_image_payload_mapping=lambda: {}),
         alignment_screen=object(),
         export=ports.export,
     )
@@ -1077,14 +1135,14 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert render_cluster.shank_selection_actions.app is app
     assert render_cluster.shank_selection_actions.selection_view is not None
     assert render_cluster.alignment_selection_actions.app is app
-    render_cluster.alignment_presenter.callbacks.render_histology_alignment(
-        "edit-state"
+    assert (
+        render_cluster.alignment_presenter.callbacks.render_histology_alignment.__self__
+        is render_cluster.histology_presenter
     )
-    assert panel.calls == [("edit", "edit-state")]
-    render_cluster.alignment_presenter.callbacks.plot_channels("projection")
-    assert slice_display.plotted_channels == ["projection"]
-    render_cluster.alignment_presenter.callbacks.refresh_perpendicular_histology()
-    assert slice_display.perpendicular_refreshes == 1
+    assert (
+        render_cluster.alignment_presenter.callbacks.plot_channels.__self__
+        is render_cluster.slice_panel_presenter
+    )
     assert render_cluster.shank_presenter.callbacks.render_alignment_choices is (
         ports.render.shank.render_alignment_choices
     )
@@ -1119,23 +1177,30 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert reference_line_display.clear_count == 2
     assert reference_line_display.reattach_count == 1
     assert reference_line_display.sync_count == 1
-    render_cluster.shank_presenter.callbacks.render_ephys_plots("state")
-    assert ephys_display.rendered_states == ["state"]
-    render_cluster.shank_presenter.callbacks.render_histology_plots(1)
-    assert panel.calls[-1] == "panels"
-    assert slice_display.perpendicular_refreshes == 2
-    assert reference_line_display.created_lines == [([1.0], [2.0])]
-    render_cluster.shank_presenter.callbacks.restore_slice_selection(
-        "menu",
-        "selection",
-        "label",
+    assert (
+        render_cluster.shank_presenter.callbacks.render_ephys_plots.__self__
+        is render_cluster.ephys_plot_presenter
     )
-    assert slice_display.restored == [("menu", "selection", "label")]
+    assert (
+        render_cluster.shank_presenter.callbacks.render_histology_plots.__self__
+        is render_cluster.histology_refresh_presenter
+    )
+    assert reference_line_display.created_lines == []
+    assert (
+        render_cluster.shank_presenter.callbacks.restore_slice_selection.__self__
+        is render_cluster.slice_menu_coordinator
+    )
     assert coordinator_cluster.plot_exporter.ephys_exporter.presenter is (
-        ephys_display.plot_presenter
+        render_cluster.ephys_plot_presenter
     )
     assert coordinator_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
     assert coordinator_cluster.plot_exporter.slice_handles.slice_display is slice_display
+    assert coordinator_cluster.plot_exporter.slice_handles.slice_panel_presenter is (
+        render_cluster.slice_panel_presenter
+    )
+    assert coordinator_cluster.plot_exporter.slice_handles.slice_menu_coordinator is (
+        render_cluster.slice_menu_coordinator
+    )
     coordinator_cluster.plot_exporter.add_lines_points()
     assert reference_line_display.add_count == 1
     assert coordinator_cluster.plot_exporter.callbacks.set_axis is ports.export.set_axis

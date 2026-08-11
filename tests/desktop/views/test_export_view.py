@@ -58,12 +58,18 @@ def test_export_view_builds_ephys_layout_and_callbacks() -> None:
 def test_export_view_builds_slice_and_plot_export_dtos() -> None:
     view, _calls = _view()
 
-    slice_handles = view.slice_handles(slice_display="slice-display")
+    slice_handles = view.slice_handles(
+        slice_display="slice-display",
+        slice_panel_presenter="slice-panel-presenter",
+        slice_menu_coordinator="slice-menu-coordinator",
+    )
     slice_style = view.slice_style()
     plot_callbacks = view.plot_callbacks()
     geometry = plot_callbacks.slice_geometry()
 
     assert slice_handles.slice_display == "slice-display"
+    assert slice_handles.slice_panel_presenter == "slice-panel-presenter"
+    assert slice_handles.slice_menu_coordinator == "slice-menu-coordinator"
     assert slice_handles.slice_plot == "slice-plot"
     assert slice_style.trajectory_pen == "trajectory-pen"
     assert plot_callbacks.set_axis is view.set_axis

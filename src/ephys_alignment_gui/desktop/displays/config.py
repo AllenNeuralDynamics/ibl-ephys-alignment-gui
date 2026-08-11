@@ -20,10 +20,10 @@ def desktop_ephys_display_config_from_main_window(
     actions = window.shell_actions
     style = window.style
     return DesktopEphysDisplayConfig(
+        depth_view=window.app.queries.workspace.depth_view_settings(),
         line_pen=style.solid_pen,
         depth_guide_pen=style.dotted_pen,
         padding_provider=lambda: style.padding,
-        raw_image_payloads=lambda: window.shank_screen_view.raw_image_payload_mapping(),
         set_axis=set_axis,
         reset_axis=actions.reset_axis_button_pressed,
         cluster_clicked=actions.cluster_clicked,
@@ -37,9 +37,9 @@ def desktop_histology_display_config_from_main_window(
 ) -> DesktopHistologyDisplayConfig:
     """Adapt MainWindow callbacks/style to histology display config."""
     actions = window.shell_actions
-    histology_available = window.app.queries.workspace.histology_data_loaded
     style = window.style
     return DesktopHistologyDisplayConfig(
+        depth_view=window.app.queries.workspace.depth_view_settings(),
         dotted_pen=style.dotted_pen,
         fit_pen=style.fit_pen,
         linear_fit_pen=style.linear_fit_pen,
@@ -49,7 +49,7 @@ def desktop_histology_display_config_from_main_window(
         on_linear_fit_changed=actions.lin_fit_option_changed,
         on_mouse_double_clicked=actions.on_mouse_double_clicked,
         on_mouse_hover=actions.on_mouse_hover,
-        histology_available=histology_available,
+        linear_fit_enabled=window.app.queries.workspace.linear_fit_enabled,
     )
 
 
@@ -60,6 +60,7 @@ def desktop_slice_display_config_from_main_window(
     histology_available = window.app.queries.workspace.histology_data_loaded
     style = window.style
     return DesktopSliceDisplayConfig(
+        depth_view=window.app.queries.workspace.depth_view_settings(),
         dotted_pen=style.dotted_pen,
         solid_pen=style.solid_pen,
         reference_line_pen=style.reference_line_pen,

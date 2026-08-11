@@ -36,13 +36,14 @@ class DesktopShankScreenView:
         self,
         preserve_plot_selection: bool,
         *,
-        displays: Any,
+        ephys_plot_presenter: Any,
+        slice_menu_coordinator: Any,
     ) -> DesktopShankSelectionState:
         """Capture desktop plot selections to preserve across shank redraw."""
-        prev_slice = displays.slice.capture_selection()
+        prev_slice = slice_menu_coordinator.capture_selection()
         prev_ephys_plot_keys = (
-            displays.ephys.current_plot_keys()
-            if preserve_plot_selection and displays.ephys.has_plot_menus()
+            ephys_plot_presenter.current_plot_keys()
+            if preserve_plot_selection and ephys_plot_presenter.has_plot_menus()
             else None
         )
         return DesktopShankSelectionState(
@@ -59,11 +60,16 @@ class DesktopShankScreenView:
         )
         self.reset_raw_image_payloads()
 
-    def render_plot_menus(self, plot_menu_state: Any, *, displays: Any) -> None:
+    def render_plot_menus(
+        self,
+        plot_menu_state: Any,
+        *,
+        ephys_plot_presenter: Any,
+    ) -> None:
         """Refresh ephys plot menus for the selected shank."""
-        if not displays.ephys.has_plot_menus():
+        if not ephys_plot_presenter.has_plot_menus():
             self.init_menubar()
-        displays.ephys.render_menus(plot_menu_state)
+        ephys_plot_presenter.render_menus(plot_menu_state)
 
     def configure_view_after_render(self, preserve_plot_selection: bool) -> None:
         """Apply one-time view configuration after shank rendering."""

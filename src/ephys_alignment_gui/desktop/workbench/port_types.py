@@ -30,11 +30,11 @@ class DesktopAlignmentEditActionPorts:
 class DesktopShankRenderPorts:
     """Desktop operations needed to render an active shank."""
 
-    capture_plot_selection: Callable[[bool], Any]
+    capture_plot_selection: Callable[..., Any]
     render_alignment_choices: Callable[[list[str]], None]
     apply_plot_data_state: Callable[[Any], None]
     raw_image_payloads: Callable[[], Any]
-    render_plot_menus: Callable[[Any], None]
+    render_plot_menus: Callable[..., None]
     configure_view: Callable[[bool], None]
     offline: Callable[[], bool]
 

@@ -138,7 +138,10 @@ class DesktopWorkbench:
         movable: bool = True,
     ) -> bool:
         """Render the active aligned histology panel."""
-        return self.displays.histology.render_active_aligned(fig, movable=movable)
+        return self.render_cluster.histology_presenter.render_active_aligned(
+            fig,
+            movable=movable,
+        )
 
     def render_active_reference_histology(
         self,
@@ -147,7 +150,10 @@ class DesktopWorkbench:
         movable: bool = False,
     ) -> bool:
         """Render the active reference histology panel."""
-        return self.displays.histology.render_active_reference(fig, movable=movable)
+        return self.render_cluster.histology_presenter.render_active_reference(
+            fig,
+            movable=movable,
+        )
 
     def render_active_nearby_histology(
         self,
@@ -156,19 +162,22 @@ class DesktopWorkbench:
         movable: bool = False,
     ) -> bool:
         """Render the active nearby-boundary histology panel."""
-        return self.displays.histology.render_active_nearby(fig, movable=movable)
+        return self.render_cluster.histology_presenter.render_active_nearby(
+            fig,
+            movable=movable,
+        )
 
     def render_active_scale_factor(self) -> bool:
         """Render the active scale-factor panel."""
-        return self.displays.histology.render_active_scale_factor()
+        return self.render_cluster.histology_presenter.render_active_scale_factor()
 
     def render_active_fit(self) -> bool:
         """Render the active feature/track fit panel."""
-        return self.displays.histology.render_active_fit()
+        return self.render_cluster.histology_presenter.render_active_fit()
 
     def render_active_histology_panels(self) -> bool:
         """Render reference histology, aligned histology, scale, and fit panels."""
-        return self.displays.histology.render_active_panels()
+        return self.render_cluster.histology_presenter.render_active_panels()
 
     def render_loaded_shank_histology(self, shank_idx: int | None = None) -> bool:
         """Render loaded-shank histology, perpendicular slice, and line overlays."""

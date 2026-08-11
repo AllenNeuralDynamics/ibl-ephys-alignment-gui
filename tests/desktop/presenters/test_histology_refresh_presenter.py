@@ -27,7 +27,7 @@ class FakeQueries:
         return self.line_state
 
 
-class FakeHistologyDisplay:
+class FakeHistologyPresenter:
     def __init__(self, render_result: bool = True) -> None:
         self.render_result = render_result
         self.render_count = 0
@@ -37,12 +37,20 @@ class FakeHistologyDisplay:
         return self.render_result
 
 
-class FakeSliceDisplay:
+class FakeSlicePanelPresenter:
     def __init__(self) -> None:
-        self.refresh_count = 0
+        self.refreshed_selections: list[Any] = []
 
-    def refresh_perpendicular_histology(self) -> None:
-        self.refresh_count += 1
+    def refresh_perpendicular_histology(self, selection: Any) -> None:
+        self.refreshed_selections.append(selection)
+
+
+class FakeSliceMenuCoordinator:
+    def __init__(self) -> None:
+        self.selection = "slice-selection"
+
+    def current_selection(self) -> Any:
+        return self.selection
 
 
 class FakeReferenceLineDisplay:
@@ -60,24 +68,26 @@ def _presenter(
 ) -> tuple[
     DesktopHistologyRefreshPresenter,
     FakeQueries,
-    FakeHistologyDisplay,
-    FakeSliceDisplay,
+    FakeHistologyPresenter,
+    FakeSlicePanelPresenter,
     FakeReferenceLineDisplay,
 ]:
     queries = FakeQueries(line_state)
-    histology = FakeHistologyDisplay(render_result)
-    slice_display = FakeSliceDisplay()
+    histology = FakeHistologyPresenter(render_result)
+    slice_panel = FakeSlicePanelPresenter()
+    slice_menu = FakeSliceMenuCoordinator()
     reference_lines = FakeReferenceLineDisplay()
     return (
         DesktopHistologyRefreshPresenter(
             app=SimpleNamespace(queries=queries),
-            histology_display=histology,
-            slice_display=slice_display,
+            histology_presenter=histology,
+            slice_panel_presenter=slice_panel,
+            slice_menu_coordinator=slice_menu,
             reference_line_display=reference_lines,
         ),
         queries,
         histology,
-        slice_display,
+        slice_panel,
         reference_lines,
     )
 
@@ -87,14 +97,14 @@ def test_render_loaded_shank_histology_restores_reference_lines() -> None:
         feature_positions_um=[1.0],
         track_positions_um=[2.0],
     )
-    presenter, queries, histology, slice_display, reference_lines = _presenter(
+    presenter, queries, histology, slice_panel, reference_lines = _presenter(
         line_state=line_state
     )
 
     assert presenter.render_loaded_shank_histology(1)
 
     assert histology.render_count == 1
-    assert slice_display.refresh_count == 1
+    assert slice_panel.refreshed_selections == ["slice-selection"]
     assert queries.line_calls == [1]
     assert reference_lines.created == [([1.0], [2.0])]
 
@@ -108,13 +118,13 @@ def test_render_loaded_shank_histology_uses_active_shank_by_default() -> None:
 
 
 def test_render_loaded_shank_histology_stops_when_panel_render_fails() -> None:
-    presenter, queries, histology, slice_display, reference_lines = _presenter(
+    presenter, queries, histology, slice_panel, reference_lines = _presenter(
         render_result=False
     )
 
     assert not presenter.render_loaded_shank_histology(1)
 
     assert histology.render_count == 1
-    assert slice_display.refresh_count == 0
+    assert slice_panel.refreshed_selections == []
     assert queries.line_calls == []
     assert reference_lines.created == []

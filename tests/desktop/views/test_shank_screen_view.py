@@ -8,11 +8,10 @@ from typing import Any
 import numpy as np
 
 from ephys_alignment_gui.core.alignment_read_models import ActiveShankPlotDataState
-from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.views.shank_screen_view import DesktopShankScreenView
 
 
-class FakeSliceDisplay:
+class FakeSliceMenuCoordinator:
     def __init__(self) -> None:
         self.selection = SimpleNamespace(selection="slice-selection", label="slice")
 
@@ -20,7 +19,7 @@ class FakeSliceDisplay:
         return self.selection
 
 
-class FakeEphysDisplay:
+class FakeEphysPlotPresenter:
     def __init__(self, *, has_menus: bool = True) -> None:
         self.has_menus = has_menus
         self.current_plot_key_calls = 0
@@ -48,15 +47,15 @@ class FakeDepthPlotView:
 def _view(
     *,
     has_menus: bool = True,
-) -> tuple[DesktopShankScreenView, FakeEphysDisplay, list[Any], DesktopDisplays]:
+) -> tuple[
+    DesktopShankScreenView,
+    FakeEphysPlotPresenter,
+    FakeSliceMenuCoordinator,
+    list[Any],
+]:
     calls: list[Any] = []
-    ephys = FakeEphysDisplay(has_menus=has_menus)
-    displays = DesktopDisplays(
-        ephys=ephys,
-        histology=object(),
-        reference_lines=object(),
-        slice=FakeSliceDisplay(),
-    )
+    ephys = FakeEphysPlotPresenter(has_menus=has_menus)
+    slice_menu = FakeSliceMenuCoordinator()
     view = DesktopShankScreenView(
         depth_plots=FakeDepthPlotView(calls),
         init_menubar=lambda: calls.append("init-menubar"),
@@ -64,19 +63,22 @@ def _view(
         capture_slice_export_geometry=lambda: calls.append("slice-geometry"),
     )
     view.raw_image_payloads = {"raw": "payload"}
-    return view, ephys, calls, displays
+    return view, ephys, slice_menu, calls
 
 
 def test_capture_plot_selection_preserves_ephys_keys_only_when_requested() -> None:
-    preserve_view, preserve_ephys, _calls, preserve_displays = _view(has_menus=True)
-    no_preserve_view, no_preserve_ephys, _calls, no_preserve_displays = _view(
-        has_menus=True
-    )
+    preserve_view, preserve_ephys, preserve_slice, _calls = _view(has_menus=True)
+    no_preserve_view, no_preserve_ephys, no_preserve_slice, _calls = _view(has_menus=True)
 
-    preserved = preserve_view.capture_plot_selection(True, displays=preserve_displays)
+    preserved = preserve_view.capture_plot_selection(
+        True,
+        ephys_plot_presenter=preserve_ephys,
+        slice_menu_coordinator=preserve_slice,
+    )
     not_preserved = no_preserve_view.capture_plot_selection(
         False,
-        displays=no_preserve_displays,
+        ephys_plot_presenter=no_preserve_ephys,
+        slice_menu_coordinator=no_preserve_slice,
     )
 
     assert preserved.previous_slice_selection == "slice-selection"
@@ -89,7 +91,7 @@ def test_capture_plot_selection_preserves_ephys_keys_only_when_requested() -> No
 
 
 def test_apply_plot_data_state_sets_depth_limits_and_clears_raw_payloads() -> None:
-    view, _ephys, calls, _displays = _view()
+    view, _ephys, _slice_menu, calls = _view()
     state = ActiveShankPlotDataState(
         key=None,
         shank_idx=0,
@@ -106,16 +108,16 @@ def test_apply_plot_data_state_sets_depth_limits_and_clears_raw_payloads() -> No
 
 
 def test_render_plot_menus_initializes_menubar_when_needed() -> None:
-    view, ephys, calls, displays = _view(has_menus=False)
+    view, ephys, _slice_menu, calls = _view(has_menus=False)
 
-    view.render_plot_menus("menu-state", displays=displays)
+    view.render_plot_menus("menu-state", ephys_plot_presenter=ephys)
 
     assert calls == ["init-menubar"]
     assert ephys.rendered_menus == ["menu-state"]
 
 
 def test_configure_view_after_render_only_configures_first_unpreserved_view() -> None:
-    view, _ephys, calls, _displays = _view()
+    view, _ephys, _slice_menu, calls = _view()
 
     view.configure_view_after_render(False)
     view.configure_view_after_render(False)

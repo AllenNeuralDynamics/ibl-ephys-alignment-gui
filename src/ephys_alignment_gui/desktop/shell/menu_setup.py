@@ -21,13 +21,14 @@ def build_menu_bar(window: Any) -> None:
 
 
 def _attach_plot_menus(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
-    window.displays.ephys.attach_plot_menus(menu_bar)
-    window.displays.slice.attach_slice_menu(
+    render_cluster = window.desktop_workbench.render_cluster
+    render_cluster.ephys_plot_presenter.attach_plot_menus(menu_bar)
+    render_cluster.slice_menu_coordinator.attach_menu(
         menu_bar,
         parent=window,
         offline=window.offline,
     )
-    window.displays.ephys.attach_unit_filter_menu(menu_bar, window)
+    render_cluster.ephys_plot_presenter.attach_unit_filter_menu(menu_bar, window)
 
 
 def _add_fit_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
@@ -69,49 +70,66 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 window,
                 "Toggle Image Plots",
                 "Alt+1",
-                lambda: window.displays.ephys.toggle_plot("image"),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "image"
+                ),
             ),
             _action(
                 window,
                 "Toggle Line Plots",
                 "Alt+2",
-                lambda: window.displays.ephys.toggle_plot("line"),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "line"
+                ),
             ),
             _action(
                 window,
                 "Toggle Probe Plots",
                 "Alt+3",
-                lambda: window.displays.ephys.toggle_plot("probe"),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "probe"
+                ),
             ),
             _action(
                 window,
                 "Toggle Slice Plots",
                 "Alt+4",
-                lambda: window.displays.slice.toggle_slice_plot(),
+                lambda: window.desktop_workbench.render_cluster.slice_menu_coordinator.toggle_plot(),
             ),
             _action(
                 window,
                 "Toggle Previous Image Plots",
                 "Alt+Ctrl+1",
-                lambda: window.displays.ephys.toggle_plot("image", reverse=True),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "image",
+                    reverse=True,
+                ),
             ),
             _action(
                 window,
                 "Toggle Previous Line Plots",
                 "Alt+Ctrl+2",
-                lambda: window.displays.ephys.toggle_plot("line", reverse=True),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "line",
+                    reverse=True,
+                ),
             ),
             _action(
                 window,
                 "Toggle Previous Probe Plots",
                 "Alt+Ctrl+3",
-                lambda: window.displays.ephys.toggle_plot("probe", reverse=True),
+                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                    "probe",
+                    reverse=True,
+                ),
             ),
             _action(
                 window,
                 "Toggle Previous Slice Plots",
                 "Alt+Ctrl+4",
-                lambda: window.displays.slice.toggle_slice_plot(reverse=True),
+                lambda: window.desktop_workbench.render_cluster.slice_menu_coordinator.toggle_plot(
+                    reverse=True
+                ),
             ),
             _action(
                 window,

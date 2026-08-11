@@ -71,10 +71,13 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 ),
             ),
             shank=DesktopShankRenderPorts(
-                capture_plot_selection=lambda preserve: (
+                capture_plot_selection=lambda preserve,
+                ephys_plot_presenter,
+                slice_menu_coordinator: (
                     window.shank_screen_view.capture_plot_selection(
                         preserve,
-                        displays=window.displays,
+                        ephys_plot_presenter=ephys_plot_presenter,
+                        slice_menu_coordinator=slice_menu_coordinator,
                     )
                 ),
                 render_alignment_choices=(
@@ -82,10 +85,10 @@ def desktop_workbench_ports_from_main_window(window: Any) -> DesktopWorkbenchPor
                 ),
                 apply_plot_data_state=window.shank_screen_view.apply_plot_data_state,
                 raw_image_payloads=window.shank_screen_view.raw_image_payload_mapping,
-                render_plot_menus=lambda state: (
+                render_plot_menus=lambda state, ephys_plot_presenter: (
                     window.shank_screen_view.render_plot_menus(
                         state,
-                        displays=window.displays,
+                        ephys_plot_presenter=ephys_plot_presenter,
                     )
                 ),
                 configure_view=(window.shank_screen_view.configure_view_after_render),

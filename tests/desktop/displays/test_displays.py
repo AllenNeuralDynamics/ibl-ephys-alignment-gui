@@ -45,20 +45,17 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     )
     reference_lines = object()
 
-    def create_ephys(*, app: Any, config: Any) -> Any:
-        calls.append(("ephys", app, config, None))
+    def create_ephys(*, config: Any) -> Any:
+        calls.append(("ephys", None, config, None))
         return ephys
 
     def create_histology(
         *,
-        app: Any,
         config: Any,
         perpendicular_plot: Any,
-        scale_factor_y_range: Any,
     ) -> Any:
-        calls.append(("histology", app, config, perpendicular_plot))
+        calls.append(("histology", None, config, perpendicular_plot))
         assert perpendicular_plot is slice_display.perpendicular_plot
-        assert scale_factor_y_range() == (0.0, 1.0)
         return histology
 
     def create_reference_lines(*, bindings: Any) -> Any:
@@ -71,8 +68,8 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
         assert bindings.fit_plot == "fit-plot"
         return reference_lines
 
-    def create_slice(*, app: Any, config: Any) -> Any:
-        calls.append(("slice", app, config, None))
+    def create_slice(*, config: Any) -> Any:
+        calls.append(("slice", None, config, None))
         return slice_display
 
     monkeypatch.setattr(
@@ -101,7 +98,7 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
         slice="slice-ports",
     )
 
-    result = DesktopDisplays.create(app="app", config=config)
+    result = DesktopDisplays.create(config=config)
 
     assert result.ephys is ephys
     assert result.histology is histology
@@ -112,8 +109,8 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     assert probe_plot.y_links == [image_plot]
     assert perpendicular_plot.y_links == [aligned_plot]
     assert calls[:3] == [
-        ("ephys", "app", "ephys-ports", None),
-        ("slice", "app", "slice-ports", None),
-        ("histology", "app", "histology-ports", perpendicular_plot),
+        ("ephys", None, "ephys-ports", None),
+        ("slice", None, "slice-ports", None),
+        ("histology", None, "histology-ports", perpendicular_plot),
     ]
     assert calls[3][0] == "reference_lines"
