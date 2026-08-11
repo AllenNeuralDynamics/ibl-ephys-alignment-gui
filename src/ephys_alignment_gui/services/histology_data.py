@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import SimpleITK as sitk
+from aind_anatomical_utils.anatomical_volume import AnatomicalHeader
 
 from ephys_alignment_gui.geometry.anatomical_atlas import (
     _BLESSED_DIRECTION,
@@ -19,9 +21,12 @@ from ephys_alignment_gui.geometry.rigid_rotation import (
     polar_rotation,
     rotate_image,
 )
-from ephys_alignment_gui.io.datapackage_loader import MouseRoot
+from ephys_alignment_gui.io.datapackage_loader import HistologyImagePaths, MouseRoot
 
 logger = logging.getLogger(__name__)
+_GEOMETRY_SCHEMA = "anatomical-header/1"
+_GEOMETRY_SPACE = "left-posterior-superior"
+_GEOMETRY_UNITS = "millimeter"
 
 
 @dataclass(frozen=True)
@@ -102,8 +107,8 @@ class HistologyDataService:
 
         intensity_image = sitk.ReadImage(str(hist.ccf_template))
         label_image = sitk.ReadImage(str(hist.labels))
-        pipeline_image = sitk.ReadImage(str(hist.registration_pipeline))
         histology_image = sitk.ReadImage(str(hist.registration))
+        pipeline_image = _load_pipeline_geometry_image(hist, intensity_image)
 
         # Extract the rotational part of the SPIM->template affine and apply
         # it to every image-space asset, so the canonical in-memory frame has
@@ -129,9 +134,6 @@ class HistologyDataService:
         label_image_rot = rotate_image(
             label_image, R, rotation_center, interpolator="nearest"
         )
-        pipeline_image_rot = rotate_image(
-            pipeline_image, R, rotation_center, interpolator="linear"
-        )
         histology_image_rot = rotate_image(
             histology_image, R, rotation_center, interpolator="linear"
         )
@@ -139,7 +141,6 @@ class HistologyDataService:
         brain_atlas = BrainAtlasAnatomical(
             intensity_img=intensity_image_rot,
             label_img=label_image_rot,
-            pipeline_img=pipeline_image_rot,
             display_rotation=R,
             display_rotation_center=rotation_center,
             intensity_img_spim_native=intensity_image,
@@ -166,3 +167,174 @@ class HistologyDataService:
             histology_images={"histology_registration": histology_image_rot},
             lazy_channel_paths=lazy_channel_paths,
         )
+
+
+def _load_pipeline_geometry_image(
+    hist: HistologyImagePaths,
+    base_image: sitk.Image,
+) -> sitk.Image:
+    """Load the pipeline geometry image, preferring the sidecar when present."""
+    sidecar_path = hist.registration_pipeline_geometry
+    if sidecar_path is not None:
+        header = _pipeline_geometry_header_from_sidecar(sidecar_path, base_image)
+        if hist.registration_pipeline is not None:
+            _validate_pipeline_volume_matches_header(hist.registration_pipeline, header)
+        return header.as_sitk_stub()
+
+    if hist.registration_pipeline is not None:
+        return sitk.ReadImage(str(hist.registration_pipeline))
+
+    raise ValueError(
+        "Datapackage histology image_space must include either "
+        "registration_pipeline_geometry or registration_pipeline"
+    )
+
+
+def _pipeline_geometry_stub_from_sidecar(
+    sidecar_path: Path,
+    base_image: sitk.Image,
+) -> sitk.Image:
+    """Rehydrate a pipeline geometry sidecar as a 1x1x1 SimpleITK stub."""
+    return _pipeline_geometry_header_from_sidecar(
+        sidecar_path, base_image
+    ).as_sitk_stub()
+
+
+def _pipeline_geometry_header_from_sidecar(
+    sidecar_path: Path,
+    base_image: sitk.Image,
+) -> AnatomicalHeader:
+    """Rehydrate a pipeline geometry sidecar as an anatomical header."""
+    payload = _load_geometry_payload(sidecar_path)
+    _validate_geometry_payload_conventions(payload, sidecar_path)
+    header_payload = payload["header"]
+    header = _anatomical_header_from_payload(header_payload, sidecar_path)
+    if header.size_ijk != tuple(base_image.GetSize()):
+        raise ValueError(
+            f"pipeline geometry {header.size_ijk} does not match base image "
+            f"{base_image.GetSize()}; the index handed between frames "
+            "would be wrong"
+        )
+    return header
+
+
+def _validate_pipeline_volume_matches_header(
+    pipeline_path: Path,
+    header: AnatomicalHeader,
+) -> None:
+    """Assert the 3.2 transition sidecar agrees with the still-shipped volume."""
+    volume = sitk.ReadImage(str(pipeline_path))
+    if header.size_ijk != tuple(volume.GetSize()):
+        raise ValueError(
+            f"pipeline geometry {header.size_ijk} does not match pipeline volume "
+            f"{volume.GetSize()}"
+        )
+    if not np.allclose(header.spacing, volume.GetSpacing()):
+        raise ValueError(
+            f"pipeline geometry spacing {header.spacing} does not match "
+            f"pipeline volume {volume.GetSpacing()}"
+        )
+    if not np.allclose(header.origin, volume.GetOrigin()):
+        raise ValueError(
+            f"pipeline geometry origin {header.origin} does not match "
+            f"pipeline volume {volume.GetOrigin()}"
+        )
+    if not np.allclose(header.direction_tuple(), volume.GetDirection()):
+        raise ValueError(
+            "pipeline geometry direction does not match pipeline volume "
+            f"{volume.GetDirection()}"
+        )
+
+
+def _load_geometry_payload(sidecar_path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(sidecar_path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Malformed pipeline geometry sidecar {sidecar_path}: {e}"
+        ) from e
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Pipeline geometry sidecar {sidecar_path} must contain a JSON object"
+        )
+    return payload
+
+
+def _validate_geometry_payload_conventions(
+    payload: dict[str, object],
+    sidecar_path: Path,
+) -> None:
+    if payload.get("schema") != _GEOMETRY_SCHEMA:
+        raise ValueError(
+            f"Unsupported pipeline geometry schema in {sidecar_path}: "
+            f"{payload.get('schema')!r}"
+        )
+    if payload.get("space") != _GEOMETRY_SPACE:
+        raise ValueError(
+            f"Unsupported pipeline geometry space in {sidecar_path}: "
+            f"{payload.get('space')!r}"
+        )
+    if payload.get("units") != _GEOMETRY_UNITS:
+        raise ValueError(
+            f"Unsupported pipeline geometry units in {sidecar_path}: "
+            f"{payload.get('units')!r}"
+        )
+    if not isinstance(payload.get("header"), dict):
+        raise ValueError(
+            f"Pipeline geometry sidecar {sidecar_path} missing header object"
+        )
+
+
+def _anatomical_header_from_payload(
+    header_payload: object,
+    sidecar_path: Path,
+) -> AnatomicalHeader:
+    if not isinstance(header_payload, dict):
+        raise ValueError(
+            f"Pipeline geometry sidecar {sidecar_path} missing header object"
+        )
+    try:
+        origin = _float_triplet(header_payload["origin"], "origin")
+        spacing = _float_triplet(header_payload["spacing"], "spacing")
+        direction = np.array(header_payload["direction"], dtype=np.float64).reshape(
+            3, 3
+        )
+        size_ijk = _int_triplet(header_payload["size_ijk"], "size_ijk")
+    except KeyError as e:
+        raise ValueError(
+            f"Pipeline geometry sidecar {sidecar_path} missing header field {e}"
+        ) from e
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid pipeline geometry sidecar {sidecar_path}: {e}"
+        ) from e
+    return AnatomicalHeader(
+        origin=origin,
+        spacing=spacing,
+        direction=direction,
+        size_ijk=size_ijk,
+    )
+
+
+def _float_triplet(
+    value: object,
+    field: str,
+) -> tuple[float, float, float]:
+    if not isinstance(value, list | tuple) or len(value) != 3:
+        raise ValueError(f"{field} must be a length-3 sequence")
+    try:
+        return (float(value[0]), float(value[1]), float(value[2]))
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{field} must contain numeric values") from e
+
+
+def _int_triplet(
+    value: object,
+    field: str,
+) -> tuple[int, int, int]:
+    if not isinstance(value, list | tuple) or len(value) != 3:
+        raise ValueError(f"{field} must be a length-3 sequence")
+    try:
+        return (int(value[0]), int(value[1]), int(value[2]))
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{field} must contain integer values") from e

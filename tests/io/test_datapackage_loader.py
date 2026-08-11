@@ -30,6 +30,8 @@ def _make_mouse_root(
     ephys: str | None = "rec1/probeA",
     channels_rel: str | None = None,
     ccf_null: bool = False,
+    pipeline_volume: bool = True,
+    pipeline_geometry: bool = False,
 ) -> Path:
     """Create a minimal mouse-root directory with a datapackage.json.
 
@@ -44,13 +46,17 @@ def _make_mouse_root(
     # Histology files (inside mouse root).
     img_dir = mouse_root / "image_space_histology"
     img_dir.mkdir()
-    for name in (
+    histology_files = [
         "histology_registration.nrrd",
-        "histology_registration_pipeline.nrrd",
         "ccf_in_mouse.nrrd",
         "labels_in_mouse.nrrd",
         "Ex_561_Em_600.nrrd",
-    ):
+    ]
+    if pipeline_volume:
+        histology_files.append("histology_registration_pipeline.nrrd")
+    if pipeline_geometry:
+        histology_files.append("histology_registration_pipeline.json")
+    for name in histology_files:
         (img_dir / name).touch()
 
     # Transforms live in a sibling SmartSPIM asset (outside mouse root).
@@ -99,6 +105,21 @@ def _make_mouse_root(
             probes.setdefault(rec_id, {}).update(rec_probes)
 
     img_rel = "image_space_histology"
+    image_space = {
+        "registration": _ref(f"{img_rel}/histology_registration.nrrd"),
+        "ccf_template": _ref(f"{img_rel}/ccf_in_mouse.nrrd"),
+        "labels": _ref(f"{img_rel}/labels_in_mouse.nrrd"),
+        "additional_channels": [_ref(f"{img_rel}/Ex_561_Em_600.nrrd")],
+    }
+    if pipeline_volume:
+        image_space["registration_pipeline"] = _ref(
+            f"{img_rel}/histology_registration_pipeline.nrrd"
+        )
+    if pipeline_geometry:
+        image_space["registration_pipeline_geometry"] = _ref(
+            f"{img_rel}/histology_registration_pipeline.json"
+        )
+
     dp = {
         "schema_version": schema_version,
         "mouse_id": "mouse42",
@@ -136,15 +157,7 @@ def _make_mouse_root(
             ),
         },
         "histology": {
-            "image_space": {
-                "registration": _ref(f"{img_rel}/histology_registration.nrrd"),
-                "registration_pipeline": _ref(
-                    f"{img_rel}/histology_registration_pipeline.nrrd"
-                ),
-                "ccf_template": _ref(f"{img_rel}/ccf_in_mouse.nrrd"),
-                "labels": _ref(f"{img_rel}/labels_in_mouse.nrrd"),
-                "additional_channels": [_ref(f"{img_rel}/Ex_561_Em_600.nrrd")],
-            },
+            "image_space": image_space,
             "ccf_space": {
                 "registration": _ref("ccf_space_histology/histology_registration.nrrd"),
             },
@@ -232,6 +245,38 @@ def test_histology_paths_are_absolute(tmp_path):
         assert p.is_file()
     assert "Ex_561_Em_600" in mr.histology.additional_channels
     assert mr.histology.additional_channels["Ex_561_Em_600"].is_file()
+
+
+def test_loads_3_2_pipeline_geometry_sidecar(tmp_path):
+    root = _make_mouse_root(
+        tmp_path,
+        schema_version="3.2.0",
+        pipeline_geometry=True,
+    )
+    sidecar = root / "image_space_histology" / "histology_registration_pipeline.json"
+
+    mr = _load(root)
+
+    assert mr.schema_version == "3.2.0"
+    assert mr.histology.registration_pipeline_geometry == sidecar
+    assert mr.histology.registration_pipeline is not None
+    assert mr.histology.registration_pipeline.is_file()
+
+
+def test_loads_4_0_pipeline_geometry_without_volume(tmp_path):
+    root = _make_mouse_root(
+        tmp_path,
+        schema_version="4.0.0",
+        pipeline_volume=False,
+        pipeline_geometry=True,
+    )
+    sidecar = root / "image_space_histology" / "histology_registration_pipeline.json"
+
+    mr = _load(root)
+
+    assert mr.schema_version == "4.0.0"
+    assert mr.histology.registration_pipeline is None
+    assert mr.histology.registration_pipeline_geometry == sidecar
 
 
 def test_probe_info_resolves_paths(tmp_path):
@@ -407,12 +452,15 @@ def test_rejects_older_schema(tmp_path):
 
 def test_rejects_unvendored_schema_version(tmp_path):
     root = _make_mouse_root(tmp_path, schema_version="3.0.0")
-    with pytest.raises(DataPackageError, match="GUI supports bundled schemas: 3.1.0"):
+    with pytest.raises(
+        DataPackageError,
+        match="GUI supports bundled schemas: 3.1.0, 3.2.0, 4.0.0",
+    ):
         _load(root)
 
 
 def test_rejects_incompatible_major_schema(tmp_path):
-    root = _make_mouse_root(tmp_path, schema_version="4.0.0")
+    root = _make_mouse_root(tmp_path, schema_version="5.0.0")
     with pytest.raises(DataPackageError, match="Unsupported datapackage schema"):
         _load(root)
 

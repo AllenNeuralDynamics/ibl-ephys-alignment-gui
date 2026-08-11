@@ -18,8 +18,6 @@ class BrainAtlasAnatomical(BrainAtlas):
     In addition to the BrainAtlas intensity and label arrays, this class also
     stores the SimpleITK images for potential further processing.
 
-    pipeline_sitk_image: sitk.Image
-        The pipeline image associated with this atlas for CCF conversion.
     intensity_sitk_image: sitk.Image
         The anatomical intensity image.
     display_rotation, display_rotation_center: np.ndarray | None
@@ -31,12 +29,6 @@ class BrainAtlasAnatomical(BrainAtlas):
         atlas was built directly from SPIM-native images without rotation.
     """
 
-    # Pipeline image associated with this atlas for CCF conversion.
-    # After the canonical rotation has been applied upstream, this image is in
-    # the rotated canonical frame (same as ``intensity_sitk_image``). The
-    # SPIM-native version is kept as ``pipeline_sitk_image_spim_native`` for
-    # downstream ANTs-chain coord math (which requires pre-rotation inputs).
-    pipeline_sitk_image: sitk.Image
     # Anatomical intensity image in the canonical (rotated) frame.
     intensity_sitk_image: sitk.Image
     # Pre-rotation SPIM-native versions, retained for composition with the
@@ -57,7 +49,6 @@ class BrainAtlasAnatomical(BrainAtlas):
         self,
         intensity_img: sitk.Image,
         label_img: sitk.Image,
-        pipeline_img: sitk.Image,
         display_rotation: NDArray[np.float64] | None = None,
         display_rotation_center: NDArray[np.float64] | None = None,
         intensity_img_spim_native: sitk.Image | None = None,
@@ -76,16 +67,14 @@ class BrainAtlasAnatomical(BrainAtlas):
             The labels should be the **lateralized** IBL brain region labels,
             with the left hemisphere being the negative indices and the right
             hemisphere being the positive indices.
-        pipeline_img : sitk.Image
-            The pipeline image associated with this atlas for CCF conversion.
-            This should have the same array shape as the intensity image, but
-            may be in a different physical space. Its physical space should be
-            the one used by the CCF-registration pipeline, and allow conversion
-            of the voxel indices to the physical domain of the pipeline-computed
-            CCF transforms.
+        pipeline_img_spim_native : sitk.Image, optional
+            Geometry-only image in the physical space used by the SPIM-native
+            CCF registration pipeline. Downstream output conversion maps
+            continuous indices from the base histology grid into this frame.
         """
 
-        # Validate that intensity and label images have the same shape and physical space
+        # Validate that intensity and label images have the same shape and
+        # physical space.
         methods_to_check = [
             "GetOrigin",
             "GetSpacing",
@@ -97,7 +86,8 @@ class BrainAtlasAnatomical(BrainAtlas):
             label_val = np.array(getattr(label_img, m)())
             if not np.allclose(intensity_val, label_val):
                 raise ValueError(
-                    f"Intensity and label {m}() mismatch: {intensity_val} != {label_val}"
+                    f"Intensity and label {m}() mismatch: "
+                    f"{intensity_val} != {label_val}"
                 )
 
         # Reorient to _BLESSED_DIRECTION if needed
@@ -109,7 +99,6 @@ class BrainAtlasAnatomical(BrainAtlas):
         if orientation_code == _BLESSED_DIRECTION:
             intensity_img_blessed = intensity_img
             label_img_blessed = label_img
-            pipeline_img_blessed = pipeline_img
         else:
             _logger.info(
                 f"Reorienting volume from {orientation_code} to {_BLESSED_DIRECTION} "
@@ -117,7 +106,6 @@ class BrainAtlasAnatomical(BrainAtlas):
             )
             intensity_img_blessed = sitk.DICOMOrient(intensity_img, _BLESSED_DIRECTION)
             label_img_blessed = sitk.DICOMOrient(label_img, _BLESSED_DIRECTION)
-            pipeline_img_blessed = sitk.DICOMOrient(pipeline_img, _BLESSED_DIRECTION)
 
         cosine_dir_mat = np.array(intensity_img_blessed.GetDirection()).reshape(3, 3)
 
@@ -199,13 +187,11 @@ class BrainAtlasAnatomical(BrainAtlas):
         )
         nxyz = np.array(intensity_img_sra_arr.shape)[dims2xyz]
         self.bc = BrainCoordinates(nxyz=nxyz, xyz0=sitk_origin_ras_m, dxyz=dxyz)
-        # Store the SimpleITK intensity image, and the pipeline image for use
-        # with CCF transforms
+        # Store the SimpleITK intensity image for use with CCF transforms.
         self.intensity_sitk_image = intensity_img_blessed
-        self.pipeline_sitk_image = pipeline_img_blessed
         # Retain pre-rotation versions for the SPIM-native ANTs chain path.
-        # If the caller didn't supply them, we weren't rotated — reuse the
-        # already-blessed rotated images as both.
+        # If the caller didn't supply them, reuse the already-blessed intensity
+        # image as the SPIM-native base grid.
         self.intensity_sitk_image_spim_native = (
             intensity_img_spim_native
             if intensity_img_spim_native is not None
@@ -214,7 +200,7 @@ class BrainAtlasAnatomical(BrainAtlas):
         self.pipeline_sitk_image_spim_native = (
             pipeline_img_spim_native
             if pipeline_img_spim_native is not None
-            else pipeline_img_blessed
+            else self.intensity_sitk_image_spim_native
         )
         # Rotation applied upstream to get here (None means identity).
         if (display_rotation is None) != (display_rotation_center is None):

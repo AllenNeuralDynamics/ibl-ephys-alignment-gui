@@ -12,6 +12,7 @@ classifiers = ["Programming Language :: Python :: 3"]
 readme = "README.md"
 
 dependencies = [
+  "aind-anatomical-utils>=0.4.3",
   "aind-data-schema<2.0",
   "aind-data-access-api",
   "aind-qcportal-schema",
@@ -41,6 +42,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 ephys_alignment_gui = [
   "io/schemas/aind-ibl-ephys-alignment-datapackage/3.1.0/datapackage.schema.json",
+  "io/schemas/aind-ibl-ephys-alignment-datapackage/3.2.0/datapackage.schema.json",
+  "io/schemas/aind-ibl-ephys-alignment-datapackage/4.0.0/datapackage.schema.json",
   "resources/ephys_atlas_image.png",
 ]
 

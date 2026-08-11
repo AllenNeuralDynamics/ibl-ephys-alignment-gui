@@ -129,7 +129,8 @@ class HistologyImagePaths:
     """Absolute paths to image-space histology volumes."""
 
     registration: Path
-    registration_pipeline: Path
+    registration_pipeline: Path | None
+    registration_pipeline_geometry: Path | None
     ccf_template: Path
     labels: Path
     additional_channels: dict[str, Path] = field(default_factory=dict)
@@ -447,7 +448,14 @@ def _parse_histology(
         registration=_resolve_ref(img["registration"], resolver, assets),
         registration_pipeline=_resolve_ref(
             img["registration_pipeline"], resolver, assets
-        ),
+        )
+        if img.get("registration_pipeline") is not None
+        else None,
+        registration_pipeline_geometry=_resolve_ref(
+            img["registration_pipeline_geometry"], resolver, assets
+        )
+        if img.get("registration_pipeline_geometry") is not None
+        else None,
         ccf_template=_resolve_ref(img["ccf_template"], resolver, assets),
         labels=_resolve_ref(img["labels"], resolver, assets),
         additional_channels=additional,
