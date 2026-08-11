@@ -329,10 +329,16 @@ class FakeFolderDialog:
 
 
 class FakeSavePresenter:
-    def __init__(self) -> None:
+    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
         self.saved_count = 0
         self.qc_display_count = 0
         self.qc_clicked_count = 0
+        self.subscriptions = subscriptions or []
+        self.connect_count = 0
+
+    def connect_save_events(self) -> list[FakeSubscription]:
+        self.connect_count += 1
+        return self.subscriptions
 
     def save_alignment_outputs(self) -> bool:
         self.saved_count += 1
@@ -579,27 +585,37 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     shank_sub = FakeSubscription()
     load_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
+    save_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
     load_data = FakeLoadDataPresenter([load_sub])
     lifecycle = FakeLifecyclePresenter([lifecycle_sub])
+    save = FakeSavePresenter([save_sub])
     workbench = _workbench(
         alignment,
         shank,
         FakeHistologyDisplay(),
         load_data=load_data,
         lifecycle=lifecycle,
+        save=save,
     )
 
     subscriptions = workbench.connect_events()
     second_connect = workbench.connect_events()
 
-    assert subscriptions == [alignment_sub, shank_sub, load_sub, lifecycle_sub]
+    assert subscriptions == [
+        alignment_sub,
+        shank_sub,
+        load_sub,
+        lifecycle_sub,
+        save_sub,
+    ]
     assert second_connect == subscriptions
     assert alignment.connect_count == 1
     assert shank.connect_count == 1
     assert load_data.connect_count == 1
     assert lifecycle.connect_count == 1
+    assert save.connect_count == 1
 
     workbench.disconnect_events()
     workbench.disconnect_events()
@@ -608,6 +624,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert shank_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1
+    assert save_sub.disconnect_count == 1
 
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:

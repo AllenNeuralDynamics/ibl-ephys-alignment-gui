@@ -51,6 +51,9 @@ from ephys_alignment_gui.core.alignment_events import (
     LoadDataCancelled,
     LoadDataFailed,
     LoadDataProgressed,
+    SaveCompleted,
+    SaveDocDbStatus,
+    SaveFailed,
     ShankChanged,
     StreamActivated,
     StreamDetached,
@@ -1301,6 +1304,8 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
             chn_coords=np.array([[10.0, 20.0]]),
         )
     }
+    events: list[SaveCompleted] = []
+    workspace.app.events.subscribe(SaveCompleted, events.append)
 
     result = workspace.app.commands.persistence.save_visited_alignment_outputs(
         use_docdb=True
@@ -1333,6 +1338,32 @@ def test_commands_save_visited_alignment_outputs_batches_active_shanks(
     assert repo.saved_kwargs[0]["use_docdb"]
     assert repo.saved_kwargs[0]["shank_idx"] == 1
     assert repo.saved_kwargs[0]["previous_alignments"] == active_state.alignments
+    assert events == [
+        SaveCompleted(
+            saved_count=1,
+            active_choices=tuple(active_state.prev_align),
+            docdb_statuses=(
+                SaveDocDbStatus(
+                    probe_name="probeA_0",
+                ),
+            ),
+        )
+    ]
+
+
+def test_commands_save_visited_alignment_outputs_emits_failed_event() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.output_directory = Path("/tmp/out")
+    events: list[SaveFailed] = []
+    workspace.app.events.subscribe(SaveFailed, events.append)
+
+    result = workspace.app.commands.persistence.save_visited_alignment_outputs(
+        use_docdb=True
+    )
+
+    assert isinstance(result, Failed)
+    assert result.message == "No visited alignments are ready to save"
+    assert events == [SaveFailed(message="No visited alignments are ready to save")]
 
 
 def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) -> None:

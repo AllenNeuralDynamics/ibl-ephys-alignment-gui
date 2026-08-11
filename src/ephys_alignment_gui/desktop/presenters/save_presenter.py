@@ -10,6 +10,8 @@ from typing import Any
 
 from ephys_alignment_gui.application.results import VisitedAlignmentOutputsSaved
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok, Requirement
+from ephys_alignment_gui.core.alignment_events import SaveCompleted, SaveFailed
+from ephys_alignment_gui.core.event_bus import EventSubscription
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,41 @@ class DesktopSavePresenter:
     """Coordinate desktop save and QC button behavior."""
 
     commands: Any
+    events: Any
     callbacks: DesktopSaveCallbacks
+
+    def connect_save_events(self) -> list[EventSubscription]:
+        """Subscribe desktop save presentation to semantic save events."""
+        return [
+            self.events.subscribe(SaveCompleted, self.on_save_completed),
+            self.events.subscribe(SaveFailed, self.on_save_failed),
+        ]
+
+    def on_save_completed(self, event: SaveCompleted) -> None:
+        """Render save completion in desktop UI/logging."""
+        for status in event.docdb_statuses:
+            if status.error is not None:
+                logger.error(
+                    "Failed to write to DocDB with error %s. "
+                    "Output saved to results folder",
+                    status.error,
+                )
+            else:
+                logger.info(
+                    "Channels locations saved, and ccf coordinates saved for %s",
+                    status.probe_name,
+                )
+
+        if event.active_choices is not None:
+            self.callbacks.render_alignment_choices(list(event.active_choices))
+        logger.info(
+            "Channel locations saved to results folder for %d visited alignment(s)",
+            event.saved_count,
+        )
+
+    def on_save_failed(self, event: SaveFailed) -> None:
+        """Log save failure reported by the app layer."""
+        logger.error(event.message)
 
     def save_alignment_outputs(self) -> bool:
         """Save visited alignment outputs, prompting for output if needed."""
@@ -63,35 +99,9 @@ class DesktopSavePresenter:
                 self.callbacks.log_requirement(result.first)
                 return False
             if isinstance(result, Failed):
-                logger.error(result.message)
                 return False
             assert isinstance(result, VisitedAlignmentOutputsSaved)
-            self._render_saved_outputs(result)
         return True
-
-    def _render_saved_outputs(self, result: VisitedAlignmentOutputsSaved) -> None:
-        """Render save command results in desktop UI/logging."""
-        for saved in result.saved_outputs.values():
-            if saved.saved.docdb_probe_name is None:
-                continue
-            if saved.saved.docdb_error is not None:
-                logger.error(
-                    "Failed to write to DocDB with error %s. "
-                    "Output saved to results folder",
-                    saved.saved.docdb_error,
-                )
-            else:
-                logger.info(
-                    "Channels locations saved, and ccf coordinates saved for %s",
-                    saved.saved.docdb_probe_name,
-                )
-
-        if result.active_choices is not None:
-            self.callbacks.render_alignment_choices(result.active_choices)
-        logger.info(
-            "Channel locations saved to results folder for %d visited alignment(s)",
-            result.saved_count,
-        )
 
     def display_qc_options(self) -> bool:
         """Open the QC dialog if histology is available."""

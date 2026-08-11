@@ -187,6 +187,7 @@ class AlignmentWorkspace:
             derived_data_service=self.alignment_derived_data_service,
             alignment_repository=self.alignment_repository,
             output_builder=self.alignment_output_service,
+            events=self.events,
         )
         self.edit_commands = AlignmentEditCommandHandler(
             controller=self.controller,

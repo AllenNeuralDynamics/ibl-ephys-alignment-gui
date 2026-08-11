@@ -18,11 +18,17 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
 )
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
+from ephys_alignment_gui.core.alignment_events import (
+    SaveCompleted,
+    SaveDocDbStatus,
+    SaveFailed,
+)
 from ephys_alignment_gui.core.alignment_state import LEGACY_AUTO_ALIGNMENT_LABEL
 from ephys_alignment_gui.core.controller import (
     AlignmentController,
 )
 from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.alignment_derived_data import (
@@ -46,6 +52,7 @@ class AlignmentPersistenceCommandHandler:
     derived_data_service: AlignmentDerivedDataService
     alignment_repository: AlignmentRepository
     output_builder: Any
+    events: EventBus
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
@@ -113,10 +120,11 @@ class AlignmentPersistenceCommandHandler:
 
         output_inputs, states_by_key = self._visited_alignment_output_inputs()
         if not output_inputs:
-            return Failed("No visited alignments are ready to save")
+            return self._save_failed("No visited alignments are ready to save")
 
         outputs = self._build_alignment_outputs(output_inputs)
         if isinstance(outputs, Failed):
+            self._emit_save_failed(outputs.message)
             return outputs
 
         for state in states_by_key.values():
@@ -135,6 +143,7 @@ class AlignmentPersistenceCommandHandler:
                 use_docdb,
             )
             if isinstance(saved, Failed):
+                self._emit_save_failed(saved.message)
                 return saved
             saved_outputs[key] = saved
 
@@ -147,11 +156,46 @@ class AlignmentPersistenceCommandHandler:
         elif isinstance(choices, Failed):
             logger.error(choices.message)
 
-        return VisitedAlignmentOutputsSaved(
+        result = VisitedAlignmentOutputsSaved(
             saved_count=len(saved_outputs),
             saved_outputs=saved_outputs,
             active_choices=active_choices,
         )
+        self.events.emit(
+            SaveCompleted(
+                saved_count=result.saved_count,
+                active_choices=(
+                    tuple(result.active_choices)
+                    if result.active_choices is not None
+                    else None
+                ),
+                docdb_statuses=self._docdb_statuses(result),
+            )
+        )
+        return result
+
+    def _save_failed(self, message: str) -> Failed:
+        self._emit_save_failed(message)
+        return Failed(message)
+
+    def _emit_save_failed(self, message: str) -> None:
+        self.events.emit(SaveFailed(message=message))
+
+    @staticmethod
+    def _docdb_statuses(
+        result: VisitedAlignmentOutputsSaved,
+    ) -> tuple[SaveDocDbStatus, ...]:
+        statuses: list[SaveDocDbStatus] = []
+        for saved in result.saved_outputs.values():
+            if saved.saved.docdb_probe_name is None:
+                continue
+            statuses.append(
+                SaveDocDbStatus(
+                    probe_name=saved.saved.docdb_probe_name,
+                    error=saved.saved.docdb_error,
+                )
+            )
+        return tuple(statuses)
 
     def _visited_alignment_output_inputs(
         self,
@@ -186,12 +230,10 @@ class AlignmentPersistenceCommandHandler:
                 )
                 continue
             alignment = state.active_alignment
-            channel_locations_ras = (
-                self.derived_data_service.compute_channel_locations(
-                    ephysalign=shank_runtime.ephysalign,
-                    feature=alignment.feature,
-                    track=alignment.track,
-                )
+            channel_locations_ras = self.derived_data_service.compute_channel_locations(
+                ephysalign=shank_runtime.ephysalign,
+                feature=alignment.feature,
+                track=alignment.track,
             )
             output_inputs[key] = (channel_locations_ras, shank_runtime.chn_coords)
             states_by_key[key] = state

@@ -17,7 +17,13 @@ from ephys_alignment_gui.application.workflow import (
     Ok,
     Requirement,
 )
+from ephys_alignment_gui.core.alignment_events import (
+    SaveCompleted,
+    SaveDocDbStatus,
+    SaveFailed,
+)
 from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.desktop.presenters.save_presenter import (
     DesktopSaveCallbacks,
     DesktopSavePresenter,
@@ -48,9 +54,11 @@ class FakeCommands:
     def __init__(
         self,
         *,
+        events: EventBus | None = None,
         ready_results: list[Any] | None = None,
         save_result: Any | None = None,
     ) -> None:
+        self.events = events
         self.ready_results = ready_results or [Ok()]
         self.save_result = save_result or _saved_result()
         self.ready_calls = 0
@@ -63,7 +71,34 @@ class FakeCommands:
 
     def save_visited_alignment_outputs(self, *, use_docdb: bool):
         self.save_calls.append({"use_docdb": use_docdb})
+        self._emit_save_event(self.save_result)
         return self.save_result
+
+    def _emit_save_event(self, result: Any) -> None:
+        if self.events is None:
+            return
+        if isinstance(result, Failed):
+            self.events.emit(SaveFailed(message=result.message))
+            return
+        if isinstance(result, VisitedAlignmentOutputsSaved):
+            self.events.emit(
+                SaveCompleted(
+                    saved_count=result.saved_count,
+                    active_choices=(
+                        tuple(result.active_choices)
+                        if result.active_choices is not None
+                        else None
+                    ),
+                    docdb_statuses=tuple(
+                        SaveDocDbStatus(
+                            probe_name=saved.saved.docdb_probe_name,
+                            error=saved.saved.docdb_error,
+                        )
+                        for saved in result.saved_outputs.values()
+                        if saved.saved.docdb_probe_name is not None
+                    ),
+                )
+            )
 
 
 def _requirement() -> Requirement:
@@ -108,21 +143,21 @@ def _presenter(
     selected_descriptions: list[str] | None = None,
 ) -> tuple[DesktopSavePresenter, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
+    events = EventBus()
     commands = commands or FakeCommands()
+    commands.events = events
     presenter = DesktopSavePresenter(
         commands=commands,
+        events=events,
         callbacks=DesktopSaveCallbacks(
-            ensure_output_directory=lambda requirement: calls.append(
-                ("ensure-output", requirement)
-            )
-            or ensure_output,
+            ensure_output_directory=lambda requirement: (
+                calls.append(("ensure-output", requirement)) or ensure_output
+            ),
             log_requirement=lambda requirement: calls.append(
                 ("requirement", requirement)
             ),
             use_docdb=lambda: use_docdb,
-            render_alignment_choices=lambda choices: calls.append(
-                ("choices", choices)
-            ),
+            render_alignment_choices=lambda choices: calls.append(("choices", choices)),
             busy_context=lambda *args, **kwargs: FakeBusyContext(
                 calls,
                 *args,
@@ -136,6 +171,7 @@ def _presenter(
             warning=lambda title, message: calls.append(("warning", title, message)),
         ),
     )
+    presenter.connect_save_events()
     return presenter, commands, calls
 
 

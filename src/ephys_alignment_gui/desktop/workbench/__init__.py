@@ -82,6 +82,9 @@ class DesktopWorkbench:
         self._event_subscriptions.extend(
             self.presenter_cluster.lifecycle_presenter.connect_lifecycle_events()
         )
+        self._event_subscriptions.extend(
+            self.presenter_cluster.save_presenter.connect_save_events()
+        )
         return list(self._event_subscriptions)
 
     def disconnect_events(self) -> None:

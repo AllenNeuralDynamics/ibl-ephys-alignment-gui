@@ -121,3 +121,27 @@ class HistologyLoadReported:
     shank_idx: int
     status: HistologyLoadStatus
     message: str | None = None
+
+
+@dataclass(frozen=True)
+class SaveDocDbStatus:
+    """DocDB write status for one saved alignment output."""
+
+    probe_name: str
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class SaveCompleted:
+    """Payload emitted after visited alignment outputs are persisted."""
+
+    saved_count: int
+    active_choices: tuple[str, ...] | None = None
+    docdb_statuses: tuple[SaveDocDbStatus, ...] = ()
+
+
+@dataclass(frozen=True)
+class SaveFailed:
+    """Payload emitted when visited alignment output persistence fails."""
+
+    message: str

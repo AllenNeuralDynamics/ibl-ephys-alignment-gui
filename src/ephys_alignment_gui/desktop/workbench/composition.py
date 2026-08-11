@@ -186,6 +186,7 @@ def build_desktop_workbench_presenter_cluster(
     )
     save_presenter = DesktopSavePresenter(
         commands=app.commands.persistence,
+        events=app.events,
         callbacks=_save_callbacks(
             ports.save,
             output_folder_prompt,
