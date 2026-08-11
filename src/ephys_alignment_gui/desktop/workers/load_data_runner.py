@@ -65,6 +65,10 @@ class FreshLoadRunner(Protocol):
         """Request cancellation of the active job."""
         ...
 
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        """Request cancellation and wait for the active job to stop."""
+        ...
+
 
 class FreshLoadWorker(QtCore.QObject):
     """QObject that runs one fresh-load job in its owning thread."""
@@ -160,6 +164,31 @@ class QtFreshLoadRunner(QtCore.QObject):
             return
         active.invocation.cancel_token.cancel(reason)
         active.thread.requestInterruption()
+
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        """Request cancellation and wait for the active load worker to stop.
+
+        Cancellation is cooperative: this method does not terminate the worker
+        thread. If heavy IO is still inside a non-interruptible call after the
+        timeout, callers should keep the desktop lifecycle alive.
+        """
+        active = self._active
+        if active is None:
+            return True
+
+        self.cancel(reason)
+        active.thread.quit()
+        stopped = active.thread.wait(timeout_ms)
+        if not stopped:
+            logger.warning(
+                "Fresh load worker did not stop within %s ms after cancellation",
+                timeout_ms,
+            )
+            return False
+
+        if self._active is active:
+            self._active = None
+        return True
 
     def _clear_if_active(self, worker: FreshLoadWorker) -> None:
         active = self._active

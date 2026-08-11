@@ -432,6 +432,7 @@ class ImmediateFreshLoadRunner:
     def __init__(self) -> None:
         self.starts: list[Any] = []
         self.cancel_calls: list[str] = []
+        self.shutdown_calls: list[tuple[str, int]] = []
 
     @property
     def is_running(self) -> bool:
@@ -456,11 +457,17 @@ class ImmediateFreshLoadRunner:
     def cancel(self, reason: str) -> None:
         self.cancel_calls.append(reason)
 
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_calls.append((reason, timeout_ms))
+        return True
+
 
 class ManualFreshLoadRunner:
     def __init__(self) -> None:
         self.active = False
         self.cancel_calls: list[str] = []
+        self.shutdown_calls: list[tuple[str, int]] = []
+        self.shutdown_result = True
         self.start_args: dict[str, Any] | None = None
 
     @property
@@ -502,6 +509,12 @@ class ManualFreshLoadRunner:
     def cancel(self, reason: str) -> None:
         self.cancel_calls.append(reason)
         self.active = False
+
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_calls.append((reason, timeout_ms))
+        if self.shutdown_result:
+            self.active = False
+        return self.shutdown_result
 
 
 def _cached_result(shank_idx: int) -> CachedEphysDataActivated:
@@ -755,6 +768,39 @@ def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> N
     assert runner.cancel_calls == ["superseded by a newer load request"]
     assert commands.begin_calls == []
     assert calls == []
+
+
+def test_shutdown_active_load_cancels_runner_and_closes_busy_context() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    runner = ManualFreshLoadRunner()
+    presenter, commands, _queries, calls = _presenter(
+        begin_result=prepared,
+        load_runner=runner,
+    )
+    assert presenter.load_heavy_data()
+
+    assert presenter.shutdown_active_load("closing", timeout_ms=123)
+
+    assert commands.cancel_calls == ["closing"]
+    assert runner.shutdown_calls == [("closing", 123)]
+    assert ("busy-exit", RuntimeError) in calls
+
+
+def test_shutdown_active_load_keeps_context_open_when_runner_does_not_stop() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    runner = ManualFreshLoadRunner()
+    runner.shutdown_result = False
+    presenter, commands, _queries, calls = _presenter(
+        begin_result=prepared,
+        load_runner=runner,
+    )
+    assert presenter.load_heavy_data()
+
+    assert not presenter.shutdown_active_load("closing", timeout_ms=123)
+
+    assert commands.cancel_calls == ["closing"]
+    assert runner.shutdown_calls == [("closing", 123)]
+    assert ("busy-exit", RuntimeError) not in calls
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:

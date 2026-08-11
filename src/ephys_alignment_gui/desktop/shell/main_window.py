@@ -103,10 +103,12 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def closeEvent(self, event) -> None:
-        """Disconnect desktop event subscriptions before the Qt window closes."""
+        """Shut down desktop work before the Qt window closes."""
         workbench = getattr(self, "desktop_workbench", None)
-        if workbench is not None:
-            workbench.disconnect_events()
+        if workbench is not None and not workbench.shutdown():
+            logger.warning("Window close ignored while a fresh load is still running")
+            event.ignore()
+            return
         super().closeEvent(event)
 
     @staticmethod

@@ -125,10 +125,7 @@ class DesktopLoadDataPresenter:
         callbacks = self.callbacks
         if self.load_runner.is_running:
             logger.info("Load request ignored because a foreground load is active")
-            self.app.commands.load.cancel_active_fresh_load(
-                "superseded by a newer load request"
-            )
-            self.load_runner.cancel("superseded by a newer load request")
+            self.cancel_active_load("superseded by a newer load request")
             return False
 
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
@@ -183,6 +180,32 @@ class DesktopLoadDataPresenter:
             logger.exception("Failed to start background load")
             return False
         return True
+
+    def cancel_active_load(self, reason: str) -> bool:
+        """Request cancellation for any active foreground load."""
+        if self._active_load_id is None and not self.load_runner.is_running:
+            return False
+
+        self.app.commands.load.cancel_active_fresh_load(reason)
+        if self.load_runner.is_running:
+            self.load_runner.cancel(reason)
+        return True
+
+    def shutdown_active_load(
+        self,
+        reason: str = "application closing",
+        *,
+        timeout_ms: int = 5000,
+    ) -> bool:
+        """Cancel and settle any active foreground load before desktop teardown."""
+        if self._active_load_id is None and not self.load_runner.is_running:
+            return True
+
+        self.app.commands.load.cancel_active_fresh_load(reason)
+        stopped = self.load_runner.shutdown(reason, timeout_ms=timeout_ms)
+        if stopped:
+            self._close_load_context(RuntimeError(f"Load cancelled: {reason}"))
+        return stopped
 
     def _on_load_worker_progress(
         self,

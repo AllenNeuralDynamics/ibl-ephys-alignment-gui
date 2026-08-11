@@ -121,10 +121,17 @@ class FakeHistologyDisplay:
 
 
 class FakeLoadDataPresenter:
-    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
+    def __init__(
+        self,
+        subscriptions: list[FakeSubscription] | None = None,
+        *,
+        shutdown_result: bool = True,
+    ) -> None:
         self.load_count = 0
         self.subscriptions = subscriptions or []
         self.connect_count = 0
+        self.shutdown_result = shutdown_result
+        self.shutdown_timeouts: list[int] = []
 
     def connect_load_events(self) -> list[FakeSubscription]:
         self.connect_count += 1
@@ -133,6 +140,10 @@ class FakeLoadDataPresenter:
     def load_heavy_data(self) -> bool:
         self.load_count += 1
         return True
+
+    def shutdown_active_load(self, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_timeouts.append(timeout_ms)
+        return self.shutdown_result
 
 
 class FakeLifecyclePresenter:
@@ -639,6 +650,55 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert lifecycle_sub.disconnect_count == 1
     assert save_sub.disconnect_count == 1
     assert previous_alignment_sub.disconnect_count == 1
+
+
+def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
+    alignment_sub = FakeSubscription()
+    shank_sub = FakeSubscription()
+    load_sub = FakeSubscription()
+    lifecycle_sub = FakeSubscription()
+    save_sub = FakeSubscription()
+    previous_alignment_sub = FakeSubscription()
+    load_data = FakeLoadDataPresenter([load_sub])
+    workbench = _workbench(
+        FakeAlignmentPresenter([alignment_sub]),
+        FakeShankPresenter([shank_sub]),
+        FakeHistologyDisplay(),
+        load_data=load_data,
+        lifecycle=FakeLifecyclePresenter([lifecycle_sub]),
+        save=FakeSavePresenter([save_sub]),
+        previous_alignment_load=FakePreviousAlignmentLoadPresenter(
+            [previous_alignment_sub]
+        ),
+    )
+    workbench.connect_events()
+
+    assert workbench.shutdown(timeout_ms=123)
+
+    assert load_data.shutdown_timeouts == [123]
+    assert alignment_sub.disconnect_count == 1
+    assert shank_sub.disconnect_count == 1
+    assert load_sub.disconnect_count == 1
+    assert lifecycle_sub.disconnect_count == 1
+    assert save_sub.disconnect_count == 1
+    assert previous_alignment_sub.disconnect_count == 1
+
+
+def test_workbench_shutdown_leaves_events_connected_when_load_does_not_stop() -> None:
+    alignment_sub = FakeSubscription()
+    load_data = FakeLoadDataPresenter(shutdown_result=False)
+    workbench = _workbench(
+        FakeAlignmentPresenter([alignment_sub]),
+        FakeShankPresenter([]),
+        FakeHistologyDisplay(),
+        load_data=load_data,
+    )
+    workbench.connect_events()
+
+    assert not workbench.shutdown(timeout_ms=123)
+
+    assert load_data.shutdown_timeouts == [123]
+    assert alignment_sub.disconnect_count == 0
 
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:

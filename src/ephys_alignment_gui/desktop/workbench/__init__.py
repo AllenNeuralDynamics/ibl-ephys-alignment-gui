@@ -96,6 +96,16 @@ class DesktopWorkbench:
             subscription.disconnect()
         self._event_subscriptions.clear()
 
+    def shutdown(self, *, timeout_ms: int = 5000) -> bool:
+        """Settle foreground desktop work before the workbench is torn down."""
+        stopped = self.presenter_cluster.load_data_presenter.shutdown_active_load(
+            timeout_ms=timeout_ms,
+        )
+        if not stopped:
+            return False
+        self.disconnect_events()
+        return True
+
     def initialize_startup_stream_state(self) -> None:
         """Initialize stream-dependent app and desktop state at startup."""
         self.presenter_cluster.lifecycle_presenter.initialize_startup_stream_state()
