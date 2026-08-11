@@ -20,7 +20,7 @@ def test_edit_history_initializes_cyclic_buffers() -> None:
     assert history.idx_prev == 0
     assert history.track == [0, 0, 0, 0]
     assert history.features == [0, 0, 0, 0]
-    assert history.lin_fit_history == [True, True, True, True]
+    assert history.lin_fit_history == [False, False, False, False]
 
 
 def test_edit_history_is_transient_per_instance() -> None:
@@ -72,5 +72,5 @@ def test_clear_current_alignment_restores_blank_sentinel() -> None:
 
     assert history.features[0] == 0
     assert history.track[0] == 0
-    assert history.lin_fit_history[0]
+    assert not history.lin_fit_history[0]
     assert history.current_alignment is None

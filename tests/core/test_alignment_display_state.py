@@ -43,13 +43,13 @@ def test_depth_view_settings_provide_probe_ranges_and_fit_depth_grid() -> None:
 def test_edit_settings_track_current_alignment_command_options() -> None:
     state = AlignmentDisplayState()
 
-    assert state.edit_settings.lin_fit
+    assert not state.edit_settings.lin_fit
     assert state.edit_settings.extend_feature == 1
-    assert state.edit_settings.set_lin_fit(False) is False
+    assert state.edit_settings.set_lin_fit(True) is True
 
     state.reset_edit_settings()
 
-    assert state.edit_settings.lin_fit
+    assert not state.edit_settings.lin_fit
 
 
 def test_visibility_toggles_are_resettable_display_state() -> None:

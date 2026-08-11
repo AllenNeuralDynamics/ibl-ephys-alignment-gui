@@ -43,3 +43,4 @@ def test_active_alignment_returns_mutable_copies() -> None:
 
     np.testing.assert_array_equal(alignment.feature, [0.0, 1.0])
     np.testing.assert_array_equal(alignment.track, [0.0, 2.0])
+    assert not alignment.lin_fit

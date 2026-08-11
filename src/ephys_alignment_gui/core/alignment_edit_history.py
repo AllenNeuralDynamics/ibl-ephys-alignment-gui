@@ -31,7 +31,7 @@ class AlignmentEditHistory:
     def __post_init__(self) -> None:
         self.track = [0] * (self.max_idx + 1)
         self.features = [0] * (self.max_idx + 1)
-        self.lin_fit_history = [True] * (self.max_idx + 1)
+        self.lin_fit_history = [False] * (self.max_idx + 1)
 
     @property
     def current_alignment(self) -> ActiveAlignment | None:
@@ -52,4 +52,4 @@ class AlignmentEditHistory:
         """Clear the active cursor slot back to the legacy blank sentinel."""
         self.features[self.idx] = 0
         self.track[self.idx] = 0
-        self.lin_fit_history[self.idx] = True
+        self.lin_fit_history[self.idx] = False

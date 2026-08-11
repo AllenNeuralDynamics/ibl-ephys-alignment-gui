@@ -15,7 +15,7 @@ class ActiveAlignment:
 
     feature: NDArray[np.floating[Any]]
     track: NDArray[np.floating[Any]]
-    lin_fit: bool = True
+    lin_fit: bool = False
 
     def __post_init__(self) -> None:
         feature = np.array(self.feature, dtype=float, copy=True)
@@ -35,7 +35,7 @@ class ActiveAlignment:
         feature: Any,
         track: Any,
         *,
-        lin_fit: bool = True,
+        lin_fit: bool = False,
     ) -> ActiveAlignment | None:
         """Create an alignment from legacy buffers, returning None for blanks."""
         if feature is None or track is None:

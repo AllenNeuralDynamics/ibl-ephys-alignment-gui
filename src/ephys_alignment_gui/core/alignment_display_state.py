@@ -55,7 +55,7 @@ class DepthViewSettings:
 class AlignmentEditSettings:
     """Frontend-agnostic edit options used by alignment commands."""
 
-    lin_fit: bool = True
+    lin_fit: bool = False
     extend_feature: int = 1
 
     def set_lin_fit(self, enabled: bool) -> bool:
