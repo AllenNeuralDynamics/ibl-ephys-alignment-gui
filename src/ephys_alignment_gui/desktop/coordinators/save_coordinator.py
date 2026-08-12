@@ -12,7 +12,6 @@ from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrationPlan,
 )
-from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok, Requirement
 from ephys_alignment_gui.core.alignment_events import (
     SaveCompleted,
     SaveFailed,
@@ -21,6 +20,7 @@ from ephys_alignment_gui.core.alignment_events import (
 )
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventSubscription
+from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok, Requirement
 from ephys_alignment_gui.desktop.workers.save_rehydration_runner import (
     QtSaveRuntimeRehydrationRunner,
     SaveRuntimeRehydrationResult,
@@ -297,9 +297,7 @@ class DesktopSaveCoordinator:
             self._progress_dialog.update_progress(
                 key=key,
                 phase_label="Reloading runtime",
-                status_label=(
-                    "Loaded" if event.status == "completed" else "Loading"
-                ),
+                status_label=("Loaded" if event.status == "completed" else "Loading"),
                 completed=completed,
                 total=total,
                 message=event.message,
@@ -397,9 +395,8 @@ class DesktopSaveCoordinator:
         button = self.callbacks.complete_button()
         if self._save_button_original_text is not None and hasattr(button, "setText"):
             button.setText(self._save_button_original_text)
-        if (
-            self._save_button_original_tooltip is not None
-            and hasattr(button, "setToolTip")
+        if self._save_button_original_tooltip is not None and hasattr(
+            button, "setToolTip"
         ):
             button.setToolTip(self._save_button_original_tooltip)
         self._save_button_original_text = None

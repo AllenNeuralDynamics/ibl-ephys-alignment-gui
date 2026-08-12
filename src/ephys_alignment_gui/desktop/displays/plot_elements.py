@@ -296,7 +296,7 @@ class ColorBar(pg.GraphicsWidget):
         # Create colour map from matplotlib colourmap name
         self.cmap_name = cmap_name
         cmap = matplotlib.cm.get_cmap(self.cmap_name)
-        if type(cmap) == matplotlib.colors.LinearSegmentedColormap:
+        if isinstance(cmap, matplotlib.colors.LinearSegmentedColormap):
             cbins = np.linspace(0.0, 1.0, cbin)
             colors = (cmap(cbins)[np.newaxis, :, :3][0]).tolist()
         else:
@@ -428,7 +428,7 @@ class AdaptedAxisItem(pg.AxisItem):
 
         profiler("draw text")
 
-    def generateDrawSpecs(self, p):
+    def generateDrawSpecs(self, p):  # noqa: C901
         """
         Calls tickValues() and tickStrings() to determine where and how ticks should
         be drawn, then generates from this a set of drawing commands to be

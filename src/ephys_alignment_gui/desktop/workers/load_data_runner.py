@@ -13,7 +13,7 @@ from ephys_alignment_gui.application.results import (
     FreshLoadExecution,
     FreshLoadJobInvocation,
 )
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
     LoadDataJobCompleted,

@@ -10,13 +10,13 @@ from ephys_alignment_gui.application.results import AlignmentChoicesUpdated
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
 )
-from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.desktop.coordinators.previous_alignment_load_coordinator import (
     DesktopPreviousAlignmentLoadCoordinator,
     PreviousAlignmentLoadCallbacks,

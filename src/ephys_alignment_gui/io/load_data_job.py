@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.io.ephys_stream_loader import (
     EphysStreamLoader,
     LoadedEphysSelection,

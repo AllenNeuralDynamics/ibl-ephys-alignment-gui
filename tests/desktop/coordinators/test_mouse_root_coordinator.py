@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.application.results.metadata import MouseRootLoaded
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.coordinators.mouse_root_coordinator import (
     DesktopMouseRootCallbacks,
     DesktopMouseRootCoordinator,
@@ -109,10 +109,9 @@ def _coordinator(
                 *args,
                 **kwargs,
             ),
-            cancel_active_preload=lambda reason: calls.append(
-                ("cancel-preload", reason)
-            )
-            or True,
+            cancel_active_preload=lambda reason: (
+                calls.append(("cancel-preload", reason)) or True
+            ),
             evict_stream_cache=lambda: calls.append(("evict-app",)) or evict_result,
             select_first_session=lambda: calls.append(("select-first-session",)),
         ),

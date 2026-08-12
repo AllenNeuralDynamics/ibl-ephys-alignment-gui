@@ -9,7 +9,7 @@ from typing import Any
 
 from PyQt5 import QtWidgets
 
-from ephys_alignment_gui.application.workflow import (
+from ephys_alignment_gui.core.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     Blocked,
     Ok,

@@ -9,13 +9,13 @@ from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
 )
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     OutputDirectoryChanged,
     OutputRootChanged,
 )
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 
 

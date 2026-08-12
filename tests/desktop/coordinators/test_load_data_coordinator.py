@@ -17,7 +17,6 @@ from ephys_alignment_gui.application.results import (
     LoadDataFreshRequiredResult,
 )
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     FreshLoadCompleted,
     HistologyLoadReported,
@@ -27,6 +26,7 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamActivated,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.coordinators.load_data_coordinator import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataCoordinator,

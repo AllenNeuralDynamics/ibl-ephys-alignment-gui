@@ -26,7 +26,6 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrationPlan,
     SaveRuntimeRehydrator,
 )
-from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
@@ -48,6 +47,7 @@ from ephys_alignment_gui.core.controller import (
 )
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataCancelToken,
@@ -659,7 +659,4 @@ class AlignmentPersistenceCommandHandler:
 
     @staticmethod
     def _describe_key(key: AlignmentKey) -> str:
-        return (
-            f"{key.recording_id}/{key.ephys_collection} "
-            f"shank {key.shank_idx + 1}"
-        )
+        return f"{key.recording_id}/{key.ephys_collection} shank {key.shank_idx + 1}"

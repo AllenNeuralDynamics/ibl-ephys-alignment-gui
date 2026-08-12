@@ -31,13 +31,13 @@ from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrator,
 )
-from ephys_alignment_gui.application.workflow import WorkflowPolicy
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.document import AlignmentDocument
 from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.core.slice_display_policy import SliceDisplayPolicy
+from ephys_alignment_gui.core.workflow import WorkflowPolicy
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.io.ephys_stream_loader import EphysStreamLoader
 from ephys_alignment_gui.io.load_data_job import LoadDataJob

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.application.results.metadata import RecordingSelected
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.coordinators.session_selection_coordinator import (
     DesktopSessionSelectionCallbacks,
     DesktopSessionSelectionCoordinator,

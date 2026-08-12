@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.application.results import LoadedShankPrepared
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import ShankChanged
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveShankPlotDataState,
@@ -18,6 +17,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState
 
 logger = logging.getLogger(__name__)

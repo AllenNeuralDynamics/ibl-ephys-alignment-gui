@@ -38,7 +38,7 @@ from ephys_alignment_gui.desktop.coordinators.path_dialog_coordinator import (
 from ephys_alignment_gui.desktop.coordinators.plot_export_coordinator import (
     DesktopPlotExportCoordinator,
 )
-from ephys_alignment_gui.desktop.coordinators.previous_alignment_load_coordinator import (  # noqa: E501
+from ephys_alignment_gui.desktop.coordinators.previous_alignment_load_coordinator import (
     DesktopPreviousAlignmentLoadCoordinator,
     PreviousAlignmentLoadCallbacks,
 )

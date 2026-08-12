@@ -15,11 +15,11 @@ from ephys_alignment_gui.application.results import (
     ShankRuntimeInitialized,
     ShankSelected,
 )
-from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok
 
 
 @dataclass(frozen=True)

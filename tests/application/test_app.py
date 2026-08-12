@@ -47,7 +47,6 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrated,
     SaveRuntimeRehydrationPlan,
 )
-from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
@@ -84,6 +83,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
 )
 from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
+from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.io.datapackage_loader import MouseRoot, ProbeInfo
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
@@ -463,10 +463,7 @@ def _mouse_root_with_probes(*probes: ProbeInfo) -> MouseRoot:
         transforms=None,
         histology=None,
         probes={
-            "rec": {
-                probe.probe_name: probe
-                for probe in (probes or (_probe_info(),))
-            }
+            "rec": {probe.probe_name: probe for probe in (probes or (_probe_info(),))}
         },
     )
 
@@ -1230,7 +1227,7 @@ def test_commands_cache_started_preload_data_caches_without_activation() -> None
     assert not workspace.document.data_loaded
 
 
-def test_commands_cache_started_preload_ignores_stale_session() -> None:
+def test_commands_cache_started_preload_caches_after_same_root_session_change() -> None:
     workspace = _workspace_with_probe_state(shank_idx=0)
     probe = _probe_info(probe_name="probeB", ephys_collection="streamB")
     workspace.data_context.mouse_root = _mouse_root_with_probes(probe)
@@ -1265,8 +1262,56 @@ def test_commands_cache_started_preload_ignores_stale_session() -> None:
         job_result,
     )
 
+    assert result.shank_idx == 0
+    assert ("rec", "streamB") in workspace.runtime.stream_cache
+    assert workspace.runtime.active_stream_runtime is None
+
+
+def test_commands_cache_started_preload_ignores_stale_mouse_root() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    probe = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe)
+    prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "streamB"),
+        shank_idx=0,
+        preserve_plot_selection=True,
+        target=LoadDataJobTarget(
+            recording_id="rec",
+            probe_name="probeB",
+            stream_key=("rec", "streamB"),
+            shank_idx=0,
+            mouse_root=workspace.data_context.mouse_root,
+            probe_info=probe,
+            channel_table=ChannelTable(
+                local_coordinates=np.array([[0.0, 0.0]]),
+                shank_indices=np.array([0]),
+            ),
+        ),
+    )
+    execution = workspace.app.commands.load.start_preload_data(prepared)
+    workspace.data_context.mouse_root = MouseRoot(
+        root=Path("/tmp/other-mouse"),
+        schema_version="3.1.0",
+        mouse_id="mouse",
+        transforms=None,
+        histology=None,
+        probes={},
+    )
+    job_result = LoadDataJobCompleted(
+        target=prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream("streamB")),
+        histology=HistologyDataLoaded(),
+    )
+
+    result = workspace.app.commands.load.cache_started_preload_data(
+        execution,
+        job_result,
+    )
+
     assert isinstance(result, LoadDataStaleResultIgnored)
-    assert result.reason == "Loaded preload target is stale; selected session changed."
+    assert (
+        result.reason == "Loaded preload target is stale; selected mouse root changed."
+    )
     assert ("rec", "streamB") not in workspace.runtime.stream_cache
 
 

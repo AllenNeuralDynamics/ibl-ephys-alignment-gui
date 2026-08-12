@@ -9,7 +9,7 @@ from ephys_alignment_gui.application.results import (
     LoadedShankPrepared,
     PreviousAlignmentSelected,
 )
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.actions.alignment_selection_actions import (
     DesktopAlignmentSelectionActions,
     DesktopAlignmentSelectionCallbacks,

@@ -9,7 +9,7 @@ from typing import Any
 
 from PyQt5 import QtCore
 
-from ephys_alignment_gui.application.workflow import Requirement
+from ephys_alignment_gui.core.workflow import Requirement
 
 logger = logging.getLogger(__name__)
 

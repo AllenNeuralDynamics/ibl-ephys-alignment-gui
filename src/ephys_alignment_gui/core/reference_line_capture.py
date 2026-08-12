@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ephys_alignment_gui.application.results import PendingReferenceLinesUpdated
-from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.results import PendingReferenceLinesUpdated
+from ephys_alignment_gui.core.workflow import Failed, Ok
 
 
 class ReferenceLinesNotProvided:

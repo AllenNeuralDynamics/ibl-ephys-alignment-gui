@@ -12,13 +12,13 @@ from typing import Any
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
 )
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
+from ephys_alignment_gui.core.workflow import Failed
 
 logger = logging.getLogger(__name__)
 

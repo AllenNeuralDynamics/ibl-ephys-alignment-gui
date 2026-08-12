@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ephys_alignment_gui.application.results import (
+from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
+from ephys_alignment_gui.core.alignment_state import (
+    AlignmentState,
+    PendingReferenceLines,
+)
+from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
+from ephys_alignment_gui.core.results import (
     AlignmentChoicesUpdated,
     AlignmentEditApplied,
     AlignmentEditNoop,
@@ -15,19 +22,12 @@ from ephys_alignment_gui.application.results import (
     ShankRuntimeInitialized,
     ShankSelected,
 )
-from ephys_alignment_gui.application.workflow import (
+from ephys_alignment_gui.core.workflow import (
     Failed,
     Ok,
     PolicyResult,
     WorkflowPolicy,
 )
-from ephys_alignment_gui.core.active_alignment import ActiveAlignment
-from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
-from ephys_alignment_gui.core.alignment_state import (
-    AlignmentState,
-    PendingReferenceLines,
-)
-from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.runtime.shank import ShankRuntime
 from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
 from ephys_alignment_gui.services.alignment_repository import AlignmentHistory

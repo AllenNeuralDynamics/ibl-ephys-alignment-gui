@@ -12,8 +12,8 @@ from ephys_alignment_gui.application.results.metadata import (
     ProbeSelected,
     RecordingSelected,
 )
-from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.ephys_data import EphysDataService
 from ephys_alignment_gui.services.histology_data import HistologyDataContext

@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 from ephys_alignment_gui.application.results import LoadedShankPrepared
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import ShankChanged
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveShankPlotDataState,
@@ -18,6 +17,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.presenters.shank_presenter import (
     DesktopShankPresenter,
     DesktopShankRenderCallbacks,

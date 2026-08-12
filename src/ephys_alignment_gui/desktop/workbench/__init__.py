@@ -127,6 +127,31 @@ class DesktopWorkbench:
             init_region_lookup
         )
 
+    def attach_plot_menus(self, menu_bar: Any, *, parent: Any, offline: bool) -> None:
+        """Attach desktop plot menus without exposing render-cluster internals."""
+        self.render_cluster.ephys_plot_presenter.attach_plot_menus(menu_bar)
+        self.render_cluster.slice_menu_coordinator.attach_menu(
+            menu_bar,
+            parent=parent,
+            offline=offline,
+        )
+        self.render_cluster.ephys_plot_presenter.attach_unit_filter_menu(
+            menu_bar,
+            parent,
+        )
+
+    def toggle_ephys_plot(self, menu: Any, *, reverse: bool = False) -> None:
+        """Toggle the selected ephys plot menu."""
+        self.render_cluster.ephys_plot_presenter.toggle_plot(menu, reverse=reverse)
+
+    def toggle_slice_plot(self, *, reverse: bool = False) -> None:
+        """Toggle the selected slice plot menu."""
+        self.render_cluster.slice_menu_coordinator.toggle_plot(reverse=reverse)
+
+    def set_ephys_view(self, view: int) -> None:
+        """Apply one of the desktop shank-screen ephys layouts."""
+        self.views.shank_screen.set_view(view=view)
+
     def render_loaded_shank(
         self,
         *,
@@ -198,7 +223,9 @@ class DesktopWorkbench:
 
     def set_mouse_root(self, mouse_root: Any) -> bool:
         """Load a mouse-root datapackage through the desktop coordinator."""
-        return self.coordinator_cluster.mouse_root_coordinator.set_mouse_root(mouse_root)
+        return self.coordinator_cluster.mouse_root_coordinator.set_mouse_root(
+            mouse_root
+        )
 
     def mouse_root_edited(self) -> bool:
         """Handle direct text edits to the mouse-root line edit."""
@@ -206,7 +233,9 @@ class DesktopWorkbench:
 
     def session_selected(self, idx: int | None = None) -> bool:
         """Select the current recording/session from the desktop widgets."""
-        return self.coordinator_cluster.session_selection_coordinator.session_selected(idx)
+        return self.coordinator_cluster.session_selection_coordinator.session_selected(
+            idx
+        )
 
     def probe_selected(self, idx: int | None = None) -> bool:
         """Select the current probe from the desktop widgets."""
@@ -222,9 +251,7 @@ class DesktopWorkbench:
 
     def load_data_button_pressed(self) -> bool:
         """Run desktop load preflight policy and load data when allowed."""
-        return (
-            self.coordinator_cluster.load_preflight_coordinator.load_data_button_pressed()
-        )
+        return self.coordinator_cluster.load_preflight_coordinator.load_data_button_pressed()
 
     def fit_button_pressed(self) -> bool:
         """Fit the active alignment from current desktop reference lines."""
@@ -298,7 +325,9 @@ class DesktopWorkbench:
 
     def ensure_output_directory_for_save(self, requirement: Any | None = None) -> bool:
         """Require a save location before writing alignment outputs."""
-        return self.coordinator_cluster.output_folder_prompt.ensure_for_save(requirement)
+        return self.coordinator_cluster.output_folder_prompt.ensure_for_save(
+            requirement
+        )
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save-root directory. Per-probe output lands under it."""
@@ -373,11 +402,15 @@ class DesktopWorkbench:
 
     def cluster_clicked(self, item: Any, point: Any) -> Any | None:
         """Open cluster detail popup for a clicked ephys cluster point."""
-        return self.coordinator_cluster.interaction_coordinator.cluster_clicked(item, point)
+        return self.coordinator_cluster.interaction_coordinator.cluster_clicked(
+            item, point
+        )
 
     def describe_labels_pressed(self) -> bool:
         """Show region information for the selected histology label."""
-        return self.coordinator_cluster.interaction_coordinator.describe_labels_pressed()
+        return (
+            self.coordinator_cluster.interaction_coordinator.describe_labels_pressed()
+        )
 
     def label_closed(self, popup: Any) -> None:
         """Hide the label popup without forgetting reusable widgets."""

@@ -21,14 +21,11 @@ def build_menu_bar(window: Any) -> None:
 
 
 def _attach_plot_menus(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
-    render_cluster = window.desktop_workbench.render_cluster
-    render_cluster.ephys_plot_presenter.attach_plot_menus(menu_bar)
-    render_cluster.slice_menu_coordinator.attach_menu(
+    window.desktop_workbench.attach_plot_menus(
         menu_bar,
         parent=window,
         offline=window.offline,
     )
-    render_cluster.ephys_plot_presenter.attach_unit_filter_menu(menu_bar, window)
 
 
 def _add_fit_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
@@ -70,37 +67,31 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 window,
                 "Toggle Image Plots",
                 "Alt+1",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
-                    "image"
-                ),
+                lambda: window.desktop_workbench.toggle_ephys_plot("image"),
             ),
             _action(
                 window,
                 "Toggle Line Plots",
                 "Alt+2",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
-                    "line"
-                ),
+                lambda: window.desktop_workbench.toggle_ephys_plot("line"),
             ),
             _action(
                 window,
                 "Toggle Probe Plots",
                 "Alt+3",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
-                    "probe"
-                ),
+                lambda: window.desktop_workbench.toggle_ephys_plot("probe"),
             ),
             _action(
                 window,
                 "Toggle Slice Plots",
                 "Alt+4",
-                lambda: window.desktop_workbench.render_cluster.slice_menu_coordinator.toggle_plot(),
+                lambda: window.desktop_workbench.toggle_slice_plot(),
             ),
             _action(
                 window,
                 "Toggle Previous Image Plots",
                 "Alt+Ctrl+1",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                lambda: window.desktop_workbench.toggle_ephys_plot(
                     "image",
                     reverse=True,
                 ),
@@ -109,7 +100,7 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 window,
                 "Toggle Previous Line Plots",
                 "Alt+Ctrl+2",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                lambda: window.desktop_workbench.toggle_ephys_plot(
                     "line",
                     reverse=True,
                 ),
@@ -118,7 +109,7 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 window,
                 "Toggle Previous Probe Plots",
                 "Alt+Ctrl+3",
-                lambda: window.desktop_workbench.render_cluster.ephys_plot_presenter.toggle_plot(
+                lambda: window.desktop_workbench.toggle_ephys_plot(
                     "probe",
                     reverse=True,
                 ),
@@ -127,27 +118,25 @@ def _add_display_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None
                 window,
                 "Toggle Previous Slice Plots",
                 "Alt+Ctrl+4",
-                lambda: window.desktop_workbench.render_cluster.slice_menu_coordinator.toggle_plot(
-                    reverse=True
-                ),
+                lambda: window.desktop_workbench.toggle_slice_plot(reverse=True),
             ),
             _action(
                 window,
                 "View 1",
                 "Shift+1",
-                lambda: window.shank_screen_view.set_view(view=1),
+                lambda: window.desktop_workbench.set_ephys_view(view=1),
             ),
             _action(
                 window,
                 "View 2",
                 "Shift+2",
-                lambda: window.shank_screen_view.set_view(view=2),
+                lambda: window.desktop_workbench.set_ephys_view(view=2),
             ),
             _action(
                 window,
                 "View 3",
                 "Shift+3",
-                lambda: window.shank_screen_view.set_view(view=3),
+                lambda: window.desktop_workbench.set_ephys_view(view=3),
             ),
             _action(window, "Reset Axis", "Shift+A", actions.reset_axis_button_pressed),
             _action(

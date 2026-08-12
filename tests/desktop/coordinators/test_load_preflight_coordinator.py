@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ephys_alignment_gui.application.workflow import (
+from ephys_alignment_gui.core.workflow import (
     CHOOSE_OUTPUT_FOLDER,
     Blocked,
     Ok,
@@ -44,9 +44,7 @@ class FakeMessageBox:
 
     def addButton(self, *args: Any) -> object:
         button = (
-            self.set_button
-            if args[0] == "Set Output Folder..."
-            else self.cancel_button
+            self.set_button if args[0] == "Set Output Folder..." else self.cancel_button
         )
         self.buttons.append(button)
         return button

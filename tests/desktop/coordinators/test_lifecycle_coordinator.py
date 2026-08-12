@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     StreamCacheEvicted,
     StreamDetached,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.coordinators.lifecycle_coordinator import (
     DesktopLifecycleCallbacks,
     DesktopLifecycleCoordinator,

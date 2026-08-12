@@ -8,8 +8,8 @@ from ephys_alignment_gui.application.save_runtime_dependencies import (
     SaveRuntimeDependency,
     SaveRuntimeDependencyPlan,
 )
-from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.core.controller import AlignmentController
+from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataCancelToken,
     LoadDataJob,
@@ -82,8 +82,7 @@ class SaveRuntimeRehydrator:
             return Ok()
         if isinstance(result, SaveRuntimeRehydrationCancelled):
             return Failed(
-                "Reload cancelled while saving edited alignments: "
-                f"{result.reason}"
+                f"Reload cancelled while saving edited alignments: {result.reason}"
             )
         return result
 
@@ -235,9 +234,7 @@ class SaveRuntimeRehydrator:
                 f"{self._describe(dependency)}: missing datapackage metadata."
             )
         try:
-            channel_table = self.ephys_data_service.load_channel_table(
-                dependency.probe
-            )
+            channel_table = self.ephys_data_service.load_channel_table(dependency.probe)
         except Exception as exc:
             return Failed(
                 "Failed to load channel metadata needed to save edited alignment "

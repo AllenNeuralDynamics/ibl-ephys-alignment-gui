@@ -14,7 +14,7 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrationCancelled,
     SaveRuntimeRehydrationPlan,
 )
-from ephys_alignment_gui.application.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataCancelToken,
     LoadDataJobProgress,

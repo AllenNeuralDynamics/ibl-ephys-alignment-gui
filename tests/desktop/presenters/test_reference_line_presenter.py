@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.application.workflow import Failed, Ok
+from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.desktop.presenters.reference_line_presenter import (
     DesktopReferenceLinePresenter,
 )

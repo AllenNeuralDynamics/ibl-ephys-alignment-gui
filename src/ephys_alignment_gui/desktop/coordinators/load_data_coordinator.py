@@ -19,7 +19,6 @@ from ephys_alignment_gui.application.results import (
     LoadDataPreloadSkipped,
     LoadDataStaleResultIgnored,
 )
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     HistologyLoadReported,
     LoadDataCancelled,
@@ -28,6 +27,7 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamActivated,
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
+from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.workers.load_data_runner import (
     FreshLoadJobResult,
     FreshLoadRunner,

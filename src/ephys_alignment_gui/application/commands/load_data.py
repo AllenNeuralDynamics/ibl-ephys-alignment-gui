@@ -36,7 +36,6 @@ from ephys_alignment_gui.application.save_runtime_dependencies import (
     describe_save_runtime_dependencies,
     plan_save_runtime_dependencies,
 )
-from ephys_alignment_gui.application.workflow import Failed, PolicyResult
 from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
 from ephys_alignment_gui.core.alignment_events import (
     FreshLoadCompleted,
@@ -55,6 +54,7 @@ from ephys_alignment_gui.core.reference_line_capture import (
     ReferenceLineCapture,
     capture_active_reference_lines_if_provided,
 )
+from ephys_alignment_gui.core.workflow import Failed, PolicyResult
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.io.ephys_stream_loader import LoadedEphysSelection
 from ephys_alignment_gui.io.load_data_job import (
@@ -657,7 +657,12 @@ class LoadDataCommandHandler:
         self,
         execution: FreshLoadExecution,
         job_result: LoadDataJobCompleted | LoadDataJobCancelled | Failed,
-    ) -> FreshEphysDataLoaded | LoadDataStaleResultIgnored | LoadDataJobCancelled | Failed:
+    ) -> (
+        FreshEphysDataLoaded
+        | LoadDataStaleResultIgnored
+        | LoadDataJobCancelled
+        | Failed
+    ):
         """Cache a completed preload only if its request is still useful."""
         if isinstance(job_result, Failed | LoadDataJobCancelled):
             self.preload_lifecycle.finish(execution)
@@ -756,8 +761,8 @@ class LoadDataCommandHandler:
 
         try:
             probe = mouse_root.get_probe(recording_id, probe_name)
-            channel_table = self.metadata_commands.ephys_data_service.load_channel_table(
-                probe
+            channel_table = (
+                self.metadata_commands.ephys_data_service.load_channel_table(probe)
             )
         except Exception as exc:
             return Failed(f"Failed to prepare preload target {probe_name}: {exc}")
@@ -821,9 +826,6 @@ class LoadDataCommandHandler:
             or current_mouse_root.root != prepared.target.mouse_root.root
         ):
             return "Loaded preload target is stale; selected mouse root changed."
-
-        if self.controller.document.selected_recording != prepared.target.recording_id:
-            return "Loaded preload target is stale; selected session changed."
 
         if self.runtime.cached_stream(prepared.target.stream_key) is not None:
             return "Loaded preload target is already cached or active."

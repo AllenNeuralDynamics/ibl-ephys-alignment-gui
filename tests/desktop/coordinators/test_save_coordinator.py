@@ -13,14 +13,6 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrated,
     SaveRuntimeRehydrationPlan,
 )
-from ephys_alignment_gui.application.workflow import (
-    CHOOSE_OUTPUT_FOLDER,
-    OUTPUT_REQUIRED,
-    Blocked,
-    Failed,
-    Ok,
-    Requirement,
-)
 from ephys_alignment_gui.core.alignment_events import (
     SaveCompleted,
     SaveDocDbStatus,
@@ -30,6 +22,14 @@ from ephys_alignment_gui.core.alignment_events import (
 )
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import (
+    CHOOSE_OUTPUT_FOLDER,
+    OUTPUT_REQUIRED,
+    Blocked,
+    Failed,
+    Ok,
+    Requirement,
+)
 from ephys_alignment_gui.desktop.coordinators.save_coordinator import (
     DesktopSaveCallbacks,
     DesktopSaveCoordinator,
@@ -91,9 +91,7 @@ class FakeSaveProgressDialog:
         self.calls.append(("progress-cancel-callback",))
 
     def show_started(self, targets, *, message, cancel_enabled=False) -> None:
-        self.calls.append(
-            ("progress-started", tuple(targets), message, cancel_enabled)
-        )
+        self.calls.append(("progress-started", tuple(targets), message, cancel_enabled))
 
     def update_progress(
         self,

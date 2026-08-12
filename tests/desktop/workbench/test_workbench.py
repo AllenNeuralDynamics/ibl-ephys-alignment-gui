@@ -5,8 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from ephys_alignment_gui.application.workflow import Ok
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.workflow import Ok
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.presenters.shank_presenter import (
     DesktopShankSelectionState,
@@ -258,9 +258,21 @@ class FakeDisplayActions:
 class FakeEphysPlotPresenter:
     def __init__(self) -> None:
         self.rendered_states: list[Any] = []
+        self.menu_attaches: list[Any] = []
+        self.unit_filter_attaches: list[tuple[Any, Any]] = []
+        self.toggles: list[tuple[Any, bool]] = []
 
     def render_shank_ephys_plots(self, state: Any) -> None:
         self.rendered_states.append(state)
+
+    def attach_plot_menus(self, menu_bar: Any) -> None:
+        self.menu_attaches.append(menu_bar)
+
+    def attach_unit_filter_menu(self, menu_bar: Any, parent: Any) -> None:
+        self.unit_filter_attaches.append((menu_bar, parent))
+
+    def toggle_plot(self, menu: Any, *, reverse: bool = False) -> None:
+        self.toggles.append((menu, reverse))
 
 
 class FakeSlicePanelPresenter:
@@ -279,6 +291,8 @@ class FakeSliceMenuCoordinator:
     def __init__(self) -> None:
         self.restored: list[tuple[Any, Any, Any]] = []
         self.selection = "slice-selection"
+        self.menu_attaches: list[tuple[Any, Any, bool]] = []
+        self.toggles: list[bool] = []
 
     def current_selection(self) -> Any:
         return self.selection
@@ -290,6 +304,20 @@ class FakeSliceMenuCoordinator:
         previous_label: Any,
     ) -> None:
         self.restored.append((slice_menu_state, previous_selection, previous_label))
+
+    def attach_menu(self, menu_bar: Any, *, parent: Any, offline: bool) -> None:
+        self.menu_attaches.append((menu_bar, parent, offline))
+
+    def toggle_plot(self, *, reverse: bool = False) -> None:
+        self.toggles.append(reverse)
+
+
+class FakeShankScreenView:
+    def __init__(self) -> None:
+        self.views: list[int] = []
+
+    def set_view(self, *, view: int) -> None:
+        self.views.append(view)
 
 
 class FakeMouseRootPresenter:
@@ -625,6 +653,7 @@ def _workbench(
     ephys_display: Any | None = None,
     slice_display: Any | None = None,
     reference_line_display: Any | None = None,
+    views: Any | None = None,
 ) -> DesktopWorkbench:
     displays = _displays(
         ephys=ephys_display,
@@ -673,7 +702,7 @@ def _workbench(
     )
     return DesktopWorkbench(
         app=object(),
-        views=object(),
+        views=views or SimpleNamespace(shank_screen=FakeShankScreenView()),
         displays=displays,
         render_cluster=render_cluster,
         coordinator_cluster=coordinator_cluster,
@@ -745,6 +774,36 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert lifecycle_sub.disconnect_count == 1
     assert save_sub.disconnect_count == 1
     assert previous_alignment_sub.disconnect_count == 1
+
+
+def test_workbench_exposes_shell_plot_menu_actions() -> None:
+    ephys = FakeEphysPlotPresenter()
+    slice_menu = FakeSliceMenuCoordinator()
+    shank_screen = FakeShankScreenView()
+    workbench = _workbench(
+        FakeAlignmentPresenter([]),
+        FakeShankPresenter([]),
+        FakeHistologyDisplay(),
+        ephys_plot_presenter=ephys,
+        slice_menu_coordinator=slice_menu,
+        views=SimpleNamespace(shank_screen=shank_screen),
+    )
+    menu_bar = object()
+    parent = object()
+
+    workbench.attach_plot_menus(menu_bar, parent=parent, offline=True)
+    workbench.toggle_ephys_plot("image")
+    workbench.toggle_ephys_plot("line", reverse=True)
+    workbench.toggle_slice_plot()
+    workbench.toggle_slice_plot(reverse=True)
+    workbench.set_ephys_view(view=2)
+
+    assert ephys.menu_attaches == [menu_bar]
+    assert ephys.unit_filter_attaches == [(menu_bar, parent)]
+    assert ephys.toggles == [("image", False), ("line", True)]
+    assert slice_menu.menu_attaches == [(menu_bar, parent, True)]
+    assert slice_menu.toggles == [False, True]
+    assert shank_screen.views == [2]
 
 
 def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
@@ -1246,9 +1305,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert coordinator_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
     slice_handles = coordinator_cluster.plot_exporter.slice_handles
     assert slice_handles.slice_display is slice_display
-    assert slice_handles.slice_panel_presenter is (
-        render_cluster.slice_panel_presenter
-    )
+    assert slice_handles.slice_panel_presenter is (render_cluster.slice_panel_presenter)
     assert slice_handles.slice_menu_coordinator is (
         render_cluster.slice_menu_coordinator
     )

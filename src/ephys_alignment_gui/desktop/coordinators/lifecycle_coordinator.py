@@ -7,12 +7,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from ephys_alignment_gui.application.workflow import Failed
 from ephys_alignment_gui.core.alignment_events import (
     StreamCacheEvicted,
     StreamDetached,
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
+from ephys_alignment_gui.core.workflow import Failed
 
 logger = logging.getLogger(__name__)
 
