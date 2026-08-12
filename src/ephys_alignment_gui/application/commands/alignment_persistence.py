@@ -34,6 +34,10 @@ from ephys_alignment_gui.core.alignment_events import (
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
+    SaveProgressPhase,
+    SaveProgressStarted,
+    SaveProgressStatus,
+    SaveProgressUpdated,
 )
 from ephys_alignment_gui.core.alignment_state import (
     LEGACY_AUTO_ALIGNMENT_LABEL,
@@ -189,6 +193,11 @@ class AlignmentPersistenceCommandHandler:
         if isinstance(ready, Blocked):
             return ready
 
+        target_keys = self._dirty_alignment_keys()
+        if not target_keys:
+            return self._save_failed("No edited alignments are ready to save")
+        self._emit_save_progress_started(target_keys)
+
         save_inputs = self._dirty_alignment_output_inputs(
             rehydrate_missing=rehydrate_missing,
         )
@@ -201,6 +210,17 @@ class AlignmentPersistenceCommandHandler:
             key: (save_input.channel_locations_ras, save_input.channel_coordinates)
             for key, save_input in save_inputs.items()
         }
+        self._emit_save_progress_updated(
+            key=None,
+            phase="building_outputs",
+            status="started",
+            completed=0,
+            total=len(output_inputs),
+            message=(
+                "Batching CCF transform points for "
+                f"{len(output_inputs)} edited alignment(s)..."
+            ),
+        )
         outputs = self._build_alignment_outputs(
             output_inputs,
             multi_shank_by_key={
@@ -209,10 +229,30 @@ class AlignmentPersistenceCommandHandler:
         )
         if isinstance(outputs, Failed):
             return self._save_failed(outputs.message)
+        self._emit_save_progress_updated(
+            key=None,
+            phase="building_outputs",
+            status="completed",
+            completed=len(output_inputs),
+            total=len(output_inputs),
+            message=(
+                "Built CCF output dictionaries for "
+                f"{len(output_inputs)} edited alignment(s)."
+            ),
+        )
 
         logger.info("Saving output files to results folder...")
         saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
-        for key, output in outputs.items():
+        total_outputs = len(outputs)
+        for output_index, (key, output) in enumerate(outputs.items(), start=1):
+            self._emit_save_progress_updated(
+                key=key,
+                phase="writing_files",
+                status="started",
+                completed=output_index - 1,
+                total=total_outputs,
+                message=f"Writing output files for {self._describe_key(key)}...",
+            )
             save_input = save_inputs[key]
             state = save_input.state
             alignment = state.active_alignment
@@ -234,6 +274,14 @@ class AlignmentPersistenceCommandHandler:
             saved_outputs[key] = saved
             state.set_alignments(alignments_to_save)
             state.mark_saved()
+            self._emit_save_progress_updated(
+                key=key,
+                phase="writing_files",
+                status="completed",
+                completed=output_index,
+                total=total_outputs,
+                message=f"Wrote output files for {self._describe_key(key)}.",
+            )
         self.controller.document.dirty = self.controller.document.has_unsaved_alignments
 
         active_choices: list[str] | None = None
@@ -337,8 +385,8 @@ class AlignmentPersistenceCommandHandler:
         rehydrate_missing: bool = True,
     ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
         """Collect save inputs for every dirty document alignment state."""
-        states_by_key = self.controller.document.dirty_alignment_states()
-        if not states_by_key:
+        dirty_items = self._dirty_alignment_items()
+        if not dirty_items:
             return {}
 
         runtime_plan = plan_save_runtime_dependencies(
@@ -364,17 +412,18 @@ class AlignmentPersistenceCommandHandler:
         runtime_by_key = runtime_plan.by_key
 
         save_inputs: dict[AlignmentKey, AlignmentSaveInput] = {}
-        for key, state in sorted(
-            states_by_key.items(),
-            key=lambda item: (
-                item[0].recording_id,
-                item[0].ephys_collection,
-                item[0].shank_idx,
-            ),
-        ):
+        total = len(dirty_items)
+        for input_index, (key, state) in enumerate(dirty_items, start=1):
             alignment = state.active_alignment
-            if alignment is None:
-                continue
+            assert alignment is not None
+            self._emit_save_progress_updated(
+                key=key,
+                phase="preparing",
+                status="started",
+                completed=input_index - 1,
+                total=total,
+                message=f"Preparing channel locations for {self._describe_key(key)}...",
+            )
 
             stream_runtime = runtime_by_key[key].stream_runtime
             if stream_runtime is None:
@@ -410,7 +459,34 @@ class AlignmentPersistenceCommandHandler:
                 output_directory=output_directory,
                 multi_shank=self._stream_is_multi_shank(stream_runtime),
             )
+            self._emit_save_progress_updated(
+                key=key,
+                phase="preparing",
+                status="completed",
+                completed=input_index,
+                total=total,
+                message=f"Prepared channel locations for {self._describe_key(key)}.",
+            )
         return save_inputs
+
+    def _dirty_alignment_keys(self) -> tuple[AlignmentKey, ...]:
+        """Return dirty alignment keys that have active alignment data to save."""
+        return tuple(key for key, _state in self._dirty_alignment_items())
+
+    def _dirty_alignment_items(self) -> tuple[tuple[AlignmentKey, AlignmentState], ...]:
+        """Return sorted dirty alignment states with active alignment data."""
+        return tuple(
+            (key, state)
+            for key, state in sorted(
+                self.controller.document.dirty_alignment_states().items(),
+                key=lambda item: (
+                    item[0].recording_id,
+                    item[0].ephys_collection,
+                    item[0].shank_idx,
+                ),
+            )
+            if state.active_alignment is not None
+        )
 
     def _build_alignment_outputs(
         self,
@@ -545,3 +621,45 @@ class AlignmentPersistenceCommandHandler:
 
     def _output_builder(self) -> Any | None:
         return self.output_builder
+
+    def _emit_save_progress_started(
+        self,
+        target_keys: tuple[AlignmentKey, ...],
+    ) -> None:
+        self.events.emit(
+            SaveProgressStarted(
+                targets=target_keys,
+                message=(
+                    f"Saving {len(target_keys)} edited alignment"
+                    f"{'' if len(target_keys) == 1 else 's'}..."
+                ),
+            )
+        )
+
+    def _emit_save_progress_updated(
+        self,
+        *,
+        key: AlignmentKey | None,
+        phase: SaveProgressPhase,
+        status: SaveProgressStatus,
+        completed: int,
+        total: int,
+        message: str,
+    ) -> None:
+        self.events.emit(
+            SaveProgressUpdated(
+                key=key,
+                phase=phase,
+                status=status,
+                completed=completed,
+                total=total,
+                message=message,
+            )
+        )
+
+    @staticmethod
+    def _describe_key(key: AlignmentKey) -> str:
+        return (
+            f"{key.recording_id}/{key.ephys_collection} "
+            f"shank {key.shank_idx + 1}"
+        )

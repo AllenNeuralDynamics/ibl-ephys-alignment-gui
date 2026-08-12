@@ -25,6 +25,8 @@ from ephys_alignment_gui.core.alignment_events import (
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
+    SaveProgressStarted,
+    SaveProgressUpdated,
 )
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
@@ -56,6 +58,73 @@ class FakeBusyContext:
 
     def update_message(self, message: str) -> None:
         self.calls.append(("message", message))
+
+
+class FakeButton:
+    def __init__(self, calls: list[tuple]) -> None:
+        self.calls = calls
+        self.text_value = "Save"
+        self.tooltip_value = ""
+
+    def text(self) -> str:
+        return self.text_value
+
+    def setText(self, value: str) -> None:
+        self.text_value = value
+        self.calls.append(("button-text", value))
+
+    def toolTip(self) -> str:
+        return self.tooltip_value
+
+    def setToolTip(self, value: str) -> None:
+        self.tooltip_value = value
+        self.calls.append(("button-tooltip", value))
+
+
+class FakeSaveProgressDialog:
+    def __init__(self, calls: list[tuple]) -> None:
+        self.calls = calls
+        self.cancel_callback = None
+
+    def set_cancel_callback(self, callback) -> None:
+        self.cancel_callback = callback
+        self.calls.append(("progress-cancel-callback",))
+
+    def show_started(self, targets, *, message, cancel_enabled=False) -> None:
+        self.calls.append(
+            ("progress-started", tuple(targets), message, cancel_enabled)
+        )
+
+    def update_progress(
+        self,
+        *,
+        key,
+        phase_label,
+        status_label,
+        completed,
+        total,
+        message,
+    ) -> None:
+        self.calls.append(
+            (
+                "progress-update",
+                key,
+                phase_label,
+                status_label,
+                completed,
+                total,
+                message,
+            )
+        )
+
+    def set_cancel_enabled(self, enabled: bool) -> None:
+        self.calls.append(("progress-cancel-enabled", enabled))
+
+    def show_finished(self, message: str, *, success: bool) -> None:
+        self.calls.append(("progress-finished", message, success))
+
+    def close_dialog(self) -> None:
+        self.calls.append(("progress-close",))
 
 
 class ManualSaveRehydrationRunner:
@@ -227,6 +296,7 @@ def _saved_result(
 
 
 def _rehydration_plan() -> SaveRuntimeRehydrationPlan:
+    key = AlignmentKey("rec", "stream", 0)
     target = type(
         "Target",
         (),
@@ -237,7 +307,7 @@ def _rehydration_plan() -> SaveRuntimeRehydrationPlan:
             "shank_idx": 0,
         },
     )()
-    dependency = type("Dependency", (), {"load_target": target})()
+    dependency = type("Dependency", (), {"key": key, "load_target": target})()
     return SaveRuntimeRehydrationPlan((dependency,))
 
 
@@ -250,11 +320,14 @@ def _coordinator(
     ephys_qc: str = "Pass",
     selected_descriptions: list[str] | None = None,
     rehydration_runner: Any | None = None,
+    complete_button: Any | None = None,
 ) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
     events = EventBus()
     commands = commands or FakeCommands()
     commands.events = events
+    progress_dialog = FakeSaveProgressDialog(calls)
+    button = complete_button if complete_button is not None else "complete-button"
     coordinator = DesktopSaveCoordinator(
         commands=commands,
         events=events,
@@ -272,7 +345,8 @@ def _coordinator(
                 *args,
                 **kwargs,
             ),
-            complete_button=lambda: "complete-button",
+            complete_button=lambda: button,
+            save_progress_dialog=lambda: progress_dialog,
             histology_available=lambda: histology_available,
             open_qc_dialog=lambda: calls.append(("open-qc",)),
             ephys_qc=lambda: ephys_qc,
@@ -357,6 +431,13 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
     assert runner.start_calls == [plan]
     assert commands.save_calls == []
     assert calls == [
+        ("progress-cancel-callback",),
+        (
+            "progress-started",
+            (AlignmentKey("rec", "stream", 0),),
+            "Reloading runtime data for 1 edited alignment before saving...",
+            True,
+        ),
         (
             "busy",
             ("Reloading data needed for save...", "Saved successfully"),
@@ -372,8 +453,19 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
     assert commands.save_calls == [{"use_docdb": True}]
     assert commands.save_rehydrate_missing == [False]
     assert ("message", "Reloading runtime data...") in calls
+    assert (
+        "progress-update",
+        AlignmentKey("rec", "stream", 0),
+        "Reloading runtime",
+        "Loading",
+        0,
+        1,
+        "Reloading runtime data...",
+    ) in calls
     assert ("message", "Saving output files...") in calls
+    assert ("progress-cancel-enabled", False) in calls
     assert ("choices", ["saved", "original"]) in calls
+    assert ("progress-finished", "Saved 1 edited alignment.", True) in calls
     assert ("busy-exit", None) in calls
 
 
@@ -407,6 +499,69 @@ def test_shutdown_active_save_settles_rehydration() -> None:
 
     assert runner.shutdown_calls == [("closing", 123)]
     assert ("busy-exit", RuntimeError) in calls
+
+
+def test_save_progress_events_update_dialog_and_button() -> None:
+    button_calls: list[tuple] = []
+    button = FakeButton(button_calls)
+    coordinator, commands, calls = _coordinator(complete_button=button)
+    key = AlignmentKey("rec", "stream", 2)
+
+    commands.events.emit(
+        SaveProgressStarted(
+            targets=(key,),
+            message="Saving 1 edited alignment...",
+        )
+    )
+    commands.events.emit(
+        SaveProgressUpdated(
+            key=key,
+            phase="writing_files",
+            status="completed",
+            completed=1,
+            total=1,
+            message="Wrote output files.",
+        )
+    )
+
+    assert coordinator is not None
+    assert ("button-text", "Saving 0/1") in button_calls
+    assert ("button-text", "Saving 1/1") in button_calls
+    assert (
+        "progress-started",
+        (key,),
+        "Saving 1 edited alignment...",
+        False,
+    ) in calls
+    assert (
+        "progress-update",
+        key,
+        "Writing files",
+        "Done",
+        1,
+        1,
+        "Wrote output files.",
+    ) in calls
+
+
+def test_cancel_active_save_requests_rehydration_cancel() -> None:
+    plan = _rehydration_plan()
+    runner = ManualSaveRehydrationRunner()
+    coordinator, _commands, calls = _coordinator(rehydration_runner=runner)
+
+    assert coordinator._start_rehydration_then_save(plan, use_docdb=True)
+    assert coordinator.cancel_active_save()
+
+    assert runner.cancel_calls == ["cancelled by user"]
+    assert (
+        "progress-update",
+        None,
+        "Reloading runtime",
+        "Cancelling",
+        0,
+        1,
+        "Cancelling save runtime reload...",
+    ) in calls
 
 
 def test_display_qc_options_opens_dialog_when_histology_available() -> None:

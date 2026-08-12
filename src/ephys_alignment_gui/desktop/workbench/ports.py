@@ -11,6 +11,9 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.desktop.displays.axis_style import set_axis
 from ephys_alignment_gui.desktop.shell.busy_context import BusyContext
+from ephys_alignment_gui.desktop.views.save_progress_dialog import (
+    DesktopSaveProgressDialog,
+)
 from ephys_alignment_gui.desktop.workbench.port_types import (
     DesktopAlignmentEditActionPorts,
     DesktopAlignmentRenderPorts,
@@ -135,6 +138,7 @@ def desktop_workbench_ports_from_handles(
             ),
             busy_context=busy_context,
             complete_button=lambda: handles.complete_button,
+            save_progress_dialog=lambda: DesktopSaveProgressDialog(parent),
             histology_available=histology_available,
             open_qc_dialog=open_qc_dialog,
             ephys_qc=ephys_qc,

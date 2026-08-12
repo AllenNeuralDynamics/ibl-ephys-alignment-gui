@@ -69,6 +69,7 @@ class DesktopSavePorts:
     render_alignment_choices: Callable[[list[str]], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
     complete_button: Callable[[], Any]
+    save_progress_dialog: Callable[[], Any]
     histology_available: Callable[[], bool]
     open_qc_dialog: Callable[[], None]
     ephys_qc: Callable[[], str]

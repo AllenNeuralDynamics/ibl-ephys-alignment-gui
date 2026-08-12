@@ -176,6 +176,35 @@ class SaveDocDbStatus:
     error: str | None = None
 
 
+SaveProgressPhase = Literal[
+    "preparing",
+    "rehydrating",
+    "building_outputs",
+    "writing_files",
+]
+SaveProgressStatus = Literal["started", "completed", "running"]
+
+
+@dataclass(frozen=True)
+class SaveProgressStarted:
+    """Payload emitted when an edited-alignment save transaction starts."""
+
+    targets: tuple[AlignmentKey, ...]
+    message: str
+
+
+@dataclass(frozen=True)
+class SaveProgressUpdated:
+    """Payload emitted as an edited-alignment save transaction advances."""
+
+    key: AlignmentKey | None
+    phase: SaveProgressPhase
+    status: SaveProgressStatus
+    completed: int
+    total: int
+    message: str
+
+
 @dataclass(frozen=True)
 class SaveCompleted:
     """Payload emitted after edited alignment outputs are persisted."""

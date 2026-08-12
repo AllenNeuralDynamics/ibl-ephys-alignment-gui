@@ -69,6 +69,8 @@ from ephys_alignment_gui.core.alignment_events import (
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
+    SaveProgressStarted,
+    SaveProgressUpdated,
     ShankChanged,
     StreamActivated,
     StreamDetached,
@@ -1116,7 +1118,7 @@ def test_queries_resolve_next_unloaded_probe_in_recording() -> None:
     )
 
 
-def test_queries_next_unloaded_probe_returns_none_when_remaining_probes_cached() -> None:
+def test_queries_next_unloaded_probe_returns_none_when_remaining_cached() -> None:
     workspace = AlignmentWorkspace()
     workspace.data_context.mouse_root = _mouse_root_with_probes(
         _probe_info(probe_name="probeA", ephys_collection="streamA"),
@@ -1798,6 +1800,10 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         ("rec", "stream"): runtime_a,
         ("rec", "streamB"): runtime_b,
     }
+    started_events: list[SaveProgressStarted] = []
+    progress_events: list[SaveProgressUpdated] = []
+    workspace.app.events.subscribe(SaveProgressStarted, started_events.append)
+    workspace.app.events.subscribe(SaveProgressUpdated, progress_events.append)
 
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False
@@ -1807,6 +1813,20 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     assert result.saved_count == 2
     assert list(result.saved_outputs) == [key_a, key_b]
     assert list(output_builder.batched_alignments) == [key_a, key_b]
+    assert started_events == [
+        SaveProgressStarted(
+            targets=(key_a, key_b),
+            message="Saving 2 edited alignments...",
+        )
+    ]
+    assert any(
+        event.key is None
+        and event.phase == "building_outputs"
+        and event.status == "started"
+        and event.total == 2
+        and "Batching CCF transform points" in event.message
+        for event in progress_events
+    )
     assert [call["ephysalign"] for call in derived.channel_location_calls] == [
         "aligner-a",
         "aligner-b",

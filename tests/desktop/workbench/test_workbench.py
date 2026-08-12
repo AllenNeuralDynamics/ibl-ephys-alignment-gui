@@ -1046,6 +1046,7 @@ def _workbench_ports() -> DesktopWorkbenchPorts:
                 __exit__=lambda *_args: None,
             ),
             complete_button=lambda: object(),
+            save_progress_dialog=lambda: object(),
             histology_available=lambda: True,
             open_qc_dialog=lambda: None,
             ephys_qc=lambda: "Pass",
@@ -1195,7 +1196,10 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert coordinator_cluster.save_coordinator.callbacks.use_docdb is (
         ports.save.use_docdb
     )
-    assert coordinator_cluster.previous_alignment_load_coordinator.callbacks.use_docdb is (
+    previous_alignment_callbacks = (
+        coordinator_cluster.previous_alignment_load_coordinator.callbacks
+    )
+    assert previous_alignment_callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
     )
     assert (
@@ -1240,11 +1244,12 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         render_cluster.ephys_plot_presenter
     )
     assert coordinator_cluster.plot_exporter.ephys_exporter.panel is ephys_display.panel
-    assert coordinator_cluster.plot_exporter.slice_handles.slice_display is slice_display
-    assert coordinator_cluster.plot_exporter.slice_handles.slice_panel_presenter is (
+    slice_handles = coordinator_cluster.plot_exporter.slice_handles
+    assert slice_handles.slice_display is slice_display
+    assert slice_handles.slice_panel_presenter is (
         render_cluster.slice_panel_presenter
     )
-    assert coordinator_cluster.plot_exporter.slice_handles.slice_menu_coordinator is (
+    assert slice_handles.slice_menu_coordinator is (
         render_cluster.slice_menu_coordinator
     )
     coordinator_cluster.plot_exporter.add_lines_points()
