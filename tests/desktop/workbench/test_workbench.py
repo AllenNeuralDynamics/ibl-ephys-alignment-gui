@@ -388,12 +388,19 @@ class FakeFolderDialog:
 
 
 class FakeSavePresenter:
-    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
+    def __init__(
+        self,
+        subscriptions: list[FakeSubscription] | None = None,
+        *,
+        shutdown_result: bool = True,
+    ) -> None:
         self.saved_count = 0
         self.qc_display_count = 0
         self.qc_clicked_count = 0
         self.subscriptions = subscriptions or []
         self.connect_count = 0
+        self.shutdown_result = shutdown_result
+        self.shutdown_timeouts: list[int] = []
 
     def connect_save_events(self) -> list[FakeSubscription]:
         self.connect_count += 1
@@ -402,6 +409,10 @@ class FakeSavePresenter:
     def save_alignment_outputs(self) -> bool:
         self.saved_count += 1
         return True
+
+    def shutdown_active_save(self, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_timeouts.append(timeout_ms)
+        return self.shutdown_result
 
     def display_qc_options(self) -> bool:
         self.qc_display_count += 1
@@ -733,6 +744,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     save_sub = FakeSubscription()
     previous_alignment_sub = FakeSubscription()
     load_data = FakeLoadDataPresenter([load_sub])
+    save = FakeSavePresenter([save_sub])
     output_path = FakeOutputPathPresenter([output_path_sub])
     workbench = _workbench(
         FakeAlignmentPresenter([alignment_sub]),
@@ -741,7 +753,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
         load_data=load_data,
         output_path=output_path,
         lifecycle=FakeLifecyclePresenter([lifecycle_sub]),
-        save=FakeSavePresenter([save_sub]),
+        save=save,
         previous_alignment_load=FakePreviousAlignmentLoadPresenter(
             [previous_alignment_sub]
         ),
@@ -751,6 +763,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     assert workbench.shutdown(timeout_ms=123)
 
     assert load_data.shutdown_timeouts == [123]
+    assert save.shutdown_timeouts == [123]
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
@@ -774,6 +787,23 @@ def test_workbench_shutdown_leaves_events_connected_when_load_does_not_stop() ->
     assert not workbench.shutdown(timeout_ms=123)
 
     assert load_data.shutdown_timeouts == [123]
+    assert alignment_sub.disconnect_count == 0
+
+
+def test_workbench_shutdown_leaves_events_connected_when_save_does_not_stop() -> None:
+    alignment_sub = FakeSubscription()
+    save = FakeSavePresenter(shutdown_result=False)
+    workbench = _workbench(
+        FakeAlignmentPresenter([alignment_sub]),
+        FakeShankPresenter([]),
+        FakeHistologyDisplay(),
+        save=save,
+    )
+    workbench.connect_events()
+
+    assert not workbench.shutdown(timeout_ms=123)
+
+    assert save.shutdown_timeouts == [123]
     assert alignment_sub.disconnect_count == 0
 
 

@@ -43,6 +43,10 @@ from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
 )
+from ephys_alignment_gui.application.save_runtime_rehydration import (
+    SaveRuntimeRehydrated,
+    SaveRuntimeRehydrationPlan,
+)
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
@@ -1872,6 +1876,86 @@ def test_commands_save_edited_alignment_outputs_reloads_dirty_missing_runtime(
     assert workspace.runtime.active_stream_runtime is None
     assert not state.has_unsaved_alignment
     assert not workspace.document.dirty
+
+
+def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    ephys_data_service = FakeEphysDataService()
+    runtime_initializer = FakeRuntimeInitializer()
+    probe_track_service = FakeProbeTrackService()
+    workspace = AlignmentWorkspace(
+        ephys_data_service=ephys_data_service,
+        alignment_runtime_service=runtime_initializer,
+        probe_track_service=probe_track_service,
+    )
+    fake_job = FakeLoadDataJob()
+    workspace.save_runtime_rehydrator.load_data_job = fake_job
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_root = tmp_path / "results"
+    workspace.document.output_directory = tmp_path / "active"
+    probe = _probe_info()
+    workspace.data_context.mouse_root = _mouse_root_with_probe(probe)
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+
+    plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
+
+    assert isinstance(plan, SaveRuntimeRehydrationPlan)
+    assert len(plan.dependencies) == 1
+
+    rehydrated = workspace.app.commands.persistence.run_save_runtime_rehydration(plan)
+
+    assert isinstance(rehydrated, SaveRuntimeRehydrated)
+    assert rehydrated.dependency_count == 1
+    assert len(fake_job.calls) == 1
+    assert ("rec", "stream") in workspace.runtime.stream_cache
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False,
+        rehydrate_missing=False,
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 1
+    assert len(fake_job.calls) == 1
+    assert list(output_builder.batched_alignments) == [key]
+    assert not state.has_unsaved_alignment
+    assert not workspace.document.dirty
+
+
+def test_commands_save_without_rehydration_fails_for_missing_runtime(tmp_path) -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.output_directory = tmp_path
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False,
+        rehydrate_missing=False,
+    )
+
+    assert isinstance(result, Failed)
+    assert "stream runtime is not loaded" in result.message
+    assert state.has_unsaved_alignment
 
 
 def test_commands_save_edited_alignment_outputs_fails_for_unresolvable_dirty_runtime(

@@ -21,6 +21,9 @@ from ephys_alignment_gui.application.save_runtime_dependencies import (
     plan_save_runtime_dependencies,
 )
 from ephys_alignment_gui.application.save_runtime_rehydration import (
+    SaveRuntimeRehydrated,
+    SaveRuntimeRehydrationCancelled,
+    SaveRuntimeRehydrationPlan,
     SaveRuntimeRehydrator,
 )
 from ephys_alignment_gui.application.workflow import Blocked, Failed, Ok
@@ -42,6 +45,10 @@ from ephys_alignment_gui.core.controller import (
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.io.load_data_job import (
+    LoadDataCancelToken,
+    LoadDataProgressCallback,
+)
 from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
@@ -175,13 +182,16 @@ class AlignmentPersistenceCommandHandler:
         self,
         *,
         use_docdb: bool,
+        rehydrate_missing: bool = True,
     ) -> EditedAlignmentOutputsSaved | Blocked | Failed:
         """Persist outputs for every dirty alignment state in the document."""
         ready = self.controller.can_save_alignment_output()
         if isinstance(ready, Blocked):
             return ready
 
-        save_inputs = self._dirty_alignment_output_inputs()
+        save_inputs = self._dirty_alignment_output_inputs(
+            rehydrate_missing=rehydrate_missing,
+        )
         if isinstance(save_inputs, Failed):
             return self._save_failed(save_inputs.message)
         if not save_inputs:
@@ -253,6 +263,50 @@ class AlignmentPersistenceCommandHandler:
         )
         return result
 
+    def prepare_save_runtime_rehydration(
+        self,
+    ) -> SaveRuntimeRehydrationPlan | Ok | Failed:
+        """Return save-runtime reload work needed before saving dirty outputs."""
+        runtime_plan = plan_save_runtime_dependencies(
+            document=self.controller.document,
+            data_context=self.data_context,
+            runtime=self.runtime,
+        )
+        if not runtime_plan.unavailable:
+            return Ok()
+        if self.save_runtime_rehydrator is None:
+            return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
+        return self.save_runtime_rehydrator.prepare_rehydration(runtime_plan)
+
+    def run_save_runtime_rehydration(
+        self,
+        plan: SaveRuntimeRehydrationPlan,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> SaveRuntimeRehydrated | SaveRuntimeRehydrationCancelled | Failed:
+        """Reload missing save runtimes without publishing app events."""
+        if self.save_runtime_rehydrator is None:
+            return Failed("No save-runtime rehydrator is configured.")
+        return self.save_runtime_rehydrator.run_rehydration_plan(
+            plan,
+            progress=progress,
+            cancel_token=cancel_token,
+        )
+
+    def publish_save_runtime_rehydration_result(
+        self,
+        result: SaveRuntimeRehydrated | SaveRuntimeRehydrationCancelled | Failed,
+    ) -> Ok | Failed:
+        """Publish the terminal semantic result of save-runtime rehydration."""
+        if isinstance(result, SaveRuntimeRehydrated):
+            return Ok()
+        if isinstance(result, SaveRuntimeRehydrationCancelled):
+            return self._save_failed(
+                f"Reload cancelled while saving edited alignments: {result.reason}"
+            )
+        return self._save_failed(result.message)
+
     def _save_failed(self, message: str) -> Failed:
         self.controller.document.dirty = self.controller.document.has_unsaved_alignments
         self._emit_save_failed(message)
@@ -279,6 +333,8 @@ class AlignmentPersistenceCommandHandler:
 
     def _dirty_alignment_output_inputs(
         self,
+        *,
+        rehydrate_missing: bool = True,
     ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
         """Collect save inputs for every dirty document alignment state."""
         states_by_key = self.controller.document.dirty_alignment_states()
@@ -290,7 +346,11 @@ class AlignmentPersistenceCommandHandler:
             data_context=self.data_context,
             runtime=self.runtime,
         )
-        if runtime_plan.unavailable and self.save_runtime_rehydrator is not None:
+        if (
+            rehydrate_missing
+            and runtime_plan.unavailable
+            and self.save_runtime_rehydrator is not None
+        ):
             rehydrated = self.save_runtime_rehydrator.rehydrate_missing(runtime_plan)
             if isinstance(rehydrated, Failed):
                 return rehydrated

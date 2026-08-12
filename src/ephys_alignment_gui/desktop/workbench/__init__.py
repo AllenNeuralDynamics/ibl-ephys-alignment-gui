@@ -106,6 +106,11 @@ class DesktopWorkbench:
         )
         if not stopped:
             return False
+        stopped = self.coordinator_cluster.save_coordinator.shutdown_active_save(
+            timeout_ms=timeout_ms,
+        )
+        if not stopped:
+            return False
         self.disconnect_events()
         return True
 

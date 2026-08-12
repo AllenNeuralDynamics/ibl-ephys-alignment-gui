@@ -11,10 +11,12 @@ from ephys_alignment_gui.application.save_runtime_dependencies import (
 from ephys_alignment_gui.application.workflow import Failed, Ok
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.io.load_data_job import (
+    LoadDataCancelToken,
     LoadDataJob,
     LoadDataJobCancelled,
     LoadDataJobCompleted,
     LoadDataJobRequest,
+    LoadDataProgressCallback,
 )
 from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.plotting.payload_cache_factory import (
@@ -31,6 +33,27 @@ from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.ephys_data import EphysDataService
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 from ephys_alignment_gui.services.probe_track import ProbeTrackService
+
+
+@dataclass(frozen=True)
+class SaveRuntimeRehydrationPlan:
+    """Missing stream runtimes that must be reloaded before save can proceed."""
+
+    dependencies: tuple[SaveRuntimeDependency, ...]
+
+
+@dataclass(frozen=True)
+class SaveRuntimeRehydrated:
+    """Missing save runtimes were reloaded and initialized."""
+
+    dependency_count: int
+
+
+@dataclass(frozen=True)
+class SaveRuntimeRehydrationCancelled:
+    """Save-runtime rehydration was cancelled cooperatively."""
+
+    reason: str
 
 
 @dataclass
@@ -51,35 +74,89 @@ class SaveRuntimeRehydrator:
         plan: SaveRuntimeDependencyPlan,
     ) -> Ok | Failed:
         """Reload every missing runtime dependency that can be resolved."""
-        for dependency in plan.dependencies:
-            if not dependency.needs_reload:
-                continue
-            result = self._rehydrate_dependency(dependency)
-            if isinstance(result, Failed):
-                return result
-        return Ok()
+        prepared = self.prepare_rehydration(plan)
+        if isinstance(prepared, Failed | Ok):
+            return prepared
+        result = self.run_rehydration_plan(prepared)
+        if isinstance(result, SaveRuntimeRehydrated):
+            return Ok()
+        if isinstance(result, SaveRuntimeRehydrationCancelled):
+            return Failed(
+                "Reload cancelled while saving edited alignments: "
+                f"{result.reason}"
+            )
+        return result
 
-    def _rehydrate_dependency(self, dependency: SaveRuntimeDependency) -> Ok | Failed:
+    def prepare_rehydration(
+        self,
+        plan: SaveRuntimeDependencyPlan,
+    ) -> SaveRuntimeRehydrationPlan | Ok | Failed:
+        """Return reload work needed by one save dependency plan."""
+        if not plan.unavailable:
+            return Ok()
+
+        reloadable = tuple(
+            dependency for dependency in plan.dependencies if dependency.needs_reload
+        )
+        if len(reloadable) != len(plan.unavailable):
+            return Failed(plan.failure_message() or "Cannot save alignment.")
+        return SaveRuntimeRehydrationPlan(reloadable)
+
+    def run_rehydration_plan(
+        self,
+        plan: SaveRuntimeRehydrationPlan,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> SaveRuntimeRehydrated | SaveRuntimeRehydrationCancelled | Failed:
+        """Reload and initialize every dependency in one prepared plan."""
+        cancel_token = cancel_token or LoadDataCancelToken()
+        for dependency in plan.dependencies:
+            cancelled = self._cancelled(cancel_token)
+            if cancelled is not None:
+                return cancelled
+            result = self.rehydrate_dependency(
+                dependency,
+                progress=progress,
+                cancel_token=cancel_token,
+            )
+            if isinstance(result, Failed | SaveRuntimeRehydrationCancelled):
+                return result
+        return SaveRuntimeRehydrated(dependency_count=len(plan.dependencies))
+
+    def rehydrate_dependency(
+        self,
+        dependency: SaveRuntimeDependency,
+        *,
+        progress: LoadDataProgressCallback | None = None,
+        cancel_token: LoadDataCancelToken | None = None,
+    ) -> Ok | SaveRuntimeRehydrationCancelled | Failed:
+        """Reload and initialize one missing save-runtime dependency."""
         target = self._load_target_for_dependency(dependency)
         if isinstance(target, Failed):
             return target
 
-        job_result = self.load_data_job.run(LoadDataJobRequest(target))
+        cancel_token = cancel_token or LoadDataCancelToken()
+        job_result = self.load_data_job.run(
+            LoadDataJobRequest(target),
+            progress=progress,
+            cancel_token=cancel_token,
+        )
         if isinstance(job_result, Failed):
             return Failed(
                 "Failed to reload runtime needed to save edited alignment for "
                 f"{self._describe(dependency)}: {job_result.message}"
             )
         if isinstance(job_result, LoadDataJobCancelled):
-            return Failed(
-                "Reload cancelled while saving edited alignment for "
-                f"{self._describe(dependency)}: {job_result.reason}"
-            )
+            return SaveRuntimeRehydrationCancelled(reason=job_result.reason)
         if not isinstance(job_result, LoadDataJobCompleted):
             return Failed(
                 "Failed to reload runtime needed to save edited alignment for "
                 f"{self._describe(dependency)}."
             )
+        cancelled = self._cancelled(cancel_token)
+        if cancelled is not None:
+            return cancelled
         if not target.same_identity(job_result.target):
             return Failed(
                 "Reloaded runtime target does not match save dependency for "
@@ -135,6 +212,16 @@ class SaveRuntimeRehydrator:
             return initialized
         self.runtime.cache_loaded_stream(stream_runtime, activate=False)
         return Ok()
+
+    @staticmethod
+    def _cancelled(
+        cancel_token: LoadDataCancelToken,
+    ) -> SaveRuntimeRehydrationCancelled | None:
+        if not cancel_token.cancelled:
+            return None
+        return SaveRuntimeRehydrationCancelled(
+            reason=cancel_token.reason or "cancelled",
+        )
 
     def _load_target_for_dependency(
         self,
