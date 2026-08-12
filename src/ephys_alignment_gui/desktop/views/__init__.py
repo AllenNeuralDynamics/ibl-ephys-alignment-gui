@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.desktop.displays.axis_style import set_axis, set_font
-from ephys_alignment_gui.desktop.shell.menu_setup import build_menu_bar
 from ephys_alignment_gui.desktop.views.alignment_screen_view import (
     DesktopAlignmentScreenView,
 )
@@ -15,6 +15,30 @@ from ephys_alignment_gui.desktop.views.export_view import DesktopExportView
 from ephys_alignment_gui.desktop.views.path_view import DesktopPathView
 from ephys_alignment_gui.desktop.views.selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop.views.shank_screen_view import DesktopShankScreenView
+
+
+@dataclass(frozen=True)
+class DesktopViewHandles:
+    """Concrete shell handles needed to build focused desktop views."""
+
+    session_model: Any
+    session_combobox: Any
+    probe_model: Any
+    probe_combobox: Any
+    shank_model: Any
+    shank_combobox: Any
+    load_data_button: Any
+    mouse_root_button: Any
+    mouse_root_line: Any
+    output_folder_line: Any
+    current_index_label: Any
+    total_index_label: Any
+    alignment_model: Any
+    alignment_combobox: Any
+    init_menubar: Callable[[], Any]
+    reset_axis: Callable[..., Any]
+    padding: Callable[[], Any]
+    slice_trajectory_pen: Any
 
 
 @dataclass(frozen=True)
@@ -29,22 +53,26 @@ class DesktopViews:
     export: DesktopExportView
 
     @classmethod
-    def from_main_window(cls, window: Any, *, displays: Any) -> DesktopViews:
-        """Build focused desktop view objects from a MainWindow shell."""
-        style = window.style
+    def from_handles(
+        cls,
+        handles: DesktopViewHandles,
+        *,
+        displays: Any,
+    ) -> DesktopViews:
+        """Build focused desktop view objects from explicit shell handles."""
         selection = DesktopSelectionView(
-            session_model=window.session_list,
-            session_combobox=window.session_combobox,
-            probe_model=window.probe_list,
-            probe_combobox=window.probe_combobox,
-            shank_model=window.shank_list,
-            shank_combobox=window.shank_combobox,
-            load_data_button=window.load_data_button,
+            session_model=handles.session_model,
+            session_combobox=handles.session_combobox,
+            probe_model=handles.probe_model,
+            probe_combobox=handles.probe_combobox,
+            shank_model=handles.shank_model,
+            shank_combobox=handles.shank_combobox,
+            load_data_button=handles.load_data_button,
         )
         path = DesktopPathView(
-            mouse_root_button=window.mouse_root_button,
-            mouse_root_line=window.mouse_root_line,
-            output_folder_line=window.output_folder_line,
+            mouse_root_button=handles.mouse_root_button,
+            mouse_root_line=handles.mouse_root_line,
+            output_folder_line=handles.output_folder_line,
         )
         depth = DesktopDepthPlotView(
             default_range_plots=(
@@ -63,11 +91,11 @@ class DesktopViews:
             },
             probe_tip_lines=displays.ephys.panel.probe_tip_lines,
             probe_top_lines=displays.ephys.panel.probe_top_lines,
-            padding=lambda: style.padding,
+            padding=handles.padding,
         )
         shank_screen = DesktopShankScreenView(
             depth_plots=depth,
-            init_menubar=lambda: build_menu_bar(window),
+            init_menubar=handles.init_menubar,
             apply_ephys_view=displays.ephys.apply_view,
             capture_slice_export_geometry=displays.slice.capture_export_geometry,
         )
@@ -75,17 +103,17 @@ class DesktopViews:
             depth_plots=depth,
             reference_lines=displays.reference_lines,
             lin_fit_checkbox=displays.histology.linear_fit_checkbox,
-            current_index_label=window.idx_string,
-            total_index_label=window.tot_idx_string,
-            alignment_model=window.align_list,
-            alignment_combobox=window.align_combobox,
+            current_index_label=handles.current_index_label,
+            total_index_label=handles.total_index_label,
+            alignment_model=handles.alignment_model,
+            alignment_combobox=handles.alignment_combobox,
         )
         export = DesktopExportView(
             ephys_graphics_layout=displays.ephys.graphics_layout,
             ephys_data_area=displays.ephys.area,
             slice_plot=displays.slice.coronal_plot,
-            slice_trajectory_pen=style.linear_fit_pen,
-            reset_axis=window.shell_actions.reset_axis_button_pressed,
+            slice_trajectory_pen=handles.slice_trajectory_pen,
+            reset_axis=handles.reset_axis,
             set_view=shank_screen.set_view,
             set_axis=set_axis,
             set_font=set_font,

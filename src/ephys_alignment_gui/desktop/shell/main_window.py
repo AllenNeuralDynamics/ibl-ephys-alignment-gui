@@ -10,10 +10,15 @@ from ephys_alignment_gui.core.settings import (
 )
 from ephys_alignment_gui.desktop.displays import DesktopDisplays
 from ephys_alignment_gui.desktop.displays.config import (
-    desktop_display_config_from_main_window,
+    desktop_display_config_from_handles,
 )
 from ephys_alignment_gui.desktop.shell import window_setup
 from ephys_alignment_gui.desktop.shell.actions import DesktopShellActions
+from ephys_alignment_gui.desktop.shell.handles import (
+    display_config_handles_from_main_window,
+    view_handles_from_main_window,
+    workbench_port_handles_from_main_window,
+)
 from ephys_alignment_gui.desktop.shell.popup_manager import DesktopPopupManager
 from ephys_alignment_gui.desktop.shell.region_lookup_setup import (
     initialize_region_lookup,
@@ -22,7 +27,7 @@ from ephys_alignment_gui.desktop.shell.style import DesktopShellStyle
 from ephys_alignment_gui.desktop.views import DesktopViews
 from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop.workbench.ports import (
-    desktop_workbench_ports_from_main_window,
+    desktop_workbench_ports_from_handles,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,10 +80,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.offline: bool = offline
         window_setup.initialize_shell(self, offline=offline)
         self.displays = DesktopDisplays.create(
-            config=desktop_display_config_from_main_window(self),
+            config=desktop_display_config_from_handles(
+                display_config_handles_from_main_window(self)
+            ),
         )
         window_setup.install_main_layout(self, displays=self.displays)
-        self.views = DesktopViews.from_main_window(self, displays=self.displays)
+        self.views = DesktopViews.from_handles(
+            view_handles_from_main_window(self),
+            displays=self.displays,
+        )
         self.selection_view = self.views.selection
         self.path_view = self.views.path
         self.depth_plot_view = self.views.depth
@@ -90,7 +100,9 @@ class MainWindow(QtWidgets.QMainWindow):
             parent=self,
             views=self.views,
             displays=self.displays,
-            ports=desktop_workbench_ports_from_main_window(self),
+            ports=desktop_workbench_ports_from_handles(
+                workbench_port_handles_from_main_window(self)
+            ),
         )
         self.desktop_workbench.initialize_startup_stream_state()
         self.desktop_workbench.connect_events()

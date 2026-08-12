@@ -41,7 +41,7 @@ class DesktopShankRenderPorts:
 
 @dataclass(frozen=True)
 class DesktopRenderPorts:
-    """MainWindow render ports consumed by focused desktop coordinators."""
+    """Desktop render ports consumed by focused desktop coordinators."""
 
     alignment: DesktopAlignmentRenderPorts
     shank: DesktopShankRenderPorts
@@ -118,7 +118,7 @@ class DesktopLifecyclePorts:
 
 @dataclass(frozen=True)
 class DesktopWorkbenchPorts:
-    """MainWindow ports consumed by Workbench coordinator composition."""
+    """Desktop shell ports consumed by Workbench coordinator composition."""
 
     render: DesktopRenderPorts
     alignment_edit_actions: DesktopAlignmentEditActionPorts
