@@ -95,6 +95,7 @@ def _coordinator(
     commands: FakeCommands | None = None,
     calls: list[tuple] | None = None,
     path_text: str = "/data/mouse",
+    evict_result: Any | None = None,
 ) -> tuple[DesktopMouseRootCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
@@ -112,6 +113,7 @@ def _coordinator(
                 ("cancel-preload", reason)
             )
             or True,
+            evict_stream_cache=lambda: calls.append(("evict-app",)) or evict_result,
             select_first_session=lambda: calls.append(("select-first-session",)),
         ),
     )
@@ -133,6 +135,7 @@ def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
         ),
         ("busy-enter",),
         ("cancel-preload", "mouse root changed"),
+        ("evict-app",),
         ("path", Path("/data/mouse")),
         ("sessions", ["rec1"]),
         ("clear-probes",),
@@ -159,8 +162,29 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
     assert coordinator.set_mouse_root(Path("/data/mouse"))
 
     assert _commands.clear_histology_calls == 0
+    assert ("cancel-preload", "mouse root changed") not in calls
+    assert ("evict-app",) not in calls
     assert ("select-session", 0) not in calls
     assert ("select-first-session",) not in calls
+
+
+def test_set_same_mouse_root_preserves_preload_and_stream_cache() -> None:
+    result = MouseRootLoaded(
+        SimpleNamespace(
+            root=Path("/data/mouse"),
+            mouse_id="mouse",
+            sessions=["rec1"],
+            probes={"rec1": {"probeA": object()}},
+        ),
+        root_changed=False,
+    )
+    coordinator, _commands, calls = _coordinator(commands=FakeCommands(result=result))
+
+    assert coordinator.set_mouse_root(Path("/data/mouse"))
+
+    assert _commands.clear_histology_calls == 0
+    assert ("cancel-preload", "mouse root changed") not in calls
+    assert ("evict-app",) not in calls
 
 
 def test_set_mouse_root_failure_does_not_update_views() -> None:
@@ -178,7 +202,28 @@ def test_set_mouse_root_failure_does_not_update_views() -> None:
             {"disable_widgets": ["button", "line"]},
         ),
         ("busy-enter",),
+        ("busy-exit", None),
+    ]
+
+
+def test_set_mouse_root_stops_when_cache_eviction_is_blocked() -> None:
+    coordinator, commands, calls = _coordinator(
+        evict_result=Failed("dirty runtime"),
+    )
+
+    assert not coordinator.set_mouse_root(Path("/data/mouse"))
+
+    assert commands.calls == [Path("/data/mouse")]
+    assert commands.clear_histology_calls == 1
+    assert calls == [
+        (
+            "busy",
+            ("Loading datapackage...", "Mouse root loaded"),
+            {"disable_widgets": ["button", "line"]},
+        ),
+        ("busy-enter",),
         ("cancel-preload", "mouse root changed"),
+        ("evict-app",),
         ("busy-exit", None),
     ]
 

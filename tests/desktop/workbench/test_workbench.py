@@ -1069,6 +1069,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         capture_active_reference_lines=lambda positions: (
             captured_reference_lines.append(positions) or Ok()
         ),
+        evict_stream_cache=lambda: Ok(),
     )
     commands = SimpleNamespace(
         paths=command_impl,

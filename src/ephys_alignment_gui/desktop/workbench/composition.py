@@ -149,7 +149,6 @@ def build_desktop_workbench_coordinator_cluster(
             render_cluster.reference_line_presenter,
             probe_selection_coordinator,
             lifecycle_coordinator.show_empty_state,
-            load_data_coordinator.cancel_active_preload,
         ),
     )
     mouse_root_coordinator = DesktopMouseRootCoordinator(
@@ -160,6 +159,7 @@ def build_desktop_workbench_coordinator_cluster(
             ports.busy,
             session_selection_coordinator,
             load_data_coordinator.cancel_active_preload,
+            app.commands.load.evict_stream_cache,
         ),
     )
     folder_dialog = DesktopFolderDialog(parent=None)
@@ -416,14 +416,12 @@ def _session_selection_callbacks(
     reference_line_presenter: Any,
     probe_selection_coordinator: DesktopProbeSelectionCoordinator,
     show_empty_state: Callable[[], None],
-    cancel_active_preload: Callable[[str], bool],
 ) -> DesktopSessionSelectionCallbacks:
     """Build callbacks for session selection."""
     return DesktopSessionSelectionCallbacks(
         capture_pending_reference_lines=(
             reference_line_presenter.capture_pending_reference_lines
         ),
-        cancel_active_preload=cancel_active_preload,
         show_empty_state=show_empty_state,
         select_first_probe=probe_selection_coordinator.probe_selected,
     )
@@ -433,10 +431,12 @@ def _mouse_root_callbacks(
     busy_ports: DesktopBusyPorts,
     session_selection_coordinator: DesktopSessionSelectionCoordinator,
     cancel_active_preload: Callable[[str], bool],
+    evict_stream_cache: Callable[[], Any],
 ) -> DesktopMouseRootCallbacks:
     """Build callbacks for mouse-root loading."""
     return DesktopMouseRootCallbacks(
         busy_context=busy_ports.busy_context,
         cancel_active_preload=cancel_active_preload,
+        evict_stream_cache=evict_stream_cache,
         select_first_session=session_selection_coordinator.session_selected,
     )

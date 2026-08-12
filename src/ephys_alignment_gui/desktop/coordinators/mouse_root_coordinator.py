@@ -21,6 +21,7 @@ class DesktopMouseRootCallbacks:
 
     busy_context: Callable[..., AbstractContextManager[Any]]
     cancel_active_preload: Callable[[str], bool]
+    evict_stream_cache: Callable[[], Any]
     select_first_session: Callable[[], None]
 
 
@@ -40,14 +41,18 @@ class DesktopMouseRootCoordinator:
             "Mouse root loaded",
             disable_widgets=self.path_view.mouse_root_widgets(),
         ):
-            self.callbacks.cancel_active_preload("mouse root changed")
             result = self.commands.set_mouse_root(mouse_root)
             if isinstance(result, Failed):
                 logger.error(result.message)
                 return False
             assert isinstance(result, MouseRootLoaded)
             if result.root_changed:
+                self.callbacks.cancel_active_preload("mouse root changed")
                 self.commands.clear_histology_context()
+                evicted = self.callbacks.evict_stream_cache()
+                if isinstance(evicted, Failed):
+                    logger.error(evicted.message)
+                    return False
             loaded_root = result.mouse_root
 
             self.path_view.set_mouse_root(loaded_root.root)

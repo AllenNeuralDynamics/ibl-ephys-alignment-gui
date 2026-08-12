@@ -51,11 +51,8 @@ class FakeCommands:
     def __init__(
         self,
         result: Any | None = None,
-        *,
-        evict_result: Any | None = None,
     ) -> None:
         self.result = result or RecordingSelected("rec", ["probeA", "probeB"])
-        self.evict_result = evict_result
         self.calls: list[str] = []
         self.ui_calls: list[tuple] | None = None
         self.metadata = self
@@ -65,10 +62,9 @@ class FakeCommands:
         self.calls.append(recording_id)
         return self.result
 
-    def evict_stream_cache(self) -> Any:
+    def detach_active_stream(self) -> None:
         if self.ui_calls is not None:
-            self.ui_calls.append(("evict-app",))
-        return self.evict_result
+            self.ui_calls.append(("detach-app",))
 
 
 def _coordinator(
@@ -100,10 +96,6 @@ def _coordinator(
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            cancel_active_preload=lambda reason: calls.append(
-                ("cancel-preload", reason)
-            )
-            or True,
             show_empty_state=lambda: calls.append(("empty",)),
             select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
@@ -137,8 +129,7 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
     assert commands.calls == ["rec"]
     assert calls == [
         ("capture",),
-        ("cancel-preload", "session changed"),
-        ("evict-app",),
+        ("detach-app",),
         ("empty",),
         ("populate-probes", ["probeA", "probeB"]),
         ("clear-shanks",),
@@ -173,8 +164,7 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
 
     assert calls == [
         ("capture",),
-        ("cancel-preload", "session changed"),
-        ("evict-app",),
+        ("detach-app",),
         ("empty",),
         ("populate-probes", []),
         ("clear-shanks",),
@@ -192,21 +182,15 @@ def test_session_selected_failure_does_not_mutate_selection_view() -> None:
     assert commands.calls == ["rec"]
     assert calls == [
         ("capture",),
-        ("cancel-preload", "session changed"),
-        ("evict-app",),
+        ("detach-app",),
     ]
 
 
-def test_session_selected_stops_when_cache_eviction_is_blocked() -> None:
-    coordinator, commands, calls = _coordinator(
-        commands=FakeCommands(evict_result=Failed("dirty runtime"))
-    )
+def test_session_selected_preserves_preload_and_stream_cache() -> None:
+    coordinator, commands, calls = _coordinator()
 
-    assert not coordinator.session_selected()
+    assert coordinator.session_selected()
 
-    assert commands.calls == []
-    assert calls == [
-        ("capture",),
-        ("cancel-preload", "session changed"),
-        ("evict-app",),
-    ]
+    assert commands.calls == ["rec"]
+    assert ("detach-app",) in calls
+    assert not any(call[0] in {"cancel-preload", "evict-app"} for call in calls)

@@ -18,7 +18,6 @@ class DesktopSessionSelectionCallbacks:
     """Non-widget side effects for session selection."""
 
     capture_pending_reference_lines: Callable[[], None]
-    cancel_active_preload: Callable[[str], bool]
     show_empty_state: Callable[[], None]
     select_first_probe: Callable[[], None]
 
@@ -42,11 +41,7 @@ class DesktopSessionSelectionCoordinator:
             return False
 
         callbacks.capture_pending_reference_lines()
-        callbacks.cancel_active_preload("session changed")
-        evicted = self.app.commands.load.evict_stream_cache()
-        if isinstance(evicted, Failed):
-            logger.error(evicted.message)
-            return False
+        self.app.commands.load.detach_active_stream()
         result = self.app.commands.metadata.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)
