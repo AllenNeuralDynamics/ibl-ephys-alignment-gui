@@ -54,6 +54,7 @@ from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplaySta
 from ephys_alignment_gui.core.alignment_events import (
     AlignmentEdited,
     FreshLoadCompleted,
+    HistologyBoundariesVisibilityChanged,
     HistologyLoadReported,
     LoadDataCancelled,
     LoadDataFailed,
@@ -63,6 +64,8 @@ from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
+    ReferenceLineVisibilityChanged,
+    RegionAnnotationSourceChanged,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -2590,6 +2593,13 @@ def test_commands_set_unit_filter_does_not_require_loaded_runtime() -> None:
 
 def test_display_commands_update_app_owned_display_settings() -> None:
     workspace = AlignmentWorkspace()
+    display_events: list[Any] = []
+    workspace.events.subscribe(ReferenceLineVisibilityChanged, display_events.append)
+    workspace.events.subscribe(
+        HistologyBoundariesVisibilityChanged,
+        display_events.append,
+    )
+    workspace.events.subscribe(RegionAnnotationSourceChanged, display_events.append)
 
     assert workspace.app.commands.display.toggle_reference_lines_visible() is False
     assert workspace.app.commands.display.toggle_histology_boundaries_visible() is False
@@ -2602,6 +2612,11 @@ def test_display_commands_update_app_owned_display_settings() -> None:
     assert workspace.display_state.histology_boundaries_visible is False
     assert workspace.display_state.region_annotation_source == "FranklinPaxinos"
     assert workspace.app.queries.workspace.linear_fit_enabled() is False
+    assert display_events == [
+        ReferenceLineVisibilityChanged(visible=False),
+        HistologyBoundariesVisibilityChanged(visible=False),
+        RegionAnnotationSourceChanged(source="FranklinPaxinos"),
+    ]
 
 
 def test_queries_return_output_and_alignment_screen_read_models(tmp_path) -> None:

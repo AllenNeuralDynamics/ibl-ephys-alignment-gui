@@ -213,8 +213,14 @@ class FakeAlignmentSelectionActions:
 
 
 class FakeDisplayActions:
-    def __init__(self) -> None:
+    def __init__(self, subscriptions: list[FakeSubscription] | None = None) -> None:
         self.calls: list[Any] = []
+        self.subscriptions = subscriptions or []
+        self.connect_count = 0
+
+    def connect_display_events(self) -> list[FakeSubscription]:
+        self.connect_count += 1
+        return self.subscriptions
 
     def toggle_histology_boundaries(self) -> bool:
         self.calls.append("toggle-histology-boundaries")
@@ -677,6 +683,7 @@ def _workbench(
 def test_workbench_owns_event_subscription_lifecycle() -> None:
     alignment_sub = FakeSubscription()
     shank_sub = FakeSubscription()
+    display_sub = FakeSubscription()
     load_sub = FakeSubscription()
     output_path_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
@@ -684,6 +691,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     previous_alignment_sub = FakeSubscription()
     alignment = FakeAlignmentPresenter([alignment_sub])
     shank = FakeShankPresenter([shank_sub])
+    display_actions = FakeDisplayActions([display_sub])
     load_data = FakeLoadDataPresenter([load_sub])
     output_path = FakeOutputPathPresenter([output_path_sub])
     lifecycle = FakeLifecyclePresenter([lifecycle_sub])
@@ -695,6 +703,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
         alignment,
         shank,
         FakeHistologyDisplay(),
+        display_actions=display_actions,
         load_data=load_data,
         output_path=output_path,
         lifecycle=lifecycle,
@@ -708,6 +717,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert subscriptions == [
         alignment_sub,
         shank_sub,
+        display_sub,
         load_sub,
         output_path_sub,
         lifecycle_sub,
@@ -717,6 +727,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
     assert second_connect == subscriptions
     assert alignment.connect_count == 1
     assert shank.connect_count == 1
+    assert display_actions.connect_count == 1
     assert load_data.connect_count == 1
     assert output_path.connect_count == 1
     assert lifecycle.connect_count == 1
@@ -728,6 +739,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
 
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
+    assert display_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
     assert output_path_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1
@@ -738,6 +750,7 @@ def test_workbench_owns_event_subscription_lifecycle() -> None:
 def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     alignment_sub = FakeSubscription()
     shank_sub = FakeSubscription()
+    display_sub = FakeSubscription()
     load_sub = FakeSubscription()
     output_path_sub = FakeSubscription()
     lifecycle_sub = FakeSubscription()
@@ -750,6 +763,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
         FakeAlignmentPresenter([alignment_sub]),
         FakeShankPresenter([shank_sub]),
         FakeHistologyDisplay(),
+        display_actions=FakeDisplayActions([display_sub]),
         load_data=load_data,
         output_path=output_path,
         lifecycle=FakeLifecyclePresenter([lifecycle_sub]),
@@ -766,6 +780,7 @@ def test_workbench_shutdown_settles_load_before_disconnecting_events() -> None:
     assert save.shutdown_timeouts == [123]
     assert alignment_sub.disconnect_count == 1
     assert shank_sub.disconnect_count == 1
+    assert display_sub.disconnect_count == 1
     assert load_sub.disconnect_count == 1
     assert output_path_sub.disconnect_count == 1
     assert lifecycle_sub.disconnect_count == 1

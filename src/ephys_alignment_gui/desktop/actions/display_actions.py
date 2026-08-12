@@ -6,6 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.core.alignment_events import (
+    HistologyBoundariesVisibilityChanged,
+    ReferenceLineVisibilityChanged,
+    RegionAnnotationSourceChanged,
+)
+from ephys_alignment_gui.core.event_bus import EventSubscription
+
 
 @dataclass
 class DesktopDisplayActions:
@@ -19,22 +26,61 @@ class DesktopDisplayActions:
     fit_alignment: Callable[[], bool]
     histology_available: Callable[[], bool]
 
-    def toggle_histology_boundaries(self) -> bool:
-        """Toggle reference/nearby histology boundary display."""
-        boundaries_visible = (
-            self.app.commands.display.toggle_histology_boundaries_visible()
-        )
-        if not boundaries_visible:
-            return self.histology_presenter.render_active_nearby()
-        return self.histology_presenter.render_active_reference()
+    def connect_display_events(self) -> list[EventSubscription]:
+        """Subscribe desktop display updates to semantic display-state events."""
+        return [
+            self.app.events.subscribe(
+                HistologyBoundariesVisibilityChanged,
+                self.on_histology_boundaries_visibility_changed,
+            ),
+            self.app.events.subscribe(
+                RegionAnnotationSourceChanged,
+                self.on_region_annotation_source_changed,
+            ),
+            self.app.events.subscribe(
+                ReferenceLineVisibilityChanged,
+                self.on_reference_line_visibility_changed,
+            ),
+        ]
 
-    def toggle_region_annotation_source(self) -> None:
-        """Toggle region annotation source and refresh histology panels."""
-        self.app.commands.display.toggle_region_annotation_source()
+    def on_histology_boundaries_visibility_changed(
+        self,
+        event: HistologyBoundariesVisibilityChanged,
+    ) -> None:
+        """Render the selected reference/nearby histology boundary display."""
+        if not event.visible:
+            self.histology_presenter.render_active_nearby()
+            return
+        self.histology_presenter.render_active_reference()
+
+    def on_region_annotation_source_changed(
+        self,
+        _event: RegionAnnotationSourceChanged,
+    ) -> None:
+        """Refresh histology panels after the annotation source changes."""
         self.histology_presenter.render_active_aligned()
         self.histology_presenter.render_active_reference()
         self.histology_presenter.render_active_scale_factor()
         self.displays.reference_lines.reattach()
+
+    def on_reference_line_visibility_changed(
+        self,
+        event: ReferenceLineVisibilityChanged,
+    ) -> None:
+        """Apply reference-line visibility to desktop plot handles."""
+        if not event.visible:
+            self.displays.reference_lines.remove_from_plots()
+            return
+        self.displays.reference_lines.add_to_plots()
+
+    def toggle_histology_boundaries(self) -> bool:
+        """Toggle reference/nearby histology boundary display."""
+        self.app.commands.display.toggle_histology_boundaries_visible()
+        return True
+
+    def toggle_region_annotation_source(self) -> None:
+        """Toggle region annotation source and refresh histology panels."""
+        self.app.commands.display.toggle_region_annotation_source()
 
     def toggle_labels(self) -> None:
         """Toggle atlas label visibility on histology panels."""
@@ -42,11 +88,7 @@ class DesktopDisplayActions:
 
     def toggle_reference_lines(self) -> None:
         """Toggle reference-line visibility on desktop plots."""
-        lines_visible = self.app.commands.display.toggle_reference_lines_visible()
-        if not lines_visible:
-            self.displays.reference_lines.remove_from_plots()
-        else:
-            self.displays.reference_lines.add_to_plots()
+        self.app.commands.display.toggle_reference_lines_visible()
 
     def toggle_channels(self) -> None:
         """Toggle channel overlays on slice panels."""

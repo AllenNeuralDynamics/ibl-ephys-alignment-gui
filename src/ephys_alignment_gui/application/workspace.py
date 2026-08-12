@@ -224,6 +224,7 @@ class AlignmentWorkspace:
         )
         self.display_commands = DisplayCommandHandler(
             display_state=self.display_state,
+            events=self.events,
         )
         self.app = AlignmentApp(
             commands=AlignmentCommands(

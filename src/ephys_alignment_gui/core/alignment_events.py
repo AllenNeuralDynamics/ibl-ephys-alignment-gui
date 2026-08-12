@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
+from ephys_alignment_gui.core.alignment_display_state import RegionAnnotationSource
 from ephys_alignment_gui.core.document import AlignmentKey
 
 AlignmentEditKind = Literal[
@@ -43,6 +44,27 @@ class ShankChanged:
     active_key: AlignmentKey | None
     data_loaded: bool
     preserve_plot_selection: bool | None = None
+
+
+@dataclass(frozen=True)
+class ReferenceLineVisibilityChanged:
+    """Payload emitted after reference-line visibility display state changes."""
+
+    visible: bool
+
+
+@dataclass(frozen=True)
+class HistologyBoundariesVisibilityChanged:
+    """Payload emitted after histology boundary display state changes."""
+
+    visible: bool
+
+
+@dataclass(frozen=True)
+class RegionAnnotationSourceChanged:
+    """Payload emitted after the displayed region annotation source changes."""
+
+    source: RegionAnnotationSource
 
 
 @dataclass(frozen=True)

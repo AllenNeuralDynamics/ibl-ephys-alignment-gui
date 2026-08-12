@@ -77,6 +77,9 @@ class DesktopWorkbench:
             self.render_cluster.shank_presenter.connect_shank_events()
         )
         self._event_subscriptions.extend(
+            self.render_cluster.display_actions.connect_display_events()
+        )
+        self._event_subscriptions.extend(
             self.coordinator_cluster.load_data_coordinator.connect_load_events()
         )
         self._event_subscriptions.extend(
