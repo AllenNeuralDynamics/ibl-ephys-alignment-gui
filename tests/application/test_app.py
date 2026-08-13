@@ -49,7 +49,10 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
 )
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
-from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_display_state import (
+    DEFAULT_UNIT_FILTER,
+    AlignmentDisplayState,
+)
 from ephys_alignment_gui.core.alignment_events import (
     AlignmentEdited,
     FreshLoadCompleted,
@@ -745,7 +748,7 @@ def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> 
     assert workspace.runtime.current_stream_key is None
     assert ("rec", "stream") not in workspace.runtime.stream_cache
     assert stream_runtime.stream_key == ("rec", "stream")
-    assert workspace.display_state.unit_filter == "all"
+    assert workspace.display_state.unit_filter == "KS good"
 
 
 def test_commands_begin_load_data_noops_when_stream_shank_already_active() -> None:
@@ -850,7 +853,7 @@ def test_commands_begin_load_data_prepares_fresh_load_and_captures_lines() -> No
     assert not workspace.document.data_loaded
     assert workspace.document.selected_alignment_key == AlignmentKey("rec", "stream", 0)
     assert workspace.runtime.active_stream_runtime is None
-    assert workspace.display_state.unit_filter == "all"
+    assert workspace.display_state.unit_filter == "KS good"
     assert old_state.pending_reference_lines is not None
 
 
@@ -1424,7 +1427,7 @@ def test_commands_detach_active_stream_preserves_cache_and_resets_display() -> N
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.current_stream_key is None
     assert workspace.runtime.stream_cache[("rec", "stream")] is stream_runtime
-    assert workspace.display_state.unit_filter == "all"
+    assert workspace.display_state.unit_filter == "KS good"
     assert events == [StreamDetached(cached_stream_count=1)]
 
 
@@ -1451,7 +1454,7 @@ def test_commands_evict_stream_cache_clears_cache_and_resets_display() -> None:
     assert workspace.runtime.stream_cache == {}
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.current_stream_key is None
-    assert workspace.display_state.unit_filter == "all"
+    assert workspace.display_state.unit_filter == "KS good"
     assert events == [StreamCacheEvictedEvent(evicted_stream_count=2)]
 
 
@@ -2837,7 +2840,7 @@ def test_queries_return_default_unit_filter() -> None:
         runtime=SimpleNamespace(active_stream_runtime=None),
     )
 
-    assert queries.ephys.active_unit_filter() == "all"
+    assert queries.ephys.active_unit_filter() == DEFAULT_UNIT_FILTER
 
 
 def test_queries_can_resolve_raw_payload_without_payload_cache() -> None:

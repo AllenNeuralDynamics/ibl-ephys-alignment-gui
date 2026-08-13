@@ -87,7 +87,7 @@ class FakeQueries:
         self.plot_data_state = ActiveShankPlotDataState(
             key=AlignmentKey("rec", "stream", 1),
             shank_idx=1,
-            unit_filter="all",
+            unit_filter="KS good",
             channel_min_um=5.0,
             channel_max_um=100.0,
             in_brain_depths_um=None,
@@ -98,7 +98,7 @@ class FakeQueries:
             alignment_key=AlignmentKey("rec", "stream", 1),
             data_loaded=True,
             preserve_plot_selection=resolved_preserve,
-            unit_filter="all",
+            unit_filter="KS good",
             plot_menu="plot-menu",
             slice_menu="slice-menu",
         )
@@ -322,6 +322,10 @@ def test_shank_presenter_allows_missing_slice_data_without_histology() -> None:
 
     presenter.render_loaded_shank(shank_idx=1, preserve_plot_selection=False)
 
-    assert ("set_unit_filter", "all") in calls
+    assert not any(
+        call[0] == "set_unit_filter"
+        for call in calls
+        if isinstance(call, tuple)
+    )
     assert ("menus", "plot-menu") in calls
     assert ("configure", False) in calls

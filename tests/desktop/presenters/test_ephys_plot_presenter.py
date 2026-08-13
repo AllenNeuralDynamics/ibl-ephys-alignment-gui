@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from ephys_alignment_gui.core.alignment_display_state import DEFAULT_UNIT_FILTER
 from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
 from ephys_alignment_gui.desktop.presenters.ephys_plot_presenter import (
     DesktopEphysPlotPresenter,
@@ -39,6 +40,7 @@ class FakeAction:
         self.checkable = checkable
         self.checked = checked
         self._data = None
+        self._group = None
         self.triggered = FakeSignal()
 
     def setData(self, data) -> None:
@@ -48,6 +50,10 @@ class FakeAction:
         return self._data
 
     def setChecked(self, checked: bool) -> None:
+        if checked and self._group is not None and self._group.exclusive:
+            for action in self._group.actions():
+                if action is not self:
+                    action.checked = False
         self.checked = checked
 
     def text(self) -> str:
@@ -68,6 +74,7 @@ class FakeActionGroup:
 
     def addAction(self, action: FakeAction) -> None:
         self._actions.append(action)
+        action._group = self
         action.triggered.connect(lambda _checked=False: self.triggered.emit(action))
 
     def actions(self) -> list[FakeAction]:
@@ -208,6 +215,13 @@ def test_ephys_plot_presenter_renders_menu_state_and_selected_keys() -> None:
     }
 
 
+def test_ephys_plot_presenter_marks_default_unit_filter_checked() -> None:
+    presenter, _queries, _commands = _presenter([])
+
+    assert presenter._unit_filter_actions_by_subset[DEFAULT_UNIT_FILTER].checked
+    assert not presenter._unit_filter_actions_by_subset["all"].checked
+
+
 def test_ephys_plot_presenter_toggles_and_dispatches_selected_plot() -> None:
     calls: list[Any] = []
     presenter, queries, _commands = _presenter(calls)
@@ -243,6 +257,23 @@ def test_ephys_plot_presenter_applies_unit_filter_and_redraws_current() -> None:
     ]
 
 
+def test_ephys_plot_presenter_unit_filter_preserves_user_selected_image_plot() -> None:
+    calls: list[Any] = []
+    presenter, _queries, commands = _presenter(calls)
+
+    presenter.toggle_plot("image")
+    calls.clear()
+    presenter.filter_unit_pressed("unitrefine_neural")
+
+    assert commands.unit_filters == ["unitrefine_neural"]
+    assert calls == [
+        ("image", {"payload": "image.first"}),
+        ("line", {"payload": "line.depth"}),
+        ("probe", {"payload": "probe.depth"}, [1, 2]),
+    ]
+    assert presenter.current_plot_keys()["image"] == "image.first"
+
+
 def test_ephys_plot_presenter_renders_defaults_for_new_shank() -> None:
     calls: list[Any] = []
     presenter, _queries, _commands = _presenter(calls)
@@ -252,13 +283,14 @@ def test_ephys_plot_presenter_renders_defaults_for_new_shank() -> None:
         alignment_key=None,
         data_loaded=True,
         preserve_plot_selection=False,
-        unit_filter="all",
+        unit_filter="KS good",
         plot_menu=_plot_menu_state(),
         slice_menu=None,
     )
 
     presenter.render_shank_ephys_plots(state)
 
+    assert presenter._unit_filter_actions_by_subset["KS good"].checked
     assert calls == [
         ("image", {"payload": "image.first"}),
         ("probe", {"payload": "probe.depth"}, [1, 2]),

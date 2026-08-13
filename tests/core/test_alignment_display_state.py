@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplayState
+from ephys_alignment_gui.core.alignment_display_state import (
+    DEFAULT_UNIT_FILTER,
+    AlignmentDisplayState,
+)
 
 
 def test_region_annotation_source_toggle_and_reset() -> None:
@@ -22,7 +25,7 @@ def test_region_annotation_source_toggle_and_reset() -> None:
 def test_unit_filter_set_and_reset() -> None:
     state = AlignmentDisplayState()
 
-    assert state.unit_filter == "all"
+    assert state.unit_filter == DEFAULT_UNIT_FILTER
 
 
 def test_depth_view_settings_provide_probe_ranges_and_fit_depth_grid() -> None:
@@ -69,4 +72,4 @@ def test_visibility_toggles_are_resettable_display_state() -> None:
 
     state.reset_unit_filter()
 
-    assert state.unit_filter == "all"
+    assert state.unit_filter == DEFAULT_UNIT_FILTER

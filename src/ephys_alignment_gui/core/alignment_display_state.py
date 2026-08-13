@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 RegionAnnotationSource = Literal["Allen", "FranklinPaxinos"]
+DEFAULT_UNIT_FILTER = "unitrefine_neural"
 
 
 @dataclass
@@ -69,7 +70,7 @@ class AlignmentDisplayState:
     """Frontend-agnostic display choices that do not change alignment state."""
 
     region_annotation_source: RegionAnnotationSource = "Allen"
-    unit_filter: str = "all"
+    unit_filter: str = DEFAULT_UNIT_FILTER
     reference_lines_visible: bool = True
     histology_boundaries_visible: bool = True
     depth_view: DepthViewSettings = field(default_factory=DepthViewSettings)
@@ -82,8 +83,8 @@ class AlignmentDisplayState:
         self.region_annotation_source = "Allen"
 
     def reset_unit_filter(self) -> None:
-        """Reset displayed ephys plots to all units."""
-        self.unit_filter = "all"
+        """Reset displayed ephys plots to the default unit subset."""
+        self.unit_filter = DEFAULT_UNIT_FILTER
 
     def reset_visibility_toggles(self) -> None:
         """Reset simple plot visibility toggles to defaults."""
@@ -101,7 +102,6 @@ class AlignmentDisplayState:
     def reset_for_active_stream(self) -> None:
         """Reset frontend-agnostic display state for a stream transition."""
         self.reset_region_annotation_source()
-        self.reset_unit_filter()
         self.reset_visibility_toggles()
         self.reset_depth_view()
         self.reset_edit_settings()

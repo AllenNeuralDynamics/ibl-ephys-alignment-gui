@@ -9,6 +9,7 @@ from typing import Any
 
 from PyQt5 import QtWidgets
 
+from ephys_alignment_gui.core.alignment_display_state import DEFAULT_UNIT_FILTER
 from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
 from ephys_alignment_gui.plotting.menu_state import (
     EPHYS_PLOT_MENUS,
@@ -73,13 +74,21 @@ class DesktopEphysPlotPresenter:
 
         actions: dict[str, Any] = {}
         for subset, label, checked in (
-            ("all", "All", True),
-            ("KS good", "KS good", False),
-            ("KS mua", "KS mua", False),
-            ("IBL good", "IBL good", False),
-            ("aind_qc", "aind_qc", False),
-            ("unitrefine_sua", "unitrefine_sua", False),
-            ("unitrefine_neural", "unitrefine_neural", False),
+            ("all", "All", DEFAULT_UNIT_FILTER == "all"),
+            ("KS good", "KS good", DEFAULT_UNIT_FILTER == "KS good"),
+            ("KS mua", "KS mua", DEFAULT_UNIT_FILTER == "KS mua"),
+            ("IBL good", "IBL good", DEFAULT_UNIT_FILTER == "IBL good"),
+            ("aind_qc", "aind_qc", DEFAULT_UNIT_FILTER == "aind_qc"),
+            (
+                "unitrefine_sua",
+                "unitrefine_sua",
+                DEFAULT_UNIT_FILTER == "unitrefine_sua",
+            ),
+            (
+                "unitrefine_neural",
+                "unitrefine_neural",
+                DEFAULT_UNIT_FILTER == "unitrefine_neural",
+            ),
         ):
             action = self.action_factory(
                 label,
@@ -164,7 +173,7 @@ class DesktopEphysPlotPresenter:
             return
 
         self.set_initial_actions_checked()
-        self.set_unit_filter_action_checked("all")
+        self.set_unit_filter_action_checked(state.unit_filter)
         self.plot_default_spec("image")
         self.plot_default_spec("probe")
         self.plot_default_spec("line")
@@ -184,16 +193,15 @@ class DesktopEphysPlotPresenter:
     def filter_unit_pressed(self, unit_filter: str) -> None:
         """Apply a unit filter and redraw the currently selected ephys plots."""
         self.app.commands.edit.set_unit_filter(unit_filter)
-        self.set_initial_actions_checked()
         self.set_unit_filter_action_checked(unit_filter)
         self.update_plot()
 
     def update_plot(self) -> None:
         """Re-run the plotting function for the current menu selections."""
         for menu in EPHYS_PLOT_MENUS:
-            action = self.checked_action(menu)
-            if action is not None:
-                action.trigger()
+            spec_key = self._plot_spec_key_from_action(self.checked_action(menu))
+            if spec_key is not None:
+                self.plot_from_spec(spec_key)
 
     def plot_from_spec(self, spec_key: str) -> None:
         """Render a registered plot payload with the configured render callbacks."""

@@ -106,8 +106,6 @@ class DesktopShankPresenter:
         if prepared.alignment_choices is not None:
             callbacks.render_alignment_choices(prepared.alignment_choices)
 
-        if not preserve:
-            self.app.commands.edit.set_unit_filter("all")
         screen_preparation = (
             self.app.queries.active_shank.prepare_active_shank_screen_state(
                 histology_available=prepared.histology_available,
