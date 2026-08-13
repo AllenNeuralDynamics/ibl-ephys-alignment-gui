@@ -118,17 +118,30 @@ class FakeAxis:
         self.hidden = True
 
 
+class FakeHistogramCurve:
+    def __init__(self) -> None:
+        self.xData: np.ndarray | None = None
+        self.yData: np.ndarray | None = None
+
+    def setData(self, x: Any, y: Any) -> None:
+        self.xData = np.asarray(x)
+        self.yData = np.asarray(y)
+
+
 class FakeHistogramLUTItem:
     def __init__(self) -> None:
         self.axis = FakeAxis()
         self.gradient = FakeGradient()
         self.sigLevelsChanged = FakeSignal()
+        self.plot = FakeHistogramCurve()
+        self.plots = [self.plot]
         self.image_item = None
         self.levels = (0.0, 1.0)
         self.auto_range_count = 0
 
     def setImageItem(self, image_item: Any) -> None:
         self.image_item = image_item
+        self.plot.setData(*image_item.getHistogram())
 
     def autoHistogramRange(self) -> None:
         self.auto_range_count += 1
@@ -330,6 +343,35 @@ def test_slice_panel_owns_perpendicular_overlay_handles(monkeypatch) -> None:
     assert perpendicular.x_ranges == [{"min": -100.0, "max": 100.0, "padding": 0}]
 
 
+def test_slice_panel_clear_perpendicular_only_removes_owned_handles() -> None:
+    view, _coronal, perpendicular, _layout = _view_with_plots()
+    state = view.view_state
+    external_reference_line = object()
+    perp_image_item = object()
+    perp_probe_line = object()
+    perp_channel_dots = object()
+    perp_tip_marker = object()
+    state.perp_image_item = perp_image_item
+    state.perp_probe_line = perp_probe_line
+    state.perp_channel_dots = perp_channel_dots
+    state.perp_tip_marker = perp_tip_marker
+
+    view.clear_perpendicular()
+
+    assert external_reference_line not in perpendicular.removed
+    assert perpendicular.clear_count == 0
+    assert perpendicular.removed == [
+        perp_image_item,
+        perp_probe_line,
+        perp_channel_dots,
+        perp_tip_marker,
+    ]
+    assert state.perp_image_item is None
+    assert state.perp_probe_line is None
+    assert state.perp_channel_dots is None
+    assert state.perp_tip_marker is None
+
+
 def test_slice_panel_preserves_scalar_levels_per_slice_selection(monkeypatch) -> None:
     monkeypatch.setattr(
         "ephys_alignment_gui.desktop.displays.slice_panel_view.pg.ImageItem",
@@ -373,6 +415,42 @@ def test_slice_panel_preserves_scalar_levels_per_slice_selection(monkeypatch) ->
     assert view.view_state.slice_levels_by_selection[histology] == (20.0, 80.0)
 
 
+def test_slice_panel_displays_lut_histogram_counts_on_log_scale(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "ephys_alignment_gui.desktop.displays.slice_panel_view.pg.ImageItem",
+        FakeImageItem,
+    )
+    monkeypatch.setattr(
+        "ephys_alignment_gui.desktop.displays.slice_panel_view.pg.HistogramLUTItem",
+        FakeHistogramLUTItem,
+    )
+    monkeypatch.setattr(
+        "ephys_alignment_gui.desktop.displays.slice_panel_view.pg.PlotCurveItem",
+        FakePlotItem,
+    )
+    monkeypatch.setattr(
+        "ephys_alignment_gui.desktop.displays.slice_panel_view.pg.ScatterPlotItem",
+        FakePlotItem,
+    )
+    monkeypatch.setattr(
+        "ephys_alignment_gui.desktop.displays.slice_panel_view.ColorBar",
+        FakeColorBar,
+    )
+    view, _coronal, _perpendicular, _layout = _view_with_plots()
+
+    view.render_slice(
+        _slice_render_state(
+            SliceSelection("slice_data", "histology_registration"),
+            initial_levels=(5.0, 95.0),
+        )
+    )
+
+    histogram = view.view_state.histogram_item
+    np.testing.assert_array_equal(histogram.plot.xData, [0.0, 1.0])
+    np.testing.assert_allclose(histogram.plot.yData, np.log1p([0, 20]))
+    assert histogram.getLevels() == (5.0, 95.0)
+
+
 def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
     view, coronal, perpendicular, layout = _view_with_plots()
     state = view.view_state
@@ -382,10 +460,14 @@ def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
     state.slice_chns = object()
     state.slice_tip = object()
     state.traj_line = object()
-    state.perp_image_item = object()
-    state.perp_probe_line = object()
-    state.perp_channel_dots = object()
-    state.perp_tip_marker = object()
+    perp_image_item = object()
+    perp_probe_line = object()
+    perp_channel_dots = object()
+    perp_tip_marker = object()
+    state.perp_image_item = perp_image_item
+    state.perp_probe_line = perp_probe_line
+    state.perp_channel_dots = perp_channel_dots
+    state.perp_tip_marker = perp_tip_marker
     state.slice_color_bar = object()
     state.slice_hist_levels = (1.0, 2.0)
     state.active_slice_selection = object()
@@ -396,7 +478,11 @@ def test_slice_panel_clear_resets_owned_plots_and_handles() -> None:
     view.clear()
 
     assert coronal.clear_count == 1
-    assert perpendicular.clear_count == 1
+    assert perpendicular.clear_count == 0
+    assert perp_image_item in perpendicular.removed
+    assert perp_probe_line in perpendicular.removed
+    assert perp_channel_dots in perpendicular.removed
+    assert perp_tip_marker in perpendicular.removed
     assert layout.removed == [slice_item]
     assert state.channel_projection is None
     assert state.slice_lines == []

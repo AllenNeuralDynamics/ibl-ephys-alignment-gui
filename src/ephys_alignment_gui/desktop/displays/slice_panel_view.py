@@ -22,6 +22,21 @@ from ephys_alignment_gui.geometry.ephys_alignment import TIP_SIZE_UM
 logger = logging.getLogger(__name__)
 
 
+def _show_histogram_log_counts(histogram_item: Any) -> None:
+    """Display LUT histogram counts on a log1p scale without changing levels."""
+    plots = getattr(histogram_item, "plots", None)
+    if plots is None:
+        plot = getattr(histogram_item, "plot", None)
+        plots = () if plot is None else (plot,)
+    for plot in plots:
+        x_data = getattr(plot, "xData", None)
+        y_data = getattr(plot, "yData", None)
+        if x_data is None or y_data is None:
+            continue
+        log_counts = np.log1p(np.maximum(np.asarray(y_data, dtype=float), 0.0))
+        plot.setData(x_data, log_counts)
+
+
 @dataclass(frozen=True)
 class SlicePanelPlots:
     """Pyqtgraph plot handles owned by the desktop slice panel."""
@@ -160,7 +175,11 @@ class SlicePanelView:
 
     def clear_perpendicular(self) -> None:
         """Clear perpendicular plot items and forget perpendicular handles."""
-        self.plots.perpendicular.clear()
+        view_state = self.view_state
+        self._remove_item(self.plots.perpendicular, view_state.perp_image_item)
+        self._remove_item(self.plots.perpendicular, view_state.perp_probe_line)
+        self._remove_item(self.plots.perpendicular, view_state.perp_channel_dots)
+        self._remove_item(self.plots.perpendicular, view_state.perp_tip_marker)
         self.view_state.reset_perpendicular_overlays()
 
     def render_slice(self, render_state: ActiveSliceRenderState) -> None:
@@ -381,6 +400,7 @@ class SlicePanelView:
                     min=hist_levels[0],
                     max=upper_val,
                 )
+        _show_histogram_log_counts(view_state.histogram_item)
 
         view_state.slice_hist_levels = view_state.histogram_item.getLevels()
         self._remember_slice_levels(view_state.slice_hist_levels)
