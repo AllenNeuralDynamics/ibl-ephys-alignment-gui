@@ -40,6 +40,11 @@ class DesktopSessionSelectionCoordinator:
         if not session_name:
             return False
 
+        active_probe = self.app.queries.workspace.active_probe_selection_state()
+        if active_probe is not None and active_probe.recording_id == session_name:
+            logger.info("Session %s already selected", session_name)
+            return True
+
         callbacks.capture_pending_reference_lines()
         self.app.commands.load.detach_active_stream()
         result = self.app.commands.metadata.select_recording_metadata(session_name)

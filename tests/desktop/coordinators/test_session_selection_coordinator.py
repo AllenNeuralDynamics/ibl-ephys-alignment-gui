@@ -74,6 +74,7 @@ def _coordinator(
     mouse_root_loaded: bool = True,
     session_name: str = "rec",
     sessions: list[str] | None = None,
+    active_session_name: str | None = None,
 ) -> tuple[DesktopSessionSelectionCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
@@ -88,6 +89,16 @@ def _coordinator(
         queries=SimpleNamespace(
             workspace=SimpleNamespace(
                 mouse_root_loaded=lambda: mouse_root_loaded,
+                active_probe_selection_state=(
+                    lambda: (
+                        SimpleNamespace(
+                            recording_id=active_session_name,
+                            probe_name="probeA",
+                        )
+                        if active_session_name is not None
+                        else None
+                    )
+                ),
             )
         ),
     )
@@ -116,6 +127,15 @@ def test_session_selected_noops_without_session_name() -> None:
     coordinator, commands, calls = _coordinator(session_name="")
 
     assert not coordinator.session_selected()
+
+    assert commands.calls == []
+    assert calls == []
+
+
+def test_session_selected_noops_for_current_session() -> None:
+    coordinator, commands, calls = _coordinator(active_session_name="rec")
+
+    assert coordinator.session_selected()
 
     assert commands.calls == []
     assert calls == []

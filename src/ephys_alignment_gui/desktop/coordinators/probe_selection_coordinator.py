@@ -44,6 +44,15 @@ class DesktopProbeSelectionCoordinator:
         if not session_name or not probe_name:
             return False
 
+        active_probe = self.app.queries.workspace.active_probe_selection_state()
+        if (
+            active_probe is not None
+            and active_probe.recording_id == session_name
+            and active_probe.probe_name == probe_name
+        ):
+            logger.info("Probe %s/%s already selected", session_name, probe_name)
+            return True
+
         callbacks.capture_pending_reference_lines()
 
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx

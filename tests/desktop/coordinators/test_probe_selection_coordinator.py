@@ -120,6 +120,7 @@ def _coordinator(
     probe_name: str = "probeA",
     probes: list[str] | None = None,
     active_shank_idx: int = 1,
+    active_probe: tuple[str, str] | None = None,
     cached: bool = False,
 ) -> tuple[DesktopProbeSelectionCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
@@ -138,6 +139,16 @@ def _coordinator(
                 mouse_root_loaded=lambda: mouse_root_loaded,
                 active_shank_selection=lambda: SimpleNamespace(
                     shank_idx=active_shank_idx
+                ),
+                active_probe_selection_state=(
+                    lambda: (
+                        SimpleNamespace(
+                            recording_id=active_probe[0],
+                            probe_name=active_probe[1],
+                        )
+                        if active_probe is not None
+                        else None
+                    )
                 ),
             )
         ),
@@ -176,6 +187,16 @@ def test_probe_selected_noops_without_session_or_probe() -> None:
     assert not coordinator.probe_selected()
 
     assert commands.calls == []
+    assert calls == []
+
+
+def test_probe_selected_noops_for_current_probe() -> None:
+    coordinator, commands, calls = _coordinator(active_probe=("rec", "probeA"))
+
+    assert coordinator.probe_selected()
+
+    assert commands.calls == []
+    assert commands.shank_calls == []
     assert calls == []
 
 
