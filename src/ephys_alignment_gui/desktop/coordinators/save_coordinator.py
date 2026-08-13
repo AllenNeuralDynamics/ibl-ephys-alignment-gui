@@ -110,15 +110,18 @@ class DesktopSaveCoordinator:
         """Render one semantic save progress update."""
         if self._active_save_context is not None:
             self._active_save_context.update_message(event.message)
-        self._set_save_button_progress(
-            f"Saving {event.completed}/{max(event.total, 1)}",
-            event.message,
-        )
+        phase_label = _phase_label(event.phase)
+        status_label = _status_label(event.status)
+        if event.key is None and event.status in {"started", "running"}:
+            button_text = f"{phase_label}..."
+        else:
+            button_text = f"Saving {event.completed}/{max(event.total, 1)}"
+        self._set_save_button_progress(button_text, event.message)
         dialog = self._save_progress_dialog()
         dialog.update_progress(
             key=event.key,
-            phase_label=_phase_label(event.phase),
-            status_label=_status_label(event.status),
+            phase_label=phase_label,
+            status_label=status_label,
             completed=event.completed,
             total=event.total,
             message=event.message,
@@ -192,6 +195,7 @@ class DesktopSaveCoordinator:
 
     def _save_now(self, *, use_docdb: bool) -> bool:
         """Run the final save transaction on the GUI thread."""
+        self._show_save_preparing()
         self._set_save_button_progress("Saving...", "Saving edited alignments")
         try:
             with self.callbacks.busy_context(
@@ -212,6 +216,16 @@ class DesktopSaveCoordinator:
         finally:
             self._restore_save_button_state()
         return True
+
+    def _show_save_preparing(self) -> None:
+        """Clear stale progress rows before synchronous save work emits events."""
+        dialog = self._save_progress_dialog()
+        dialog.set_cancel_callback(None)
+        dialog.show_started(
+            (),
+            message="Preparing save...",
+            cancel_enabled=False,
+        )
 
     def _start_rehydration_then_save(
         self,

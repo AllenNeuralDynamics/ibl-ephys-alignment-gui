@@ -29,7 +29,7 @@ class DesktopShellStyle:
             reference_line_pen=pg.mkPen(
                 color="k",
                 style=QtCore.Qt.DotLine,
-                width=10,
+                width=2,
             ),
             linear_fit_pen=pg.mkPen(color="r", style=QtCore.Qt.DotLine, width=2),
             solid_pen=pg.mkPen(color="k", style=QtCore.Qt.SolidLine, width=2),

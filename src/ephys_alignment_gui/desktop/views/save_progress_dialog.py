@@ -104,10 +104,15 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         message: str,
     ) -> None:
         """Update dialog labels and one target row."""
-        if total > 0:
+        if key is None and status_label == "Running":
+            self._progress_bar.setRange(0, 0)
+        elif total > 0:
             self._progress_bar.setRange(0, total)
             self._progress_bar.setValue(max(0, min(completed, total)))
-        self._summary_label.setText(f"{phase_label}: {completed}/{max(total, 1)}")
+        if key is None:
+            self._summary_label.setText(f"{phase_label}: {status_label}")
+        else:
+            self._summary_label.setText(f"{phase_label}: {completed}/{max(total, 1)}")
         self._current_label.setText(message)
         if key is not None:
             item = self._items_by_key.get(key)
@@ -123,6 +128,7 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         """Render terminal save state and leave the dialog closable."""
         self._finished = True
         total = max(self._progress_bar.maximum(), 1)
+        self._progress_bar.setRange(0, total)
         if success:
             self._progress_bar.setValue(total)
         self._summary_label.setText("Save complete" if success else "Save failed")

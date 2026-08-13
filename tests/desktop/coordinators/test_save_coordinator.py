@@ -371,6 +371,8 @@ def test_save_prompts_for_output_then_saves() -> None:
     assert commands.save_rehydrate_missing == [False]
     assert calls == [
         ("ensure-output", blocked.first),
+        ("progress-cancel-callback",),
+        ("progress-started", (), "Preparing save...", False),
         (
             "busy",
             ("Saving...", "Saved successfully"),
@@ -378,6 +380,7 @@ def test_save_prompts_for_output_then_saves() -> None:
         ),
         ("busy-enter",),
         ("choices", ["saved", "original"]),
+        ("progress-finished", "Saved 1 edited alignment.", True),
         ("busy-exit", None),
     ]
 
@@ -405,12 +408,15 @@ def test_save_logs_failed_command() -> None:
     assert commands.save_calls == [{"use_docdb": True}]
     assert commands.save_rehydrate_missing == [False]
     assert calls == [
+        ("progress-cancel-callback",),
+        ("progress-started", (), "Preparing save...", False),
         (
             "busy",
             ("Saving...", "Saved successfully"),
             {"disable_widgets": "complete-button"},
         ),
         ("busy-enter",),
+        ("progress-finished", "save failed", False),
         ("busy-exit", None),
     ]
 
@@ -513,6 +519,16 @@ def test_save_progress_events_update_dialog_and_button() -> None:
     )
     commands.events.emit(
         SaveProgressUpdated(
+            key=None,
+            phase="building_outputs",
+            status="started",
+            completed=0,
+            total=1,
+            message="Batching CCF transform points for 1 edited alignment...",
+        )
+    )
+    commands.events.emit(
+        SaveProgressUpdated(
             key=key,
             phase="writing_files",
             status="completed",
@@ -524,12 +540,22 @@ def test_save_progress_events_update_dialog_and_button() -> None:
 
     assert coordinator is not None
     assert ("button-text", "Saving 0/1") in button_calls
+    assert ("button-text", "Transforming CCF...") in button_calls
     assert ("button-text", "Saving 1/1") in button_calls
     assert (
         "progress-started",
         (key,),
         "Saving 1 edited alignment...",
         False,
+    ) in calls
+    assert (
+        "progress-update",
+        None,
+        "Transforming CCF",
+        "Running",
+        0,
+        1,
+        "Batching CCF transform points for 1 edited alignment...",
     ) in calls
     assert (
         "progress-update",
