@@ -873,6 +873,24 @@ def test_probe_preload_does_not_start_while_foreground_load_is_running() -> None
     assert commands.preload_begin_calls == []
 
 
+def test_probe_preload_does_not_replace_running_preload() -> None:
+    preload_runner = ManualFreshLoadRunner()
+    preload_runner.active = True
+    coordinator, commands, _queries, _calls = _coordinator(
+        preload_runner=preload_runner,
+        next_probe_name="probeB",
+    )
+
+    assert not coordinator.start_probe_preload(
+        recording_id="rec",
+        probe_name="probeB",
+    )
+
+    assert commands.preload_begin_calls == []
+    assert commands.preload_cancel_calls == []
+    assert preload_runner.cancel_calls == []
+
+
 def test_load_heavy_data_cancels_active_preload_before_foreground_load() -> None:
     preload_runner = ManualFreshLoadRunner()
     preload_runner.active = True

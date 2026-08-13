@@ -242,7 +242,12 @@ class DesktopLoadDataCoordinator:
         if self.load_runner.is_running:
             return False
         if self.preload_runner.is_running:
-            self.cancel_active_preload("superseded by a newer preload request")
+            logger.debug(
+                "Skipping preload for %s/%s because another preload is still running",
+                recording_id,
+                probe_name,
+            )
+            return False
 
         prepared = self.app.commands.load.begin_preload_data(
             recording_id=recording_id,

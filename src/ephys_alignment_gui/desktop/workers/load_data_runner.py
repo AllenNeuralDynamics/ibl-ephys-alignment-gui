@@ -131,7 +131,7 @@ class QtFreshLoadRunner(QtCore.QObject):
     ) -> None:
         """Start a fresh-load job on a background QThread."""
         if self.is_running:
-            self.cancel("superseded by a newer load request")
+            raise RuntimeError("Fresh load worker is already running")
 
         thread = QtCore.QThread()
         worker = FreshLoadWorker(invocation=invocation, run_job=run_job)

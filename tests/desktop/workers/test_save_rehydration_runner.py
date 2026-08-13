@@ -6,6 +6,7 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
 from PyQt5 import QtCore
 
 from ephys_alignment_gui.application.save_runtime_rehydration import (
@@ -102,6 +103,39 @@ def test_qt_save_rehydration_runner_shutdown_cancels_and_waits_for_worker() -> N
 
     assert cancellation_reasons == ["closing"]
     assert not runner.is_running
+
+
+def test_qt_save_rehydration_runner_rejects_start_while_worker_running() -> None:
+    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+    _ = app
+    plan = _rehydration_plan()
+    started = threading.Event()
+
+    def run_job(_plan, *, progress=None, cancel_token=None):
+        started.set()
+        while not cancel_token.cancelled:
+            time.sleep(0.01)
+        return SaveRuntimeRehydrated(0)
+
+    runner = QtSaveRuntimeRehydrationRunner()
+    runner.start(
+        plan=plan,
+        run_job=run_job,
+        on_progress=lambda _event: None,
+        on_finished=lambda _result: None,
+    )
+
+    try:
+        assert started.wait(timeout=3)
+        with pytest.raises(RuntimeError, match="already running"):
+            runner.start(
+                plan=plan,
+                run_job=run_job,
+                on_progress=lambda _event: None,
+                on_finished=lambda _result: None,
+            )
+    finally:
+        assert runner.shutdown("closing", timeout_ms=3000)
 
 
 def _rehydration_plan() -> SaveRuntimeRehydrationPlan:

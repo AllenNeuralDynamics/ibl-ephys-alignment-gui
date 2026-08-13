@@ -138,7 +138,7 @@ class QtSaveRuntimeRehydrationRunner(QtCore.QObject):
     ) -> None:
         """Start save-runtime rehydration on a background QThread."""
         if self.is_running:
-            self.cancel("superseded by a newer save request")
+            raise RuntimeError("Save-runtime rehydration worker is already running")
 
         cancel_token = LoadDataCancelToken()
         thread = QtCore.QThread()
