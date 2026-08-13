@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ephys_alignment_gui.core.image_levels import DEFAULT_BRAIN_LEVEL_PERCENTILES
 from ephys_alignment_gui.core.slice_display_policy import (
     SliceDisplayPolicy,
     SliceImageKind,
@@ -123,7 +124,10 @@ def test_render_decision_classifies_label_rgb_and_scalar() -> None:
 
     assert decision.kind is SliceImageKind.SCALAR
     assert decision.scalar_channel == "histology_registration"
-    expected = np.percentile(scalar_data["histology_registration"][1:3, 1:3], [5, 95])
+    expected = np.percentile(
+        scalar_data["histology_registration"][1:3, 1:3],
+        DEFAULT_BRAIN_LEVEL_PERCENTILES,
+    )
     assert decision.initial_levels == (expected[0], expected[1])
 
 

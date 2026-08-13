@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.core.image_levels import brain_percentile_levels
+from ephys_alignment_gui.core.image_levels import (
+    DEFAULT_BRAIN_LEVEL_PERCENTILES,
+    brain_percentile_levels,
+)
 
 
 def test_brain_percentile_levels_uses_nonzero_annotation_ids():
@@ -14,7 +17,17 @@ def test_brain_percentile_levels_uses_nonzero_annotation_ids():
 
     levels = brain_percentile_levels(image, annotation_ids)
 
-    expected = np.percentile(image[2:8, 2:8], [5, 95])
+    expected = np.percentile(image[2:8, 2:8], DEFAULT_BRAIN_LEVEL_PERCENTILES)
+    assert levels == (expected[0], expected[1])
+
+
+def test_brain_percentile_levels_accepts_custom_percentiles():
+    image = np.arange(100, dtype=float).reshape(10, 10)
+    annotation_ids = np.ones((10, 10), dtype=np.uint16)
+
+    levels = brain_percentile_levels(image, annotation_ids, lower=5, upper=95)
+
+    expected = np.percentile(image, [5, 95])
     assert levels == (expected[0], expected[1])
 
 
@@ -32,7 +45,9 @@ def test_brain_percentile_levels_ignores_nonfinite_values():
 
     levels = brain_percentile_levels(image, annotation_ids)
 
-    expected = np.percentile(image[np.isfinite(image)], [5, 95])
+    expected = np.percentile(
+        image[np.isfinite(image)], DEFAULT_BRAIN_LEVEL_PERCENTILES
+    )
     assert levels == (expected[0], expected[1])
 
 

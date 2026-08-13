@@ -58,6 +58,10 @@ class SlicePanelViewState:
     perp_tip_marker: Any = None
     slice_color_bar: Any = None
     slice_hist_levels: Any = None
+    active_slice_selection: Any = None
+    slice_levels_by_selection: dict[Any, tuple[float, float]] = field(
+        default_factory=dict
+    )
     slice_item: Any = None
     histogram_item: Any = None
 
@@ -150,6 +154,8 @@ class SlicePanelView:
         self.view_state.reset_coronal_overlays()
         self.view_state.slice_color_bar = None
         self.view_state.slice_hist_levels = None
+        self.view_state.active_slice_selection = None
+        self.view_state.slice_levels_by_selection.clear()
         self.view_state.histogram_item = None
 
     def clear_perpendicular(self) -> None:
@@ -186,13 +192,16 @@ class SlicePanelView:
         self._remove_histogram_item()
         if decision.kind is SliceImageKind.LABEL:
             view_state.slice_hist_levels = None
+            view_state.active_slice_selection = None
             self.clear_perpendicular()
             self.plots.coronal_layout.addItem(self.plots.histogram_alt, 0, 1)
             view_state.slice_item = self.plots.histogram_alt
         elif decision.kind is SliceImageKind.RGB:
             view_state.slice_hist_levels = None
+            view_state.active_slice_selection = None
             self.clear_perpendicular()
         else:
+            view_state.active_slice_selection = render_state.selection
             self._render_scalar_slice_controls(img, render_state)
 
         self.plots.coronal.addItem(img)
@@ -255,6 +264,7 @@ class SlicePanelView:
         levels = view_state.histogram_item.getLevels()
         view_state.perp_image_item.setLevels(levels)
         view_state.slice_hist_levels = levels
+        self._remember_slice_levels(levels)
 
     def plot_channels(self, projection: Any) -> None:
         """Render or update channel/tip overlays on the coronal slice."""
@@ -348,7 +358,15 @@ class SlicePanelView:
         view_state.histogram_item.gradient.setColorMap(view_state.slice_color_bar.map)
         view_state.histogram_item.autoHistogramRange()
         self.plots.coronal_layout.addItem(view_state.histogram_item, 0, 1)
-        if decision.initial_levels is not None:
+        remembered_levels = view_state.slice_levels_by_selection.get(
+            render_state.selection
+        )
+        if remembered_levels is not None:
+            view_state.histogram_item.setLevels(
+                min=remembered_levels[0],
+                max=remembered_levels[1],
+            )
+        elif decision.initial_levels is not None:
             view_state.histogram_item.setLevels(
                 min=decision.initial_levels[0],
                 max=decision.initial_levels[1],
@@ -365,6 +383,7 @@ class SlicePanelView:
                 )
 
         view_state.slice_hist_levels = view_state.histogram_item.getLevels()
+        self._remember_slice_levels(view_state.slice_hist_levels)
         view_state.histogram_item.sigLevelsChanged.connect(
             self.update_perpendicular_levels
         )
@@ -493,6 +512,7 @@ class SlicePanelView:
 
     def _remove_histogram_item(self) -> None:
         view_state = self.view_state
+        self._remember_current_histogram_levels()
         if view_state.slice_item is None:
             return
         if self.plots.coronal_layout is None:
@@ -502,6 +522,24 @@ class SlicePanelView:
         self.plots.coronal_layout.removeItem(view_state.slice_item)
         view_state.slice_item = None
         view_state.histogram_item = None
+
+    def _remember_current_histogram_levels(self) -> None:
+        histogram_item = self.view_state.histogram_item
+        if histogram_item is None:
+            return
+        get_levels = getattr(histogram_item, "getLevels", None)
+        if not callable(get_levels):
+            return
+        self._remember_slice_levels(get_levels())
+
+    def _remember_slice_levels(self, levels: Any) -> None:
+        selection = self.view_state.active_slice_selection
+        if selection is None or levels is None:
+            return
+        min_level, max_level = levels
+        remembered = (float(min_level), float(max_level))
+        self.view_state.slice_hist_levels = remembered
+        self.view_state.slice_levels_by_selection[selection] = remembered
 
     @staticmethod
     def _add_item(plot: Any, item: Any) -> None:
