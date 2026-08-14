@@ -17,6 +17,11 @@ from ephys_alignment_gui.core.alignment_read_models import (
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
+from ephys_alignment_gui.core.timing import (
+    TimingSession,
+    current_timing_session,
+    start_timing,
+)
 from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState
 
@@ -85,15 +90,49 @@ class DesktopShankPresenter:
         preserve_plot_selection: bool | None = None,
     ) -> None:
         """Render the loaded desktop view for one active shank."""
+        timer = current_timing_session()
+        owns_timer = timer is None
+        if timer is None:
+            timer = start_timing(
+                "render_loaded_shank",
+                shank_idx=shank_idx,
+                preserve_plot_selection=preserve_plot_selection,
+            )
+        with timer.activate():
+            try:
+                self._render_loaded_shank(
+                    shank_idx=shank_idx,
+                    preserve_plot_selection=preserve_plot_selection,
+                    timer=timer,
+                )
+            except Exception:
+                if owns_timer:
+                    timer.finish("failed")
+                raise
+        if owns_timer:
+            timer.finish("completed")
+
+    def _render_loaded_shank(
+        self,
+        *,
+        shank_idx: int,
+        preserve_plot_selection: bool | None,
+        timer: TimingSession,
+    ) -> None:
+        """Render the loaded desktop view with optional timing instrumentation."""
         callbacks = self._require_callbacks()
-        preserve = self.app.queries.workspace.resolve_shank_preserve_plot_selection(
-            preserve_plot_selection
-        )
+        with timer.step("resolve_preserve_plot_selection"):
+            preserve = self.app.queries.workspace.resolve_shank_preserve_plot_selection(
+                preserve_plot_selection
+            )
 
         logger.info("Setting up view for shank index %s", shank_idx)
-        selections = callbacks.capture_plot_selection(preserve)
-        callbacks.clear_reference_lines()
-        prepared = self.app.commands.loaded_shank.prepare_loaded_shank(shank_idx)
+        with timer.step("capture_plot_selection"):
+            selections = callbacks.capture_plot_selection(preserve)
+        with timer.step("clear_reference_lines"):
+            callbacks.clear_reference_lines()
+        with timer.step("prepare_loaded_shank"):
+            prepared = self.app.commands.loaded_shank.prepare_loaded_shank(shank_idx)
         if isinstance(prepared, Failed):
             logger.error(prepared.message)
             return
@@ -104,39 +143,50 @@ class DesktopShankPresenter:
             prepared.shank_idx,
         )
         if prepared.alignment_choices is not None:
-            callbacks.render_alignment_choices(prepared.alignment_choices)
+            with timer.step("render_alignment_choices"):
+                callbacks.render_alignment_choices(prepared.alignment_choices)
 
-        screen_preparation = (
-            self.app.queries.active_shank.prepare_active_shank_screen_state(
-                histology_available=prepared.histology_available,
-                preserve_plot_selection=preserve,
-                previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
-                raw_image_payloads=callbacks.raw_image_payloads(),
-                previous_slice_selection=selections.previous_slice_selection,
-                offline=callbacks.offline(),
+        with timer.step("raw_image_payloads"):
+            raw_image_payloads = callbacks.raw_image_payloads()
+        with timer.step("prepare_active_shank_screen_state"):
+            screen_preparation = (
+                self.app.queries.active_shank.prepare_active_shank_screen_state(
+                    histology_available=prepared.histology_available,
+                    preserve_plot_selection=preserve,
+                    previous_ephys_plot_keys=selections.previous_ephys_plot_keys,
+                    raw_image_payloads=raw_image_payloads,
+                    previous_slice_selection=selections.previous_slice_selection,
+                    offline=callbacks.offline(),
+                )
             )
-        )
         if screen_preparation.missing_plot_data:
             raise RuntimeError("No active stream runtime for shank plot data")
         assert screen_preparation.plot_data is not None
-        self.app.commands.display.set_probe_limits(
-            min(0.0, float(screen_preparation.plot_data.channel_min_um)),
-            float(screen_preparation.plot_data.channel_max_um),
-        )
-        callbacks.apply_plot_data_state(screen_preparation.plot_data)
+        with timer.step("set_probe_limits"):
+            self.app.commands.display.set_probe_limits(
+                min(0.0, float(screen_preparation.plot_data.channel_min_um)),
+                float(screen_preparation.plot_data.channel_max_um),
+            )
+        with timer.step("apply_plot_data_state"):
+            callbacks.apply_plot_data_state(screen_preparation.plot_data)
         if screen_preparation.missing_required_slice_data:
             raise RuntimeError("Could not build active slice data")
         screen_state = self._require_screen_state(screen_preparation)
-        callbacks.render_plot_menus(screen_state.plot_menu)
-        callbacks.render_ephys_plots(screen_state)
-        callbacks.restore_slice_selection(
-            screen_state.slice_menu,
-            selections.previous_slice_selection,
-            selections.previous_slice_label,
-        )
+        with timer.step("render_plot_menus"):
+            callbacks.render_plot_menus(screen_state.plot_menu)
+        with timer.step("render_ephys_plots"):
+            callbacks.render_ephys_plots(screen_state)
+        with timer.step("restore_slice_selection"):
+            callbacks.restore_slice_selection(
+                screen_state.slice_menu,
+                selections.previous_slice_selection,
+                selections.previous_slice_label,
+            )
         if prepared.histology_available:
-            callbacks.render_histology_plots(shank_idx)
-        callbacks.configure_view(preserve)
+            with timer.step("render_histology_plots"):
+                callbacks.render_histology_plots(shank_idx)
+        with timer.step("configure_view"):
+            callbacks.configure_view(preserve)
         logger.info("Shank view setup complete")
 
     def _require_callbacks(self) -> DesktopShankRenderCallbacks:

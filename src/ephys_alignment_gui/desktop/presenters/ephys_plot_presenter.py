@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,6 +12,7 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.core.alignment_display_state import DEFAULT_UNIT_FILTER
 from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
+from ephys_alignment_gui.core.timing import TimingSession, current_timing_session
 from ephys_alignment_gui.plotting.menu_state import (
     EPHYS_PLOT_MENUS,
     PlotMenuGroupState,
@@ -163,20 +165,24 @@ class DesktopEphysPlotPresenter:
     def render_shank_ephys_plots(self, state: ActiveShankScreenState) -> None:
         """Render the ephys plot selections after a shank-screen refresh."""
         logger.info("Rendering ephys plots...")
+        timer = current_timing_session()
         if state.preserve_plot_selection:
-            self.set_unit_filter_action_checked(state.unit_filter)
-            for menu in EPHYS_PLOT_MENUS:
-                action = self.checked_action(menu)
-                if action is not None:
-                    action.setChecked(True)
-            self.update_plot()
+            with _timed_step(timer, "ephys_restore_selected_actions"):
+                self.set_unit_filter_action_checked(state.unit_filter)
+                for menu in EPHYS_PLOT_MENUS:
+                    action = self.checked_action(menu)
+                    if action is not None:
+                        action.setChecked(True)
+            with _timed_step(timer, "ephys_update_selected_plots"):
+                self.update_plot()
             return
 
-        self.set_initial_actions_checked()
-        self.set_unit_filter_action_checked(state.unit_filter)
-        self.plot_default_spec("image")
-        self.plot_default_spec("probe")
-        self.plot_default_spec("line")
+        with _timed_step(timer, "ephys_set_initial_actions"):
+            self.set_initial_actions_checked()
+            self.set_unit_filter_action_checked(state.unit_filter)
+        for menu in ("image", "probe", "line"):
+            with _timed_step(timer, "ephys_plot_default_spec", menu=menu):
+                self.plot_default_spec(menu)
 
     def set_initial_actions_checked(self) -> None:
         """Check the initial ephys plot actions without triggering redraw."""
@@ -208,17 +214,30 @@ class DesktopEphysPlotPresenter:
         spec = self.registered_plot_spec(spec_key)
         if spec is None:
             return
-        data = self.plot_payload_for_spec(spec.key)
-        if spec.renderer == "image":
-            self.callbacks.render_image(data)
-        elif spec.renderer == "scatter":
-            self.callbacks.render_scatter(data)
-        elif spec.renderer == "line":
-            self.callbacks.render_line(data)
-        elif spec.renderer == "probe":
-            self.callbacks.render_probe(data, self.plot_bounds_for_spec(spec.key))
-        else:
-            raise ValueError(f"Unsupported plot renderer: {spec.renderer!r}")
+        timer = current_timing_session()
+        with _timed_step(
+            timer,
+            "ephys_plot_payload_for_spec",
+            spec_key=spec.key,
+            renderer=spec.renderer,
+        ):
+            data = self.plot_payload_for_spec(spec.key)
+        with _timed_step(
+            timer,
+            "ephys_render_plot_spec",
+            spec_key=spec.key,
+            renderer=spec.renderer,
+        ):
+            if spec.renderer == "image":
+                self.callbacks.render_image(data)
+            elif spec.renderer == "scatter":
+                self.callbacks.render_scatter(data)
+            elif spec.renderer == "line":
+                self.callbacks.render_line(data)
+            elif spec.renderer == "probe":
+                self.callbacks.render_probe(data, self.plot_bounds_for_spec(spec.key))
+            else:
+                raise ValueError(f"Unsupported plot renderer: {spec.renderer!r}")
 
     def plot_default_spec(self, menu: PlotMenu) -> None:
         """Render the available default plot for a menu group, if present."""
@@ -344,3 +363,7 @@ class DesktopEphysPlotPresenter:
     def _trigger_action(action: Any) -> None:
         action.setChecked(True)
         action.trigger()
+
+
+def _timed_step(timer: TimingSession | None, name: str, **fields: Any):
+    return timer.step(name, **fields) if timer is not None else nullcontext()

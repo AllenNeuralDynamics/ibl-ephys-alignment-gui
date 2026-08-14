@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     PreparedActiveShankScreenState,
 )
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
+from ephys_alignment_gui.core.timing import TimingSession, current_timing_session
 from ephys_alignment_gui.plotting.registry import PlotMenu
 
 
@@ -70,7 +72,11 @@ class ActiveShankScreenQueries:
         offline: bool,
     ) -> PreparedActiveShankScreenState:
         """Materialize active shank runtime state and return its screen DTO."""
-        plot_data_state = self.ephys_plot_queries.prepare_active_shank_plot_data_state()
+        timer = current_timing_session()
+        with _timed_step(timer, "query_prepare_plot_data_state"):
+            plot_data_state = (
+                self.ephys_plot_queries.prepare_active_shank_plot_data_state()
+            )
         if plot_data_state is None:
             return PreparedActiveShankScreenState(
                 plot_data=None,
@@ -79,7 +85,8 @@ class ActiveShankScreenQueries:
                 slice_data_available=False,
             )
 
-        slice_data_state = self.slice_queries.prepare_active_slice_screen_data()
+        with _timed_step(timer, "query_prepare_slice_data_state"):
+            slice_data_state = self.slice_queries.prepare_active_slice_screen_data()
         slice_data_available = slice_data_state is not None
         if histology_available and not slice_data_available:
             return PreparedActiveShankScreenState(
@@ -89,16 +96,21 @@ class ActiveShankScreenQueries:
                 slice_data_available=False,
             )
 
-        screen_state = self.active_shank_screen_state(
-            preserve_plot_selection=preserve_plot_selection,
-            previous_ephys_plot_keys=previous_ephys_plot_keys,
-            raw_image_payloads=raw_image_payloads,
-            previous_slice_selection=previous_slice_selection,
-            offline=offline,
-        )
+        with _timed_step(timer, "query_build_active_screen_state"):
+            screen_state = self.active_shank_screen_state(
+                preserve_plot_selection=preserve_plot_selection,
+                previous_ephys_plot_keys=previous_ephys_plot_keys,
+                raw_image_payloads=raw_image_payloads,
+                previous_slice_selection=previous_slice_selection,
+                offline=offline,
+            )
         return PreparedActiveShankScreenState(
             plot_data=plot_data_state,
             screen=screen_state,
             histology_available=histology_available,
             slice_data_available=slice_data_available,
         )
+
+
+def _timed_step(timer: TimingSession | None, name: str):
+    return timer.step(name) if timer is not None else nullcontext()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ActiveShankPlotDataState,
     ClusterDetailRenderState,
 )
+from ephys_alignment_gui.core.timing import TimingSession, current_timing_session
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plotting.registry import (
     PlotMenu,
@@ -53,11 +55,19 @@ class EphysPlotQueries:
             return None
         shank_idx = self.context.active_shank_idx()
         unit_filter = self.active_unit_filter() if unit_filter is None else unit_filter
-        payload_cache = stream_runtime.filtered_plot_payload_cache_for_shank(
-            shank_idx,
+        timer = current_timing_session()
+        with _timed_step(
+            timer,
+            "query_get_filtered_plot_payload_cache",
+            shank_idx=shank_idx,
             unit_filter=unit_filter,
-        )
-        in_brain_depths_um = self.active_in_brain_depths_for_alignment()
+        ):
+            payload_cache = stream_runtime.filtered_plot_payload_cache_for_shank(
+                shank_idx,
+                unit_filter=unit_filter,
+            )
+        with _timed_step(timer, "query_compute_in_brain_depths"):
+            in_brain_depths_um = self.active_in_brain_depths_for_alignment()
         payload_cache.in_brain_depths_um = in_brain_depths_um
         return ActiveShankPlotDataState(
             key=self.context.document.selected_alignment_key,
@@ -76,11 +86,13 @@ class EphysPlotQueries:
     ) -> PlotMenuState:
         """Return available plot menu entries for the active shank."""
         payload_cache = self._active_payload_cache()
-        return self._plot_menu_state_for_payload_cache(
-            payload_cache,
-            previous_selected_keys=previous_selected_keys,
-            raw_image_payloads=raw_image_payloads,
-        )
+        timer = current_timing_session()
+        with _timed_step(timer, "query_build_plot_menu_state"):
+            return self._plot_menu_state_for_payload_cache(
+                payload_cache,
+                previous_selected_keys=previous_selected_keys,
+                raw_image_payloads=raw_image_payloads,
+            )
 
     def active_plot_spec(
         self,
@@ -111,7 +123,14 @@ class EphysPlotQueries:
         spec = self._find_plot_spec(state, spec_key)
         if spec is None:
             return None
-        return resolve_plot_payload(payload_cache, spec)
+        timer = current_timing_session()
+        with _timed_step(
+            timer,
+            "query_resolve_plot_payload",
+            spec_key=spec.key,
+            renderer=spec.renderer,
+        ):
+            return resolve_plot_payload(payload_cache, spec)
 
     def active_plot_bounds(
         self,
@@ -128,7 +147,14 @@ class EphysPlotQueries:
         spec = self._find_plot_spec(state, spec_key)
         if spec is None:
             return None
-        return resolve_plot_bounds(payload_cache, spec)
+        timer = current_timing_session()
+        with _timed_step(
+            timer,
+            "query_resolve_plot_bounds",
+            spec_key=spec.key,
+            renderer=spec.renderer,
+        ):
+            return resolve_plot_bounds(payload_cache, spec)
 
     def active_in_brain_depths_um(self) -> Any:
         """Return active plot payload cache in-brain depths, if available."""
@@ -222,3 +248,7 @@ class EphysPlotQueries:
         return stream_runtime.plot_payload_cache_for_shank(
             self.context.active_shank_idx()
         )
+
+
+def _timed_step(timer: TimingSession | None, name: str, **fields: Any):
+    return timer.step(name, **fields) if timer is not None else nullcontext()

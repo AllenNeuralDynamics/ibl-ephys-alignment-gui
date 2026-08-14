@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +24,7 @@ from ephys_alignment_gui.core.slice_display_policy import (
     SliceDisplayPolicy,
     SliceSelection,
 )
+from ephys_alignment_gui.core.timing import TimingSession, current_timing_session
 from ephys_alignment_gui.runtime.slice_data_service import SliceDataRuntimeService
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
@@ -47,19 +49,23 @@ class SliceQueries:
         """Materialize active slice data when histology runtime is available."""
         if not self._histology_slices_available():
             return None
-        return self.ensure_active_slice_data_state()
+        timer = current_timing_session()
+        with _timed_step(timer, "query_ensure_coronal_slice_state"):
+            return self.ensure_active_slice_data_state()
 
     def ensure_active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Build/cache and return coronal slice data for the active alignment."""
         context = self.context.active_alignment_context()
         if context is None or not self._histology_slices_available():
             return None
-        return self.slice_data_runtime_service.ensure_coronal_slice_state(
-            key=context.key,
-            shank_runtime=context.shank_runtime,
-            histology_context=self.histology_context,
-            slice_service=self.slice_service,
-        )
+        timer = current_timing_session()
+        with _timed_step(timer, "runtime_ensure_coronal_slice_state"):
+            return self.slice_data_runtime_service.ensure_coronal_slice_state(
+                key=context.key,
+                shank_runtime=context.shank_runtime,
+                histology_context=self.histology_context,
+                slice_service=self.slice_service,
+            )
 
     def active_slice_data_state(self) -> ActiveSliceDataState | None:
         """Return currently active coronal slice data without building it."""
@@ -175,17 +181,23 @@ class SliceQueries:
             context.active_alignment,
             context.shank_runtime,
         )
-        return self.slice_data_runtime_service.perpendicular_slice_state(
-            key=context.key,
-            active_alignment=context.active_alignment,
-            shank_runtime=context.shank_runtime,
-            histology=histology,
-            histology_context=self.histology_context,
-            slice_service=self.slice_service,
+        timer = current_timing_session()
+        with _timed_step(
+            timer,
+            "runtime_perpendicular_slice_state",
             channel_name=channel_name,
-            extent_m=extent_m,
-            probe_margin_um=probe_margin_um,
-        )
+        ):
+            return self.slice_data_runtime_service.perpendicular_slice_state(
+                key=context.key,
+                active_alignment=context.active_alignment,
+                shank_runtime=context.shank_runtime,
+                histology=histology,
+                histology_context=self.histology_context,
+                slice_service=self.slice_service,
+                channel_name=channel_name,
+                extent_m=extent_m,
+                probe_margin_um=probe_margin_um,
+            )
 
     def _histology_slices_available(self) -> bool:
         return (
@@ -193,3 +205,7 @@ class SliceQueries:
             and getattr(self.histology_context, "brain_atlas", None) is not None
             and self.slice_service is not None
         )
+
+
+def _timed_step(timer: TimingSession | None, name: str, **fields: Any):
+    return timer.step(name, **fields) if timer is not None else nullcontext()

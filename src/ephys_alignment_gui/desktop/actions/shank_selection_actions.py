@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ephys_alignment_gui.application.results import ShankSelected
+from ephys_alignment_gui.core.timing import start_timing
 from ephys_alignment_gui.core.workflow import Failed
 
 logger = logging.getLogger(__name__)
@@ -33,16 +34,26 @@ class DesktopShankSelectionActions:
             logger.info("Shank %s already selected", shank_id)
             return True
 
-        result = self.app.commands.shanks.select_shank(
-            shank_idx,
-            outgoing_reference_lines=self.reference_line_display.positions(),
-            source="dropdown",
+        timer = start_timing(
+            "shank_dropdown_switch",
+            shank_idx=shank_idx,
+            shank_id=shank_id,
         )
-        if isinstance(result, Failed):
-            logger.error(result.message)
-            return False
-        if not isinstance(result, ShankSelected):
-            return False
+        with timer.activate():
+            with timer.step("select_shank_command"):
+                result = self.app.commands.shanks.select_shank(
+                    shank_idx,
+                    outgoing_reference_lines=self.reference_line_display.positions(),
+                    source="dropdown",
+                )
+            if isinstance(result, Failed):
+                logger.error(result.message)
+                timer.finish("failed", message=result.message)
+                return False
+            if not isinstance(result, ShankSelected):
+                timer.finish("failed", result_type=type(result).__name__)
+                return False
 
         logger.info("Shank %s selected (index %s)", shank_id, result.shank_idx)
+        timer.finish("completed")
         return True

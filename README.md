@@ -52,6 +52,16 @@ external assets, such as SmartSPIM registration data and `spim_template_to_ccf`.
 On Code Ocean, `/data` is normally sufficient when all required assets are
 attached.
 
+For switch/load performance debugging, set:
+
+```
+EPHYS_ALIGNMENT_GUI_TIMING=1
+```
+
+This emits `ephys_alignment_gui.timing` log entries for active shank/probe
+switches, fresh-load worker completion, preload jobs, plot-payload preparation,
+slice preparation, and desktop rendering. Leave it unset during normal use.
+
 If an attached asset is not mounted under the name recorded in
 `datapackage.json`, provide explicit asset locations with either:
 
