@@ -920,3 +920,39 @@ def test_rejects_malformed_schema_version(tmp_path):
     root = _make_mouse_root(tmp_path, schema_version="4.1")
     with pytest.raises(DataPackageError, match="MAJOR.MINOR.PATCH"):
         _load(root)
+
+
+def test_transforms_may_come_from_a_third_external_asset(tmp_path):
+    """A registration-override datapackage must load.
+
+    The producer can pin the image->template transforms to a separate asset
+    (manifest `registration_asset`) when a brain was registered on the wrong
+    channel. That adds a third `external_assets` entry and repoints two refs at
+    it -- data, not schema, so no contract change. This is the consumer half of
+    that claim.
+    """
+    root = _make_mouse_root(tmp_path, schema_version="4.1.0", pipeline_geometry=True)
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+
+    data["external_assets"]["registration"] = {
+        "role": "registration_override",
+        "name": "SmartSPIM_mouse42_reg",
+        "id": None,
+        "uri": None,
+        "checksum": None,
+    }
+    override = tmp_path / "SmartSPIM_mouse42_reg" / "ccf_Ex_639_Em_667"
+    override.mkdir(parents=True)
+    for key in ("image_to_template_affine", "image_to_template_warp"):
+        name = Path(data["transforms"][key]["path"]).name
+        (override / name).write_bytes(b"")
+        data["transforms"][key] = {
+            "asset": "registration",
+            "path": f"ccf_Ex_639_Em_667/{name}",
+        }
+    dp_path.write_text(json.dumps(data))
+
+    mr = _load(root)
+
+    assert mr.schema_version == "4.1.0"
