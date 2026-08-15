@@ -858,3 +858,65 @@ def test_same_probe_name_in_two_recordings_kept_distinct(tmp_path):
     assert p2.probe_id == "p-1-rec2"
     assert p1.recording_id == "rec1"
     assert p2.recording_id == "rec2"
+
+
+def test_accepts_unbundled_minor_within_supported_major(tmp_path):
+    """An additive minor bump must load without a lockstep GUI release.
+
+    The whole point of gating on major: the producer can ship 4.2.0 before this
+    GUI bundles a 4.2.0 schema, and the package still validates against the
+    newest same-major contract.
+    """
+    root = _make_mouse_root(tmp_path, schema_version="4.9.0", pipeline_geometry=True)
+
+    mr = _load(root)
+
+    assert mr.schema_version == "4.9.0"
+
+
+def test_accepts_unknown_fields_from_a_newer_minor(tmp_path):
+    """Fields this GUI does not know about are ignored, not rejected."""
+    root = _make_mouse_root(tmp_path, schema_version="4.9.0", pipeline_geometry=True)
+    dp_path = root / "datapackage.json"
+    data = json.loads(dp_path.read_text())
+    data["some_future_block"] = {"added": "in 4.9.0"}
+    dp_path.write_text(json.dumps(data))
+
+    assert _load(root).schema_version == "4.9.0"
+
+
+def test_older_minor_still_validates_against_its_own_schema(tmp_path):
+    """Exact-match validation is unchanged when the version is bundled."""
+    root = _make_mouse_root(tmp_path, schema_version="4.0.0", pipeline_geometry=True)
+
+    assert _load(root).schema_version == "4.0.0"
+
+
+def test_schema_selection_fails_for_a_major_with_no_bundled_schema():
+    """Guards the gate against a major being declared supported but unbundled.
+
+    Adding a major to SUPPORTED_SCHEMA_MAJORS without shipping a schema for it
+    would otherwise fall through to an unhelpful resource-not-found.
+    """
+    from ephys_alignment_gui.io.datapackage_schema import (
+        DatapackageContractError,
+        _schema_version_for,
+    )
+
+    with pytest.raises(DatapackageContractError, match="No bundled datapackage schema"):
+        _schema_version_for("9.0.0")
+
+
+def test_schema_selection_never_picks_a_contract_newer_than_the_package():
+    """A 4.0.x package is checked against 4.0.0, not the newer bundled 4.1.0."""
+    from ephys_alignment_gui.io.datapackage_schema import _schema_version_for
+
+    assert _schema_version_for("4.0.5") == "4.0.0"
+    assert _schema_version_for("4.9.0") == "4.1.0"
+    assert _schema_version_for("3.9.0") == "3.2.0"
+
+
+def test_rejects_malformed_schema_version(tmp_path):
+    root = _make_mouse_root(tmp_path, schema_version="4.1")
+    with pytest.raises(DataPackageError, match="MAJOR.MINOR.PATCH"):
+        _load(root)
