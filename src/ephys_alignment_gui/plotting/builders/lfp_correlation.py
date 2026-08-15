@@ -34,14 +34,19 @@ class LfpCorrelationPlotDataBuilder:
 
         row_channels = self._load_row_channels(lfp_corr_folder)
         matrix_rows = self._matrix_rows_for_current_shank(row_channels)
+        block_groups = self._unique_block_row_groups(row_channels)
 
         lfp_corr_files = self._correlation_files(lfp_corr_folder, matrix_rows)
         if not lfp_corr_files:
             logger.warning("No LFP correlation files found in %s", lfp_corr_folder)
             return {}
 
-        all_data = self._load_correlation_files(lfp_corr_files, matrix_rows)
-        all_data.update(self._load_coherency_files(lfp_corr_folder, matrix_rows))
+        all_data = self._load_correlation_files(
+            lfp_corr_files, matrix_rows, block_groups
+        )
+        all_data.update(
+            self._load_coherency_files(lfp_corr_folder, matrix_rows, block_groups)
+        )
         data_img_lfp_corr = self._sort_lfp_correlation_keys(all_data)
         logger.debug(
             "LFP correlation data loaded: %d epoch_bands",
@@ -90,6 +95,40 @@ class LfpCorrelationPlotDataBuilder:
                 )
             return None
         return rows
+
+    def _unique_block_row_groups(
+        self,
+        row_channels: dict[str, Any] | None,
+    ) -> list[tuple[str, np.ndarray]] | None:
+        """Depth-sorted per-block row arrays, deduplicated by row-set identity.
+
+        Returns ``None`` when block metadata is absent or only one unique
+        depth range exists — the single-image path is used in that case.
+        """
+        if not row_channels:
+            return None
+        shanks = row_channels.get("shanks", {})
+        entry = shanks.get(str(self.shank_idx))
+        if entry is None:
+            entry = shanks.get(str(self.shank_idx + 1))
+        if entry is None:
+            return None
+        blocks = entry.get("blocks", [])
+        if not blocks:
+            return None
+        seen: dict[tuple, bool] = {}
+        groups: list[tuple[str, np.ndarray]] = []
+        for block_entry in blocks:
+            key = tuple(block_entry["rows"])
+            if key not in seen:
+                seen[key] = True
+                groups.append(
+                    (
+                        block_entry.get("label", "block"),
+                        np.asarray(block_entry["rows"], dtype=int),
+                    )
+                )
+        return groups if len(groups) > 1 else None
 
     def _slice_band_matrix(
         self,
@@ -260,12 +299,54 @@ class LfpCorrelationPlotDataBuilder:
         self,
         files: list[Path],
         matrix_rows: np.ndarray | None,
+        block_groups: list[tuple[str, np.ndarray]] | None = None,
     ) -> dict[str, Any]:
         """Load real-valued LFP correlation matrices."""
         all_data = {}
         for file in files:
             band_name = self._band_key_from_file(file, "_mean_corr")
-            this_corr, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
+            full_matrix = np.load(file)
+
+            if block_groups is not None:
+                # Multi-block path: one ImageItem per unique depth range.
+                # Shared 95th-percentile colorscale computed across all blocks.
+                shared_max = self._block_max_corr(full_matrix, block_groups)
+                imgs, scales_list, offsets_list, xranges_list = [], [], [], []
+                for _label, block_rows in block_groups:
+                    block_corr, _ = self._slice_band_matrix(full_matrix, block_rows)
+                    if block_corr is None:
+                        continue
+                    np.fill_diagonal(block_corr, 0.0)
+                    n_block = block_corr.shape[0]
+                    scale, offset_y, x_range = self._matrix_depth_geometry(
+                        block_rows, n_block
+                    )
+                    imgs.append(block_corr)
+                    scales_list.append(np.array([scale, scale]))
+                    offsets_list.append(np.array([offset_y, offset_y]))
+                    xranges_list.append(x_range)
+                if not imgs:
+                    continue
+                overall_xrange = np.array(
+                    [
+                        min(r[0] for r in xranges_list),
+                        max(r[1] for r in xranges_list),
+                    ]
+                )
+                all_data[band_name] = {
+                    "img": imgs,
+                    "scale": scales_list,
+                    "levels": np.array([-shared_max, shared_max]),
+                    "offset": offsets_list,
+                    "xrange": overall_xrange,
+                    "cmap": "RdBu_r",
+                    "title": f"LFP correlation ({band_name})",
+                    "xaxis": "Distance from probe tip (um)",
+                }
+                continue
+
+            # Single-image path (no block metadata).
+            this_corr, depth_rows = self._slice_band_matrix(full_matrix, matrix_rows)
             if this_corr is None:
                 continue
 
@@ -313,10 +394,34 @@ class LfpCorrelationPlotDataBuilder:
             }
         return all_data
 
+    def _block_max_corr(
+        self,
+        full_matrix: np.ndarray,
+        block_groups: list[tuple[str, np.ndarray]],
+    ) -> float:
+        """Shared 95th-percentile |correlation| across all block sub-matrices."""
+        vals = []
+        for _label, block_rows in block_groups:
+            block_corr = full_matrix[np.ix_(block_rows, block_rows)]
+            n = block_corr.shape[0]
+            mask = ~np.eye(n, dtype=bool)
+            inb = in_brain_depth_mask(
+                self._matrix_row_depths(block_rows, n),
+                self.in_brain_depths_um,
+            )
+            if inb is not None and inb.shape[0] == n:
+                mask &= np.outer(inb, inb)
+            if np.any(mask):
+                vals.append(np.abs(block_corr[mask]))
+        if not vals:
+            return 1.0
+        return float(np.quantile(np.concatenate(vals), 0.95))
+
     def _load_coherency_files(
         self,
         lfp_corr_folder: Path,
         matrix_rows: np.ndarray | None,
+        block_groups: list[tuple[str, np.ndarray]] | None = None,
     ) -> dict[str, Any]:
         """Load complex coherency matrices and render HSV phase images."""
         from matplotlib.colors import hsv_to_rgb
@@ -325,7 +430,17 @@ class LfpCorrelationPlotDataBuilder:
         for file in self._coherency_files(lfp_corr_folder, matrix_rows):
             try:
                 band_name = self._band_key_from_file(file, "_coherency")
-                coh, depth_rows = self._slice_band_matrix(np.load(file), matrix_rows)
+                full_matrix = np.load(file)
+
+                if block_groups is not None:
+                    payload = self._coherency_block_payload(
+                        full_matrix, block_groups, band_name, hsv_to_rgb
+                    )
+                    if payload is not None:
+                        all_data[f"{band_name}_phase"] = payload
+                    continue
+
+                coh, depth_rows = self._slice_band_matrix(full_matrix, matrix_rows)
                 if coh is None:
                     continue
 
@@ -378,6 +493,76 @@ class LfpCorrelationPlotDataBuilder:
                     exc_info=True,
                 )
         return all_data
+
+    def _coherency_phase_rgba(
+        self,
+        coh: np.ndarray,
+        rows: np.ndarray | None,
+        hsv_to_rgb: Any,
+    ) -> np.ndarray:
+        """HSV phase image (uint8 RGBA) for one coherency sub-matrix."""
+        magnitude = np.abs(coh)
+        phase = np.angle(coh)
+        n = coh.shape[0]
+
+        off_diag = ~np.eye(n, dtype=bool)
+        inb = in_brain_depth_mask(
+            self._matrix_row_depths(rows, n),
+            self.in_brain_depths_um,
+        )
+        if inb is not None and inb.shape[0] == n:
+            off_diag &= np.outer(inb, inb)
+        max_mag = np.quantile(magnitude[off_diag], 0.95) if np.any(off_diag) else 1.0
+        if max_mag > 0:
+            magnitude = magnitude / max_mag
+
+        hsv = np.stack(
+            [
+                (phase / (2 * np.pi)) % 1.0,
+                np.clip(magnitude, 0, 1),
+                np.ones_like(phase),
+            ],
+            axis=-1,
+        )
+        rgb = hsv_to_rgb(hsv)
+        rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
+        rgba[:, :, :3] = rgb.astype(np.float32)
+        np.fill_diagonal(rgba[:, :, 3], 0.0)
+        return (rgba * 255).astype(np.uint8)
+
+    def _coherency_block_payload(
+        self,
+        full_matrix: np.ndarray,
+        block_groups: list[tuple[str, np.ndarray]],
+        band_name: str,
+        hsv_to_rgb: Any,
+    ) -> dict[str, Any] | None:
+        """Per-block coherency phase images, one ImageItem per depth range."""
+        imgs, scales, offsets, xranges = [], [], [], []
+        for _label, block_rows in block_groups:
+            coh, _ = self._slice_band_matrix(full_matrix, block_rows)
+            if coh is None:
+                continue
+            n_block = coh.shape[0]
+            scale, offset_y, x_range = self._matrix_depth_geometry(block_rows, n_block)
+            imgs.append(self._coherency_phase_rgba(coh, block_rows, hsv_to_rgb))
+            scales.append(np.array([scale, scale]))
+            offsets.append(np.array([offset_y, offset_y]))
+            xranges.append(x_range)
+        if not imgs:
+            return None
+        return {
+            "img": imgs,
+            "scale": scales,
+            "levels": None,
+            "offset": offsets,
+            "xrange": np.array(
+                [min(r[0] for r in xranges), max(r[1] for r in xranges)]
+            ),
+            "cmap": None,
+            "title": f"LFP coherency phase ({band_name})",
+            "xaxis": "Distance from probe tip (um)",
+        }
 
     @staticmethod
     def _sort_lfp_correlation_keys(all_data: dict[str, Any]) -> dict[str, Any]:

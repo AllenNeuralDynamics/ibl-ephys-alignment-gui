@@ -358,22 +358,38 @@ class DesktopEphysPanelView:
         self.items.clear_image(self.plots.image, self.plots.image_colorbar)
         self.set_axis(self.plots.image_colorbar, "top", pen="w")
 
-        image = pg.ImageItem()
-        img_data = data["img"]
-        if img_data.ndim == 3:
-            image.setImage(img_data, autoLevels=False)
-        else:
-            image.setImage(img_data)
-        image.setTransform(
-            QtGui.QTransform(*self._transform(data["scale"], data["offset"]))
-        )
-        cmap = data.get("cmap")
-        if cmap:
-            color_bar = ColorBar(data["cmap"])
-            lut = color_bar.getColourMap()
-            image.setLookupTable(lut)
-            image.setLevels((data["levels"][0], data["levels"][1]))
-            cbar = color_bar.makeColourBar(
+        # A payload may carry one image or several (one per recording block,
+        # each with its own depth pitch). Normalise to lists.
+        imgs = data["img"]
+        scales = data["scale"]
+        offsets = data["offset"]
+        if not isinstance(imgs, list):
+            imgs, scales, offsets = [imgs], [scales], [offsets]
+
+        first_image = None
+        for img_data, scale, offset in zip(imgs, scales, offsets):
+            image = pg.ImageItem()
+            if img_data.ndim == 3:
+                image.setImage(img_data, autoLevels=False)
+            else:
+                image.setImage(img_data)
+            image.setTransform(QtGui.QTransform(*self._transform(scale, offset)))
+            if data.get("cmap"):
+                color_bar = ColorBar(data["cmap"])
+                image.setLookupTable(color_bar.getColourMap())
+                image.setLevels((data["levels"][0], data["levels"][1]))
+            elif img_data.ndim != 3:
+                image.setLevels((1, 0))
+
+            self.plots.image.addItem(image)
+            self.items.image_plots.append(image)
+            if first_image is None:
+                first_image = image
+                first_scale = scale
+
+        # Colour bar is shared across blocks: levels are common by construction.
+        if data.get("cmap"):
+            cbar = ColorBar(data["cmap"]).makeColourBar(
                 20,
                 5,
                 self.plots.image_colorbar,
@@ -383,7 +399,7 @@ class DesktopEphysPanelView:
             )
             self.plots.image_colorbar.addItem(cbar)
             self.items.image_colorbars.append(cbar)
-        elif img_data.ndim == 3:
+        elif imgs[0].ndim == 3:
             cbar_img = self._phase_legend_item()
             self.plots.image_colorbar.addItem(cbar_img)
             self.items.image_colorbars.append(cbar_img)
@@ -393,11 +409,7 @@ class DesktopEphysPanelView:
                 pen="w",
                 label="phase ↑  coherence ↓",
             )
-        else:
-            image.setLevels((1, 0))
 
-        self.plots.image.addItem(image)
-        self.items.image_plots.append(image)
         self.plots.image.setXRange(
             min=data["xrange"][0],
             max=data["xrange"][1],
@@ -405,9 +417,9 @@ class DesktopEphysPanelView:
         )
         self.set_axis(self.plots.image, "bottom", label=data["xaxis"])
         self.feature_plot.set_data_plot(
-            image,
-            x_scale=data["scale"][0],
-            y_scale=data["scale"][1],
+            first_image,
+            x_scale=first_scale[0],
+            y_scale=first_scale[1],
             xrange=data["xrange"],
         )
 
