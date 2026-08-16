@@ -223,6 +223,40 @@ def test_render_image_owns_image_items_and_feature_coordinate_mapping(
     assert axis_calls[-1][0] == (plots["image"], "bottom")
 
 
+def test_render_image_overlays_no_data_mask(monkeypatch) -> None:
+    view, plots, _axis_calls = _view(monkeypatch)
+
+    view.render_image(
+        {
+            "img": np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+            "scale": [2.0, 3.0],
+            "offset": [10.0, 20.0],
+            "cmap": "viridis",
+            "levels": [1.0, 6.0],
+            "title": "feature",
+            "xrange": (0.0, 100.0),
+            "xaxis": "depth",
+            "no_data_mask": np.array(
+                [
+                    [False, True, False],
+                    [False, True, True],
+                ]
+            ),
+            "no_data_color": (145, 158, 170, 210),
+        }
+    )
+
+    assert len(view.items.image_plots) == 2
+    image, overlay = view.items.image_plots
+    assert image in plots["image"].added
+    assert overlay in plots["image"].added
+    assert overlay.auto_levels is False
+    assert overlay.transform.values == image.transform.values
+    assert overlay.image.shape == (2, 3, 4)
+    np.testing.assert_array_equal(overlay.image[0, 1], [145, 158, 170, 210])
+    np.testing.assert_array_equal(overlay.image[0, 0], [0, 0, 0, 0])
+
+
 def test_render_scatter_connects_cluster_clicks_and_maps_cluster_index(
     monkeypatch,
 ) -> None:

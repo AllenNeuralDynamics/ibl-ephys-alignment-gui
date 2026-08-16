@@ -241,8 +241,12 @@ class SpikePlotDataBuilder:
 
         img = base["img"]
         depths = base["depths"]
+        support = base["depth_support_mask"]
         col = in_brain_depth_mask(depths, in_brain_depths_um, bin_width=base["d_bin"])
-        fr_by_depth = np.mean(img if col is None else img[:, col], axis=0)
+        level_col = support if col is None else (col & support)
+        if not level_col.any():
+            level_col = support
+        fr_by_depth = np.mean(img[:, level_col], axis=0)
 
         return {
             "img": img,
@@ -253,6 +257,8 @@ class SpikePlotDataBuilder:
             "xaxis": "Time (s)",
             "cmap": "binary",
             "title": "Firing Rate",
+            "no_data_mask": np.broadcast_to(~support, img.shape),
+            "no_data_color": (145, 158, 170, 210),
         }
 
     def _fr_image_base(
@@ -285,6 +291,7 @@ class SpikePlotDataBuilder:
         img = n.T / t_bin
         xscale = (times[-1] - times[0]) / img.shape[0]
         yscale = (depths[-1] - depths[0]) / img.shape[1]
+        depth_support_mask = self._depth_support_mask(depths, d_bin)
 
         self._fr_img_base_by_request[raster_request] = {
             "img": img,
@@ -293,8 +300,39 @@ class SpikePlotDataBuilder:
             "xrange": np.array([times[0], times[-1]]),
             "depths": depths,
             "d_bin": d_bin,
+            "depth_support_mask": depth_support_mask,
         }
         return self._fr_img_base_by_request[raster_request]
+
+    def _depth_support_mask(self, depths, bin_width_um: float):
+        """Return depth bins supported by the selected channel geometry."""
+        depths = np.asarray(depths)
+        chn_coords = np.asarray(getattr(self.geometry, "chn_coords", []))
+        if chn_coords.ndim != 2 or chn_coords.shape[1] < 2:
+            return np.ones(depths.size, dtype=bool)
+
+        channel_depths = chn_coords[:, 1]
+        channel_depths = np.unique(channel_depths[np.isfinite(channel_depths)])
+        if channel_depths.size == 0:
+            return np.ones(depths.size, dtype=bool)
+
+        if channel_depths.size > 1:
+            spacing = np.diff(channel_depths)
+            positive_spacing = spacing[spacing > 0]
+            pitch = (
+                float(np.min(positive_spacing))
+                if positive_spacing.size
+                else float(bin_width_um)
+            )
+        else:
+            pitch = float(getattr(self.geometry, "chn_diff", bin_width_um))
+
+        support_radius_um = max(float(bin_width_um) / 2.0, pitch / 2.0)
+        distance_to_channel = np.min(
+            np.abs(depths[:, np.newaxis] - channel_depths[np.newaxis, :]),
+            axis=1,
+        )
+        return distance_to_channel <= support_radius_um
 
     def get_fr_amp_data_line(self):
         """Return firing-rate and amplitude depth-profile line payloads."""

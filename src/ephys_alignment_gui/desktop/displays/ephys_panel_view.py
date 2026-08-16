@@ -379,11 +379,22 @@ class DesktopEphysPanelView:
         imgs = data["img"]
         scales = data["scale"]
         offsets = data["offset"]
+        no_data_masks = data.get("no_data_mask")
         if not isinstance(imgs, list):
             imgs, scales, offsets = [imgs], [scales], [offsets]
+            no_data_masks = [no_data_masks] if no_data_masks is not None else [None]
+        elif no_data_masks is None:
+            no_data_masks = [None] * len(imgs)
+        elif not isinstance(no_data_masks, list):
+            no_data_masks = [no_data_masks]
 
         first_image = None
-        for img_data, scale, offset in zip(imgs, scales, offsets):
+        for img_data, scale, offset, no_data_mask in zip(
+            imgs,
+            scales,
+            offsets,
+            no_data_masks,
+        ):
             image = pg.ImageItem()
             if img_data.ndim == 3:
                 image.setImage(img_data, autoLevels=False)
@@ -399,6 +410,16 @@ class DesktopEphysPanelView:
 
             self.plots.image.addItem(image)
             self.items.image_plots.append(image)
+            overlay = self._no_data_overlay(
+                no_data_mask,
+                data.get("no_data_color", (145, 158, 170, 210)),
+            )
+            if overlay is not None:
+                overlay_item = pg.ImageItem()
+                overlay_item.setImage(overlay, autoLevels=False)
+                overlay_item.setTransform(QtGui.QTransform(*self._transform(scale, offset)))
+                self.plots.image.addItem(overlay_item)
+                self.items.image_plots.append(overlay_item)
             if first_image is None:
                 first_image = image
                 first_scale = scale
@@ -461,6 +482,26 @@ class DesktopEphysPanelView:
             offset[1],
             1.0,
         ]
+
+    @staticmethod
+    def _no_data_overlay(mask: Any, color: Any) -> np.ndarray | None:
+        """Return an RGBA overlay for image bins outside the sampled channel support."""
+        if mask is None:
+            return None
+
+        mask_array = np.asarray(mask, dtype=bool)
+        if mask_array.size == 0 or not mask_array.any():
+            return None
+
+        rgba = np.asarray(color, dtype=np.uint8).ravel()
+        if rgba.size == 3:
+            rgba = np.concatenate([rgba, np.array([220], dtype=np.uint8)])
+        if rgba.size != 4:
+            rgba = np.array([145, 158, 170, 210], dtype=np.uint8)
+
+        overlay = np.zeros(mask_array.shape + (4,), dtype=np.uint8)
+        overlay[mask_array] = rgba
+        return overlay
 
     @staticmethod
     def _qt_colours(colours: Any) -> list[Any]:
