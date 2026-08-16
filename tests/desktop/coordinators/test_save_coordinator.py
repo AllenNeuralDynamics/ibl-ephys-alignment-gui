@@ -496,6 +496,7 @@ def test_save_prompts_for_output_then_saves() -> None:
         ("progress-cancel-enabled", True),
         ("choices", ["saved", "original"]),
         ("progress-finished", "Saved 1 edited alignment.", True),
+        ("progress-close",),
         ("busy-exit", None),
     ]
 
@@ -588,6 +589,7 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
     assert ("progress-cancel-enabled", True) in calls
     assert ("choices", ["saved", "original"]) in calls
     assert ("progress-finished", "Saved 1 edited alignment.", True) in calls
+    assert ("progress-close",) in calls
     assert ("busy-exit", None) in calls
 
 

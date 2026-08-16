@@ -17,7 +17,6 @@ class DesktopAlignmentScreenView:
     """Own desktop-only alignment render state and view refresh helpers."""
 
     depth_plots: DesktopDepthPlotView
-    reference_lines: Any
     lin_fit_checkbox: Any
     current_index_label: Any
     total_index_label: Any
@@ -50,13 +49,6 @@ class DesktopAlignmentScreenView:
     ) -> None:
         """Restore y-ranges captured before an alignment redraw."""
         self.depth_plots.restore_y_ranges(ranges)
-
-    def create_reference_lines_for_previous_alignment(self, state: Any) -> None:
-        """Create editable reference lines from the previous alignment."""
-        if state.previous_feature_positions_um is not None:
-            self.reference_lines.create_previous_feature_lines(
-                state.previous_feature_positions_um
-            )
 
     def set_default_feature_y_range(
         self,

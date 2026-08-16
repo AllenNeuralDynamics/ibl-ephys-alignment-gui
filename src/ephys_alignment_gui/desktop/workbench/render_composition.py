@@ -209,7 +209,6 @@ def _alignment_render_callbacks(
         clear_reference_lines=displays.reference_lines.clear,
         capture_depth_plot_y_ranges=ports.capture_depth_plot_y_ranges,
         restore_depth_plot_y_ranges=ports.restore_depth_plot_y_ranges,
-        reattach_reference_lines=displays.reference_lines.reattach,
         render_histology_alignment=histology_presenter.render_alignment_edit,
         plot_channels=slice_panel_presenter.plot_channels,
         refresh_perpendicular_histology=(
@@ -217,11 +216,11 @@ def _alignment_render_callbacks(
                 slice_menu_coordinator.current_selection()
             )
         ),
-        update_reference_lines_to_alignment=(
-            displays.reference_lines.sync_track_to_feature
-        ),
-        create_reference_lines_for_previous_alignment=lambda: (
-            _create_reference_lines_for_previous_alignment(app, views)
+        render_reference_lines_from_alignment=(
+            lambda state: _render_reference_lines_from_alignment(
+                displays.reference_lines,
+                state,
+            )
         ),
         set_default_feature_y_range=lambda: _set_default_feature_y_range(app, views),
         update_status=lambda: _update_alignment_status(app, views),
@@ -242,13 +241,18 @@ def _restore_lin_fit_from_edit(
     )
 
 
-def _create_reference_lines_for_previous_alignment(
-    app: Any,
-    views: DesktopViews,
+def _render_reference_lines_from_alignment(
+    reference_lines: Any,
+    state: Any,
 ) -> None:
-    """Create previous-alignment reference lines from an app read model."""
-    state = app.queries.workspace.active_alignment_edit_screen_state()
-    views.alignment_screen.create_reference_lines_for_previous_alignment(state)
+    """Render alignment-derived reference lines without recording a user edit."""
+    if state is None:
+        reference_lines.clear()
+        return
+    reference_lines.replace_lines(
+        state.feature_positions_um,
+        state.track_positions_um,
+    )
 
 
 def _set_default_feature_y_range(app: Any, views: DesktopViews) -> None:

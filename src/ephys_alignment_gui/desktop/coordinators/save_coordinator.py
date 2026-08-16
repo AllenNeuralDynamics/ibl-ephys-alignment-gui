@@ -171,6 +171,7 @@ class DesktopSaveCoordinator:
                 f"{'' if event.saved_count == 1 else 's'}.",
                 success=True,
             )
+            self._progress_dialog.close_dialog()
         if self._save_ui_active():
             self._set_save_button_progress("Saved", "Saved successfully")
 

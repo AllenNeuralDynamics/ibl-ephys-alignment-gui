@@ -492,6 +492,7 @@ class FakePlotExportPresenter:
 class FakeEphysDisplay:
     def __init__(self) -> None:
         self.panel = SimpleNamespace(
+            image_raster_request=lambda: None,
             render_image=lambda data: self.rendered_states.append(("image", data)),
             render_scatter=lambda data: self.rendered_states.append(("scatter", data)),
             render_line=lambda data: self.rendered_states.append(("line", data)),
@@ -533,10 +534,9 @@ class FakeSliceDisplay:
 class FakeReferenceLineDisplay:
     def __init__(self) -> None:
         self.clear_count = 0
-        self.reattach_count = 0
-        self.sync_count = 0
         self.add_count = 0
         self.created_lines: list[tuple[Any, Any]] = []
+        self.replaced_lines: list[tuple[Any, Any]] = []
         self.lines_changed_callback = None
         self.current_positions = ([1.0], [2.0])
 
@@ -549,17 +549,14 @@ class FakeReferenceLineDisplay:
     def clear(self) -> None:
         self.clear_count += 1
 
-    def reattach(self) -> None:
-        self.reattach_count += 1
-
-    def sync_track_to_feature(self) -> None:
-        self.sync_count += 1
-
     def add_to_plots(self) -> None:
         self.add_count += 1
 
     def create_lines(self, positions: Any, track_positions: Any = None) -> None:
         self.created_lines.append((positions, track_positions))
+
+    def replace_lines(self, positions: Any, track_positions: Any = None) -> None:
+        self.replaced_lines.append((positions, track_positions))
 
 
 def _displays(
@@ -1284,13 +1281,17 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert reference_line_display.lines_changed_callback is not None
     reference_line_display.lines_changed_callback()
     assert captured_reference_lines == [([1.0], [2.0])]
+    line_state = SimpleNamespace(
+        feature_positions_um=[3.0],
+        track_positions_um=[4.0],
+    )
     render_cluster.alignment_presenter.callbacks.clear_reference_lines()
-    render_cluster.alignment_presenter.callbacks.reattach_reference_lines()
-    render_cluster.alignment_presenter.callbacks.update_reference_lines_to_alignment()
+    render_cluster.alignment_presenter.callbacks.render_reference_lines_from_alignment(
+        line_state
+    )
     render_cluster.shank_presenter.callbacks.clear_reference_lines()
     assert reference_line_display.clear_count == 2
-    assert reference_line_display.reattach_count == 1
-    assert reference_line_display.sync_count == 1
+    assert reference_line_display.replaced_lines == [([3.0], [4.0])]
     assert (
         render_cluster.shank_presenter.callbacks.render_ephys_plots.__self__
         is render_cluster.ephys_plot_presenter

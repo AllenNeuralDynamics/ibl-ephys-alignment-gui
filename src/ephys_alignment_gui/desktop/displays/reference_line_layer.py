@@ -150,6 +150,56 @@ class ReferenceLineLayer:
             )
         self._on_lines_changed()
 
+    def replace_lines(
+        self,
+        positions: Any,
+        track_positions: Any = None,
+        *,
+        notify: bool = False,
+    ) -> None:
+        """Replace managed line positions with explicit feature/track coordinates."""
+        feature_positions = np.asarray(positions, dtype=float)
+        if track_positions is None:
+            track_positions = feature_positions
+        else:
+            track_positions = np.asarray(track_positions, dtype=float)
+        if feature_positions.shape != track_positions.shape:
+            logger.error(
+                "Cannot replace reference lines: feature/track positions differ"
+            )
+            return
+
+        if feature_positions.size == 0:
+            self.clear()
+            if notify:
+                self._on_lines_changed()
+            return
+
+        if self.lines_features.shape[0] != feature_positions.size:
+            self.clear()
+            self.create_lines(feature_positions, track_positions)
+            if notify:
+                self._on_lines_changed()
+            return
+
+        for feature_pos, track_pos, line_feature, line_track, point in zip(
+            feature_positions,
+            track_positions,
+            self.lines_features,
+            self.lines_tracks,
+            self.points,
+        ):
+            for line in line_feature:
+                self._set_line_pos(line, feature_pos)
+            for line in line_track:
+                self._set_line_pos(line, track_pos)
+            point[0].setData(
+                x=[track_pos],
+                y=[feature_pos],
+            )
+        if notify:
+            self._on_lines_changed()
+
     def update_feature_line(self, line: Any) -> None:
         """Mirror a moved feature-space line across feature plots."""
         idx = np.where(self.lines_features == line)
@@ -233,6 +283,18 @@ class ReferenceLineLayer:
         if line_idx.size == 0:
             return None
         return int(line_idx[0])
+
+    @staticmethod
+    def _set_line_pos(line: Any, position: float) -> None:
+        block_signals = getattr(line, "blockSignals", None)
+        previous_blocked = None
+        if callable(block_signals):
+            previous_blocked = block_signals(True)
+        try:
+            line.setPos(position)
+        finally:
+            if callable(block_signals) and previous_blocked is not None:
+                block_signals(previous_blocked)
 
     def _create_line(
         self,

@@ -743,6 +743,39 @@ def test_queries_active_reference_line_state_rejects_mismatched_shank() -> None:
     assert workspace.app.queries.workspace.active_reference_line_state(1) is None
 
 
+def test_queries_active_alignment_reference_line_state_uses_active_alignment() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([-0.001, 0.001, 0.002, 0.003]),
+        np.array([-0.002, 0.0015, 0.0025, 0.004]),
+    )
+    workspace.document.active_set_pending_reference_lines([10.0], [11.0])
+
+    result = workspace.app.queries.workspace.active_alignment_reference_line_state(0)
+
+    assert isinstance(result, ActiveReferenceLineRenderState)
+    np.testing.assert_allclose(result.feature_positions_um, [1000.0, 2000.0])
+    np.testing.assert_allclose(result.track_positions_um, [1500.0, 2500.0])
+
+
+def test_queries_active_alignment_reference_line_state_allows_empty_interior() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([-0.001, 0.003]),
+        np.array([-0.002, 0.004]),
+    )
+
+    result = workspace.app.queries.workspace.active_alignment_reference_line_state(0)
+
+    assert isinstance(result, ActiveReferenceLineRenderState)
+    assert result.feature_positions_um.size == 0
+    assert result.track_positions_um.size == 0
+
+
 def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> None:
     workspace = AlignmentWorkspace()
     workspace.document.mark_data_loaded(True)
@@ -3037,10 +3070,6 @@ def test_queries_return_output_and_alignment_screen_read_models(tmp_path) -> Non
     assert isinstance(edit_state, ActiveAlignmentEditScreenState)
     assert edit_state.current_idx == 0
     assert edit_state.total_idx == 1
-    np.testing.assert_allclose(
-        edit_state.previous_feature_positions_um,
-        [1000.0, 2000.0],
-    )
 
 
 def test_commands_prepare_loaded_shank_without_histology() -> None:

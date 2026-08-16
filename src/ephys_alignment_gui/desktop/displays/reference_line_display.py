@@ -89,9 +89,9 @@ class DesktopReferenceLineDisplay:
         """Create linked feature/track reference lines."""
         self.layer.create_lines(positions, track_positions)
 
-    def create_previous_feature_lines(self, feature_prev: Any) -> None:
-        """Create previous-alignment reference lines from feature history."""
-        self.layer.create_lines(feature_prev)
+    def replace_lines(self, positions: Any, track_positions: Any = None) -> None:
+        """Replace linked feature/track reference lines without user-edit capture."""
+        self.layer.replace_lines(positions, track_positions)
 
     def sync_track_to_feature(self) -> None:
         """Move track-space reference lines to current feature-line positions."""

@@ -30,6 +30,8 @@ class FakeLine:
     def __init__(self, y: float) -> None:
         self._y = y
         self.sigPositionChanged = FakeSignal()
+        self.blocked_states: list[bool] = []
+        self._blocked = False
 
     def pos(self) -> FakePosition:
         return FakePosition(self._y)
@@ -42,6 +44,12 @@ class FakeLine:
 
     def getYPos(self) -> float:
         return self._y
+
+    def blockSignals(self, blocked: bool) -> bool:
+        previous = self._blocked
+        self._blocked = blocked
+        self.blocked_states.append(blocked)
+        return previous
 
 
 class FakePoint:
@@ -111,6 +119,43 @@ def test_sync_track_to_feature_updates_track_handles_and_fit_point() -> None:
     assert layer.lines_tracks[0][1].getYPos() == 10.0
     assert layer.points[0][0].data == {"x": [10.0], "y": [10.0]}
     assert changes == ["changed"]
+
+
+def test_replace_lines_updates_handles_without_notifying() -> None:
+    layer, _, changes = _layer()
+    feature_line, track_line = _populate(layer)
+
+    layer.replace_lines([30.0], [40.0])
+
+    assert feature_line.getYPos() == 30.0
+    assert track_line.getYPos() == 40.0
+    assert layer.lines_features[0][1].getYPos() == 30.0
+    assert layer.lines_tracks[0][1].getYPos() == 40.0
+    assert layer.points[0][0].data == {"x": [40.0], "y": [30.0]}
+    assert feature_line.blocked_states == [True, False]
+    assert track_line.blocked_states == [True, False]
+    assert changes == []
+
+
+def test_replace_lines_can_notify_when_requested() -> None:
+    layer, _, changes = _layer()
+    _populate(layer)
+
+    layer.replace_lines([30.0], [40.0], notify=True)
+
+    assert changes == ["changed"]
+
+
+def test_replace_lines_with_no_positions_clears_without_notifying() -> None:
+    layer, plots, changes = _layer()
+    _populate(layer)
+
+    layer.replace_lines([], [])
+
+    assert layer.lines_features.shape == (0, 3)
+    assert layer.lines_tracks.shape == (0, 2)
+    assert plots.image.removed
+    assert changes == []
 
 
 def test_delete_selected_removes_one_line_group_and_notifies() -> None:

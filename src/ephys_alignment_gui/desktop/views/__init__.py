@@ -101,7 +101,6 @@ class DesktopViews:
         )
         alignment_screen = DesktopAlignmentScreenView(
             depth_plots=depth,
-            reference_lines=displays.reference_lines,
             lin_fit_checkbox=displays.histology.linear_fit_checkbox,
             current_index_label=handles.current_index_label,
             total_index_label=handles.total_index_label,

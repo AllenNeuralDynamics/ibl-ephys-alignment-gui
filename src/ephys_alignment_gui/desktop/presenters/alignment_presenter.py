@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 
 LineUpdateMode = Literal[
     "none",
-    "reattach",
-    "sync_to_alignment",
-    "reset_to_previous",
+    "render_from_alignment",
 ]
 
 
@@ -41,13 +39,13 @@ def desktop_presentation_options_for_edit(
     """Return desktop presentation policy for an application alignment edit."""
     if edit_kind == "fit":
         return DesktopAlignmentPresentationOptions(
-            line_update="sync_to_alignment",
+            line_update="render_from_alignment",
             preserve_depth_range=True,
         )
     if edit_kind == "offset":
-        return DesktopAlignmentPresentationOptions(line_update="sync_to_alignment")
+        return DesktopAlignmentPresentationOptions(line_update="render_from_alignment")
     if edit_kind in {"next", "previous"}:
-        return DesktopAlignmentPresentationOptions(line_update="reattach")
+        return DesktopAlignmentPresentationOptions(line_update="render_from_alignment")
     return DesktopAlignmentPresentationOptions(
         reset_histology_range=True,
         clear_reference_lines=True,
@@ -62,12 +60,10 @@ class DesktopAlignmentRenderCallbacks:
     clear_reference_lines: Callable[[], None]
     capture_depth_plot_y_ranges: Callable[[], Any]
     restore_depth_plot_y_ranges: Callable[[Any], None]
-    reattach_reference_lines: Callable[[], None]
     render_histology_alignment: Callable[[ActiveAlignmentRenderState], Any]
     plot_channels: Callable[[Any], None]
     refresh_perpendicular_histology: Callable[[], None]
-    update_reference_lines_to_alignment: Callable[[], None]
-    create_reference_lines_for_previous_alignment: Callable[[], None]
+    render_reference_lines_from_alignment: Callable[[Any], None]
     set_default_feature_y_range: Callable[[], None]
     update_status: Callable[[], None]
 
@@ -131,37 +127,27 @@ class DesktopAlignmentPresenter:
         """Apply one alignment edit to focused desktop render callbacks."""
         callbacks = self._require_callbacks()
 
-        self._prepare_reference_lines_before_render(options)
         callbacks.render_histology_alignment(render_state)
         callbacks.plot_channels(render_state.projection)
         if options.refresh_perpendicular:
             callbacks.refresh_perpendicular_histology()
-        self._update_reference_lines_after_render(options)
+        if options.line_update == "render_from_alignment":
+            callbacks.render_reference_lines_from_alignment(
+                self._active_alignment_reference_lines(render_state)
+            )
         if options.reset_histology_range:
             callbacks.set_default_feature_y_range()
         callbacks.update_status()
 
-    def _prepare_reference_lines_before_render(
+    def _active_alignment_reference_lines(
         self,
-        options: DesktopAlignmentPresentationOptions,
-    ) -> None:
-        """Prepare reference-line handles before plot refreshes."""
-        if options.line_update == "reattach":
-            self._require_callbacks().reattach_reference_lines()
-
-    def _update_reference_lines_after_render(
-        self,
-        options: DesktopAlignmentPresentationOptions,
-    ) -> None:
-        """Update desktop reference-line handles after plot refreshes."""
-        callbacks = self._require_callbacks()
-        if options.line_update == "reattach":
-            callbacks.reattach_reference_lines()
-        elif options.line_update == "sync_to_alignment":
-            callbacks.reattach_reference_lines()
-            callbacks.update_reference_lines_to_alignment()
-        elif options.line_update == "reset_to_previous":
-            callbacks.create_reference_lines_for_previous_alignment()
+        render_state: ActiveAlignmentRenderState,
+    ) -> Any:
+        """Return reference-line positions derived from the active alignment."""
+        return (
+            self._require_queries()
+            .workspace.active_alignment_reference_line_state(render_state.key.shank_idx)
+        )
 
     def _require_queries(self) -> Any:
         if self.queries is None:

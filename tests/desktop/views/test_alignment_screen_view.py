@@ -45,14 +45,6 @@ class FakeCheckbox:
         self.calls.append(("checked", checked))
 
 
-class FakeReferenceLines:
-    def __init__(self) -> None:
-        self.previous_features: list[Any] = []
-
-    def create_previous_feature_lines(self, feature_prev: Any) -> None:
-        self.previous_features.append(feature_prev)
-
-
 class FakeLabel:
     def __init__(self) -> None:
         self.text: str | None = None
@@ -124,7 +116,6 @@ def _view() -> tuple[
     DesktopAlignmentScreenView,
     FakeDepthPlots,
     FakeCheckbox,
-    FakeReferenceLines,
     FakeLabel,
     FakeLabel,
     FakeModel,
@@ -132,14 +123,12 @@ def _view() -> tuple[
 ]:
     depth_plots = FakeDepthPlots()
     checkbox = FakeCheckbox()
-    reference_lines = FakeReferenceLines()
     current_label = FakeLabel()
     total_label = FakeLabel()
     alignment_model = FakeModel()
     alignment_combobox = FakeCombobox()
     view = DesktopAlignmentScreenView(
         depth_plots=depth_plots,
-        reference_lines=reference_lines,
         lin_fit_checkbox=checkbox,
         current_index_label=current_label,
         total_index_label=total_label,
@@ -151,7 +140,6 @@ def _view() -> tuple[
         view,
         depth_plots,
         checkbox,
-        reference_lines,
         current_label,
         total_label,
         alignment_model,
@@ -160,7 +148,7 @@ def _view() -> tuple[
 
 
 def test_set_linear_fit_checked_blocks_checkbox_signals() -> None:
-    view, _depth, checkbox, _lines, _current, _total, _model, _combo = _view()
+    view, _depth, checkbox, _current, _total, _model, _combo = _view()
 
     view.set_linear_fit_checked(False)
 
@@ -172,7 +160,7 @@ def test_set_linear_fit_checked_blocks_checkbox_signals() -> None:
 
 
 def test_depth_range_methods_delegate_to_depth_plot_view() -> None:
-    view, depth_plots, _checkbox, _lines, _current, _total, _model, _combo = _view()
+    view, depth_plots, _checkbox, _current, _total, _model, _combo = _view()
     depth_view = object()
     in_brain_depths_um = np.array([100.0])
 
@@ -192,27 +180,9 @@ def test_depth_range_methods_delegate_to_depth_plot_view() -> None:
     assert depth_plots.calls[2][2] is in_brain_depths_um
 
 
-def test_create_previous_reference_lines_uses_middle_feature_points_in_um() -> None:
-    active_state = ActiveAlignmentEditScreenState(
-        current_idx=0,
-        total_idx=0,
-        previous_feature_positions_um=np.array([1000.0, 2000.0]),
-    )
-    view, _depth, _checkbox, reference_lines, _current, _total, _model, _combo = (
-        _view()
-    )
-
-    view.create_reference_lines_for_previous_alignment(active_state)
-
-    assert len(reference_lines.previous_features) == 1
-    np.testing.assert_allclose(reference_lines.previous_features[0], [1000.0, 2000.0])
-
-
 def test_update_status_uses_active_edit_history() -> None:
     active_state = ActiveAlignmentEditScreenState(current_idx=2, total_idx=5)
-    view, _depth, _checkbox, _lines, current_label, total_label, _model, _combo = (
-        _view()
-    )
+    view, _depth, _checkbox, current_label, total_label, _model, _combo = _view()
 
     view.update_status(active_state)
 
@@ -221,7 +191,7 @@ def test_update_status_uses_active_edit_history() -> None:
 
 
 def test_render_alignment_choices_populates_alignment_combo() -> None:
-    view, _depth, _checkbox, _lines, _current, _total, model, combobox = _view()
+    view, _depth, _checkbox, _current, _total, model, combobox = _view()
 
     view.render_alignment_choices(["original", "histology fit"])
 

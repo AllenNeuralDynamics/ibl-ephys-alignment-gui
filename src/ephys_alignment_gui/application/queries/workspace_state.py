@@ -92,6 +92,26 @@ class WorkspaceStateQueries:
             feature_positions_um=np.asarray(feature_prev)[1:-1] * 1e6,
         )
 
+    def active_alignment_reference_line_state(
+        self,
+        shank_idx: int | None = None,
+    ) -> ActiveReferenceLineRenderState | None:
+        """Return reference-line positions derived from the active alignment."""
+        state = self.context.document.active_alignment_state
+        key = self.context.document.selected_alignment_key
+        if state is None or key is None:
+            return None
+        if shank_idx is not None and key.shank_idx != shank_idx:
+            return None
+
+        alignment = state.active_alignment
+        if alignment is None:
+            return None
+        return ActiveReferenceLineRenderState(
+            feature_positions_um=np.asarray(alignment.feature)[1:-1] * 1e6,
+            track_positions_um=np.asarray(alignment.track)[1:-1] * 1e6,
+        )
+
     def is_loaded_stream_shank(
         self,
         stream_key: StreamKey | None,
@@ -241,20 +261,14 @@ class WorkspaceStateQueries:
     def active_alignment_edit_screen_state(
         self,
     ) -> ActiveAlignmentEditScreenState:
-        """Return edit-history status and previous reference-line render data."""
+        """Return edit-history status labels."""
         state = self.context.document.active_alignment_state
         if state is None:
             return ActiveAlignmentEditScreenState(current_idx=0, total_idx=0)
 
-        previous_feature_positions_um = None
-        feature_prev = state.feature_prev
-        if feature_prev is not None and np.any(feature_prev):
-            previous_feature_positions_um = np.asarray(feature_prev)[1:-1] * 1e6
-
         return ActiveAlignmentEditScreenState(
             current_idx=state.edit_history.current_idx,
             total_idx=state.edit_history.total_idx,
-            previous_feature_positions_um=previous_feature_positions_um,
         )
 
     def resolve_shank_preserve_plot_selection(
