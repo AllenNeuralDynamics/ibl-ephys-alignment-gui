@@ -75,6 +75,7 @@ class DesktopSavePorts:
     ephys_qc: Callable[[], str]
     selected_qc_descriptions: Callable[[], list[str]]
     warning: Callable[[str, str], Any]
+    save_blocking_widgets: Callable[[], list[Any]] = lambda: []
 
 
 @dataclass(frozen=True)

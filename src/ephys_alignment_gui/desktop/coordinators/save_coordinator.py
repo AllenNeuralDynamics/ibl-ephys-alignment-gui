@@ -21,6 +21,11 @@ from ephys_alignment_gui.core.alignment_events import (
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok, Requirement
+from ephys_alignment_gui.desktop.workers.alignment_save_runner import (
+    AlignmentSaveJobResult,
+    AlignmentSaveRunner,
+    QtAlignmentSaveRunner,
+)
 from ephys_alignment_gui.desktop.workers.save_rehydration_runner import (
     QtSaveRuntimeRehydrationRunner,
     SaveRuntimeRehydrationResult,
@@ -47,6 +52,7 @@ class DesktopSaveCallbacks:
     ephys_qc: Callable[[], str]
     selected_qc_descriptions: Callable[[], list[str]]
     warning: Callable[[str, str], Any]
+    save_blocking_widgets: Callable[[], list[Any]] = lambda: []
 
 
 @dataclass
@@ -59,6 +65,7 @@ class DesktopSaveCoordinator:
     rehydration_runner: SaveRuntimeRehydrationRunner = field(
         default_factory=QtSaveRuntimeRehydrationRunner
     )
+    save_runner: AlignmentSaveRunner = field(default_factory=QtAlignmentSaveRunner)
     _active_save_context: Any | None = field(default=None, init=False, repr=False)
     _active_save_context_manager: Any | None = field(
         default=None,
@@ -178,8 +185,8 @@ class DesktopSaveCoordinator:
                 self.callbacks.log_requirement(save_ready.first)
             return False
 
-        if self.rehydration_runner.is_running:
-            logger.info("Save request ignored because runtime reload is active")
+        if self.rehydration_runner.is_running or self.save_runner.is_running:
+            logger.info("Save request ignored because save work is active")
             return False
 
         use_docdb = self.callbacks.use_docdb()
@@ -191,34 +198,64 @@ class DesktopSaveCoordinator:
             return self._start_rehydration_then_save(rehydration, use_docdb=use_docdb)
 
         assert isinstance(rehydration, Ok)
-        return self._save_now(use_docdb=use_docdb)
+        return self._start_prepared_save(use_docdb=use_docdb)
 
-    def _save_now(self, *, use_docdb: bool) -> bool:
-        """Run the final save transaction on the GUI thread."""
+    def _start_prepared_save(
+        self,
+        *,
+        use_docdb: bool,
+        open_context: bool = True,
+    ) -> bool:
+        """Prepare a save job and run output generation in the background."""
         self._show_save_preparing()
         self._set_save_button_progress("Saving...", "Saving edited alignments")
-        try:
-            with self.callbacks.busy_context(
+        if open_context and self._active_save_context_manager is None:
+            self._open_save_context(
                 "Saving...",
                 "Saved successfully",
-                disable_widgets=self.callbacks.complete_button(),
-            ):
-                result = self.commands.save_edited_alignment_outputs(
-                    use_docdb=use_docdb,
-                    rehydrate_missing=False,
-                )
-                if isinstance(result, Blocked):
-                    self.callbacks.log_requirement(result.first)
-                    return False
-                if isinstance(result, Failed):
-                    return False
-                assert isinstance(result, EditedAlignmentOutputsSaved)
-        finally:
-            self._restore_save_button_state()
+                disable_widgets=self._save_disable_widgets(),
+            )
+        elif self._active_save_context is not None:
+            self._active_save_context.update_message("Preparing save...")
+
+        try:
+            prepared = self.commands.prepare_edited_alignment_save(
+                use_docdb=use_docdb,
+                rehydrate_missing=False,
+            )
+        except Exception as exc:
+            self._close_save_context(exc)
+            logger.exception("Failed to prepare edited-alignment save")
+            return False
+
+        if isinstance(prepared, Blocked):
+            self.callbacks.log_requirement(prepared.first)
+            self._close_save_context(RuntimeError(prepared.first.message))
+            return False
+        if isinstance(prepared, Failed):
+            self._close_save_context(RuntimeError(prepared.message))
+            return False
+
+        if self._progress_dialog is not None:
+            self._progress_dialog.set_cancel_enabled(False)
+
+        try:
+            self.save_runner.start(
+                prepared=prepared,
+                run_job=self.commands.run_prepared_alignment_save,
+                on_progress=self._on_save_job_progress,
+                on_finished=self._on_save_job_finished,
+            )
+        except Exception as exc:
+            failed = Failed(f"Failed to start edited-alignment save: {exc}")
+            self.commands.publish_prepared_alignment_save_result(prepared, failed)
+            self._close_save_context(exc)
+            logger.exception("Failed to start edited-alignment save")
+            return False
         return True
 
     def _show_save_preparing(self) -> None:
-        """Clear stale progress rows before synchronous save work emits events."""
+        """Clear stale progress rows before save preparation emits events."""
         dialog = self._save_progress_dialog()
         dialog.set_cancel_callback(None)
         dialog.show_started(
@@ -242,7 +279,7 @@ class DesktopSaveCoordinator:
         self._open_save_context(
             "Reloading data needed for save...",
             "Saved successfully",
-            disable_widgets=self.callbacks.complete_button(),
+            disable_widgets=self._save_disable_widgets(),
         )
         self._pending_use_docdb = use_docdb
         try:
@@ -267,11 +304,17 @@ class DesktopSaveCoordinator:
         *,
         timeout_ms: int = 5000,
     ) -> bool:
-        """Cancel and settle active save-runtime reload before desktop teardown."""
-        if not self.rehydration_runner.is_running:
-            return True
-        stopped = self.rehydration_runner.shutdown(reason, timeout_ms=timeout_ms)
-        if stopped:
+        """Settle active save workers before desktop teardown."""
+        stopped = True
+        if self.rehydration_runner.is_running:
+            stopped = self.rehydration_runner.shutdown(reason, timeout_ms=timeout_ms)
+        if self.save_runner.is_running:
+            stopped = self.save_runner.shutdown(reason, timeout_ms=timeout_ms) and stopped
+        if stopped and (
+            self._pending_use_docdb is not None
+            or self._progress_dialog is not None
+            or self._active_save_context_manager is not None
+        ):
             self._pending_use_docdb = None
             if self._progress_dialog is not None:
                 self._progress_dialog.close_dialog()
@@ -334,19 +377,31 @@ class DesktopSaveCoordinator:
             self._active_save_context.update_message("Saving output files...")
         if self._progress_dialog is not None:
             self._progress_dialog.set_cancel_enabled(False)
-        save_result = self.commands.save_edited_alignment_outputs(
-            use_docdb=use_docdb,
-            rehydrate_missing=False,
-        )
-        if isinstance(save_result, Blocked):
-            self.callbacks.log_requirement(save_result.first)
-            self._close_save_context(RuntimeError(save_result.first.message))
-            return
-        if isinstance(save_result, Failed):
-            self._close_save_context(RuntimeError(save_result.message))
-            return
-        assert isinstance(save_result, EditedAlignmentOutputsSaved)
-        self._close_save_context()
+        self._start_prepared_save(use_docdb=use_docdb, open_context=False)
+
+    def _on_save_job_progress(self, event: Any) -> None:
+        """Publish save-job progress from the GUI thread."""
+        self.events.emit(event)
+
+    def _on_save_job_finished(
+        self,
+        prepared: Any,
+        result: AlignmentSaveJobResult,
+    ) -> None:
+        """Publish final save result and close desktop busy state."""
+        try:
+            published = self.commands.publish_prepared_alignment_save_result(
+                prepared,
+                result,
+            )
+            if isinstance(published, Failed):
+                self._close_save_context(RuntimeError(published.message))
+                return
+            assert isinstance(published, EditedAlignmentOutputsSaved)
+            self._close_save_context()
+        except Exception as exc:
+            logger.exception("Failed to publish edited-alignment save result")
+            self._close_save_context(exc)
 
     def _open_save_context(self, *args: Any, **kwargs: Any) -> None:
         """Enter and hold the desktop busy context for async save work."""
@@ -415,6 +470,15 @@ class DesktopSaveCoordinator:
             button.setToolTip(self._save_button_original_tooltip)
         self._save_button_original_text = None
         self._save_button_original_tooltip = None
+
+    def _save_disable_widgets(self) -> list[Any]:
+        """Return widgets disabled while save work owns document state."""
+        widgets: list[Any] = []
+        button = self.callbacks.complete_button()
+        if button is not None:
+            widgets.append(button)
+        widgets.extend(self.callbacks.save_blocking_widgets())
+        return widgets
 
     def _save_ui_active(self) -> bool:
         """Return whether this coordinator has active save UI state to mutate."""

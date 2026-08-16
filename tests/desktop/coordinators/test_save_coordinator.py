@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveJobCompleted,
+    PreparedAlignmentSave,
+)
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
@@ -171,6 +175,55 @@ class ManualSaveRehydrationRunner:
         return self.shutdown_result
 
 
+class ManualAlignmentSaveRunner:
+    def __init__(
+        self,
+        *,
+        result: Any | None = None,
+        auto_finish: bool = True,
+    ) -> None:
+        self.result = result
+        self.auto_finish = auto_finish
+        self.active = False
+        self.start_calls: list[PreparedAlignmentSave] = []
+        self.shutdown_calls: list[tuple[str, int]] = []
+        self.shutdown_result = True
+        self._prepared = None
+        self._run_job = None
+        self._on_progress = None
+        self._on_finished = None
+
+    @property
+    def is_running(self) -> bool:
+        return self.active
+
+    def start(self, *, prepared, run_job, on_progress, on_finished) -> None:
+        self.active = True
+        self.start_calls.append(prepared)
+        self._prepared = prepared
+        self._run_job = run_job
+        self._on_progress = on_progress
+        self._on_finished = on_finished
+        if self.auto_finish:
+            self.finish()
+
+    def finish(self, result: Any | None = None) -> None:
+        assert self._prepared is not None
+        assert self._run_job is not None
+        assert self._on_finished is not None
+        terminal = result if result is not None else self.result
+        if terminal is None:
+            terminal = self._run_job(self._prepared, progress=self._on_progress)
+        self.active = False
+        self._on_finished(self._prepared, terminal)
+
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_calls.append((reason, timeout_ms))
+        if self.shutdown_result:
+            self.active = False
+        return self.shutdown_result
+
+
 class FakeCommands:
     def __init__(
         self,
@@ -192,6 +245,8 @@ class FakeCommands:
         self.prepare_calls = 0
         self.rehydrate_calls: list[SaveRuntimeRehydrationPlan] = []
         self.publish_calls: list[Any] = []
+        self.prepared_saves: list[PreparedAlignmentSave] = []
+        self.publish_save_calls: list[Any] = []
 
     def can_save_alignment_output(self):
         result = self.ready_results[min(self.ready_calls, len(self.ready_results) - 1)]
@@ -233,6 +288,41 @@ class FakeCommands:
         self.save_rehydrate_missing.append(rehydrate_missing)
         self._emit_save_event(self.save_result)
         return self.save_result
+
+    def prepare_edited_alignment_save(
+        self,
+        *,
+        use_docdb: bool,
+        rehydrate_missing: bool = True,
+    ):
+        prepared = PreparedAlignmentSave((), use_docdb=use_docdb)
+        self.prepared_saves.append(prepared)
+        return prepared
+
+    def run_prepared_alignment_save(
+        self,
+        prepared,
+        *,
+        progress=None,
+    ):
+        self.save_calls.append({"use_docdb": prepared.use_docdb})
+        self.save_rehydrate_missing.append(False)
+        if isinstance(self.save_result, Failed):
+            return self.save_result
+        return AlignmentSaveJobCompleted(saved_outputs=dict(self.save_result.saved_outputs))
+
+    def publish_prepared_alignment_save_result(self, prepared, result):
+        self.publish_save_calls.append(result)
+        if isinstance(result, Failed):
+            self._emit_save_event(result)
+            return result
+        published = EditedAlignmentOutputsSaved(
+            saved_count=len(result.saved_outputs),
+            saved_outputs=result.saved_outputs,
+            active_choices=["saved", "original"],
+        )
+        self._emit_save_event(published)
+        return published
 
     def _emit_save_event(self, result: Any) -> None:
         if self.events is None:
@@ -318,6 +408,7 @@ def _coordinator(
     ephys_qc: str = "Pass",
     selected_descriptions: list[str] | None = None,
     rehydration_runner: Any | None = None,
+    save_runner: Any | None = None,
     complete_button: Any | None = None,
 ) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
@@ -350,8 +441,10 @@ def _coordinator(
             ephys_qc=lambda: ephys_qc,
             selected_qc_descriptions=lambda: selected_descriptions or [],
             warning=lambda title, message: calls.append(("warning", title, message)),
+            save_blocking_widgets=lambda: [],
         ),
         rehydration_runner=rehydration_runner or ManualSaveRehydrationRunner(),
+        save_runner=save_runner or ManualAlignmentSaveRunner(),
     )
     coordinator.connect_save_events()
     return coordinator, commands, calls
@@ -376,9 +469,10 @@ def test_save_prompts_for_output_then_saves() -> None:
         (
             "busy",
             ("Saving...", "Saved successfully"),
-            {"disable_widgets": "complete-button"},
+            {"disable_widgets": ["complete-button"]},
         ),
         ("busy-enter",),
+        ("progress-cancel-enabled", False),
         ("choices", ["saved", "original"]),
         ("progress-finished", "Saved 1 edited alignment.", True),
         ("busy-exit", None),
@@ -403,7 +497,7 @@ def test_save_logs_failed_command() -> None:
         commands=FakeCommands(save_result=Failed("save failed")),
     )
 
-    assert not coordinator.save_alignment_outputs()
+    assert coordinator.save_alignment_outputs()
 
     assert commands.save_calls == [{"use_docdb": True}]
     assert commands.save_rehydrate_missing == [False]
@@ -413,11 +507,12 @@ def test_save_logs_failed_command() -> None:
         (
             "busy",
             ("Saving...", "Saved successfully"),
-            {"disable_widgets": "complete-button"},
+            {"disable_widgets": ["complete-button"]},
         ),
         ("busy-enter",),
+        ("progress-cancel-enabled", False),
         ("progress-finished", "save failed", False),
-        ("busy-exit", None),
+        ("busy-exit", RuntimeError),
     ]
 
 
@@ -445,7 +540,7 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
         (
             "busy",
             ("Reloading data needed for save...", "Saved successfully"),
-            {"disable_widgets": "complete-button"},
+            {"disable_widgets": ["complete-button"]},
         ),
         ("busy-enter",),
     ]

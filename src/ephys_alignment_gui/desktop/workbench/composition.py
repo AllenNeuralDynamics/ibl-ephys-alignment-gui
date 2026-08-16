@@ -259,6 +259,7 @@ def _save_callbacks(
         ephys_qc=ports.ephys_qc,
         selected_qc_descriptions=ports.selected_qc_descriptions,
         warning=ports.warning,
+        save_blocking_widgets=ports.save_blocking_widgets,
     )
 
 

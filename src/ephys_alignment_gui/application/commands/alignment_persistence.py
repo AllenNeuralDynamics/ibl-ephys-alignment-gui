@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveJobCompleted,
+    PreparedAlignmentSave,
+    PreparedAlignmentSaveTarget,
+)
 from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
     EditedAlignmentOutputsSaved,
@@ -189,6 +194,26 @@ class AlignmentPersistenceCommandHandler:
         rehydrate_missing: bool = True,
     ) -> EditedAlignmentOutputsSaved | Blocked | Failed:
         """Persist outputs for every dirty alignment state in the document."""
+        prepared = self.prepare_edited_alignment_save(
+            use_docdb=use_docdb,
+            rehydrate_missing=rehydrate_missing,
+        )
+        if isinstance(prepared, Blocked | Failed):
+            return prepared
+
+        result = self.run_prepared_alignment_save(
+            prepared,
+            progress=self._emit_save_progress_event,
+        )
+        return self.publish_prepared_alignment_save_result(prepared, result)
+
+    def prepare_edited_alignment_save(
+        self,
+        *,
+        use_docdb: bool,
+        rehydrate_missing: bool = True,
+    ) -> PreparedAlignmentSave | Blocked | Failed:
+        """Prepare immutable save-job inputs on the application thread."""
         ready = self.controller.can_save_alignment_output()
         if isinstance(ready, Blocked):
             return ready
@@ -206,54 +231,8 @@ class AlignmentPersistenceCommandHandler:
         if not save_inputs:
             return self._save_failed("No edited alignments are ready to save")
 
-        output_inputs = {
-            key: (save_input.channel_locations_ras, save_input.channel_coordinates)
-            for key, save_input in save_inputs.items()
-        }
-        self._emit_save_progress_updated(
-            key=None,
-            phase="building_outputs",
-            status="started",
-            completed=0,
-            total=len(output_inputs),
-            message=(
-                "Batching CCF transform points for "
-                f"{len(output_inputs)} edited alignment(s)..."
-            ),
-        )
-        outputs = self._build_alignment_outputs(
-            output_inputs,
-            multi_shank_by_key={
-                key: save_input.multi_shank for key, save_input in save_inputs.items()
-            },
-        )
-        if isinstance(outputs, Failed):
-            return self._save_failed(outputs.message)
-        self._emit_save_progress_updated(
-            key=None,
-            phase="building_outputs",
-            status="completed",
-            completed=len(output_inputs),
-            total=len(output_inputs),
-            message=(
-                "Built CCF output dictionaries for "
-                f"{len(output_inputs)} edited alignment(s)."
-            ),
-        )
-
-        logger.info("Saving output files to results folder...")
-        saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
-        total_outputs = len(outputs)
-        for output_index, (key, output) in enumerate(outputs.items(), start=1):
-            self._emit_save_progress_updated(
-                key=key,
-                phase="writing_files",
-                status="started",
-                completed=output_index - 1,
-                total=total_outputs,
-                message=f"Writing output files for {self._describe_key(key)}...",
-            )
-            save_input = save_inputs[key]
+        targets: list[PreparedAlignmentSaveTarget] = []
+        for key, save_input in save_inputs.items():
             state = save_input.state
             alignment = state.active_alignment
             alignments_to_save = state.alignments
@@ -262,26 +241,125 @@ class AlignmentPersistenceCommandHandler:
                     alignment.feature,
                     alignment.track,
                 )
+            targets.append(
+                PreparedAlignmentSaveTarget(
+                    key=key,
+                    state=state,
+                    channel_locations_ras=save_input.channel_locations_ras,
+                    channel_coordinates=save_input.channel_coordinates,
+                    output_directory=save_input.output_directory,
+                    multi_shank=save_input.multi_shank,
+                    alignments_to_save=alignments_to_save,
+                )
+            )
+
+        return PreparedAlignmentSave(tuple(targets), use_docdb=use_docdb)
+
+    def run_prepared_alignment_save(
+        self,
+        prepared: PreparedAlignmentSave,
+        *,
+        progress: Any | None = None,
+    ) -> AlignmentSaveJobCompleted | Failed:
+        """Build CCF outputs and write files without touching document state."""
+        output_inputs = {
+            target.key: (
+                target.channel_locations_ras,
+                target.channel_coordinates,
+            )
+            for target in prepared.targets
+        }
+        self._emit_or_callback_save_progress(
+            progress,
+            SaveProgressUpdated(
+                key=None,
+                phase="building_outputs",
+                status="started",
+                completed=0,
+                total=len(output_inputs),
+                message=(
+                    "Batching CCF transform points for "
+                    f"{len(output_inputs)} edited alignment(s)..."
+                ),
+            ),
+        )
+        outputs = self._build_alignment_outputs(
+            output_inputs,
+            multi_shank_by_key={
+                target.key: target.multi_shank for target in prepared.targets
+            },
+        )
+        if isinstance(outputs, Failed):
+            return outputs
+        self._emit_or_callback_save_progress(
+            progress,
+            SaveProgressUpdated(
+                key=None,
+                phase="building_outputs",
+                status="completed",
+                completed=len(output_inputs),
+                total=len(output_inputs),
+                message=(
+                    "Built CCF output dictionaries for "
+                    f"{len(output_inputs)} edited alignment(s)."
+                ),
+            ),
+        )
+
+        logger.info("Saving output files to results folder...")
+        saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
+        total_outputs = len(outputs)
+        target_by_key = {target.key: target for target in prepared.targets}
+        for output_index, (key, output) in enumerate(outputs.items(), start=1):
+            target = target_by_key[key]
+            self._emit_or_callback_save_progress(
+                progress,
+                SaveProgressUpdated(
+                    key=key,
+                    phase="writing_files",
+                    status="started",
+                    completed=output_index - 1,
+                    total=total_outputs,
+                    message=f"Writing output files for {self._describe_key(key)}...",
+                ),
+            )
             saved = self._save_alignment_output(
                 output,
-                alignments_to_save,
+                target.alignments_to_save,
                 key.shank_idx,
-                use_docdb,
-                output_directory=save_input.output_directory,
+                prepared.use_docdb,
+                output_directory=target.output_directory,
             )
             if isinstance(saved, Failed):
-                return self._save_failed(saved.message)
+                return saved
             saved_outputs[key] = saved
-            state.set_alignments(alignments_to_save)
-            state.mark_saved()
-            self._emit_save_progress_updated(
-                key=key,
-                phase="writing_files",
-                status="completed",
-                completed=output_index,
-                total=total_outputs,
-                message=f"Wrote output files for {self._describe_key(key)}.",
+            self._emit_or_callback_save_progress(
+                progress,
+                SaveProgressUpdated(
+                    key=key,
+                    phase="writing_files",
+                    status="completed",
+                    completed=output_index,
+                    total=total_outputs,
+                    message=f"Wrote output files for {self._describe_key(key)}.",
+                ),
             )
+        return AlignmentSaveJobCompleted(saved_outputs=saved_outputs)
+
+    def publish_prepared_alignment_save_result(
+        self,
+        prepared: PreparedAlignmentSave,
+        job_result: AlignmentSaveJobCompleted | Failed,
+    ) -> EditedAlignmentOutputsSaved | Failed:
+        """Publish a save job result and update document save state."""
+        if isinstance(job_result, Failed):
+            return self._save_failed(job_result.message)
+
+        for target in prepared.targets:
+            if target.key not in job_result.saved_outputs:
+                continue
+            target.state.set_alignments(target.alignments_to_save)
+            target.state.mark_saved()
         self.controller.document.dirty = self.controller.document.has_unsaved_alignments
 
         active_choices: list[str] | None = None
@@ -293,6 +371,7 @@ class AlignmentPersistenceCommandHandler:
         elif isinstance(choices, Failed):
             logger.error(choices.message)
 
+        saved_outputs = job_result.saved_outputs
         result = EditedAlignmentOutputsSaved(
             saved_count=len(saved_outputs),
             saved_outputs=saved_outputs,
@@ -656,6 +735,21 @@ class AlignmentPersistenceCommandHandler:
                 message=message,
             )
         )
+
+    def _emit_save_progress_event(self, event: SaveProgressUpdated) -> None:
+        """Emit one prepared-save progress event."""
+        self.events.emit(event)
+
+    def _emit_or_callback_save_progress(
+        self,
+        progress: Any | None,
+        event: SaveProgressUpdated,
+    ) -> None:
+        """Route save-job progress either to a callback or the app event bus."""
+        if progress is None:
+            self._emit_save_progress_event(event)
+        else:
+            progress(event)
 
     @staticmethod
     def _describe_key(key: AlignmentKey) -> str:

@@ -148,6 +148,11 @@ def desktop_workbench_ports_from_handles(
                 title,
                 message,
             ),
+            save_blocking_widgets=lambda: (
+                [central_widget]
+                if (central_widget := parent.centralWidget()) is not None
+                else []
+            ),
         ),
         previous_alignment_load=DesktopPreviousAlignmentLoadPorts(
             use_docdb=use_docdb,

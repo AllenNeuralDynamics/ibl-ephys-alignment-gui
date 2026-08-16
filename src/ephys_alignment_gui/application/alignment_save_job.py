@@ -1,0 +1,52 @@
+"""Prepared edited-alignment save jobs."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ephys_alignment_gui.application.results.alignment_persistence import (
+    AlignmentOutputsSaved,
+)
+from ephys_alignment_gui.core.alignment_state import AlignmentState
+from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
+
+
+@dataclass(frozen=True)
+class PreparedAlignmentSaveTarget:
+    """Prepared save inputs for one edited alignment.
+
+    The worker phase uses the copied arrays, alignment history, and output path.
+    The document ``state`` reference is only consumed later on the application
+    thread when a successful save is published.
+    """
+
+    key: AlignmentKey
+    state: AlignmentState
+    channel_locations_ras: Any
+    channel_coordinates: Any
+    output_directory: Path
+    multi_shank: bool
+    alignments_to_save: AlignmentHistory
+
+
+@dataclass(frozen=True)
+class PreparedAlignmentSave:
+    """Prepared save job that can build/write outputs off the GUI thread."""
+
+    targets: tuple[PreparedAlignmentSaveTarget, ...]
+    use_docdb: bool
+
+    @property
+    def target_keys(self) -> tuple[AlignmentKey, ...]:
+        """Return alignment keys in save order."""
+        return tuple(target.key for target in self.targets)
+
+
+@dataclass(frozen=True)
+class AlignmentSaveJobCompleted:
+    """Terminal result from the thread-safe save job phase."""
+
+    saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved]
