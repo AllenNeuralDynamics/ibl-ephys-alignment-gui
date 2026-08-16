@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.runtime.ephys_stream import EphysStreamRuntime
 from ephys_alignment_gui.runtime.session import (
     LoadDataAlreadyActive,
@@ -140,6 +141,74 @@ def test_cache_loaded_stream_data_can_store_without_activation() -> None:
     assert runtime.active_stream_runtime is None
     assert runtime.current_stream_key is None
     assert stream_runtime.current_shank_idx == 1
+
+
+def test_cache_loaded_stream_evicts_oldest_inactive_stream_when_over_limit() -> None:
+    runtime = SessionRuntime(max_cached_streams=3)
+    active = _stream_runtime("streamA")
+    stream_b = _stream_runtime("streamB")
+    stream_c = _stream_runtime("streamC")
+    stream_d = _stream_runtime("streamD")
+    stream_b.plot_payload_cache_for_shank(0)
+    stream_b.shank_runtime_for(0).slice_runtime.set_coronal_slice(
+        alignment_key=AlignmentKey("rec1", "streamB", 0),
+        track_interpolation_ras=np.array([[0.0, 0.0, 0.0]]),
+        slice_data={"ccf": np.array([[1.0]])},
+        fp_slice_data=None,
+    )
+    runtime.cache_loaded_stream(active)
+    runtime.cache_loaded_stream(stream_b, activate=False)
+    runtime.cache_loaded_stream(stream_c, activate=False)
+
+    runtime.cache_loaded_stream(stream_d, activate=False)
+
+    assert list(runtime.stream_cache) == [
+        ("rec1", "streamA"),
+        ("rec1", "streamC"),
+        ("rec1", "streamD"),
+    ]
+    assert runtime.active_stream_runtime is active
+    assert runtime.current_stream_key == ("rec1", "streamA")
+    assert stream_b.shank_runtime_for(0).plot_payload_cache is None
+    assert (
+        stream_b.shank_runtime_for(0).slice_runtime.cached_coronal_slice(
+            alignment_key=AlignmentKey("rec1", "streamB", 0),
+            track_interpolation_ras=np.array([[0.0, 0.0, 0.0]]),
+        )
+        is None
+    )
+
+
+def test_cached_stream_access_refreshes_lru_order() -> None:
+    runtime = SessionRuntime(max_cached_streams=3)
+    runtime.cache_loaded_stream(_stream_runtime("streamA"))
+    runtime.cache_loaded_stream(_stream_runtime("streamB"), activate=False)
+    runtime.cache_loaded_stream(_stream_runtime("streamC"), activate=False)
+
+    assert runtime.cached_stream(("rec1", "streamB")) is not None
+    runtime.cache_loaded_stream(_stream_runtime("streamD"), activate=False)
+
+    assert list(runtime.stream_cache) == [
+        ("rec1", "streamA"),
+        ("rec1", "streamB"),
+        ("rec1", "streamD"),
+    ]
+
+
+def test_unbounded_stream_cache_keeps_all_streams() -> None:
+    runtime = SessionRuntime(max_cached_streams=None)
+
+    runtime.cache_loaded_stream(_stream_runtime("streamA"))
+    runtime.cache_loaded_stream(_stream_runtime("streamB"), activate=False)
+    runtime.cache_loaded_stream(_stream_runtime("streamC"), activate=False)
+    runtime.cache_loaded_stream(_stream_runtime("streamD"), activate=False)
+
+    assert list(runtime.stream_cache) == [
+        ("rec1", "streamA"),
+        ("rec1", "streamB"),
+        ("rec1", "streamC"),
+        ("rec1", "streamD"),
+    ]
 
 
 def test_cache_loaded_stream_data_skips_cache_on_shank_init_failure() -> None:

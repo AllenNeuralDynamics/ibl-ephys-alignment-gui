@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -63,8 +64,18 @@ class SliceSet(dict):
         return [key for key in self.keys() if key not in _METADATA_KEYS]
 
 
+@dataclass
 class SliceService:
     """Build and sample anatomical/histology slices in atlas space."""
+
+    max_loaded_histology_images: int | None = 3
+
+    def __post_init__(self) -> None:
+        if (
+            self.max_loaded_histology_images is not None
+            and self.max_loaded_histology_images < 1
+        ):
+            raise ValueError("max_loaded_histology_images must be positive or None")
 
     def build_slice_set(
         self,
@@ -171,7 +182,7 @@ class SliceService:
             lazy_channel_paths=lazy_channel_paths,
             channel_name=channel_name,
         )
-        return sitk.GetArrayFromImage(hist_image)
+        return sitk.GetArrayViewFromImage(hist_image)
 
     def build_perpendicular_slice_image(
         self,
@@ -220,7 +231,9 @@ class SliceService:
         """Load and cache a histology channel image in canonical atlas space."""
         if channel_name in histology_images:
             logger.debug("Using cached image for %s", channel_name)
-            return histology_images[channel_name]
+            channel_image = self._touch_loaded_image(histology_images, channel_name)
+            self._enforce_loaded_image_limit(histology_images)
+            return channel_image
 
         lazy_channel_paths = lazy_channel_paths or {}
         if channel_name not in lazy_channel_paths:
@@ -253,8 +266,32 @@ class SliceService:
             channel_image = sitk.DICOMOrient(channel_image, _BLESSED_DIRECTION)
 
         histology_images[channel_name] = channel_image
+        self._touch_loaded_image(histology_images, channel_name)
+        self._enforce_loaded_image_limit(histology_images)
         logger.debug("Cached %s in histology_images", channel_name)
         return channel_image
+
+    @staticmethod
+    def _touch_loaded_image(
+        histology_images: dict[str, sitk.Image],
+        channel_name: str,
+    ) -> sitk.Image:
+        """Mark one cached histology image as recently used."""
+        image = histology_images.pop(channel_name)
+        histology_images[channel_name] = image
+        return image
+
+    def _enforce_loaded_image_limit(
+        self,
+        histology_images: dict[str, sitk.Image],
+    ) -> None:
+        """Evict least-recently-used histology images until within budget."""
+        if self.max_loaded_histology_images is None:
+            return
+
+        while len(histology_images) > self.max_loaded_histology_images:
+            oldest_key = next(iter(histology_images))
+            histology_images.pop(oldest_key, None)
 
 
 def _canonical_display_spacing_mm(

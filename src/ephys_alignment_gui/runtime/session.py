@@ -57,6 +57,12 @@ class SessionRuntime:
     active_stream_runtime: EphysStreamRuntime | None = None
     stream_cache: dict[StreamKey, EphysStreamRuntime] = field(default_factory=dict)
     current_stream_key: StreamKey | None = None
+    max_cached_streams: int | None = 3
+
+    def __post_init__(self) -> None:
+        if self.max_cached_streams is not None and self.max_cached_streams < 1:
+            raise ValueError("max_cached_streams must be positive or None")
+        self._enforce_stream_cache_limit()
 
     def clear_active_stream(self) -> None:
         """Clear the active stream selection without evicting cached streams."""
@@ -70,7 +76,10 @@ class SessionRuntime:
 
     def cached_stream(self, stream_key: StreamKey) -> EphysStreamRuntime | None:
         """Return a cached stream runtime, if present."""
-        return self.stream_cache.get(stream_key)
+        runtime = self.stream_cache.get(stream_key)
+        if runtime is not None:
+            self._touch_cached_stream(stream_key)
+        return runtime
 
     def is_active_stream_shank(self, stream_key: StreamKey, shank_idx: int) -> bool:
         """Whether the active runtime matches one stream/shank target."""
@@ -129,6 +138,7 @@ class SessionRuntime:
         runtime.shank_runtime_for(shank_idx)
         self.active_stream_runtime = runtime
         self.current_stream_key = stream_key
+        self._touch_cached_stream(stream_key)
         return runtime
 
     def cache_loaded_stream(
@@ -142,6 +152,8 @@ class SessionRuntime:
         if activate:
             self.active_stream_runtime = runtime
             self.current_stream_key = runtime.stream_key
+        self._touch_cached_stream(runtime.stream_key)
+        self._enforce_stream_cache_limit()
 
     def activate_stream_runtime(
         self,
@@ -154,6 +166,8 @@ class SessionRuntime:
         self.stream_cache[runtime.stream_key] = runtime
         self.active_stream_runtime = runtime
         self.current_stream_key = runtime.stream_key
+        self._touch_cached_stream(runtime.stream_key)
+        self._enforce_stream_cache_limit()
         return runtime
 
     def cache_loaded_stream_data(
@@ -172,3 +186,31 @@ class SessionRuntime:
         runtime.shank_runtime_for(shank_idx)
         self.cache_loaded_stream(runtime, activate=activate)
         return runtime
+
+    def _touch_cached_stream(self, stream_key: StreamKey) -> None:
+        """Mark a cached stream as recently used while preserving its object."""
+        try:
+            runtime = self.stream_cache.pop(stream_key)
+        except KeyError:
+            return
+        self.stream_cache[stream_key] = runtime
+
+    def _enforce_stream_cache_limit(self) -> None:
+        """Evict least-recently-used inactive streams until within budget."""
+        if self.max_cached_streams is None:
+            return
+
+        while len(self.stream_cache) > self.max_cached_streams:
+            evict_key = self._oldest_evictable_stream_key()
+            if evict_key is None:
+                return
+            evicted = self.stream_cache.pop(evict_key, None)
+            if evicted is not None:
+                evicted.clear_derived_caches()
+
+    def _oldest_evictable_stream_key(self) -> StreamKey | None:
+        """Return the oldest cached stream that is not the active stream."""
+        for stream_key in self.stream_cache:
+            if stream_key != self.current_stream_key:
+                return stream_key
+        return None

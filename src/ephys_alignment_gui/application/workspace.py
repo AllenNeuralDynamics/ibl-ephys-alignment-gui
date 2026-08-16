@@ -36,6 +36,7 @@ from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.document import AlignmentDocument
 from ephys_alignment_gui.core.event_bus import EventBus
+from ephys_alignment_gui.core.settings import max_cached_streams_from_environment
 from ephys_alignment_gui.core.slice_display_policy import SliceDisplayPolicy
 from ephys_alignment_gui.core.workflow import WorkflowPolicy
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
@@ -112,7 +113,11 @@ class AlignmentWorkspace:
     plot_payload_cache_factory: EphysPlotPayloadCacheFactory = field(
         default_factory=EphysPlotPayloadCacheFactory
     )
-    runtime: SessionRuntime = field(default_factory=SessionRuntime)
+    runtime: SessionRuntime = field(
+        default_factory=lambda: SessionRuntime(
+            max_cached_streams=max_cached_streams_from_environment()
+        )
+    )
     events: EventBus = field(default_factory=EventBus)
     load_data_lifecycle: LoadDataExecutionLifecycle = field(
         default_factory=LoadDataExecutionLifecycle

@@ -83,3 +83,9 @@ class EphysStreamRuntime:
         runtime = self.shank_runtime_by_idx.get(shank_idx)
         if runtime is not None:
             runtime.plot_payload_cache = None
+
+    def clear_derived_caches(self) -> None:
+        """Release derived plot and slice caches owned by this stream runtime."""
+        for runtime in self.shank_runtime_by_idx.values():
+            runtime.plot_payload_cache = None
+            runtime.slice_runtime.clear()

@@ -40,12 +40,15 @@ referenced by `datapackage.json`:
 ```
 EPHYS_ALIGNMENT_INPUT_ROOT=/data
 EPHYS_ALIGNMENT_OUTPUT_ROOT=/results
+EPHYS_ALIGNMENT_MAX_CACHED_STREAMS=3
 IBL_ASSET_ROOTS=/data
 ```
 
 `EPHYS_ALIGNMENT_INPUT_ROOT` sets the mouse-root file dialog start directory.
 `EPHYS_ALIGNMENT_OUTPUT_ROOT` sets the default save/output root. Both are only
 startup defaults; the GUI still lets users choose or edit different paths.
+`EPHYS_ALIGNMENT_MAX_CACHED_STREAMS` limits loaded ephys stream runtimes kept in
+memory; the default is `3`, and `unbounded` disables the limit.
 
 `IBL_ASSET_ROOTS` is an `os.pathsep`-separated list of directories searched for
 external assets, such as SmartSPIM registration data and `spim_template_to_ccf`.

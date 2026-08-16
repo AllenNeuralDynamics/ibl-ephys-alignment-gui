@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -59,3 +60,33 @@ def test_fr_image_reuses_binned_image_but_recomputes_levels(monkeypatch) -> None
     np.testing.assert_allclose(calls[0][0][2:4], (0.1, 10.0))
     assert masked["img"] is unmasked["img"]
     assert not np.array_equal(masked["levels"], unmasked["levels"])
+
+
+def test_fr_amp_line_ignores_empty_depth_bins_without_runtime_warning() -> None:
+    builder = SpikePlotDataBuilder(
+        {
+            "spikes": {
+                "exists": True,
+                "times": np.array([0.1, 1.0]),
+                "depths": np.array([0.0, 40.0]),
+                "amps": np.array([2.0, 4.0]),
+                "clusters": np.array([0, 1]),
+            },
+            "clusters": {
+                "exists": True,
+                "metrics": {},
+                "waveforms": np.zeros((2, 3, 1)),
+            },
+            "spike_shanks": np.array([0, 0]),
+        },
+        SimpleNamespace(chn_min=0.0, chn_max=40.0),
+        shank_idx=0,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        fr_line, amp_line = builder.get_fr_amp_data_line()
+
+    assert fr_line is not None
+    assert amp_line is not None
+    assert np.isfinite(amp_line["x"]).all()

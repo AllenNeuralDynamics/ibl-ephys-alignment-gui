@@ -325,8 +325,14 @@ class SpikePlotDataBuilder:
             weights=spike_amps,
         )
         mean_fr = nspikes[:, 0] / t_bin
-        mean_amp = np.divide(amp[:, 0], nspikes[:, 0]) * 1e6
-        mean_amp[np.isnan(mean_amp)] = 0
+        mean_amp = np.zeros_like(amp[:, 0], dtype=float)
+        np.divide(
+            amp[:, 0],
+            nspikes[:, 0],
+            out=mean_amp,
+            where=nspikes[:, 0] > 0,
+        )
+        mean_amp *= 1e6
         mean_amp[np.where(nspikes[:, 0] < 50)[0]] = 0
 
         return (

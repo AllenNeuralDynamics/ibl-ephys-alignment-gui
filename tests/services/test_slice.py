@@ -135,6 +135,85 @@ def test_volume_for_channel_loads_without_existing_slice_index(tmp_path) -> None
     assert "fluor" in histology_images
 
 
+def test_volume_for_channel_uses_array_view(monkeypatch, tmp_path) -> None:
+    atlas = _FakeAtlas()
+    service = SliceService()
+    channel = atlas.image + 3000
+    channel_path = _write_image(tmp_path / "fluor.mha", channel)
+
+    def fail_copy(_image):
+        raise AssertionError("volume_for_channel should not copy SITK image arrays")
+
+    monkeypatch.setattr(
+        "ephys_alignment_gui.services.slice.sitk.GetArrayFromImage",
+        fail_copy,
+    )
+    histology_images = {}
+
+    volume = service.volume_for_channel(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths={"fluor": channel_path},
+        channel_name="fluor",
+    )
+
+    np.testing.assert_array_equal(volume, channel)
+    assert "fluor" in histology_images
+
+
+def test_load_channel_image_evicts_least_recently_used_histology_images(tmp_path) -> None:
+    atlas = _FakeAtlas()
+    service = SliceService(max_loaded_histology_images=3)
+    histology_images = {
+        "histology_registration": sitk.GetImageFromArray(atlas.image + 1000)
+    }
+    paths = {
+        name: _write_image(tmp_path / f"{name}.mha", atlas.image + offset)
+        for name, offset in [
+            ("a", 2000),
+            ("b", 3000),
+            ("c", 4000),
+            ("d", 5000),
+        ]
+    }
+
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths=paths,
+        channel_name="a",
+    )
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths=paths,
+        channel_name="b",
+    )
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths=paths,
+        channel_name="c",
+    )
+
+    assert list(histology_images) == ["a", "b", "c"]
+
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths=paths,
+        channel_name="a",
+    )
+    service.load_channel_image(
+        brain_atlas=atlas,
+        histology_images=histology_images,
+        lazy_channel_paths=paths,
+        channel_name="d",
+    )
+
+    assert list(histology_images) == ["c", "a", "d"]
+
+
 def test_lazy_channel_rotation_uses_atlas_canonical_spacing(
     monkeypatch,
     tmp_path,
