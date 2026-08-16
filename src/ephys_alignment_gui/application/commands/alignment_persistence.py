@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveCancelToken,
     AlignmentSaveJobCancelled,
@@ -52,6 +54,11 @@ from ephys_alignment_gui.core.alignment_events import (
     SaveProgressStatus,
     SaveProgressUpdated,
 )
+from ephys_alignment_gui.core.alignment_output import (
+    AlignmentOutputInput,
+    AlignmentOutputMetadata,
+    ChannelOutputIdentity,
+)
 from ephys_alignment_gui.core.alignment_state import (
     LEGACY_AUTO_ALIGNMENT_LABEL,
     AlignmentState,
@@ -85,8 +92,8 @@ class AlignmentSaveInput:
     """Prepared runtime/document data needed to persist one alignment key."""
 
     state: AlignmentState
-    channel_locations_ras: Any
-    channel_coordinates: Any
+    output_input: AlignmentOutputInput
+    output_metadata: AlignmentOutputMetadata
     output_directory: Path
     multi_shank: bool
 
@@ -359,8 +366,8 @@ class AlignmentPersistenceCommandHandler:
                 PreparedAlignmentSaveTarget(
                     key=key,
                     state=state,
-                    channel_locations_ras=save_input.channel_locations_ras,
-                    channel_coordinates=save_input.channel_coordinates,
+                    output_input=save_input.output_input,
+                    output_metadata=save_input.output_metadata,
                     output_directory=save_input.output_directory,
                     multi_shank=save_input.multi_shank,
                     alignments_to_save=alignments_to_save,
@@ -379,10 +386,7 @@ class AlignmentPersistenceCommandHandler:
         """Build CCF outputs and write files without touching document state."""
         cancel_token = cancel_token or AlignmentSaveCancelToken()
         output_inputs = {
-            target.key: (
-                target.channel_locations_ras,
-                target.channel_coordinates,
-            )
+            target.key: target.output_input
             for target in prepared.targets
         }
         cancelled = self._cancelled_save(
@@ -472,6 +476,7 @@ class AlignmentPersistenceCommandHandler:
                 key.shank_idx,
                 prepared.use_docdb,
                 output_directory=target.output_directory,
+                output_metadata=target.output_metadata,
             )
             if isinstance(saved, Failed):
                 return saved
@@ -664,7 +669,8 @@ class AlignmentPersistenceCommandHandler:
                 message=f"Preparing channel locations for {self._describe_key(key)}...",
             )
 
-            stream_runtime = runtime_by_key[key].stream_runtime
+            dependency = runtime_by_key[key]
+            stream_runtime = dependency.stream_runtime
             if stream_runtime is None:
                 return Failed("Cannot save alignment: stream runtime is not loaded.")
 
@@ -693,8 +699,18 @@ class AlignmentPersistenceCommandHandler:
             )
             save_inputs[key] = AlignmentSaveInput(
                 state=state,
-                channel_locations_ras=channel_locations_ras,
-                channel_coordinates=shank_runtime.chn_coords,
+                output_input=AlignmentOutputInput(
+                    channel_locations_ras=channel_locations_ras,
+                    channel_coordinates=shank_runtime.chn_coords,
+                    channel_identity=self._channel_identity_for_collection(
+                        shank_runtime.collection
+                    ),
+                ),
+                output_metadata=self._output_metadata_for_key(
+                    key,
+                    stream_runtime=stream_runtime,
+                    probe=self._probe_for_output_metadata(key, dependency.probe),
+                ),
                 output_directory=output_directory,
                 multi_shank=self._stream_is_multi_shank(stream_runtime),
             )
@@ -729,7 +745,7 @@ class AlignmentPersistenceCommandHandler:
 
     def _build_alignment_outputs(
         self,
-        alignments: dict[AlignmentKey, tuple[Any, Any]],
+        alignments: dict[AlignmentKey, AlignmentOutputInput],
         *,
         multi_shank_by_key: dict[AlignmentKey, bool] | None = None,
     ) -> dict[AlignmentKey, AlignmentOutputBuilt] | Failed:
@@ -741,14 +757,8 @@ class AlignmentPersistenceCommandHandler:
                 batch_results = output_builder.get_alignment_results_batch(alignments)
             else:
                 batch_results = {
-                    key: output_builder.get_alignment_results(
-                        channel_locations_ras,
-                        channel_coordinates,
-                    )
-                    for key, (
-                        channel_locations_ras,
-                        channel_coordinates,
-                    ) in alignments.items()
+                    key: self._get_alignment_results(output_builder, output_input)
+                    for key, output_input in alignments.items()
                 }
         except Exception as exc:
             return Failed(f"Failed to build alignment outputs: {exc}")
@@ -770,6 +780,18 @@ class AlignmentPersistenceCommandHandler:
             ) in batch_results.items()
         }
 
+    @staticmethod
+    def _get_alignment_results(
+        output_builder: Any,
+        output_input: AlignmentOutputInput,
+    ) -> Any:
+        """Call a single-alignment output builder with channel identity."""
+        return output_builder.get_alignment_results(
+            output_input.channel_locations_ras,
+            output_input.channel_coordinates,
+            output_input.channel_identity,
+        )
+
     def _save_alignment_output(
         self,
         output: AlignmentOutputBuilt,
@@ -778,6 +800,7 @@ class AlignmentPersistenceCommandHandler:
         use_docdb: bool,
         *,
         output_directory: Path | None = None,
+        output_metadata: AlignmentOutputMetadata,
     ) -> AlignmentOutputsSaved | Failed:
         output_directory = output_directory or self.controller.document.output_directory
         if output_directory is None:
@@ -796,6 +819,7 @@ class AlignmentPersistenceCommandHandler:
                 channel_results=output.channel_results,
                 previous_alignments=persistable_alignments,
                 ccf_channel_results=output.ccf_channel_results,
+                metadata=output_metadata,
                 use_docdb=use_docdb,
             )
         except Exception as exc:
@@ -878,6 +902,78 @@ class AlignmentPersistenceCommandHandler:
             )
         self.controller.record_output_package_directory(output_package_directory)
         return output_package_directory
+
+    @staticmethod
+    def _channel_identity_for_collection(collection: Any) -> ChannelOutputIdentity:
+        """Return channel identity aligned with a shank/channel collection view."""
+        raw_ind = collection.raw_ind
+        if raw_ind is None:
+            raw_ind = np.asarray(collection.rows, dtype=int).copy()
+
+        shank_idx = collection.shank_indices
+        if shank_idx is None:
+            shank_idx = np.full(
+                np.asarray(collection.rows).shape,
+                collection.shank_idx,
+                dtype=int,
+            )
+
+        return ChannelOutputIdentity(
+            raw_ind=raw_ind,
+            contact_id=collection.contact_ids,
+            shank_idx=shank_idx,
+        )
+
+    @staticmethod
+    def _output_metadata_for_key(
+        key: AlignmentKey,
+        *,
+        stream_runtime: Any,
+        probe: Any | None,
+    ) -> AlignmentOutputMetadata:
+        """Return stable probe/shank metadata for one output sidecar."""
+        stream = getattr(stream_runtime, "stream", None)
+        logical_probe = (
+            getattr(probe, "logical_probe", None)
+            or getattr(probe, "probe_name", None)
+            or getattr(stream, "logical_probe", None)
+            or key.ephys_collection
+        )
+        probe_id = getattr(probe, "probe_id", None) or getattr(stream, "probe_id", None)
+        n_shanks = getattr(
+            probe,
+            "num_shanks",
+            None,
+        ) or getattr(
+            stream,
+            "n_shanks",
+            1,
+        )
+        return AlignmentOutputMetadata(
+            recording_id=key.recording_id,
+            ephys_collection=key.ephys_collection,
+            logical_probe=str(logical_probe),
+            shank_idx=key.shank_idx,
+            n_shanks=int(n_shanks),
+            probe_id=probe_id,
+        )
+
+    def _probe_for_output_metadata(
+        self,
+        key: AlignmentKey,
+        probe: Any | None,
+    ) -> Any | None:
+        """Return probe metadata for a save key, falling back to active probe info."""
+        if probe is not None:
+            return probe
+        active_probe = self.data_context.probe_info
+        if (
+            active_probe is not None
+            and active_probe.recording_id == key.recording_id
+            and active_probe.ephys_collection == key.ephys_collection
+        ):
+            return active_probe
+        return None
 
     @staticmethod
     def _stream_is_multi_shank(stream_runtime: Any) -> bool:

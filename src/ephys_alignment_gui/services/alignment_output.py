@@ -13,18 +13,26 @@ from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
 from numpy.typing import NDArray
 
+from ephys_alignment_gui.core.alignment_output import (
+    AlignmentOutputInput,
+    ChannelOutputIdentity,
+)
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
-AlignmentOutputInput = tuple[NDArray, NDArray]
 AlignmentOutputResult = tuple[
     dict[str, dict[str, Any]],
     dict[str, dict[str, Any]],
     bool,
 ]
+AlignmentOutputInputLike = (
+    AlignmentOutputInput
+    | tuple[Any, Any]
+    | tuple[Any, Any, ChannelOutputIdentity | None]
+)
 
 
 class AlignmentOutputService:
@@ -42,6 +50,7 @@ class AlignmentOutputService:
         self,
         channel_locations_ras: NDArray,
         chn_coords: NDArray,
+        channel_identity: ChannelOutputIdentity | None = None,
     ) -> tuple[
         dict[str, dict[str, Any]],
         dict[str, dict[str, Any]],
@@ -49,13 +58,19 @@ class AlignmentOutputService:
     ]:
         """Compute the histology-space + CCF channel dicts for a save."""
         results = self.get_alignment_results_batch(
-            {"active": (channel_locations_ras, chn_coords)}
+            {
+                "active": AlignmentOutputInput(
+                    channel_locations_ras=channel_locations_ras,
+                    channel_coordinates=chn_coords,
+                    channel_identity=channel_identity,
+                )
+            }
         )
         return results["active"]
 
     def get_alignment_results_batch(
         self,
-        alignments: Mapping[Hashable, AlignmentOutputInput],
+        alignments: Mapping[Hashable, AlignmentOutputInputLike],
     ) -> dict[Hashable, AlignmentOutputResult]:
         """Compute channel outputs for many alignments with one ANTs call."""
         logger.info("Saving channel locations locally")
@@ -68,11 +83,14 @@ class AlignmentOutputService:
         packed_points: list[NDArray] = []
         point_slices: dict[Hashable, slice] = {}
         start = 0
-        for key, (channel_locations_ras, chn_coords) in alignments.items():
+        for key, value in alignments.items():
+            output_input = self._normalize_output_input(value)
+            channel_locations_ras = output_input.channel_locations_ras
             logger.debug("Channels for %s: %s", key, channel_locations_ras)
             channel_dicts[key] = self._channel_dict_for_locations(
                 channel_locations_ras,
-                chn_coords,
+                output_input.channel_coordinates,
+                output_input.channel_identity,
             )
             stop = start + len(channel_locations_ras)
             point_slices[key] = slice(start, stop)
@@ -99,6 +117,7 @@ class AlignmentOutputService:
         self,
         channel_locations_ras: NDArray,
         chn_coords: NDArray,
+        channel_identity: ChannelOutputIdentity | None,
     ) -> dict[str, dict[str, Any]]:
         """Build the histology-space channel dict for one alignment."""
         brain_atlas = self.histology_context.brain_atlas
@@ -113,6 +132,13 @@ class AlignmentOutputService:
         )
         brain_regions["lateral"] = chn_coords[:, 0]
         brain_regions["axial"] = chn_coords[:, 1]
+        identity = (channel_identity or ChannelOutputIdentity()).with_defaults(
+            len(channel_locations_ras)
+        )
+        brain_regions["raw_ind"] = identity.raw_ind
+        if identity.contact_id is not None:
+            brain_regions["contact_id"] = identity.contact_id
+        brain_regions["shank_idx"] = identity.shank_idx
 
         assert np.unique([len(brain_regions[k]) for k in brain_regions]).size == 1
         return self.create_channel_dict(brain_regions)
@@ -188,10 +214,30 @@ class AlignmentOutputService:
                 "z": float(z),
                 "axial": info["axial"],
                 "lateral": info["lateral"],
+                "raw_ind": info["raw_ind"],
+                "contact_id": info["contact_id"],
+                "shank_idx": info["shank_idx"],
                 "brain_region_id": info["brain_region_id"],
                 "brain_region": info["brain_region"],
             }
         return ccf_channel_dict
+
+    @staticmethod
+    def _normalize_output_input(value: Any) -> AlignmentOutputInput:
+        if isinstance(value, AlignmentOutputInput):
+            return value
+        if len(value) == 2:
+            channel_locations_ras, channel_coordinates = value
+            return AlignmentOutputInput(
+                channel_locations_ras=channel_locations_ras,
+                channel_coordinates=channel_coordinates,
+            )
+        channel_locations_ras, channel_coordinates, channel_identity = value
+        return AlignmentOutputInput(
+            channel_locations_ras=channel_locations_ras,
+            channel_coordinates=channel_coordinates,
+            channel_identity=channel_identity,
+        )
 
     @staticmethod
     def create_channel_dict(brain_regions: Bunch) -> dict[str, dict[str, Any]]:
@@ -205,9 +251,45 @@ class AlignmentOutputService:
                 "z": np.float64(brain_regions.xyz[idx, 2] * 1e6),
                 "axial": np.float64(brain_regions.axial[idx]),
                 "lateral": np.float64(brain_regions.lateral[idx]),
+                "raw_ind": _json_scalar(
+                    _optional_array_value(
+                        getattr(brain_regions, "raw_ind", None),
+                        idx,
+                        default=idx,
+                    )
+                ),
+                "contact_id": _optional_json_scalar(
+                    getattr(brain_regions, "contact_id", None),
+                    idx,
+                ),
+                "shank_idx": _json_scalar(
+                    _optional_array_value(
+                        getattr(brain_regions, "shank_idx", None),
+                        idx,
+                        default=0,
+                    )
+                ),
                 "brain_region_id": int(brain_regions.id[idx]),
                 "brain_region": brain_regions.acronym[idx],
             }
             channel_dict[f"channel_{idx}"] = channel
 
         return channel_dict
+
+
+def _optional_json_scalar(values: Any | None, idx: int) -> Any | None:
+    if values is None:
+        return None
+    return _json_scalar(values[idx])
+
+
+def _optional_array_value(values: Any | None, idx: int, *, default: Any) -> Any:
+    if values is None:
+        return default
+    return values[idx]
+
+
+def _json_scalar(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value

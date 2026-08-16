@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from ephys_alignment_gui.core.alignment_output import AlignmentOutputMetadata
 from ephys_alignment_gui.services.alignment_repository import AlignmentRepository
 
 
@@ -81,6 +82,14 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
         channel_results={"channel": {"x": 1}},
         previous_alignments={"saved": [[1.0], [2.0]]},
         ccf_channel_results={"channel": {"ccf_x": 2}},
+        metadata=AlignmentOutputMetadata(
+            recording_id="rec1",
+            ephys_collection="probeA",
+            logical_probe="logicalA",
+            probe_id="probe-id",
+            shank_idx=1,
+            n_shanks=2,
+        ),
         use_docdb=False,
     )
 
@@ -90,6 +99,26 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
         saved.ccf_channel_results_path
         == output_dir / "ccf_channel_locations_shank2.json"
     )
+    assert (
+        saved.metadata_path == output_dir / "alignment_output_metadata_shank2.json"
+    )
     with open(saved.previous_alignments_path) as f:
         assert json.load(f) == {"saved": [[1.0], [2.0]]}
+    with open(saved.metadata_path) as f:
+        metadata = json.load(f)
+    assert metadata == {
+        "schema_version": "1.0.0",
+        "recording_id": "rec1",
+        "ephys_collection": "probeA",
+        "logical_probe": "logicalA",
+        "probe_id": "probe-id",
+        "shank_idx": 1,
+        "shank_id": 2,
+        "n_shanks": 2,
+        "files": {
+            "channel_locations": "channel_locations_shank2.json",
+            "prev_alignments": "prev_alignments_shank2.json",
+            "ccf_channel_locations": "ccf_channel_locations_shank2.json",
+        },
+    }
     assert saved.docdb_probe_name is None

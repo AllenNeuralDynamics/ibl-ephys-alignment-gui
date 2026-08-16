@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
+)
+from ephys_alignment_gui.core.alignment_output import (
+    AlignmentOutputInput,
+    AlignmentOutputMetadata,
 )
 from ephys_alignment_gui.core.alignment_state import AlignmentState
 from ephys_alignment_gui.core.document import AlignmentKey
@@ -25,8 +28,8 @@ class PreparedAlignmentSaveTarget:
 
     key: AlignmentKey
     state: AlignmentState
-    channel_locations_ras: Any
-    channel_coordinates: Any
+    output_input: AlignmentOutputInput
+    output_metadata: AlignmentOutputMetadata
     output_directory: Path
     multi_shank: bool
     alignments_to_save: AlignmentHistory

@@ -10,6 +10,7 @@ import pytest
 from iblutil.util import Bunch
 
 import ephys_alignment_gui.services.alignment_output as alignment_output_service
+from ephys_alignment_gui.core.alignment_output import ChannelOutputIdentity
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
@@ -32,10 +33,32 @@ def test_alignment_output_service_creates_channel_dict() -> None:
         "z": np.float64(3000.0),
         "axial": np.float64(20.0),
         "lateral": np.float64(5.0),
+        "raw_ind": 0,
+        "contact_id": None,
+        "shank_idx": 0,
         "brain_region_id": 10,
         "brain_region": "VISp",
     }
     assert channel_dict["channel_1"]["brain_region"] == "LGd"
+
+
+def test_alignment_output_service_creates_channel_dict_with_identity() -> None:
+    brain_regions = Bunch(
+        id=np.array([10]),
+        xyz=np.array([[0.001, 0.002, 0.003]]),
+        axial=np.array([20.0]),
+        lateral=np.array([5.0]),
+        raw_ind=np.array([42]),
+        contact_id=np.array([142]),
+        shank_idx=np.array([1]),
+        acronym=np.array(["VISp"]),
+    )
+
+    channel_dict = AlignmentOutputService.create_channel_dict(brain_regions)
+
+    assert channel_dict["channel_0"]["raw_ind"] == 42
+    assert channel_dict["channel_0"]["contact_id"] == 142
+    assert channel_dict["channel_0"]["shank_idx"] == 1
 
 
 def test_alignment_output_service_requires_loaded_histology() -> None:
@@ -135,6 +158,11 @@ def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
             first_key: (
                 np.array([[0.0, 0.0, 0.0], [0.001, 0.0, 0.0]]),
                 np.array([[5.0, 10.0], [6.0, 20.0]]),
+                ChannelOutputIdentity(
+                    raw_ind=np.array([5, 6]),
+                    contact_id=np.array([105, 106]),
+                    shank_idx=np.array([0, 0]),
+                ),
             ),
             second_key: (
                 np.array([[0.002, 0.0, 0.0]]),
@@ -149,5 +177,11 @@ def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
     second_ccf = results[second_key][1]
     assert first_ccf["channel_0"]["x"] == 100.0
     assert first_ccf["channel_1"]["x"] == 101.0
+    assert first_ccf["channel_0"]["raw_ind"] == 5
+    assert first_ccf["channel_0"]["contact_id"] == 105
+    assert first_ccf["channel_0"]["shank_idx"] == 0
     assert second_ccf["channel_0"]["x"] == 102.0
+    assert second_ccf["channel_0"]["raw_ind"] == 0
+    assert second_ccf["channel_0"]["contact_id"] is None
+    assert second_ccf["channel_0"]["shank_idx"] == 0
     assert results[first_key][2]

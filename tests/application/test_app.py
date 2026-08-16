@@ -236,6 +236,35 @@ class FakeStreamRuntime:
         return self.shank_runtime_by_idx
 
 
+def _fake_shank_runtime(
+    *,
+    ephysalign: str = "aligner",
+    chn_coords: np.ndarray | None = None,
+    shank_idx: int = 0,
+    raw_ind: np.ndarray | None = None,
+    contact_ids: np.ndarray | None = None,
+    shank_indices: np.ndarray | None = None,
+) -> SimpleNamespace:
+    chn_coords = (
+        np.asarray(chn_coords, dtype=float)
+        if chn_coords is not None
+        else np.array([[10.0, 20.0]])
+    )
+    rows = np.arange(chn_coords.shape[0])
+    collection = SimpleNamespace(
+        rows=rows,
+        shank_idx=shank_idx,
+        raw_ind=raw_ind,
+        contact_ids=contact_ids,
+        shank_indices=shank_indices,
+    )
+    return SimpleNamespace(
+        ephysalign=ephysalign,
+        chn_coords=chn_coords,
+        collection=collection,
+    )
+
+
 class FakeAlignmentRepository:
     def __init__(self) -> None:
         self.loaded_alignments = None
@@ -261,6 +290,7 @@ class FakeAlignmentRepository:
             channel_results_path=kwargs["output_directory"] / "channels.json",
             previous_alignments_path=kwargs["output_directory"] / "alignments.json",
             ccf_channel_results_path=kwargs["output_directory"] / "ccf.json",
+            metadata_path=kwargs["output_directory"] / "metadata.json",
             docdb_probe_name="probeA_0" if kwargs["use_docdb"] else None,
         )
 
@@ -1833,9 +1863,13 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     workspace.runtime.active_stream_runtime = FakeStreamRuntime()
     workspace.runtime.current_stream_key = ("rec", "stream")
     workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        1: SimpleNamespace(
+        1: _fake_shank_runtime(
             ephysalign="aligner",
             chn_coords=np.array([[10.0, 20.0]]),
+            shank_idx=1,
+            raw_ind=np.array([42]),
+            contact_ids=np.array([142]),
+            shank_indices=np.array([1]),
         )
     }
     events: list[SaveCompleted] = []
@@ -1850,14 +1884,18 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     assert result.active_choices == active_state.prev_align
     assert list(result.saved_outputs) == [active_key]
     assert list(output_builder.batched_alignments) == [active_key]
+    output_input = output_builder.batched_alignments[active_key]
     np.testing.assert_allclose(
-        output_builder.batched_alignments[active_key][0],
+        output_input.channel_locations_ras,
         [[1.0, 2.0, 3.0]],
     )
     np.testing.assert_allclose(
-        output_builder.batched_alignments[active_key][1],
+        output_input.channel_coordinates,
         [[10.0, 20.0]],
     )
+    np.testing.assert_array_equal(output_input.channel_identity.raw_ind, [42])
+    np.testing.assert_array_equal(output_input.channel_identity.contact_id, [142])
+    np.testing.assert_array_equal(output_input.channel_identity.shank_idx, [1])
     assert len(derived.channel_location_calls) == 1
     assert derived.channel_location_calls[0]["ephysalign"] == "aligner"
     np.testing.assert_allclose(
@@ -1874,6 +1912,11 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     assert repo.saved_kwargs[0]["use_docdb"]
     assert repo.saved_kwargs[0]["shank_idx"] == 1
     assert repo.saved_kwargs[0]["previous_alignments"] == active_state.alignments
+    assert repo.saved_kwargs[0]["metadata"].recording_id == "rec"
+    assert repo.saved_kwargs[0]["metadata"].ephys_collection == "stream"
+    assert repo.saved_kwargs[0]["metadata"].logical_probe == "probeA"
+    assert repo.saved_kwargs[0]["metadata"].shank_idx == 1
+    assert repo.saved_kwargs[0]["metadata"].n_shanks == 2
     assert events == [
         SaveCompleted(
             saved_count=1,
@@ -1945,16 +1988,18 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
 
     runtime_a = FakeStreamRuntime(("rec", "stream"), n_shanks=2)
     runtime_a.shank_runtime_by_idx = {
-        1: SimpleNamespace(
+        1: _fake_shank_runtime(
             ephysalign="aligner-a",
             chn_coords=np.array([[10.0, 20.0]]),
+            shank_idx=1,
         )
     }
     runtime_b = FakeStreamRuntime(("rec", "streamB"), n_shanks=1)
     runtime_b.shank_runtime_by_idx = {
-        0: SimpleNamespace(
+        0: _fake_shank_runtime(
             ephysalign="aligner-b",
             chn_coords=np.array([[30.0, 40.0]]),
+            shank_idx=0,
         )
     }
     workspace.runtime.stream_cache = {
@@ -2028,7 +2073,7 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
     workspace.runtime.active_stream_runtime = FakeStreamRuntime()
     workspace.runtime.current_stream_key = ("rec", "stream")
     workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: SimpleNamespace(
+        0: _fake_shank_runtime(
             ephysalign="aligner",
             chn_coords=np.array([[10.0, 20.0]]),
         )
@@ -2106,7 +2151,7 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     workspace.runtime.active_stream_runtime = FakeStreamRuntime()
     workspace.runtime.current_stream_key = ("rec", "stream")
     workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: SimpleNamespace(
+        0: _fake_shank_runtime(
             ephysalign="aligner",
             chn_coords=np.array([[10.0, 20.0]]),
         )
@@ -2375,7 +2420,7 @@ def test_commands_save_edited_alignment_outputs_does_not_commit_history_on_failu
     workspace.runtime.active_stream_runtime = FakeStreamRuntime()
     workspace.runtime.current_stream_key = ("rec", "stream")
     workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: SimpleNamespace(
+        0: _fake_shank_runtime(
             ephysalign="aligner",
             chn_coords=np.array([[10.0, 20.0]]),
         )

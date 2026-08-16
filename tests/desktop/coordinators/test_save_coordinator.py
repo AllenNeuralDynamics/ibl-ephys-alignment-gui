@@ -393,6 +393,7 @@ def _saved_result(
                     channel_results_path=Path("/results/channels.json"),
                     previous_alignments_path=Path("/results/alignments.json"),
                     ccf_channel_results_path=Path("/results/ccf.json"),
+                    metadata_path=Path("/results/metadata.json"),
                     docdb_probe_name=docdb_probe_name,
                     docdb_error=docdb_error,
                 ),

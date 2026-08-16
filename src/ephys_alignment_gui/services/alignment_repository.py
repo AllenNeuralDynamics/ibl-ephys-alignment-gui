@@ -10,6 +10,7 @@ from pathlib import Path
 
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
 
+from ephys_alignment_gui.core.alignment_output import AlignmentOutputMetadata
 from ephys_alignment_gui.io.docdb import (
     _default_doc_db_api_client,
     query_docdb_id,
@@ -43,6 +44,7 @@ class SavedAlignmentOutputs:
     channel_results_path: Path
     previous_alignments_path: Path
     ccf_channel_results_path: Path
+    metadata_path: Path
     docdb_probe_name: str | None = None
     docdb_error: str | None = None
 
@@ -174,6 +176,7 @@ class AlignmentRepository:
         channel_results: dict,
         previous_alignments: AlignmentHistory,
         ccf_channel_results: dict,
+        metadata: AlignmentOutputMetadata,
         use_docdb: bool,
     ) -> SavedAlignmentOutputs:
         """Persist alignment output JSON files and optionally DocDB output."""
@@ -183,10 +186,20 @@ class AlignmentRepository:
         ccf_channel_results_path = (
             output_directory / f"ccf_channel_locations{suffix}.json"
         )
+        metadata_path = output_directory / f"alignment_output_metadata{suffix}.json"
 
         self._write_dict_to_json(channel_results_path, channel_results)
         self._write_dict_to_json(prev_alignments_path, previous_alignments)
         self._write_dict_to_json(ccf_channel_results_path, ccf_channel_results)
+        self._write_dict_to_json(
+            metadata_path,
+            self._metadata_dict(
+                metadata,
+                channel_results_path=channel_results_path,
+                previous_alignments_path=prev_alignments_path,
+                ccf_channel_results_path=ccf_channel_results_path,
+            ),
+        )
 
         docdb_probe_name = None
         docdb_error = None
@@ -207,9 +220,34 @@ class AlignmentRepository:
             channel_results_path=channel_results_path,
             previous_alignments_path=prev_alignments_path,
             ccf_channel_results_path=ccf_channel_results_path,
+            metadata_path=metadata_path,
             docdb_probe_name=docdb_probe_name,
             docdb_error=docdb_error,
         )
+
+    @staticmethod
+    def _metadata_dict(
+        metadata: AlignmentOutputMetadata,
+        *,
+        channel_results_path: Path,
+        previous_alignments_path: Path,
+        ccf_channel_results_path: Path,
+    ) -> dict:
+        return {
+            "schema_version": "1.0.0",
+            "recording_id": metadata.recording_id,
+            "ephys_collection": metadata.ephys_collection,
+            "logical_probe": metadata.logical_probe,
+            "probe_id": metadata.probe_id,
+            "shank_idx": metadata.shank_idx,
+            "shank_id": metadata.shank_idx + 1,
+            "n_shanks": metadata.n_shanks,
+            "files": {
+                "channel_locations": channel_results_path.name,
+                "prev_alignments": previous_alignments_path.name,
+                "ccf_channel_locations": ccf_channel_results_path.name,
+            },
+        }
 
     @staticmethod
     def _write_dict_to_json(file_path: Path, data_dict: dict) -> None:
