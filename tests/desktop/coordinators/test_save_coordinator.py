@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveJobCancelled,
     AlignmentSaveJobCompleted,
     PreparedAlignmentSave,
 )
@@ -18,6 +19,7 @@ from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrationPlan,
 )
 from ephys_alignment_gui.core.alignment_events import (
+    SaveCancelled,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -125,6 +127,9 @@ class FakeSaveProgressDialog:
     def show_finished(self, message: str, *, success: bool) -> None:
         self.calls.append(("progress-finished", message, success))
 
+    def show_cancelled(self, message: str) -> None:
+        self.calls.append(("progress-cancelled", message))
+
     def close_dialog(self) -> None:
         self.calls.append(("progress-close",))
 
@@ -186,6 +191,7 @@ class ManualAlignmentSaveRunner:
         self.auto_finish = auto_finish
         self.active = False
         self.start_calls: list[PreparedAlignmentSave] = []
+        self.cancel_calls: list[str] = []
         self.shutdown_calls: list[tuple[str, int]] = []
         self.shutdown_result = True
         self._prepared = None
@@ -216,6 +222,10 @@ class ManualAlignmentSaveRunner:
             terminal = self._run_job(self._prepared, progress=self._on_progress)
         self.active = False
         self._on_finished(self._prepared, terminal)
+
+    def cancel(self, reason: str) -> None:
+        self.cancel_calls.append(reason)
+        self.active = False
 
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_calls.append((reason, timeout_ms))
@@ -304,6 +314,7 @@ class FakeCommands:
         prepared,
         *,
         progress=None,
+        cancel_token=None,
     ):
         self.save_calls.append({"use_docdb": prepared.use_docdb})
         self.save_rehydrate_missing.append(False)
@@ -313,6 +324,15 @@ class FakeCommands:
 
     def publish_prepared_alignment_save_result(self, prepared, result):
         self.publish_save_calls.append(result)
+        if isinstance(result, AlignmentSaveJobCancelled):
+            if self.events is not None:
+                self.events.emit(
+                    SaveCancelled(
+                        reason=result.reason,
+                        message=f"Save cancelled: {result.reason}",
+                    )
+                )
+            return result
         if isinstance(result, Failed):
             self._emit_save_event(result)
             return result
@@ -472,7 +492,8 @@ def test_save_prompts_for_output_then_saves() -> None:
             {"disable_widgets": ["complete-button"]},
         ),
         ("busy-enter",),
-        ("progress-cancel-enabled", False),
+        ("progress-cancel-callback",),
+        ("progress-cancel-enabled", True),
         ("choices", ["saved", "original"]),
         ("progress-finished", "Saved 1 edited alignment.", True),
         ("busy-exit", None),
@@ -510,7 +531,8 @@ def test_save_logs_failed_command() -> None:
             {"disable_widgets": ["complete-button"]},
         ),
         ("busy-enter",),
-        ("progress-cancel-enabled", False),
+        ("progress-cancel-callback",),
+        ("progress-cancel-enabled", True),
         ("progress-finished", "save failed", False),
         ("busy-exit", RuntimeError),
     ]
@@ -563,6 +585,7 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
     ) in calls
     assert ("message", "Saving output files...") in calls
     assert ("progress-cancel-enabled", False) in calls
+    assert ("progress-cancel-enabled", True) in calls
     assert ("choices", ["saved", "original"]) in calls
     assert ("progress-finished", "Saved 1 edited alignment.", True) in calls
     assert ("busy-exit", None) in calls
@@ -681,6 +704,42 @@ def test_cancel_active_save_requests_rehydration_cancel() -> None:
         1,
         "Cancelling save runtime reload...",
     ) in calls
+
+
+def test_cancel_active_save_requests_final_save_cancel() -> None:
+    runner = ManualAlignmentSaveRunner(auto_finish=False)
+    coordinator, _commands, calls = _coordinator(save_runner=runner)
+
+    assert coordinator.save_alignment_outputs()
+    assert coordinator.cancel_active_save()
+
+    assert runner.cancel_calls == ["cancelled by user"]
+    assert ("progress-cancel-enabled", True) in calls
+    assert ("progress-cancel-enabled", False) in calls
+    assert (
+        "progress-update",
+        None,
+        "Saving output",
+        "Cancelling",
+        0,
+        1,
+        "Cancelling alignment save...",
+    ) in calls
+
+
+def test_cancelled_final_save_closes_busy_context_without_saved_event() -> None:
+    runner = ManualAlignmentSaveRunner(auto_finish=False)
+    coordinator, commands, calls = _coordinator(save_runner=runner)
+
+    assert coordinator.save_alignment_outputs()
+    runner.finish(AlignmentSaveJobCancelled(reason="cancelled by user"))
+
+    assert commands.publish_save_calls == [
+        AlignmentSaveJobCancelled(reason="cancelled by user")
+    ]
+    assert ("progress-cancelled", "Save cancelled: cancelled by user") in calls
+    assert ("choices", ["saved", "original"]) not in calls
+    assert ("busy-exit", RuntimeError) in calls
 
 
 def test_display_qc_options_opens_dialog_when_histology_available() -> None:

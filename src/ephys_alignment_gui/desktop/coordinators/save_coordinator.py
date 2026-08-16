@@ -8,11 +8,15 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from typing import Any
 
+from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveJobCancelled,
+)
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrationPlan,
 )
 from ephys_alignment_gui.core.alignment_events import (
+    SaveCancelled,
     SaveCompleted,
     SaveFailed,
     SaveProgressStarted,
@@ -89,6 +93,11 @@ class DesktopSaveCoordinator:
         init=False,
         repr=False,
     )
+    _save_targets: tuple[AlignmentKey, ...] = field(
+        default=(),
+        init=False,
+        repr=False,
+    )
 
     def connect_save_events(self) -> list[EventSubscription]:
         """Subscribe desktop save coordination to semantic save events."""
@@ -96,6 +105,7 @@ class DesktopSaveCoordinator:
             self.events.subscribe(SaveProgressStarted, self.on_save_progress_started),
             self.events.subscribe(SaveProgressUpdated, self.on_save_progress_updated),
             self.events.subscribe(SaveCompleted, self.on_save_completed),
+            self.events.subscribe(SaveCancelled, self.on_save_cancelled),
             self.events.subscribe(SaveFailed, self.on_save_failed),
         ]
 
@@ -172,6 +182,14 @@ class DesktopSaveCoordinator:
         if self._save_ui_active():
             self._set_save_button_progress("Save failed", event.message)
 
+    def on_save_cancelled(self, event: SaveCancelled) -> None:
+        """Render user-requested save cancellation."""
+        logger.info(event.message)
+        if self._progress_dialog is not None:
+            self._progress_dialog.show_cancelled(event.message)
+        if self._save_ui_active():
+            self._set_save_button_progress("Cancelled", event.message)
+
     def save_alignment_outputs(self) -> bool:
         """Save edited alignment outputs, prompting for output if needed."""
         save_ready = self.commands.can_save_alignment_output()
@@ -236,8 +254,12 @@ class DesktopSaveCoordinator:
             self._close_save_context(RuntimeError(prepared.message))
             return False
 
+        self._save_targets = prepared.target_keys
         if self._progress_dialog is not None:
-            self._progress_dialog.set_cancel_enabled(False)
+            self._progress_dialog.set_cancel_callback(
+                lambda: self.cancel_active_save("cancelled by user")
+            )
+            self._progress_dialog.set_cancel_enabled(True)
 
         try:
             self.save_runner.start(
@@ -322,21 +344,36 @@ class DesktopSaveCoordinator:
         return stopped
 
     def cancel_active_save(self, reason: str = "cancelled by user") -> bool:
-        """Request cooperative cancellation for the active save-runtime reload."""
-        if not self.rehydration_runner.is_running:
-            return False
-        self.rehydration_runner.cancel(reason)
-        if self._progress_dialog is not None:
-            self._progress_dialog.update_progress(
-                key=None,
-                phase_label="Reloading runtime",
-                status_label="Cancelling",
-                completed=0,
-                total=max(len(self._rehydration_targets), 1),
-                message="Cancelling save runtime reload...",
-            )
-        self._set_save_button_progress("Cancelling...", "Cancelling save")
-        return True
+        """Request cooperative cancellation for active save work."""
+        if self.rehydration_runner.is_running:
+            self.rehydration_runner.cancel(reason)
+            if self._progress_dialog is not None:
+                self._progress_dialog.set_cancel_enabled(False)
+                self._progress_dialog.update_progress(
+                    key=None,
+                    phase_label="Reloading runtime",
+                    status_label="Cancelling",
+                    completed=0,
+                    total=max(len(self._rehydration_targets), 1),
+                    message="Cancelling save runtime reload...",
+                )
+            self._set_save_button_progress("Cancelling...", "Cancelling save")
+            return True
+        if self.save_runner.is_running:
+            self.save_runner.cancel(reason)
+            if self._progress_dialog is not None:
+                self._progress_dialog.set_cancel_enabled(False)
+                self._progress_dialog.update_progress(
+                    key=None,
+                    phase_label="Saving output",
+                    status_label="Cancelling",
+                    completed=0,
+                    total=max(len(self._save_targets), 1),
+                    message="Cancelling alignment save...",
+                )
+            self._set_save_button_progress("Cancelling...", "Cancelling save")
+            return True
+        return False
 
     def _on_rehydration_progress(self, event: LoadDataJobProgress) -> None:
         """Update save progress while missing runtimes are reloaded."""
@@ -397,6 +434,11 @@ class DesktopSaveCoordinator:
             if isinstance(published, Failed):
                 self._close_save_context(RuntimeError(published.message))
                 return
+            if isinstance(published, AlignmentSaveJobCancelled):
+                self._close_save_context(
+                    RuntimeError(f"Save cancelled: {published.reason}")
+                )
+                return
             assert isinstance(published, EditedAlignmentOutputsSaved)
             self._close_save_context()
         except Exception as exc:
@@ -423,6 +465,7 @@ class DesktopSaveCoordinator:
             self._active_save_context = None
             self._active_save_context_manager = None
             self._rehydration_targets = ()
+            self._save_targets = ()
             self._restore_save_button_state()
 
     def _show_rehydration_started(self, plan: SaveRuntimeRehydrationPlan) -> None:
@@ -548,6 +591,7 @@ def _status_label(status: str) -> str:
         "started": "Running",
         "running": "Running",
         "completed": "Done",
+        "cancelled": "Cancelled",
     }.get(status, str(status).title())
 
 

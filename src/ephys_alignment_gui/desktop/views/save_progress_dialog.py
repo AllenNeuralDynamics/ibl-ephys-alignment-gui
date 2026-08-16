@@ -138,6 +138,18 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self.raise_()
         self._process_events()
 
+    def show_cancelled(self, message: str) -> None:
+        """Render terminal cancellation and leave the dialog closable."""
+        self._finished = True
+        total = max(self._progress_bar.maximum(), 1)
+        self._progress_bar.setRange(0, total)
+        self._summary_label.setText("Save cancelled")
+        self._current_label.setText(message)
+        self.set_cancel_enabled(False)
+        self.show()
+        self.raise_()
+        self._process_events()
+
     def close_dialog(self) -> None:
         """Close the dialog regardless of active state."""
         self._finished = True

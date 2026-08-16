@@ -10,6 +10,8 @@ from typing import Protocol
 from PyQt5 import QtCore
 
 from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveCancelToken,
+    AlignmentSaveJobCancelled,
     AlignmentSaveJobCompleted,
     PreparedAlignmentSave,
 )
@@ -18,7 +20,7 @@ from ephys_alignment_gui.core.workflow import Failed
 
 logger = logging.getLogger(__name__)
 
-AlignmentSaveJobResult = AlignmentSaveJobCompleted | Failed
+AlignmentSaveJobResult = AlignmentSaveJobCompleted | AlignmentSaveJobCancelled | Failed
 AlignmentSaveProgressHandler = Callable[[SaveProgressUpdated], None]
 AlignmentSaveFinishedHandler = Callable[
     [PreparedAlignmentSave, AlignmentSaveJobResult],
@@ -34,6 +36,7 @@ class RunPreparedAlignmentSaveJob(Protocol):
         prepared: PreparedAlignmentSave,
         *,
         progress: AlignmentSaveProgressHandler | None = None,
+        cancel_token: AlignmentSaveCancelToken | None = None,
     ) -> AlignmentSaveJobResult:
         """Run one prepared alignment save job."""
         ...
@@ -58,8 +61,12 @@ class AlignmentSaveRunner(Protocol):
         """Start a prepared alignment save job."""
         ...
 
+    def cancel(self, reason: str) -> None:
+        """Request cancellation of the active job."""
+        ...
+
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
-        """Wait for the active save job to stop."""
+        """Request cancellation and wait for the active save job to stop."""
         ...
 
 
@@ -74,16 +81,22 @@ class AlignmentSaveWorker(QtCore.QObject):
         *,
         prepared: PreparedAlignmentSave,
         run_job: RunPreparedAlignmentSaveJob,
+        cancel_token: AlignmentSaveCancelToken,
     ) -> None:
         super().__init__()
         self._prepared = prepared
         self._run_job = run_job
+        self._cancel_token = cancel_token
 
     @QtCore.pyqtSlot()
     def run(self) -> None:
         """Run the save job and emit its terminal result."""
         try:
-            result = self._run_job(self._prepared, progress=self.progress.emit)
+            result = self._run_job(
+                self._prepared,
+                progress=self.progress.emit,
+                cancel_token=self._cancel_token,
+            )
         except Exception as exc:
             logger.exception("Prepared alignment save worker failed")
             result = Failed(f"Prepared alignment save worker failed: {exc}")
@@ -93,6 +106,7 @@ class AlignmentSaveWorker(QtCore.QObject):
 @dataclass
 class _ActiveAlignmentSaveWorker:
     prepared: PreparedAlignmentSave
+    cancel_token: AlignmentSaveCancelToken
     thread: QtCore.QThread
     worker: AlignmentSaveWorker
     on_progress: AlignmentSaveProgressHandler
@@ -124,8 +138,13 @@ class QtAlignmentSaveRunner(QtCore.QObject):
         if self.is_running:
             raise RuntimeError("Alignment save worker is already running")
 
+        cancel_token = AlignmentSaveCancelToken()
         thread = QtCore.QThread()
-        worker = AlignmentSaveWorker(prepared=prepared, run_job=run_job)
+        worker = AlignmentSaveWorker(
+            prepared=prepared,
+            run_job=run_job,
+            cancel_token=cancel_token,
+        )
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
@@ -140,6 +159,7 @@ class QtAlignmentSaveRunner(QtCore.QObject):
 
         self._active = _ActiveAlignmentSaveWorker(
             prepared=prepared,
+            cancel_token=cancel_token,
             thread=thread,
             worker=worker,
             on_progress=on_progress,
@@ -147,22 +167,32 @@ class QtAlignmentSaveRunner(QtCore.QObject):
         )
         thread.start()
 
-    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
-        """Wait for the active save worker to stop.
+    def cancel(self, reason: str) -> None:
+        """Request cooperative cancellation of the active save worker."""
+        active = self._active
+        if active is None:
+            return
+        active.cancel_token.cancel(reason)
+        active.thread.requestInterruption()
 
-        Final output writes and ANTs transforms are not currently cancellable.
-        During desktop teardown, wait for them to finish so Qt does not destroy
-        a running thread.
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        """Request cancellation and wait for the active save worker to stop.
+
+        Cancellation is cooperative: this method does not terminate the worker
+        thread. If a final output write or ANTs transform is inside a
+        non-interruptible call after the timeout, callers should keep the
+        desktop lifecycle alive.
         """
         active = self._active
         if active is None:
             return True
 
-        active.thread.requestInterruption()
+        self.cancel(reason)
+        active.thread.quit()
         stopped = active.thread.wait(timeout_ms)
         if not stopped:
             logger.warning(
-                "Alignment save worker did not stop within %s ms after %s",
+                "Alignment save worker did not stop within %s ms after cancellation: %s",
                 timeout_ms,
                 reason,
             )

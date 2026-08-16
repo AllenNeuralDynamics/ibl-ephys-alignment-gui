@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveCancelToken,
+    AlignmentSaveJobCancelled,
     AlignmentSaveJobCompleted,
     PreparedAlignmentSave,
     PreparedAlignmentSaveTarget,
@@ -35,6 +37,7 @@ from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
+    SaveCancelled,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -260,8 +263,10 @@ class AlignmentPersistenceCommandHandler:
         prepared: PreparedAlignmentSave,
         *,
         progress: Any | None = None,
-    ) -> AlignmentSaveJobCompleted | Failed:
+        cancel_token: AlignmentSaveCancelToken | None = None,
+    ) -> AlignmentSaveJobCompleted | AlignmentSaveJobCancelled | Failed:
         """Build CCF outputs and write files without touching document state."""
+        cancel_token = cancel_token or AlignmentSaveCancelToken()
         output_inputs = {
             target.key: (
                 target.channel_locations_ras,
@@ -269,6 +274,15 @@ class AlignmentPersistenceCommandHandler:
             )
             for target in prepared.targets
         }
+        cancelled = self._cancelled_save(
+            cancel_token,
+            progress,
+            phase="building_outputs",
+            completed=0,
+            total=len(output_inputs),
+        )
+        if cancelled is not None:
+            return cancelled
         self._emit_or_callback_save_progress(
             progress,
             SaveProgressUpdated(
@@ -291,6 +305,15 @@ class AlignmentPersistenceCommandHandler:
         )
         if isinstance(outputs, Failed):
             return outputs
+        cancelled = self._cancelled_save(
+            cancel_token,
+            progress,
+            phase="building_outputs",
+            completed=len(output_inputs),
+            total=len(output_inputs),
+        )
+        if cancelled is not None:
+            return cancelled
         self._emit_or_callback_save_progress(
             progress,
             SaveProgressUpdated(
@@ -311,6 +334,15 @@ class AlignmentPersistenceCommandHandler:
         total_outputs = len(outputs)
         target_by_key = {target.key: target for target in prepared.targets}
         for output_index, (key, output) in enumerate(outputs.items(), start=1):
+            cancelled = self._cancelled_save(
+                cancel_token,
+                progress,
+                phase="writing_files",
+                completed=output_index - 1,
+                total=total_outputs,
+            )
+            if cancelled is not None:
+                return cancelled
             target = target_by_key[key]
             self._emit_or_callback_save_progress(
                 progress,
@@ -332,6 +364,15 @@ class AlignmentPersistenceCommandHandler:
             )
             if isinstance(saved, Failed):
                 return saved
+            cancelled = self._cancelled_save(
+                cancel_token,
+                progress,
+                phase="writing_files",
+                completed=output_index,
+                total=total_outputs,
+            )
+            if cancelled is not None:
+                return cancelled
             saved_outputs[key] = saved
             self._emit_or_callback_save_progress(
                 progress,
@@ -349,11 +390,13 @@ class AlignmentPersistenceCommandHandler:
     def publish_prepared_alignment_save_result(
         self,
         prepared: PreparedAlignmentSave,
-        job_result: AlignmentSaveJobCompleted | Failed,
-    ) -> EditedAlignmentOutputsSaved | Failed:
+        job_result: AlignmentSaveJobCompleted | AlignmentSaveJobCancelled | Failed,
+    ) -> EditedAlignmentOutputsSaved | AlignmentSaveJobCancelled | Failed:
         """Publish a save job result and update document save state."""
         if isinstance(job_result, Failed):
             return self._save_failed(job_result.message)
+        if isinstance(job_result, AlignmentSaveJobCancelled):
+            return self._save_cancelled(job_result.reason)
 
         for target in prepared.targets:
             if target.key not in job_result.saved_outputs:
@@ -438,6 +481,12 @@ class AlignmentPersistenceCommandHandler:
         self.controller.document.dirty = self.controller.document.has_unsaved_alignments
         self._emit_save_failed(message)
         return Failed(message)
+
+    def _save_cancelled(self, reason: str) -> AlignmentSaveJobCancelled:
+        self.controller.document.dirty = self.controller.document.has_unsaved_alignments
+        message = f"Save cancelled: {reason}"
+        self.events.emit(SaveCancelled(reason=reason, message=message))
+        return AlignmentSaveJobCancelled(reason=reason)
 
     def _emit_save_failed(self, message: str) -> None:
         self.events.emit(SaveFailed(message=message))
@@ -750,6 +799,32 @@ class AlignmentPersistenceCommandHandler:
             self._emit_save_progress_event(event)
         else:
             progress(event)
+
+    def _cancelled_save(
+        self,
+        cancel_token: AlignmentSaveCancelToken,
+        progress: Any | None,
+        *,
+        phase: SaveProgressPhase,
+        completed: int,
+        total: int,
+    ) -> AlignmentSaveJobCancelled | None:
+        """Return a cancellation result and emit one terminal progress update."""
+        if not cancel_token.cancelled:
+            return None
+        reason = cancel_token.reason or "cancelled"
+        self._emit_or_callback_save_progress(
+            progress,
+            SaveProgressUpdated(
+                key=None,
+                phase=phase,
+                status="cancelled",
+                completed=completed,
+                total=total,
+                message=f"Save cancelled: {reason}",
+            ),
+        )
+        return AlignmentSaveJobCancelled(reason=reason)
 
     @staticmethod
     def _describe_key(key: AlignmentKey) -> str:

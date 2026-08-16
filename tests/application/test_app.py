@@ -8,6 +8,11 @@ from typing import Any
 
 import numpy as np
 
+from ephys_alignment_gui.application.alignment_save_job import (
+    AlignmentSaveCancelToken,
+    AlignmentSaveJobCancelled,
+    PreparedAlignmentSave,
+)
 from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.results import (
     ActiveStreamDetached,
@@ -68,6 +73,7 @@ from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentsUnavailable,
     ReferenceLineVisibilityChanged,
     RegionAnnotationSourceChanged,
+    SaveCancelled,
     SaveCompleted,
     SaveDocDbStatus,
     SaveFailed,
@@ -1940,6 +1946,154 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     assert not state_a.has_unsaved_alignment
     assert not state_b.has_unsaved_alignment
     assert not workspace.document.dirty
+
+
+def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
+    workspace.runtime.current_stream_key = ("rec", "stream")
+    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
+        0: SimpleNamespace(
+            ephysalign="aligner",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+    cancelled_events: list[SaveCancelled] = []
+    progress_events: list[SaveProgressUpdated] = []
+    workspace.app.events.subscribe(SaveCancelled, cancelled_events.append)
+
+    prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
+        use_docdb=False,
+        rehydrate_missing=False,
+    )
+
+    assert isinstance(prepared, PreparedAlignmentSave)
+
+    cancel_token = AlignmentSaveCancelToken()
+    cancel_token.cancel("cancelled by user")
+    job_result = workspace.app.commands.persistence.run_prepared_alignment_save(
+        prepared,
+        progress=progress_events.append,
+        cancel_token=cancel_token,
+    )
+    published = workspace.app.commands.persistence.publish_prepared_alignment_save_result(
+        prepared,
+        job_result,
+    )
+
+    assert job_result == AlignmentSaveJobCancelled(reason="cancelled by user")
+    assert published == AlignmentSaveJobCancelled(reason="cancelled by user")
+    assert progress_events == [
+        SaveProgressUpdated(
+            key=None,
+            phase="building_outputs",
+            status="cancelled",
+            completed=0,
+            total=1,
+            message="Save cancelled: cancelled by user",
+        )
+    ]
+    assert cancelled_events == [
+        SaveCancelled(
+            reason="cancelled by user",
+            message="Save cancelled: cancelled by user",
+        )
+    ]
+    assert output_builder.batched_alignments is None
+    assert repo.saved_kwargs == []
+    assert state.has_unsaved_alignment
+    assert workspace.document.dirty
+
+
+def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    workspace.data_context.probe_info = SimpleNamespace(
+        recording_id="rec",
+        probe_name="probeA",
+        ephys_collection="stream",
+    )
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
+    workspace.runtime.current_stream_key = ("rec", "stream")
+    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
+        0: SimpleNamespace(
+            ephysalign="aligner",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+    prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
+        use_docdb=False,
+        rehydrate_missing=False,
+    )
+    assert isinstance(prepared, PreparedAlignmentSave)
+    cancel_token = AlignmentSaveCancelToken()
+    progress_events: list[SaveProgressUpdated] = []
+
+    def cancel_after_transform_starts(event: SaveProgressUpdated) -> None:
+        progress_events.append(event)
+        if event.phase == "building_outputs" and event.status == "started":
+            cancel_token.cancel("cancelled by user")
+
+    job_result = workspace.app.commands.persistence.run_prepared_alignment_save(
+        prepared,
+        progress=cancel_after_transform_starts,
+        cancel_token=cancel_token,
+    )
+    published = workspace.app.commands.persistence.publish_prepared_alignment_save_result(
+        prepared,
+        job_result,
+    )
+
+    assert job_result == AlignmentSaveJobCancelled(reason="cancelled by user")
+    assert published == AlignmentSaveJobCancelled(reason="cancelled by user")
+    assert output_builder.batched_alignments is not None
+    assert repo.saved_kwargs == []
+    assert progress_events[-1] == SaveProgressUpdated(
+        key=None,
+        phase="building_outputs",
+        status="cancelled",
+        completed=1,
+        total=1,
+        message="Save cancelled: cancelled by user",
+    )
+    assert state.has_unsaved_alignment
+    assert workspace.document.dirty
 
 
 def test_commands_save_edited_alignment_outputs_reloads_dirty_missing_runtime(

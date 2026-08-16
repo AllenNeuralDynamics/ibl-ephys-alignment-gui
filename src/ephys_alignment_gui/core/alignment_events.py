@@ -182,7 +182,7 @@ SaveProgressPhase = Literal[
     "building_outputs",
     "writing_files",
 ]
-SaveProgressStatus = Literal["started", "completed", "running"]
+SaveProgressStatus = Literal["started", "completed", "running", "cancelled"]
 
 
 @dataclass(frozen=True)
@@ -218,6 +218,14 @@ class SaveCompleted:
 class SaveFailed:
     """Payload emitted when edited alignment output persistence fails."""
 
+    message: str
+
+
+@dataclass(frozen=True)
+class SaveCancelled:
+    """Payload emitted when edited alignment output persistence is cancelled."""
+
+    reason: str
     message: str
 
 

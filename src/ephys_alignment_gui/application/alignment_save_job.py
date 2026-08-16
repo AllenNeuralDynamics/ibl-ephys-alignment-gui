@@ -45,8 +45,31 @@ class PreparedAlignmentSave:
         return tuple(target.key for target in self.targets)
 
 
+@dataclass
+class AlignmentSaveCancelToken:
+    """Cooperative cancellation flag for prepared alignment save jobs."""
+
+    reason: str | None = None
+
+    @property
+    def cancelled(self) -> bool:
+        """Return whether cancellation has been requested."""
+        return self.reason is not None
+
+    def cancel(self, reason: str = "cancelled") -> None:
+        """Request cancellation at the next save-job checkpoint."""
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class AlignmentSaveJobCompleted:
     """Terminal result from the thread-safe save job phase."""
 
     saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved]
+
+
+@dataclass(frozen=True)
+class AlignmentSaveJobCancelled:
+    """Prepared alignment save was cancelled at a cooperative checkpoint."""
+
+    reason: str
