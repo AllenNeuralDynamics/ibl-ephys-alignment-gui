@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_key_context import AlignmentKeyContext
 from ephys_alignment_gui.core.alignment_state import (
@@ -115,6 +117,13 @@ class AlignmentController:
         """Record the output root in the document."""
         self.document.set_output_root(output_root)
 
+    def record_output_package_directory(
+        self,
+        output_package_directory: Path | None,
+    ) -> None:
+        """Record the mouse-level annotation output package in the document."""
+        self.document.set_output_package_directory(output_package_directory)
+
     def record_output_directory(self, output_directory: Any) -> None:
         """Record the derived per-probe output directory in the document."""
         self.document.set_output_directory(output_directory)
@@ -190,6 +199,16 @@ class AlignmentController:
             return state_or_failed
         state_or_failed.set_alignments(alignments)
         return self._alignment_choices(state_or_failed)
+
+    def import_previous_alignments_for_key(
+        self,
+        key: AlignmentKey,
+        alignments: AlignmentHistory,
+    ) -> AlignmentChoicesUpdated:
+        """Import persisted alignment history for a key without clobbering edits."""
+        state = self.document.alignment_state_for(key)
+        state.import_alignments(alignments)
+        return self._alignment_choices(state)
 
     def select_previous_alignment(
         self,
@@ -387,6 +406,8 @@ class AlignmentController:
         state = state_or_failed
         if shank_runtime.ephysalign is None:
             return Failed("Alignment runtime is not initialized.")
+        if self._reference_lines_empty(line_features_um, line_tracks_um):
+            return self.reset_alignment_to_initial(shank_runtime, lin_fit=lin_fit)
 
         try:
             result = self.alignment_edit_service.fit_to_reference_lines(
@@ -442,7 +463,7 @@ class AlignmentController:
         *,
         lin_fit: bool,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
-        """Reset the active document alignment state to runtime initial geometry."""
+        """Reset active alignment state to the unannotated runtime geometry."""
         state_or_failed = self._active_state_for_shank(shank_runtime.shank_idx)
         if isinstance(state_or_failed, Failed):
             return state_or_failed
@@ -450,17 +471,56 @@ class AlignmentController:
         if shank_runtime.ephysalign is None:
             return Failed("Alignment runtime is not initialized.")
 
+        original_seed = self._reset_runtime_to_unseeded_alignment(shank_runtime)
+        if isinstance(original_seed, Failed):
+            return original_seed
+        feature_init, track_init = original_seed
+        state.clear_previous_alignment_selection()
+
         try:
             result = self.alignment_edit_service.reset_to_initial(
                 state.edit_history,
-                feature_init=shank_runtime.ephysalign.feature_init,
-                track_init=shank_runtime.ephysalign.track_init,
+                feature_init=feature_init,
+                track_init=track_init,
                 lin_fit=lin_fit,
             )
         except Exception as exc:
             return Failed(f"Failed to reset alignment: {exc}")
 
         return self._edit_result(state, result)
+
+    def _reset_runtime_to_unseeded_alignment(
+        self,
+        shank_runtime: ShankRuntime,
+    ) -> tuple[Any, Any] | Failed:
+        """Rebuild runtime alignment without a selected previous alignment."""
+        track_annotations_ras = getattr(shank_runtime, "track_annotations_ras", None)
+        brain_atlas = getattr(shank_runtime.ephysalign, "brain_atlas", None)
+        if track_annotations_ras is None or brain_atlas is None:
+            return (
+                shank_runtime.ephysalign.feature_init,
+                shank_runtime.ephysalign.track_init,
+            )
+
+        try:
+            initialized = self.alignment_runtime_service.initialize_shank_runtime(
+                shank_runtime,
+                track_annotations_ras=track_annotations_ras,
+                brain_atlas=brain_atlas,
+            )
+        except Exception as exc:
+            return Failed(f"Failed to reset alignment runtime: {exc}")
+        return initialized.feature_init, initialized.track_init
+
+    @staticmethod
+    def _reference_lines_empty(
+        line_features_um: Any,
+        line_tracks_um: Any,
+    ) -> bool:
+        return (
+            np.asarray(line_features_um, dtype=float).size == 0
+            or np.asarray(line_tracks_um, dtype=float).size == 0
+        )
 
     def _active_state_for_shank(
         self,

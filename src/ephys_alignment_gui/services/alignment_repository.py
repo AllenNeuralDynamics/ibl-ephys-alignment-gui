@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,13 @@ class LoadedAlignmentHistory:
     """Alignment history loaded from DocDB or local files."""
 
     alignments: AlignmentHistory
+
+
+@dataclass(frozen=True)
+class LoadedAlignmentPackage:
+    """Alignment histories loaded from a GUI output package directory."""
+
+    histories: dict[tuple[str, str, int], LoadedAlignmentHistory]
 
 
 @dataclass(frozen=True)
@@ -137,6 +145,26 @@ class AlignmentRepository:
             alignments: AlignmentHistory = json.load(f)
         return alignments
 
+    def load_previous_alignment_package(
+        self,
+        *,
+        folder: Path,
+    ) -> LoadedAlignmentPackage:
+        """Load all previous-alignment histories in an output package."""
+        histories: dict[tuple[str, str, int], LoadedAlignmentHistory] = {}
+        for path in sorted(Path(folder).glob("*/*/prev_alignments*.json")):
+            shank_idx = self._shank_idx_from_previous_alignment_path(path)
+            if shank_idx is None:
+                continue
+            with open(path) as f:
+                alignments: AlignmentHistory = json.load(f)
+            probe_dir = path.parent
+            recording_dir = probe_dir.parent
+            histories[(recording_dir.name, probe_dir.name, shank_idx)] = (
+                LoadedAlignmentHistory(alignments)
+            )
+        return LoadedAlignmentPackage(histories)
+
     def save_alignment_outputs(
         self,
         *,
@@ -188,3 +216,13 @@ class AlignmentRepository:
         """Write a dict as stable indented JSON."""
         with open(file_path, "w") as fp:
             json.dump(data_dict, fp, indent=2, separators=(",", ": "))
+
+    @staticmethod
+    def _shank_idx_from_previous_alignment_path(path: Path) -> int | None:
+        match = re.fullmatch(r"prev_alignments(?:_shank(\d+))?\.json", path.name)
+        if match is None:
+            return None
+        shank_id = match.group(1)
+        if shank_id is None:
+            return 0
+        return max(0, int(shank_id) - 1)

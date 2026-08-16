@@ -49,6 +49,26 @@ def test_load_previous_alignments_local_single_shank_uses_base_name(tmp_path):
     assert loaded.alignments == expected
 
 
+def test_load_previous_alignment_package_scans_recording_probe_dirs(tmp_path):
+    repo = AlignmentRepository()
+    package = tmp_path / "ibl_annotations_mouse_2026-08-16_14-32-05"
+    probe_a = package / "rec1" / "probeA"
+    probe_b = package / "rec1" / "probeB"
+    probe_a.mkdir(parents=True)
+    probe_b.mkdir(parents=True)
+    align_a = {"a": [[1.0], [2.0]]}
+    align_b = {"b": [[3.0], [4.0]]}
+    with open(probe_a / "prev_alignments.json", "w") as f:
+        json.dump(align_a, f)
+    with open(probe_b / "prev_alignments_shank2.json", "w") as f:
+        json.dump(align_b, f)
+
+    loaded = repo.load_previous_alignment_package(folder=package)
+
+    assert loaded.histories[("rec1", "probeA", 0)].alignments == align_a
+    assert loaded.histories[("rec1", "probeB", 1)].alignments == align_b
+
+
 def test_save_alignment_outputs_writes_expected_files(tmp_path):
     repo = AlignmentRepository()
     output_dir = tmp_path / "rec1" / "probeA"

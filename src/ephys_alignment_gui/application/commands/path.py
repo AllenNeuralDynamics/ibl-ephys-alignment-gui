@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
+from ephys_alignment_gui.application.output_paths import (
+    alignment_output_package_directory,
+    probe_alignment_output_directory,
+)
 from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
@@ -26,6 +32,7 @@ class PathCommandHandler:
     controller: AlignmentController
     data_context: AlignmentDataContext
     events: EventBus
+    now: Callable[[], datetime] = datetime.now
 
     def set_output_root(self, output_root: Path) -> OutputRootSet | Failed:
         """Set the output root and derive the active probe output directory."""
@@ -76,7 +83,15 @@ class PathCommandHandler:
                 )
             return OutputDirectoryDerived(None)
 
-        output_directory = output_root / probe.recording_id / probe.probe_name
+        output_package_directory = self._ensure_output_package_directory(output_root)
+        if isinstance(output_package_directory, Failed):
+            return output_package_directory
+
+        output_directory = probe_alignment_output_directory(
+            output_package_directory,
+            probe.recording_id,
+            probe.probe_name,
+        )
         try:
             output_directory.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -92,3 +107,32 @@ class PathCommandHandler:
                 )
             )
         return OutputDirectoryDerived(output_directory)
+
+    def _ensure_output_package_directory(self, output_root: Path) -> Path | Failed:
+        """Return or create the mouse-level annotation output package directory."""
+        document = self.controller.document
+        if document.output_package_directory is not None:
+            return document.output_package_directory
+
+        mouse_id = document.mouse_id
+        if mouse_id is None and self.data_context.mouse_root is not None:
+            mouse_id = self.data_context.mouse_root.mouse_id
+        if mouse_id is None or str(mouse_id).strip() == "":
+            return Failed(
+                "Mouse ID is not loaded; cannot derive annotation output package."
+            )
+
+        output_package_directory = alignment_output_package_directory(
+            output_root,
+            mouse_id,
+            self.now(),
+        )
+        try:
+            output_package_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return Failed(
+                "Failed to create annotation output package "
+                f"{output_package_directory}: {exc}"
+            )
+        self.controller.record_output_package_directory(output_package_directory)
+        return output_package_directory

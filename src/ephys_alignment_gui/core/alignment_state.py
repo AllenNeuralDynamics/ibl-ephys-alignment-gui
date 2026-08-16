@@ -139,12 +139,51 @@ class AlignmentState:
 
     def set_alignments(self, alignments: dict[str, list[list[float]]]) -> None:
         """Replace persisted alignment history and rebuild dropdown order."""
-        self.alignments = {
+        self.alignments = self._filtered_alignments(alignments)
+        self._refresh_prev_align()
+
+    def merge_alignments(self, alignments: dict[str, list[list[float]]]) -> None:
+        """Merge persisted history without dropping existing local entries."""
+        merged = dict(self.alignments)
+        for key, value in self._filtered_alignments(alignments).items():
+            if key not in merged or merged[key] == value:
+                merged[key] = value
+                continue
+            merged[self._disambiguated_import_key(key, merged)] = value
+        self.alignments = merged
+        self._refresh_prev_align()
+
+    def import_alignments(
+        self,
+        alignments: dict[str, list[list[float]]],
+    ) -> None:
+        """Import previous alignments without replacing active user edits."""
+        if self.has_unsaved_alignment or self.pending_reference_lines is not None:
+            self.merge_alignments(alignments)
+        else:
+            self.set_alignments(alignments)
+
+    @staticmethod
+    def _filtered_alignments(
+        alignments: dict[str, list[list[float]]],
+    ) -> dict[str, list[list[float]]]:
+        return {
             key: value
             for key, value in alignments.items()
             if key != LEGACY_AUTO_ALIGNMENT_LABEL
         }
-        self._refresh_prev_align()
+
+    @staticmethod
+    def _disambiguated_import_key(
+        key: str,
+        alignments: dict[str, list[list[float]]],
+    ) -> str:
+        idx = 1
+        candidate = f"{key}.imported.{idx}"
+        while candidate in alignments:
+            idx += 1
+            candidate = f"{key}.imported.{idx}"
+        return candidate
 
     def add_alignment(self, feature: NDArray, track: NDArray) -> str:
         """Record a new saved alignment and return its unique timestamp key."""
@@ -183,6 +222,12 @@ class AlignmentState:
         self.rebase_working_alignment(alignment)
         self.clear_pending_reference_lines()
         return feature, track
+
+    def clear_previous_alignment_selection(self) -> None:
+        """Clear the previous-alignment seed used to initialize runtime state."""
+        self.feature_prev = None
+        self.track_prev = None
+        self.clear_pending_reference_lines()
 
     def rebase_working_alignment(self, alignment: ActiveAlignment | None) -> None:
         """Reset undo/redo history to a new starting alignment."""

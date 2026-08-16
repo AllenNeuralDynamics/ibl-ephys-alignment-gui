@@ -101,6 +101,11 @@ class AlignmentEditCommandHandler:
         extend_feature: int,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
         """Apply a reference-line fit for a document-selected shank runtime."""
+        if self._reference_lines_empty(line_features_um, line_tracks_um):
+            return self.reset_alignment_to_initial(
+                shank_runtime,
+                lin_fit=lin_fit,
+            )
         result = self.controller.fit_alignment_to_reference_lines(
             shank_runtime,
             line_features_um=line_features_um,
@@ -228,6 +233,13 @@ class AlignmentEditCommandHandler:
             return None
         return stream_runtime.shank_runtime_by_idx.get(
             self.controller.document.selected_shank
+        )
+
+    @staticmethod
+    def _reference_lines_empty(line_features_um: Any, line_tracks_um: Any) -> bool:
+        return (
+            np.asarray(line_features_um, dtype=float).size == 0
+            or np.asarray(line_tracks_um, dtype=float).size == 0
         )
 
     def _emit_alignment_edited(

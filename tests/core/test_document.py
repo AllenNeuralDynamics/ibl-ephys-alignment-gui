@@ -17,6 +17,7 @@ def test_document_records_mouse_root_and_clears_probe_state(tmp_path):
     doc.select_probe("rec1", "probeA")
     doc.set_channel_info_loaded(True)
     doc.mark_data_loaded(True)
+    doc.set_output_package_directory(tmp_path / "results" / "ibl_annotations_mouse42")
     doc.set_output_directory(tmp_path / "rec1" / "probeA")
 
     doc.set_mouse_root(tmp_path / "mouse42", mouse_id="mouse42")
@@ -27,12 +28,14 @@ def test_document_records_mouse_root_and_clears_probe_state(tmp_path):
     assert not doc.channel_info_loaded
     assert not doc.data_loaded
     assert doc.output_root == tmp_path / "results"
+    assert doc.output_package_directory is None
     assert doc.output_directory is None
 
 
 def test_select_probe_resets_probe_derived_state(tmp_path):
     doc = AlignmentDocument(
         output_root=tmp_path / "results",
+        output_package_directory=tmp_path / "results" / "ibl_annotations_mouse42",
         output_directory=tmp_path / "old",
         channel_info_loaded=True,
         data_loaded=True,
@@ -49,6 +52,9 @@ def test_select_probe_resets_probe_derived_state(tmp_path):
     assert not doc.data_loaded
     assert not doc.dirty
     assert doc.output_root == tmp_path / "results"
+    assert doc.output_package_directory == (
+        tmp_path / "results" / "ibl_annotations_mouse42"
+    )
     assert doc.output_directory is None
 
 
@@ -65,10 +71,25 @@ def test_output_paths_are_stored_as_paths(tmp_path):
     doc = AlignmentDocument()
 
     doc.set_output_root(tmp_path)
+    doc.set_output_package_directory(tmp_path / "ibl_annotations_mouse42")
     doc.set_output_directory(tmp_path / "rec1" / "probeA")
 
     assert doc.output_root == Path(tmp_path)
+    assert doc.output_package_directory == tmp_path / "ibl_annotations_mouse42"
     assert doc.output_directory == tmp_path / "rec1" / "probeA"
+
+
+def test_output_root_change_clears_derived_output_package_and_probe_dir(tmp_path):
+    doc = AlignmentDocument()
+    doc.set_output_root(tmp_path / "results-a")
+    doc.set_output_package_directory(tmp_path / "results-a" / "ibl_annotations_mouse42")
+    doc.set_output_directory(tmp_path / "results-a" / "rec1" / "probeA")
+
+    doc.set_output_root(tmp_path / "results-b")
+
+    assert doc.output_root == tmp_path / "results-b"
+    assert doc.output_package_directory is None
+    assert doc.output_directory is None
 
 
 def test_alignment_key_rejects_negative_shank() -> None:

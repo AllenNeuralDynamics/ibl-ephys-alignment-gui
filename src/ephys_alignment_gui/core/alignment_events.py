@@ -235,6 +235,7 @@ class PreviousAlignmentsLoaded:
 
     shank_idx: int
     choices: tuple[str, ...]
+    auto_select: bool = True
 
 
 @dataclass(frozen=True)

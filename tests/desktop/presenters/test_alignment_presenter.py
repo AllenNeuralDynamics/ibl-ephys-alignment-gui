@@ -108,7 +108,7 @@ def test_desktop_presentation_options_are_derived_from_edit_kind() -> None:
     assert fit.line_update == "sync_to_alignment"
     assert fit.preserve_depth_range
     assert not fit.clear_reference_lines
-    assert reset.line_update == "reset_to_previous"
+    assert reset.line_update == "none"
     assert reset.reset_histology_range
     assert reset.clear_reference_lines
 
@@ -193,7 +193,6 @@ def test_desktop_presenter_coordinates_reset_rendering() -> None:
         ("render_histology_alignment", render_state),
         ("plot_channels", "projection"),
         "refresh_perp",
-        "create_previous_lines",
         "set_default_range",
         "update_status",
     ]

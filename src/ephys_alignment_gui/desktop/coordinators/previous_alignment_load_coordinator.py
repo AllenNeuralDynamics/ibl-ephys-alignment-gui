@@ -11,6 +11,7 @@ from typing import Any
 
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
+    PreviousAlignmentPackageLoaded,
 )
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
@@ -27,7 +28,8 @@ logger = logging.getLogger(__name__)
 class PreviousAlignmentLoadCallbacks:
     """Desktop side effects for loading previous alignments."""
 
-    select_folder: Callable[[], Path | None]
+    select_folder: Callable[[Path | None], Path | None]
+    default_folder: Callable[[], Path | None]
     use_docdb: Callable[[], bool]
     set_reload_folder_text: Callable[[str], None]
     render_alignment_choices: Callable[[list[str]], None]
@@ -69,7 +71,9 @@ class DesktopPreviousAlignmentLoadCoordinator:
         """Render loaded previous-alignment choices."""
         choices = list(event.choices)
         self.callbacks.render_alignment_choices(choices)
-        self._last_selection_result = self.callbacks.select_alignment(0)
+        self._last_selection_result = True
+        if event.auto_select:
+            self._last_selection_result = self.callbacks.select_alignment(0)
         if self._last_selection_result:
             logger.info("Loaded %d previous alignments", len(choices))
 
@@ -94,7 +98,7 @@ class DesktopPreviousAlignmentLoadCoordinator:
             logger.error(ready.message)
             return False
 
-        selected = self.callbacks.select_folder()
+        selected = self.callbacks.select_folder(self.callbacks.default_folder())
         if selected is None:
             return False
 
@@ -123,5 +127,10 @@ class DesktopPreviousAlignmentLoadCoordinator:
                 return False
             if isinstance(result, NoPreviousAlignments):
                 return True
+            if isinstance(result, PreviousAlignmentPackageLoaded):
+                logger.info(
+                    "Loaded previous alignments for %d stream/shank(s)",
+                    result.loaded_count,
+                )
 
         return True

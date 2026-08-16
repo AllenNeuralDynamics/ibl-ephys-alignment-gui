@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.services.alignment_repository import (
     AlignmentHistory,
     SavedAlignmentOutputs,
@@ -13,6 +14,15 @@ from ephys_alignment_gui.services.alignment_repository import (
 @dataclass(frozen=True)
 class NoPreviousAlignments:
     """No previous alignments were available."""
+
+
+@dataclass(frozen=True)
+class PreviousAlignmentPackageLoaded:
+    """Previous alignments were loaded for multiple stream/shank keys."""
+
+    loaded_count: int
+    loaded_keys: tuple[AlignmentKey, ...]
+    active_choices: list[str] | None = None
 
 
 @dataclass(frozen=True)

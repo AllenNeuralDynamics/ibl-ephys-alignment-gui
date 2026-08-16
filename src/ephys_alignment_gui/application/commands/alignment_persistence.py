@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,10 @@ from ephys_alignment_gui.application.alignment_save_job import (
     PreparedAlignmentSave,
     PreparedAlignmentSaveTarget,
 )
+from ephys_alignment_gui.application.output_paths import (
+    alignment_output_package_directory,
+    probe_alignment_output_directory,
+)
 from ephys_alignment_gui.application.results import (
     AlignmentChoicesUpdated,
     EditedAlignmentOutputsSaved,
@@ -23,6 +28,7 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputBuilt,
     AlignmentOutputsSaved,
     NoPreviousAlignments,
+    PreviousAlignmentPackageLoaded,
 )
 from ephys_alignment_gui.application.save_runtime_dependencies import (
     plan_save_runtime_dependencies,
@@ -68,6 +74,7 @@ from ephys_alignment_gui.services.alignment_derived_data import (
 from ephys_alignment_gui.services.alignment_repository import (
     AlignmentHistory,
     AlignmentRepository,
+    LoadedAlignmentPackage,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,7 +106,9 @@ class AlignmentPersistenceCommandHandler:
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
-        return self.controller.can_load_previous_alignments()
+        if self.data_context.mouse_root is None:
+            return Failed("No mouse root loaded. Please select a mouse root first.")
+        return Ok()
 
     def load_previous_alignments(
         self,
@@ -107,8 +116,18 @@ class AlignmentPersistenceCommandHandler:
         folder: Path | None,
         use_docdb: bool,
         shank_idx: int | None = None,
-    ) -> AlignmentChoicesUpdated | NoPreviousAlignments | Failed:
+    ) -> (
+        AlignmentChoicesUpdated
+        | NoPreviousAlignments
+        | PreviousAlignmentPackageLoaded
+        | Failed
+    ):
         """Load and store previous alignments for a document-selected shank."""
+        if folder is not None:
+            package_result = self._load_previous_alignment_package(folder)
+            if package_result is not None:
+                return package_result
+
         target_shank = self._active_or_given_shank(shank_idx)
         ready = self.controller.can_load_previous_alignments()
         if isinstance(ready, Failed):
@@ -159,6 +178,98 @@ class AlignmentPersistenceCommandHandler:
                 )
             )
         return result
+
+    def _load_previous_alignment_package(
+        self,
+        folder: Path,
+    ) -> PreviousAlignmentPackageLoaded | NoPreviousAlignments | Failed | None:
+        try:
+            package = self._alignment_repository().load_previous_alignment_package(
+                folder=folder,
+            )
+        except Exception as exc:
+            return self._previous_alignment_load_failed(
+                None,
+                f"Failed to load previous alignment package: {exc}",
+            )
+
+        if not package.histories:
+            return None
+        return self._import_previous_alignment_package(package)
+
+    def _import_previous_alignment_package(
+        self,
+        package: LoadedAlignmentPackage,
+    ) -> PreviousAlignmentPackageLoaded | NoPreviousAlignments | Failed:
+        mouse_root = self.data_context.mouse_root
+        if mouse_root is None:
+            return self._previous_alignment_load_failed(
+                None,
+                "No mouse root loaded. Please select a mouse root first.",
+            )
+
+        loaded: dict[AlignmentKey, AlignmentChoicesUpdated] = {}
+        for (recording_id, probe_name, shank_idx), history in package.histories.items():
+            try:
+                probe = mouse_root.get_probe(recording_id, probe_name)
+            except Exception:
+                logger.warning(
+                    "Skipping previous alignment for unknown probe %s/%s",
+                    recording_id,
+                    probe_name,
+                    exc_info=True,
+                )
+                continue
+
+            key = AlignmentKey(
+                recording_id=probe.recording_id,
+                ephys_collection=probe.ephys_collection,
+                shank_idx=shank_idx,
+            )
+            loaded[key] = self.controller.import_previous_alignments_for_key(
+                key,
+                history.alignments,
+            )
+
+        if not loaded:
+            return self._previous_alignment_load_failed(
+                None,
+                "No previous alignments in the selected package matched the loaded mouse root.",
+            )
+
+        active_choices = self._emit_active_package_choices(loaded)
+        return PreviousAlignmentPackageLoaded(
+            loaded_count=len(loaded),
+            loaded_keys=tuple(
+                sorted(
+                    loaded,
+                    key=lambda key: (
+                        key.recording_id,
+                        key.ephys_collection,
+                        key.shank_idx,
+                    ),
+                )
+            ),
+            active_choices=active_choices,
+        )
+
+    def _emit_active_package_choices(
+        self,
+        loaded: dict[AlignmentKey, AlignmentChoicesUpdated],
+    ) -> list[str] | None:
+        active_key = self.controller.document.selected_alignment_key
+        if active_key is None or active_key not in loaded:
+            return None
+
+        choices = loaded[active_key].choices
+        self.events.emit(
+            PreviousAlignmentsLoaded(
+                shank_idx=active_key.shank_idx,
+                choices=tuple(choices),
+                auto_select=False,
+            )
+        )
+        return choices
 
     def _previous_alignment_load_failed(
         self,
@@ -723,7 +834,15 @@ class AlignmentPersistenceCommandHandler:
                 f"Cannot resolve output directory for edited alignment: {exc}"
             )
 
-        output_directory = output_root / probe.recording_id / probe.probe_name
+        output_package_directory = self._output_package_directory_for_save(output_root)
+        if isinstance(output_package_directory, Failed):
+            return output_package_directory
+
+        output_directory = probe_alignment_output_directory(
+            output_package_directory,
+            probe.recording_id,
+            probe.probe_name,
+        )
         try:
             output_directory.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -731,6 +850,34 @@ class AlignmentPersistenceCommandHandler:
                 f"Failed to create probe output directory {output_directory}: {exc}"
             )
         return output_directory
+
+    def _output_package_directory_for_save(self, output_root: Path) -> Path | Failed:
+        document = self.controller.document
+        if document.output_package_directory is not None:
+            return document.output_package_directory
+
+        mouse_id = document.mouse_id
+        if mouse_id is None and self.data_context.mouse_root is not None:
+            mouse_id = self.data_context.mouse_root.mouse_id
+        if mouse_id is None or str(mouse_id).strip() == "":
+            return Failed(
+                "Mouse ID is not loaded; cannot derive annotation output package."
+            )
+
+        output_package_directory = alignment_output_package_directory(
+            output_root,
+            mouse_id,
+            datetime.now(),
+        )
+        try:
+            output_package_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return Failed(
+                "Failed to create annotation output package "
+                f"{output_package_directory}: {exc}"
+            )
+        self.controller.record_output_package_directory(output_package_directory)
+        return output_package_directory
 
     @staticmethod
     def _stream_is_multi_shank(stream_runtime: Any) -> bool:

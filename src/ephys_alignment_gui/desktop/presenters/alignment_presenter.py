@@ -49,7 +49,6 @@ def desktop_presentation_options_for_edit(
     if edit_kind in {"next", "previous"}:
         return DesktopAlignmentPresentationOptions(line_update="reattach")
     return DesktopAlignmentPresentationOptions(
-        line_update="reset_to_previous",
         reset_histology_range=True,
         clear_reference_lines=True,
     )

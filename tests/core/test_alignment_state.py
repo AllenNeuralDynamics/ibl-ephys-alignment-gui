@@ -192,3 +192,41 @@ def test_alignment_state_select_alignment_rebases_working_history() -> None:
     np.testing.assert_array_equal(state.active_alignment.track, [2.0, 3.0])
     assert state.edit_history.current_idx == 0
     assert state.pending_reference_lines is None
+
+
+def test_alignment_state_can_clear_previous_alignment_selection() -> None:
+    state = AlignmentState()
+    state.feature_prev = np.array([0.0, 1.0])
+    state.track_prev = np.array([2.0, 3.0])
+    state.set_pending_reference_lines(
+        PendingReferenceLines(np.array([1.0]), np.array([2.0]))
+    )
+    state.set_alignments({"saved": [[0.0, 1.0], [2.0, 3.0]]})
+
+    state.clear_previous_alignment_selection()
+
+    assert state.feature_prev is None
+    assert state.track_prev is None
+    assert state.pending_reference_lines is None
+    assert state.prev_align == ["saved", "original"]
+
+
+def test_alignment_state_import_merges_when_active_state_is_dirty() -> None:
+    state = AlignmentState()
+    state.set_alignments({"saved": [[0.0], [1.0]]})
+    state.active_alignment = ActiveAlignment(np.array([2.0]), np.array([3.0]))
+    state.mark_alignment_changed()
+
+    state.import_alignments(
+        {
+            "saved": [[4.0], [5.0]],
+            "loaded": [[6.0], [7.0]],
+        }
+    )
+
+    assert state.alignments == {
+        "saved": [[0.0], [1.0]],
+        "saved.imported.1": [[4.0], [5.0]],
+        "loaded": [[6.0], [7.0]],
+    }
+    assert state.has_unsaved_alignment

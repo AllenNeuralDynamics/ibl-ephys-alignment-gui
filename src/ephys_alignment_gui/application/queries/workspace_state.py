@@ -196,6 +196,10 @@ class WorkspaceStateQueries:
         """Return the derived active output directory, if available."""
         return self.context.document.output_directory
 
+    def active_output_package_directory(self) -> Path | None:
+        """Return the active mouse-level annotation output package, if available."""
+        return self.context.document.output_package_directory
+
     def active_plot_export_directory(self) -> Path | None:
         """Return the default plot-export directory for the active shank."""
         output_directory = self.active_output_directory()

@@ -78,6 +78,7 @@ def _coordinator(
     commands: FakeCommands,
     *,
     selected_folder: Path | None = None,
+    default_folder: Path | None = None,
     use_docdb: bool = False,
     reload_button: Any = "reload-button",
     select_alignment_result: bool = True,
@@ -86,6 +87,7 @@ def _coordinator(
         "reload_text": [],
         "rendered_choices": [],
         "selected_alignments": [],
+        "select_folder_defaults": [],
     }
     events = EventBus()
     commands.events = events
@@ -94,7 +96,10 @@ def _coordinator(
         commands=commands,
         events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
-            select_folder=lambda: selected_folder,
+            select_folder=lambda directory: (
+                calls["select_folder_defaults"].append(directory) or selected_folder
+            ),
+            default_folder=lambda: default_folder,
             use_docdb=lambda: use_docdb,
             set_reload_folder_text=calls["reload_text"].append,
             render_alignment_choices=calls["rendered_choices"].append,
@@ -119,7 +124,10 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
         commands=commands,
         events=events,
         callbacks=PreviousAlignmentLoadCallbacks(
-            select_folder=lambda: prompt_calls.append("prompt") or "/tmp/history",
+            select_folder=lambda _directory: (
+                prompt_calls.append("prompt") or Path("/tmp/history")
+            ),
+            default_folder=lambda: Path("/tmp/output"),
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
@@ -188,12 +196,49 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
     assert calls["reload_text"] == ["/tmp/alignments"]
+    assert calls["select_folder_defaults"] == [None]
     assert calls["rendered_choices"] == [["original", "2026-07-09T12:00:00"]]
     assert calls["selected_alignments"] == [0]
     busy_calls = calls["busy_factory"].calls
     assert len(busy_calls) == 1
     assert busy_calls[0][0] == ("Loading alignments...", "Alignments loaded")
     assert busy_calls[0][1] == {"disable_widgets": "reload-button"}
+
+
+def test_loaded_alignment_event_can_render_without_auto_selecting() -> None:
+    commands = FakeCommands(load_result=NoPreviousAlignments())
+    coordinator, calls = _coordinator(commands)
+
+    coordinator.on_previous_alignments_loaded(
+        PreviousAlignmentsLoaded(
+            shank_idx=0,
+            choices=("saved", "original"),
+            auto_select=False,
+        )
+    )
+
+    assert calls["rendered_choices"] == [["saved", "original"]]
+    assert calls["selected_alignments"] == []
+
+
+def test_load_alignments_prompt_defaults_to_output_package_directory() -> None:
+    commands = FakeCommands(load_result=NoPreviousAlignments())
+    output_package_directory = Path(
+        "/tmp/results/ibl_annotations_mouse_2026-08-16_14-32-05"
+    )
+    coordinator, calls = _coordinator(
+        commands,
+        selected_folder=output_package_directory,
+        default_folder=output_package_directory,
+        use_docdb=False,
+    )
+
+    assert coordinator.load_existing_alignments()
+
+    assert calls["select_folder_defaults"] == [output_package_directory]
+    assert commands.load_calls == [
+        {"folder": output_package_directory, "use_docdb": False}
+    ]
 
 
 def test_load_failure_returns_false_after_prompt() -> None:

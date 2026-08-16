@@ -1157,6 +1157,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     workspace_queries = SimpleNamespace(
         active_mouse_root_path=lambda: None,
         active_output_root=lambda: None,
+        active_output_directory=lambda: None,
+        active_output_package_directory=lambda: None,
         has_output_directory=lambda: False,
         active_reference_line_state=lambda _shank_idx: SimpleNamespace(
             feature_positions_um=[1.0],
@@ -1260,6 +1262,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert previous_alignment_callbacks.use_docdb is (
         ports.previous_alignment_load.use_docdb
+    )
+    assert previous_alignment_callbacks.default_folder is (
+        queries.workspace.active_output_package_directory
     )
     assert (
         coordinator_cluster.previous_alignment_load_coordinator.callbacks.select_alignment.__self__

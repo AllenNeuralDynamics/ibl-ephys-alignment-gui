@@ -496,6 +496,50 @@ def test_reset_alignment_to_initial_updates_active_document_state() -> None:
     np.testing.assert_array_equal(state.active_alignment.track, [2.0, 4.0])
 
 
+def test_reset_alignment_clears_previous_seed_and_uses_unseeded_runtime() -> None:
+    doc = AlignmentDocument()
+    doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))
+    state = doc.active_alignment_state
+    assert state is not None
+    state.feature_prev = np.array([9.0, 10.0])
+    state.track_prev = np.array([11.0, 12.0])
+    state.active_alignment = ActiveAlignment(
+        np.array([9.0, 10.0]),
+        np.array([11.0, 12.0]),
+    )
+    doc.active_set_pending_reference_lines(np.array([1.0]), np.array([2.0]))
+    runtime_service = FakeAlignmentRuntimeService()
+    controller, _ = make_controller(doc, alignment_runtime_service=runtime_service)
+    shank_runtime = SimpleNamespace(
+        shank_idx=0,
+        track_annotations_ras=np.array([[1.0, 2.0, 3.0]]),
+        ephysalign=SimpleNamespace(
+            feature_init=np.array([9.0, 10.0]),
+            track_init=np.array([11.0, 12.0]),
+            brain_atlas="atlas",
+        ),
+    )
+
+    result = controller.reset_alignment_to_initial(shank_runtime, lin_fit=False)
+
+    assert isinstance(result, AlignmentEditApplied)
+    assert len(runtime_service.calls) == 1
+    called_runtime, called_kwargs = runtime_service.calls[0]
+    assert called_runtime is shank_runtime
+    np.testing.assert_array_equal(
+        called_kwargs["track_annotations_ras"],
+        [[1.0, 2.0, 3.0]],
+    )
+    assert called_kwargs["brain_atlas"] == "atlas"
+    assert "feature_prev" not in called_kwargs
+    assert "track_prev" not in called_kwargs
+    np.testing.assert_array_equal(result.alignment.feature, [1.0, 2.0])
+    np.testing.assert_array_equal(result.alignment.track, [3.0, 4.0])
+    assert state.feature_prev is None
+    assert state.track_prev is None
+    assert state.pending_reference_lines is None
+
+
 def test_fit_alignment_to_reference_lines_requires_runtime_alignment() -> None:
     doc = AlignmentDocument()
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))

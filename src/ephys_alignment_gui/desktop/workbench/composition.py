@@ -203,6 +203,7 @@ def build_desktop_workbench_coordinator_cluster(
             ports.previous_alignment_load,
             folder_dialog,
             render_cluster.alignment_selection_actions,
+            app.queries.workspace.active_output_package_directory,
         ),
     )
     interaction_coordinator = _interaction_coordinator(
@@ -267,12 +268,15 @@ def _previous_alignment_load_callbacks(
     ports: DesktopPreviousAlignmentLoadPorts,
     folder_dialog: DesktopFolderDialog,
     alignment_selection_actions: Any,
+    active_output_package_directory: Callable[[], Any],
 ) -> PreviousAlignmentLoadCallbacks:
     """Build callbacks for previous-alignment loading."""
     return PreviousAlignmentLoadCallbacks(
-        select_folder=lambda: folder_dialog.select_existing_directory(
+        select_folder=lambda directory: folder_dialog.select_existing_directory(
             "Load Existing Alignments",
+            directory=directory,
         ),
+        default_folder=active_output_package_directory,
         use_docdb=ports.use_docdb,
         set_reload_folder_text=ports.set_reload_folder_text,
         render_alignment_choices=ports.render_alignment_choices,

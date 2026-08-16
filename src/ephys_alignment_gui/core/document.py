@@ -44,6 +44,7 @@ class AlignmentDocument:
     selected_alignment_key: AlignmentKey | None = None
     alignment_states: dict[AlignmentKey, AlignmentState] = field(default_factory=dict)
     output_root: Path | None = None
+    output_package_directory: Path | None = None
     output_directory: Path | None = None
     channel_info_loaded: bool = False
     data_loaded: bool = False
@@ -64,6 +65,7 @@ class AlignmentDocument:
         """Record the active mouse root and clear probe/data state."""
         self.mouse_root = Path(mouse_root)
         self.mouse_id = mouse_id
+        self.output_package_directory = None
         self.clear_probe()
         if clear_alignment_states:
             self.alignment_states.clear()
@@ -225,8 +227,19 @@ class AlignmentDocument:
         return state
 
     def set_output_root(self, output_root: Path) -> None:
-        """Record the root under which per-probe outputs are written."""
+        """Record the root under which annotation output packages are written."""
         self.output_root = Path(output_root)
+        self.output_package_directory = None
+        self.output_directory = None
+
+    def set_output_package_directory(
+        self,
+        output_package_directory: Path | None,
+    ) -> None:
+        """Record the mouse-level output package for this annotation session."""
+        self.output_package_directory = (
+            Path(output_package_directory) if output_package_directory else None
+        )
 
     def set_output_directory(self, output_directory: Path | None) -> None:
         """Record the derived per-probe output directory."""

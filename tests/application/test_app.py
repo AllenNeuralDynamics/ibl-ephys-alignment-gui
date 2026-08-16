@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -38,6 +39,7 @@ from ephys_alignment_gui.application.results import (
 )
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
+    PreviousAlignmentPackageLoaded,
 )
 from ephys_alignment_gui.application.results.metadata import (
     MouseRootLoaded,
@@ -120,6 +122,7 @@ from ephys_alignment_gui.services.alignment_derived_data import (
 )
 from ephys_alignment_gui.services.alignment_repository import (
     LoadedAlignmentHistory,
+    LoadedAlignmentPackage,
     SavedAlignmentOutputs,
 )
 from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
@@ -236,6 +239,7 @@ class FakeStreamRuntime:
 class FakeAlignmentRepository:
     def __init__(self) -> None:
         self.loaded_alignments = None
+        self.loaded_package: dict[tuple[str, str, int], LoadedAlignmentHistory] = {}
         self.loaded_kwargs = None
         self.saved_kwargs: list[dict[str, Any]] = []
         self.save_error: Exception | None = None
@@ -245,6 +249,9 @@ class FakeAlignmentRepository:
         if self.loaded_alignments is None:
             return None
         return LoadedAlignmentHistory(self.loaded_alignments)
+
+    def load_previous_alignment_package(self, **_kwargs):
+        return LoadedAlignmentPackage(self.loaded_package)
 
     def save_alignment_outputs(self, **kwargs):
         if self.save_error is not None:
@@ -1574,6 +1581,11 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     )
     workspace.metadata_commands.data_context = data_context
     workspace.path_commands.data_context = data_context
+    workspace.path_commands.now = lambda: datetime(2026, 8, 16, 14, 32, 5)
+    expected_package = (
+        tmp_path / "results" / "ibl_annotations_mouse_2026-08-16_14-32-05"
+    )
+    expected_output = expected_package / "rec" / "probeA"
 
     mouse_result = workspace.app.commands.metadata.set_mouse_root(loaded_root.root)
     workspace.document.select_probe(probe.recording_id, probe.probe_name)
@@ -1584,18 +1596,19 @@ def test_commands_path_operations_update_document_and_context(tmp_path) -> None:
     assert mouse_result.mouse_root.root == loaded_root.root
     assert workspace.document.mouse_root == loaded_root.root
     assert isinstance(root_result, OutputRootSet)
-    assert root_result.output_directory == tmp_path / "results" / "rec" / "probeA"
+    assert root_result.output_directory == expected_output
     assert isinstance(derived_result, OutputDirectoryDerived)
-    assert derived_result.output_directory == tmp_path / "results" / "rec" / "probeA"
+    assert derived_result.output_directory == expected_output
+    assert workspace.document.output_package_directory == expected_package
     assert workspace.document.output_directory == derived_result.output_directory
     assert path_events == [
         OutputRootChanged(
             output_root=tmp_path / "results",
-            output_directory=tmp_path / "results" / "rec" / "probeA",
+            output_directory=expected_output,
         ),
         OutputDirectoryChanged(
             output_root=tmp_path / "results",
-            output_directory=tmp_path / "results" / "rec" / "probeA",
+            output_directory=expected_output,
         ),
     ]
 
@@ -1620,14 +1633,20 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
 
     mouse_root = _mouse_root_with_probe()
     output_root = tmp_path / "results"
+    output_package_directory = output_root / "ibl_annotations_mouse_2026-08-16_14-32-05"
     output_directory = output_root / "rec" / "probe"
     workspace.data_context.mouse_root = mouse_root
     workspace.document.set_output_root(output_root)
+    workspace.document.set_output_package_directory(output_package_directory)
     workspace.document.set_output_directory(output_directory)
 
     assert queries.workspace.active_mouse_root_path() == mouse_root.root
     assert queries.workspace.mouse_root_loaded()
     assert queries.workspace.active_output_root() == output_root
+    assert (
+        queries.workspace.active_output_package_directory()
+        == output_package_directory
+    )
     assert queries.workspace.has_output_directory()
 
 
@@ -1859,9 +1878,11 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         xyz_picks=(),
     )
     output_root = tmp_path / "results"
-    active_output_dir = output_root / "rec" / "probeA"
+    output_package_dir = output_root / "ibl_annotations_mouse_2026-08-16_14-32-05"
+    active_output_dir = output_package_dir / "rec" / "probeA"
     active_output_dir.mkdir(parents=True)
     workspace.document.output_root = output_root
+    workspace.document.output_package_directory = output_package_dir
     workspace.document.output_directory = active_output_dir
     workspace.data_context.mouse_root = MouseRoot(
         root=Path("/tmp/mouse"),
@@ -1940,7 +1961,7 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     ]
     assert [kwargs["output_directory"] for kwargs in repo.saved_kwargs] == [
         active_output_dir,
-        output_root / "rec" / "probeB",
+        output_package_dir / "rec" / "probeB",
     ]
     assert [kwargs["multi_shank"] for kwargs in repo.saved_kwargs] == [True, False]
     assert not state_a.has_unsaved_alignment
@@ -2381,6 +2402,64 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
     ]
 
 
+def test_commands_load_previous_alignment_package_does_not_clobber_dirty_active_state(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    repo.loaded_package = {
+        ("rec", "probeA", 1): LoadedAlignmentHistory(
+            {"active-loaded": [[1.0], [2.0]]}
+        ),
+        ("rec", "probeB", 0): LoadedAlignmentHistory(
+            {"other-loaded": [[3.0], [4.0]]}
+        ),
+    }
+    workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
+    probe_a = _probe_info()
+    probe_b = _probe_info(probe_name="probeB", ephys_collection="streamB")
+    workspace.data_context.mouse_root = _mouse_root_with_probes(probe_a, probe_b)
+    active_key = AlignmentKey("rec", "stream", 1)
+    active_state = workspace.document.alignment_state_for(active_key)
+    active_state.active_alignment = ActiveAlignment(
+        np.array([9.0, 10.0]),
+        np.array([11.0, 12.0]),
+    )
+    active_state.mark_alignment_changed()
+    workspace.document.active_set_pending_reference_lines([1000.0], [2000.0])
+    events: list[PreviousAlignmentsLoaded] = []
+    workspace.app.events.subscribe(PreviousAlignmentsLoaded, events.append)
+
+    result = workspace.app.commands.persistence.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=True,
+    )
+
+    assert isinstance(result, PreviousAlignmentPackageLoaded)
+    assert result.loaded_count == 2
+    assert result.loaded_keys == (
+        AlignmentKey("rec", "stream", 1),
+        AlignmentKey("rec", "streamB", 0),
+    )
+    assert result.active_choices == ["active-loaded", "original"]
+    assert repo.loaded_kwargs is None
+    assert active_state.has_unsaved_alignment
+    assert active_state.pending_reference_lines is not None
+    np.testing.assert_allclose(active_state.active_alignment.feature, [9.0, 10.0])
+    np.testing.assert_allclose(active_state.active_alignment.track, [11.0, 12.0])
+    assert active_state.alignments == {"active-loaded": [[1.0], [2.0]]}
+    other_state = workspace.document.alignment_state_for(
+        AlignmentKey("rec", "streamB", 0)
+    )
+    assert other_state.alignments == {"other-loaded": [[3.0], [4.0]]}
+    assert events == [
+        PreviousAlignmentsLoaded(
+            shank_idx=1,
+            choices=("active-loaded", "original"),
+            auto_select=False,
+        )
+    ]
+
+
 def test_commands_load_previous_alignments_reports_missing_history(tmp_path) -> None:
     repo = FakeAlignmentRepository()
     workspace = _workspace_with_probe_state(repo=repo)
@@ -2674,6 +2753,48 @@ def test_commands_reset_alignment_to_initial_clears_pending_lines() -> None:
     np.testing.assert_allclose(result.alignment.track, [2.0, 4.0])
     assert state.pending_reference_lines is None
     assert pending_lines_at_event == [None]
+
+
+def test_commands_empty_fit_uses_reset_semantics() -> None:
+    runtime_initializer = FakeRuntimeInitializer()
+    workspace = AlignmentWorkspace(alignment_runtime_service=runtime_initializer)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.select_alignment_key(active_key)
+    state.feature_prev = np.array([9.0, 10.0])
+    state.track_prev = np.array([11.0, 12.0])
+    state.active_alignment = ActiveAlignment(
+        np.array([9.0, 10.0]),
+        np.array([11.0, 12.0]),
+    )
+    workspace.document.active_set_pending_reference_lines([1.0], [2.0])
+    events: list[AlignmentEdited] = []
+    workspace.app.events.subscribe(AlignmentEdited, events.append)
+    shank_runtime = SimpleNamespace(
+        shank_idx=1,
+        track_annotations_ras=np.array([[1.0, 2.0, 3.0]]),
+        ephysalign=SimpleNamespace(
+            feature_init=np.array([9.0, 10.0]),
+            track_init=np.array([11.0, 12.0]),
+            brain_atlas="atlas",
+        ),
+    )
+
+    result = workspace.app.commands.edit.fit_alignment_to_reference_lines(
+        shank_runtime,
+        line_features_um=np.array([]),
+        line_tracks_um=np.array([]),
+        lin_fit=False,
+        extend_feature=0,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_allclose(result.alignment.feature, [1.0, 2.0])
+    np.testing.assert_allclose(result.alignment.track, [3.0, 4.0])
+    assert state.feature_prev is None
+    assert state.track_prev is None
+    assert state.pending_reference_lines is None
+    assert len(events) == 1
+    assert events[0].edit_kind == "reset"
 
 
 def test_queries_return_active_shank_selection_state() -> None:
