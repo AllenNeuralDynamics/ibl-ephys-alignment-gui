@@ -10,6 +10,10 @@ from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
 
 
 class FakeEphysAlignment:
+    def __init__(self) -> None:
+        self.feature_init = np.array([1.0, 4.0])
+        self.track_init = np.array([3.0, 6.0])
+
     @staticmethod
     def feature2track(depths_track, feature_ref, track_ref):
         return np.asarray(depths_track, dtype=float) + 10.0
@@ -195,6 +199,33 @@ def test_fit_to_reference_lines_uses_linear_extremes_when_enabled() -> None:
         [22.0, 23.0, 24.0, 25.0, 26.0],
     )
     assert result.lin_fit is True
+
+
+def test_fit_to_reference_lines_without_points_resets_to_initial_alignment() -> None:
+    history = AlignmentEditHistory(max_idx=10)
+    history.set_current_alignment(
+        ActiveAlignment(
+            np.array([0.0, 4.0]),
+            np.array([10.0, 14.0]),
+            lin_fit=True,
+        )
+    )
+
+    result = AlignmentEditService().fit_to_reference_lines(
+        history,
+        ephysalign=FakeEphysAlignment(),
+        line_features_um=np.array([]),
+        line_tracks_um=np.array([]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+
+    assert result.changed
+    assert history.idx == 1
+    assert result.alignment is not None
+    np.testing.assert_array_equal(result.alignment.feature, [1.0, 4.0])
+    np.testing.assert_array_equal(result.alignment.track, [3.0, 6.0])
+    assert result.lin_fit is False
 
 
 def test_offset_from_tip_appends_offset_edit_without_mutating_previous_slot() -> None:

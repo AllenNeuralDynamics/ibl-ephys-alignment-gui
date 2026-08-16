@@ -75,12 +75,20 @@ class AlignmentEditService:
         extend_feature: int,
     ) -> AlignmentEditResult:
         """Append a fit edit from user-positioned feature and track lines."""
+        line_feature = np.asarray(line_features_um, dtype=float) / 1e6
+        line_track = np.asarray(line_tracks_um, dtype=float) / 1e6
+        if line_feature.size == 0 or line_track.size == 0:
+            return self.reset_to_initial(
+                history,
+                feature_init=ephysalign.feature_init,
+                track_init=ephysalign.track_init,
+                lin_fit=lin_fit,
+            )
+
         self._append_edit_slot(history, lin_fit=lin_fit, remember_previous=True)
 
         previous_feature = np.asarray(history.features[history.idx_prev])
         previous_track = np.asarray(history.track[history.idx_prev])
-        line_feature = np.asarray(line_features_um, dtype=float) / 1e6
-        line_track = np.asarray(line_tracks_um, dtype=float) / 1e6
 
         depths_track = np.sort(np.r_[previous_track[[0, -1]], line_track])
         track = ephysalign.feature2track(
