@@ -124,7 +124,7 @@ def test_available_plot_specs_include_present_dynamic_image_payloads() -> None:
 
     assert "image.lfp_correlation.theta" in keys
     assert not any(key.startswith("image.passive_event.") for key in keys)
-    assert payload_cache.calls == []
+    assert payload_cache.calls == [("available_plot_specs_for_menu", "image")]
 
 
 def test_available_plot_specs_hide_static_entries_for_missing_datasets() -> None:
@@ -211,7 +211,10 @@ def test_available_plot_specs_does_not_build_dynamic_payloads() -> None:
 
     assert available_plot_specs_for_menu(payload_cache, "image")
     assert available_plot_specs_for_menu(payload_cache, "probe")
-    assert payload_cache.calls == []
+    assert payload_cache.calls == [
+        ("available_plot_specs_for_menu", "image"),
+        ("available_plot_specs_for_menu", "probe"),
+    ]
 
 
 def test_available_plot_specs_logs_missing_optional_dependency_once(caplog) -> None:

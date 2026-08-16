@@ -1,0 +1,103 @@
+"""Qt-free warmup job for ephys plot payload caches."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.plotting.menu_state import build_plot_menu_state
+from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
+from ephys_alignment_gui.plotting.payload_cache_factory import (
+    EphysPlotPayloadCacheFactory,
+)
+from ephys_alignment_gui.plotting.registry import plot_spec, resolve_plot_payload
+from ephys_alignment_gui.runtime.ephys_stream import StreamKey
+from ephys_alignment_gui.services.ephys_data import EphysStreamData
+
+logger = logging.getLogger(__name__)
+
+# These payloads do not depend on alignment-derived in-brain depths. Image/probe
+# payloads can use those depths for first-view levels, so leave them cold for now.
+DEFAULT_WARMUP_SPEC_KEYS = ("line.fr",)
+
+
+@dataclass(frozen=True)
+class PlotPayloadWarmupRequest:
+    """Inputs for warming one inactive stream/shank plot payload cache."""
+
+    stream_key: StreamKey
+    stream: EphysStreamData
+    shank_idx: int
+    unit_filter: str
+    spec_keys: tuple[str, ...] = DEFAULT_WARMUP_SPEC_KEYS
+
+
+@dataclass(frozen=True)
+class PlotPayloadCacheWarmed:
+    """Warmed plot payload cache ready to attach to an inactive runtime."""
+
+    stream_key: StreamKey
+    stream: EphysStreamData
+    shank_idx: int
+    unit_filter: str
+    payload_cache: EphysPlotPayloadCache
+    warmed_spec_keys: tuple[str, ...]
+
+
+class PlotPayloadWarmupJob:
+    """Build and warm ephys plot payload caches without depending on Qt."""
+
+    def __init__(
+        self,
+        plot_payload_cache_factory: EphysPlotPayloadCacheFactory,
+    ) -> None:
+        self.plot_payload_cache_factory = plot_payload_cache_factory
+
+    def run(
+        self,
+        request: PlotPayloadWarmupRequest,
+    ) -> PlotPayloadCacheWarmed | Failed:
+        """Warm one stream/shank plot cache for later activation."""
+        try:
+            payload_cache = self.plot_payload_cache_factory.build_for_stream(
+                request.stream,
+                request.shank_idx,
+            )
+            payload_cache.filter_units(request.unit_filter)
+            build_plot_menu_state(payload_cache)
+            warmed_spec_keys = self._warm_spec_payloads(
+                payload_cache,
+                request.spec_keys,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Plot payload warmup failed for %s shank %s",
+                request.stream_key,
+                request.shank_idx,
+                exc_info=True,
+            )
+            return Failed(f"Plot payload warmup failed: {exc}")
+
+        return PlotPayloadCacheWarmed(
+            stream_key=request.stream_key,
+            stream=request.stream,
+            shank_idx=request.shank_idx,
+            unit_filter=request.unit_filter,
+            payload_cache=payload_cache,
+            warmed_spec_keys=warmed_spec_keys,
+        )
+
+    @staticmethod
+    def _warm_spec_payloads(
+        payload_cache: EphysPlotPayloadCache,
+        spec_keys: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        warmed: list[str] = []
+        for spec_key in spec_keys:
+            spec = plot_spec(spec_key)
+            if spec.available is not None and not spec.available(payload_cache):
+                continue
+            if resolve_plot_payload(payload_cache, spec) is not None:
+                warmed.append(spec.key)
+        return tuple(warmed)

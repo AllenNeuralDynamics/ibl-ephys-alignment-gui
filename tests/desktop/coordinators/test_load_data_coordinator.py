@@ -26,7 +26,7 @@ from ephys_alignment_gui.core.alignment_events import (
     StreamActivated,
 )
 from ephys_alignment_gui.core.event_bus import EventBus
-from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.desktop.coordinators.load_data_coordinator import (
     DesktopLoadDataCallbacks,
     DesktopLoadDataCoordinator,
@@ -36,6 +36,7 @@ from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCompleted,
     LoadDataJobProgress,
 )
+from ephys_alignment_gui.plotting.payload_warmup import PlotPayloadCacheWarmed
 from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
@@ -78,6 +79,7 @@ class FakeQueries:
             active_probe_selection_state=self.active_probe_selection_state,
             next_unloaded_probe_in_recording=self.next_unloaded_probe_in_recording,
         )
+        self.ephys = SimpleNamespace(active_unit_filter=lambda: "unitrefine_neural")
 
     def active_shank_selection(self):
         return SimpleNamespace(shank_idx=self.shank_idx)
@@ -127,6 +129,8 @@ class FakeCommands:
         self.preload_invocation_calls: list[LoadDataFreshPrepared] = []
         self.preload_cache_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
         self.preload_cancel_calls: list[str] = []
+        self.plot_warmup_run_calls: list[Any] = []
+        self.plot_warmup_attach_calls: list[PlotPayloadCacheWarmed] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
         self._next_load_id = 1
         self.load = self
@@ -320,13 +324,31 @@ class FakeCommands:
     ):
         self.preload_cache_calls.append((execution.prepared, job_result))
         return FreshEphysDataLoaded(
-            stream_runtime=SimpleNamespace(stream_key=("rec", "stream")),
+            stream_runtime=SimpleNamespace(
+                stream_key=("rec", "stream"),
+                stream=SimpleNamespace(name="stream"),
+            ),
             shank_idx=execution.prepared.shank_idx,
         )
 
     def cancel_active_preload(self, reason: str):
         self.preload_cancel_calls.append(reason)
         return None
+
+    def run_plot_payload_warmup(self, request):
+        self.plot_warmup_run_calls.append(request)
+        return PlotPayloadCacheWarmed(
+            stream_key=request.stream_key,
+            stream=request.stream,
+            shank_idx=request.shank_idx,
+            unit_filter=request.unit_filter,
+            payload_cache=SimpleNamespace(warmed=True),
+            warmed_spec_keys=("line.fr",),
+        )
+
+    def attach_warmed_plot_payload_cache(self, warmed: PlotPayloadCacheWarmed):
+        self.plot_warmup_attach_calls.append(warmed)
+        return Ok()
 
     def _emit_activation_for_result(
         self,
@@ -518,8 +540,9 @@ class ImmediateFreshLoadRunner:
 
 
 class ManualFreshLoadRunner:
-    def __init__(self) -> None:
+    def __init__(self, *, active_during_finished: bool = False) -> None:
         self.active = False
+        self.active_during_finished = active_during_finished
         self.cancel_calls: list[str] = []
         self.shutdown_calls: list[tuple[str, int]] = []
         self.shutdown_result = True
@@ -558,12 +581,77 @@ class ManualFreshLoadRunner:
                 event,
             ),
         )
-        self.active = False
+        if not self.active_during_finished:
+            self.active = False
         self.start_args["on_finished"](execution, result)
+        self.active = False
 
     def cancel(self, reason: str) -> None:
         self.cancel_calls.append(reason)
         self.active = False
+
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_calls.append((reason, timeout_ms))
+        if self.shutdown_result:
+            self.active = False
+        return self.shutdown_result
+
+
+class ImmediatePlotWarmupRunner:
+    def __init__(self) -> None:
+        self.starts: list[Any] = []
+        self.shutdown_calls: list[tuple[str, int]] = []
+
+    @property
+    def is_running(self) -> bool:
+        return False
+
+    def start(
+        self,
+        *,
+        request,
+        run_job,
+        on_finished,
+    ) -> None:
+        self.starts.append(request)
+        on_finished(request, run_job(request))
+
+    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
+        self.shutdown_calls.append((reason, timeout_ms))
+        return True
+
+
+class ManualPlotWarmupRunner:
+    def __init__(self) -> None:
+        self.active = False
+        self.start_args: dict[str, Any] | None = None
+        self.shutdown_calls: list[tuple[str, int]] = []
+        self.shutdown_result = True
+
+    @property
+    def is_running(self) -> bool:
+        return self.active
+
+    def start(
+        self,
+        *,
+        request,
+        run_job,
+        on_finished,
+    ) -> None:
+        self.active = True
+        self.start_args = {
+            "request": request,
+            "run_job": run_job,
+            "on_finished": on_finished,
+        }
+
+    def finish(self) -> None:
+        assert self.start_args is not None
+        request = self.start_args["request"]
+        result = self.start_args["run_job"](request)
+        self.active = False
+        self.start_args["on_finished"](request, result)
 
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_calls.append((reason, timeout_ms))
@@ -664,6 +752,7 @@ def _coordinator(
     calls: list[tuple] | None = None,
     load_runner: Any | None = None,
     preload_runner: Any | None = None,
+    plot_warmup_runner: Any | None = None,
     next_probe_name: str | None = None,
 ) -> tuple[DesktopLoadDataCoordinator, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
@@ -679,6 +768,7 @@ def _coordinator(
         _callbacks(calls),
         load_runner=load_runner or ImmediateFreshLoadRunner(),
         preload_runner=preload_runner or ImmediateFreshLoadRunner(),
+        plot_warmup_runner=plot_warmup_runner or ImmediatePlotWarmupRunner(),
     )
     coordinator.connect_load_events()
     return (
@@ -841,7 +931,68 @@ def test_load_heavy_data_preloads_next_probe_after_foreground_completion() -> No
     preload_runner.finish()
 
     assert commands.preload_cache_calls
+    assert commands.plot_warmup_run_calls
+    assert commands.plot_warmup_attach_calls
     assert calls.count(("render-shank", 0, True)) == 1
+
+
+def test_load_heavy_data_preloads_after_qt_finished_before_thread_stops() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    load_runner = ManualFreshLoadRunner(active_during_finished=True)
+    preload_runner = ManualFreshLoadRunner()
+    coordinator, commands, _queries, calls = _coordinator(
+        begin_result=prepared,
+        load_runner=load_runner,
+        preload_runner=preload_runner,
+        next_probe_name="probeB",
+    )
+
+    assert coordinator.load_heavy_data()
+
+    assert load_runner.is_running
+    assert not preload_runner.is_running
+    assert commands.preload_begin_calls == []
+
+    load_runner.finish()
+
+    assert not load_runner.is_running
+    assert preload_runner.is_running
+    assert commands.preload_begin_calls == [
+        {"recording_id": "rec", "probe_name": "probeB", "target_shank": 0}
+    ]
+    assert commands.preload_start_calls
+    assert commands.preload_invocation_calls
+    assert commands.preload_cache_calls == []
+    assert calls.count(("render-shank", 0, True)) == 1
+
+
+def test_preload_completion_warms_plot_payload_cache_before_attachment() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    preload_runner = ManualFreshLoadRunner()
+    plot_warmup_runner = ManualPlotWarmupRunner()
+    coordinator, commands, _queries, _calls = _coordinator(
+        begin_result=prepared,
+        preload_runner=preload_runner,
+        plot_warmup_runner=plot_warmup_runner,
+        next_probe_name="probeB",
+    )
+
+    assert coordinator.load_heavy_data()
+    preload_runner.finish()
+
+    assert plot_warmup_runner.is_running
+    assert commands.plot_warmup_run_calls == []
+    assert commands.plot_warmup_attach_calls == []
+
+    plot_warmup_runner.finish()
+
+    assert commands.plot_warmup_run_calls
+    request = commands.plot_warmup_run_calls[0]
+    assert request.stream_key == ("rec", "stream")
+    assert request.shank_idx == 0
+    assert request.unit_filter == "unitrefine_neural"
+    assert request.spec_keys == ("line.fr",)
+    assert commands.plot_warmup_attach_calls
 
 
 def test_load_heavy_data_does_not_preload_without_unloaded_candidate() -> None:
@@ -904,6 +1055,23 @@ def test_load_heavy_data_cancels_active_preload_before_foreground_load() -> None
     assert preload_runner.cancel_calls == ["foreground load requested"]
 
 
+def test_load_heavy_data_already_active_keeps_active_preload_running() -> None:
+    preload_runner = ManualFreshLoadRunner()
+    preload_runner.active = True
+    coordinator, commands, _queries, _calls = _coordinator(
+        begin_result=LoadDataAlreadyActiveResult(("rec", "stream"), 0),
+        preload_runner=preload_runner,
+        next_probe_name="probeB",
+    )
+
+    assert coordinator.load_heavy_data()
+
+    assert preload_runner.is_running
+    assert commands.preload_begin_calls == []
+    assert commands.preload_cancel_calls == []
+    assert preload_runner.cancel_calls == []
+
+
 def test_load_heavy_data_cancels_active_runner_without_beginning_new_load() -> None:
     runner = ManualFreshLoadRunner()
     runner.active = True
@@ -962,6 +1130,18 @@ def test_shutdown_active_load_settles_preload_before_teardown() -> None:
 
     assert commands.preload_cancel_calls == ["closing"]
     assert preload_runner.shutdown_calls == [("closing", 123)]
+
+
+def test_shutdown_active_preload_settles_plot_warmup_before_teardown() -> None:
+    plot_warmup_runner = ManualPlotWarmupRunner()
+    plot_warmup_runner.active = True
+    coordinator, _commands, _queries, _calls = _coordinator(
+        plot_warmup_runner=plot_warmup_runner,
+    )
+
+    assert coordinator.shutdown_active_preload("closing", timeout_ms=123)
+
+    assert plot_warmup_runner.shutdown_calls == [("closing", 123)]
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:

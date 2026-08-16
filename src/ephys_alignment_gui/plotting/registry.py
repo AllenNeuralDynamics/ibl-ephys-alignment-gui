@@ -517,6 +517,20 @@ def available_plot_specs_for_menu(
     menu: PlotMenu,
 ) -> tuple[PlotSpec, ...]:
     """Return menu specs available for the current plot payload cache."""
+    get_or_build = getattr(payload_cache, "get_or_build_payload", None)
+    if callable(get_or_build):
+        return get_or_build(
+            ("available_plot_specs_for_menu", menu),
+            lambda: _available_plot_specs_for_menu_uncached(payload_cache, menu),
+        )
+    return _available_plot_specs_for_menu_uncached(payload_cache, menu)
+
+
+def _available_plot_specs_for_menu_uncached(
+    payload_cache: Any,
+    menu: PlotMenu,
+) -> tuple[PlotSpec, ...]:
+    """Return menu specs available for the current plot payload cache."""
     specs: list[PlotSpec] = []
     for entry in PLOT_MENU_ENTRIES:
         if entry.menu != menu:

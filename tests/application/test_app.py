@@ -95,6 +95,7 @@ from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobRequest,
 )
 from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
+from ephys_alignment_gui.plotting.payload_warmup import PlotPayloadCacheWarmed
 from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
@@ -1228,6 +1229,58 @@ def test_commands_cache_started_preload_data_caches_without_activation() -> None
     assert workspace.runtime.active_stream_runtime is None
     assert workspace.runtime.current_stream_key is None
     assert not workspace.document.data_loaded
+
+
+def test_commands_attach_warmed_plot_payload_cache_to_inactive_cached_stream() -> None:
+    workspace = AlignmentWorkspace()
+    stream = _ephys_stream("streamB")
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        stream,
+        workspace.plot_payload_cache_factory,
+        shank_idx=0,
+        activate=False,
+    )
+    payload_cache = SimpleNamespace(warmed=True)
+
+    result = workspace.app.commands.load.attach_warmed_plot_payload_cache(
+        PlotPayloadCacheWarmed(
+            stream_key=("rec", "streamB"),
+            stream=stream,
+            shank_idx=0,
+            unit_filter="unitrefine_neural",
+            payload_cache=payload_cache,
+            warmed_spec_keys=("line.fr",),
+        )
+    )
+
+    assert isinstance(result, Ok)
+    assert stream_runtime.shank_runtime_by_idx[0].plot_payload_cache is payload_cache
+
+
+def test_commands_ignore_warmed_plot_payload_cache_for_active_stream() -> None:
+    workspace = AlignmentWorkspace()
+    stream = _ephys_stream("streamB")
+    stream_runtime = workspace.runtime.cache_loaded_stream_data(
+        stream,
+        workspace.plot_payload_cache_factory,
+        shank_idx=0,
+        activate=True,
+    )
+
+    result = workspace.app.commands.load.attach_warmed_plot_payload_cache(
+        PlotPayloadCacheWarmed(
+            stream_key=("rec", "streamB"),
+            stream=stream,
+            shank_idx=0,
+            unit_filter="unitrefine_neural",
+            payload_cache=SimpleNamespace(warmed=True),
+            warmed_spec_keys=("line.fr",),
+        )
+    )
+
+    assert isinstance(result, LoadDataStaleResultIgnored)
+    assert result.reason == "Warmed stream is active; active view owns its plot cache."
+    assert stream_runtime.shank_runtime_by_idx[0].plot_payload_cache is None
 
 
 def test_commands_cache_started_preload_caches_after_same_root_session_change() -> None:

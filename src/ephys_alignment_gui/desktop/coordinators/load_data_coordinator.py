@@ -34,10 +34,19 @@ from ephys_alignment_gui.desktop.workers.load_data_runner import (
     FreshLoadRunner,
     QtFreshLoadRunner,
 )
+from ephys_alignment_gui.desktop.workers.plot_payload_warmup_runner import (
+    PlotPayloadWarmupResult,
+    PlotPayloadWarmupRunner,
+    QtPlotPayloadWarmupRunner,
+)
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
     LoadDataJobCompleted,
     LoadDataJobProgress,
+)
+from ephys_alignment_gui.plotting.payload_warmup import (
+    PlotPayloadCacheWarmed,
+    PlotPayloadWarmupRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +72,9 @@ class DesktopLoadDataCoordinator:
     callbacks: DesktopLoadDataCallbacks
     load_runner: FreshLoadRunner = field(default_factory=QtFreshLoadRunner)
     preload_runner: FreshLoadRunner = field(default_factory=QtFreshLoadRunner)
+    plot_warmup_runner: PlotPayloadWarmupRunner = field(
+        default_factory=QtPlotPayloadWarmupRunner
+    )
     _active_load_context: Any | None = field(default=None, init=False, repr=False)
     _active_load_context_manager: Any | None = field(
         default=None,
@@ -77,6 +89,11 @@ class DesktopLoadDataCoordinator:
         repr=False,
     )
     _active_preload_timer: TimingSession | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _active_plot_warmup_timer: TimingSession | None = field(
         default=None,
         init=False,
         repr=False,
@@ -140,7 +157,6 @@ class DesktopLoadDataCoordinator:
             logger.info("Load request ignored because a foreground load is active")
             self.cancel_active_load("superseded by a newer load request")
             return False
-        self.cancel_active_preload("foreground load requested")
 
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
@@ -169,11 +185,13 @@ class DesktopLoadDataCoordinator:
                 self.schedule_next_probe_preload(session_name, probe_name)
                 return True
             if isinstance(begin_result, LoadDataCachedActivated):
+                self.cancel_active_preload("foreground load requested")
                 logger.info("Activated cached stream %s", begin_result.stream_key)
                 self._finish_switch_timer("cached")
                 self.schedule_next_probe_preload(session_name, probe_name)
                 return True
             assert isinstance(begin_result, LoadDataFreshPrepared)
+            self.cancel_active_preload("foreground load requested")
             with timer.step("start_fresh_load"):
                 execution = self.app.commands.load.start_fresh_load_data(begin_result)
                 invocation = self.app.commands.load.fresh_load_job_invocation(execution)
@@ -249,6 +267,8 @@ class DesktopLoadDataCoordinator:
         self,
         recording_id: str,
         probe_name: str,
+        *,
+        allow_foreground_runner_settling: bool = False,
     ) -> bool:
         """Preload the next unloaded probe in the same recording, if one exists."""
         next_probe = self.app.queries.workspace.next_unloaded_probe_in_recording(
@@ -260,6 +280,7 @@ class DesktopLoadDataCoordinator:
         return self.start_probe_preload(
             recording_id=recording_id,
             probe_name=next_probe,
+            allow_foreground_runner_settling=allow_foreground_runner_settling,
         )
 
     def start_probe_preload(
@@ -267,9 +288,10 @@ class DesktopLoadDataCoordinator:
         *,
         recording_id: str,
         probe_name: str,
+        allow_foreground_runner_settling: bool = False,
     ) -> bool:
         """Start a background preload that only populates the inactive cache."""
-        if self.load_runner.is_running:
+        if self.load_runner.is_running and not allow_foreground_runner_settling:
             return False
         if self.preload_runner.is_running:
             logger.debug(
@@ -358,6 +380,8 @@ class DesktopLoadDataCoordinator:
         timeout_ms: int = 5000,
     ) -> bool:
         """Cancel and settle any active background preload."""
+        if not self.shutdown_plot_payload_warmup(reason, timeout_ms=timeout_ms):
+            return False
         if self._active_preload_id is None and not self.preload_runner.is_running:
             return True
         self.app.commands.load.cancel_active_preload(reason)
@@ -369,6 +393,20 @@ class DesktopLoadDataCoordinator:
                 reason=reason,
             )
             self._active_preload_id = None
+        return stopped
+
+    def shutdown_plot_payload_warmup(
+        self,
+        reason: str = "application closing",
+        *,
+        timeout_ms: int = 5000,
+    ) -> bool:
+        """Settle any active plot-cache warmup before desktop teardown."""
+        if not self.plot_warmup_runner.is_running:
+            return True
+        stopped = self.plot_warmup_runner.shutdown(reason, timeout_ms=timeout_ms)
+        if stopped:
+            self._finish_plot_warmup_timer("cancelled", reason=reason)
         return stopped
 
     def _on_load_worker_progress(
@@ -459,6 +497,7 @@ class DesktopLoadDataCoordinator:
         self.schedule_next_probe_preload(
             completed.target.recording_id,
             completed.target.probe_name,
+            allow_foreground_runner_settling=True,
         )
 
     def _on_preload_worker_progress(
@@ -515,6 +554,7 @@ class DesktopLoadDataCoordinator:
                 return
             assert isinstance(cached, FreshEphysDataLoaded)
             logger.info("Preloaded stream %s", cached.stream_runtime.stream_key)
+            self.start_plot_payload_warmup(cached)
             self._finish_preload_timer(
                 timer,
                 "completed",
@@ -524,6 +564,84 @@ class DesktopLoadDataCoordinator:
             if execution.load_id == self._active_preload_id:
                 self._active_preload_id = None
                 self._active_preload_timer = None
+
+    def start_plot_payload_warmup(self, cached: FreshEphysDataLoaded) -> bool:
+        """Warm an inactive preloaded stream's plot payload cache."""
+        if self.plot_warmup_runner.is_running:
+            logger.debug(
+                "Skipping plot payload warmup for %s because another warmup is running",
+                cached.stream_runtime.stream_key,
+            )
+            return False
+
+        request = PlotPayloadWarmupRequest(
+            stream_key=cached.stream_runtime.stream_key,
+            stream=cached.stream_runtime.stream,
+            shank_idx=cached.shank_idx,
+            unit_filter=self.app.queries.ephys.active_unit_filter(),
+        )
+        timer = start_timing(
+            "plot_payload_warmup",
+            recording_id=request.stream_key[0],
+            probe_name=request.stream_key[1],
+            shank_idx=request.shank_idx,
+            unit_filter=request.unit_filter,
+        )
+        self._active_plot_warmup_timer = timer
+        with timer.activate():
+            try:
+                with timer.step("start_plot_payload_warmup_worker"):
+                    self.plot_warmup_runner.start(
+                        request=request,
+                        run_job=self.app.commands.load.run_plot_payload_warmup,
+                        on_finished=self._on_plot_payload_warmup_finished,
+                    )
+            except Exception as exc:
+                self._finish_plot_warmup_timer("failed", message=str(exc))
+                logger.warning("Failed to start plot payload warmup", exc_info=True)
+                return False
+        return True
+
+    def _on_plot_payload_warmup_finished(
+        self,
+        request: PlotPayloadWarmupRequest,
+        result: PlotPayloadWarmupResult,
+    ) -> None:
+        timer = self._active_plot_warmup_timer
+        context = timer.activate() if timer is not None else nullcontext()
+        with context:
+            if isinstance(result, Failed):
+                logger.debug(result.message)
+                self._finish_plot_warmup_timer("failed", message=result.message)
+                return
+            assert isinstance(result, PlotPayloadCacheWarmed)
+            step = (
+                timer.step("attach_warmed_plot_payload_cache")
+                if timer is not None
+                else nullcontext()
+            )
+            with step:
+                attached = self.app.commands.load.attach_warmed_plot_payload_cache(
+                    result,
+                )
+            if isinstance(attached, Failed):
+                logger.warning(attached.message)
+                self._finish_plot_warmup_timer("failed", message=attached.message)
+                return
+            if isinstance(attached, LoadDataStaleResultIgnored):
+                logger.debug("Ignoring warmed plot cache: %s", attached.reason)
+                self._finish_plot_warmup_timer("stale", reason=attached.reason)
+                return
+            logger.info(
+                "Warmed plot payload cache for %s shank %s (%s)",
+                request.stream_key,
+                request.shank_idx,
+                ", ".join(result.warmed_spec_keys) or "no payloads",
+            )
+            self._finish_plot_warmup_timer(
+                "completed",
+                warmed_spec_keys=result.warmed_spec_keys,
+            )
 
     def _open_load_context(self, *args: Any, **kwargs: Any) -> None:
         """Enter and hold the desktop busy context for an async load."""
@@ -644,6 +762,12 @@ class DesktopLoadDataCoordinator:
             timer.finish(status, **fields)
         if timer is self._active_preload_timer:
             self._active_preload_timer = None
+
+    def _finish_plot_warmup_timer(self, status: str, **fields: Any) -> None:
+        timer = self._active_plot_warmup_timer
+        if timer is not None:
+            timer.finish(status, **fields)
+            self._active_plot_warmup_timer = None
 
 
 def _timed_step(timer: TimingSession | None, name: str):

@@ -54,7 +54,7 @@ from ephys_alignment_gui.core.reference_line_capture import (
     ReferenceLineCapture,
     capture_active_reference_lines_if_provided,
 )
-from ephys_alignment_gui.core.workflow import Failed, PolicyResult
+from ephys_alignment_gui.core.workflow import Failed, Ok, PolicyResult
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.io.ephys_stream_loader import LoadedEphysSelection
 from ephys_alignment_gui.io.load_data_job import (
@@ -69,6 +69,11 @@ from ephys_alignment_gui.io.load_data_job import (
 from ephys_alignment_gui.io.load_data_target import LoadDataJobTarget
 from ephys_alignment_gui.plotting.payload_cache_factory import (
     EphysPlotPayloadCacheFactory,
+)
+from ephys_alignment_gui.plotting.payload_warmup import (
+    PlotPayloadCacheWarmed,
+    PlotPayloadWarmupJob,
+    PlotPayloadWarmupRequest,
 )
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.histology_loader import (
@@ -689,6 +694,58 @@ class LoadDataCommandHandler:
             return self.cache_completed_fresh_load_data(job_result)
         finally:
             self.preload_lifecycle.finish(execution)
+
+    def attach_warmed_plot_payload_cache(
+        self,
+        warmed: PlotPayloadCacheWarmed,
+    ) -> Ok | LoadDataStaleResultIgnored | Failed:
+        """Attach a warmed plot cache to an inactive cached stream, if still useful."""
+        stream_runtime = self.runtime.cached_stream(warmed.stream_key)
+        if stream_runtime is None:
+            return LoadDataStaleResultIgnored(
+                load_id=None,
+                stream_key=warmed.stream_key,
+                shank_idx=warmed.shank_idx,
+                reason="Warmed stream is no longer cached.",
+            )
+        if stream_runtime.stream is not warmed.stream:
+            return LoadDataStaleResultIgnored(
+                load_id=None,
+                stream_key=warmed.stream_key,
+                shank_idx=warmed.shank_idx,
+                reason="Warmed stream does not match cached stream.",
+            )
+        if self.runtime.active_stream_runtime is stream_runtime:
+            return LoadDataStaleResultIgnored(
+                load_id=None,
+                stream_key=warmed.stream_key,
+                shank_idx=warmed.shank_idx,
+                reason="Warmed stream is active; active view owns its plot cache.",
+            )
+
+        shank_runtime = stream_runtime.shank_runtime_by_idx.get(warmed.shank_idx)
+        if shank_runtime is None:
+            return Failed(
+                f"Warmed shank runtime not found: {warmed.stream_key} "
+                f"shank {warmed.shank_idx}"
+            )
+        if shank_runtime.plot_payload_cache is not None:
+            return LoadDataStaleResultIgnored(
+                load_id=None,
+                stream_key=warmed.stream_key,
+                shank_idx=warmed.shank_idx,
+                reason="Warmed shank already has a plot cache.",
+            )
+
+        shank_runtime.plot_payload_cache = warmed.payload_cache
+        return Ok()
+
+    def run_plot_payload_warmup(
+        self,
+        request: PlotPayloadWarmupRequest,
+    ) -> PlotPayloadCacheWarmed | Failed:
+        """Run one Qt-free plot payload warmup job."""
+        return PlotPayloadWarmupJob(self.plot_payload_cache_factory).run(request)
 
     def _cache_loaded_probe_data(
         self,
