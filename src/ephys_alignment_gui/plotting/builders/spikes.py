@@ -11,6 +11,10 @@ from matplotlib import cm
 from ephys_alignment_gui.geometry.numeric import bincount2D
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
 from ephys_alignment_gui.plotting.level_policy import in_brain_depth_mask
+from ephys_alignment_gui.plotting.raster_request import (
+    DEFAULT_IMAGE_RASTER_REQUEST,
+    ImageRasterRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ class SpikePlotDataBuilder:
         self.t_template = np.array([])
         self.max_spike_time = None
         self._shank_spike_indices = None
+        self._fr_img_base_by_request = {}
 
         if self.data["spikes"]["exists"]:
             self.max_spike_time = np.max(self.data["spikes"]["times"])
@@ -108,13 +113,19 @@ class SpikePlotDataBuilder:
             ~np.isnan(self.data["spikes"]["depths"][self.spike_idx])
             & ~np.isnan(self.data["spikes"]["amps"][self.spike_idx])
         )[0]
+        self._fr_img_base_by_request.clear()
+
+    def _valid_spike_indices(self):
+        """Return selected spike row indices with finite depth/amplitude values."""
+        return self.spike_idx[self.kp_idx]
 
     def get_depth_data_scatter(self):
         """Return time/depth spike-amplitude scatter payload."""
         if not self.data["spikes"]["exists"]:
             return None
 
-        spike_amps = self.data["spikes"]["amps"][self.spike_idx][self.kp_idx]
+        valid_idx = self._valid_spike_indices()
+        spike_amps = self.data["spikes"]["amps"][valid_idx]
         A_BIN = 10
         amp_range = np.quantile(spike_amps, [0, 0.9])
         amp_bins = np.linspace(amp_range[0], amp_range[1], A_BIN)
@@ -137,8 +148,9 @@ class SpikePlotDataBuilder:
 
             spikes_size[idx] = i_a / (A_BIN / 4)
 
-        x = self.data["spikes"]["times"][self.spike_idx][self.kp_idx][0:-1:100]
-        y = self.data["spikes"]["depths"][self.spike_idx][self.kp_idx][0:-1:100]
+        display_idx = valid_idx[0:-1:100]
+        x = self.data["spikes"]["times"][display_idx]
+        y = self.data["spikes"]["depths"][display_idx]
         return {
             "x": x,
             "y": y,
@@ -159,10 +171,11 @@ class SpikePlotDataBuilder:
         if not self.data["spikes"]["exists"]:
             return None, None, None
 
+        valid_idx = self._valid_spike_indices()
         clu, spike_depths, spike_amps, n_spikes = self.compute_spike_average(
-            self.data["spikes"]["clusters"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["amps"][self.spike_idx][self.kp_idx],
+            self.data["spikes"]["clusters"][valid_idx],
+            self.data["spikes"]["depths"][valid_idx],
+            self.data["spikes"]["amps"][valid_idx],
         )
         spike_amps = spike_amps * 1e6
         fr = n_spikes / np.max(self.data["spikes"]["times"])
@@ -215,17 +228,56 @@ class SpikePlotDataBuilder:
 
         return data_fr_scatter, data_p2t_scatter, data_amp_scatter
 
-    def get_fr_img(self, in_brain_depths_um=None):
+    def get_fr_img(
+        self,
+        in_brain_depths_um=None,
+        *,
+        raster_request: ImageRasterRequest | None = None,
+    ):
         """Return time/depth firing-rate image payload."""
+        base = self._fr_image_base(raster_request)
+        if base is None:
+            return None
+
+        img = base["img"]
+        depths = base["depths"]
+        col = in_brain_depth_mask(depths, in_brain_depths_um, bin_width=base["d_bin"])
+        fr_by_depth = np.mean(img if col is None else img[:, col], axis=0)
+
+        return {
+            "img": img,
+            "scale": base["scale"],
+            "levels": np.quantile(fr_by_depth, [0, 1]),
+            "offset": base["offset"],
+            "xrange": base["xrange"],
+            "xaxis": "Time (s)",
+            "cmap": "binary",
+            "title": "Firing Rate",
+        }
+
+    def _fr_image_base(
+        self,
+        raster_request: ImageRasterRequest | None = None,
+    ):
+        """Return the expensive firing-rate image arrays cached by unit filter."""
+        raster_request = raster_request or DEFAULT_IMAGE_RASTER_REQUEST
+        if raster_request in self._fr_img_base_by_request:
+            return self._fr_img_base_by_request[raster_request]
         if not self.data["spikes"]["exists"]:
             return None
 
-        t_bin = 0.05
-        d_bin = 5
+        valid_idx = self._valid_spike_indices()
+        spike_times = self.data["spikes"]["times"][valid_idx]
+        spike_depths = self.data["spikes"]["depths"][valid_idx]
+        if spike_times.size == 0 or spike_depths.size == 0:
+            return None
+
         chn_min, chn_max = self._spike_depth_extent()
+        t_bin = raster_request.time_bin_s(float(np.ptp(spike_times)))
+        d_bin = raster_request.depth_bin_um(float(chn_max - chn_min))
         n, times, depths = bincount2D(
-            self.data["spikes"]["times"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+            spike_times,
+            spike_depths,
             t_bin,
             d_bin,
             ylim=[chn_min, chn_max],
@@ -234,19 +286,15 @@ class SpikePlotDataBuilder:
         xscale = (times[-1] - times[0]) / img.shape[0]
         yscale = (depths[-1] - depths[0]) / img.shape[1]
 
-        col = in_brain_depth_mask(depths, in_brain_depths_um, bin_width=d_bin)
-        fr_by_depth = np.mean(img if col is None else img[:, col], axis=0)
-
-        return {
+        self._fr_img_base_by_request[raster_request] = {
             "img": img,
             "scale": np.array([xscale, yscale]),
-            "levels": np.quantile(fr_by_depth, [0, 1]),
             "offset": np.array([0, np.min(depths)]),
             "xrange": np.array([times[0], times[-1]]),
-            "xaxis": "Time (s)",
-            "cmap": "binary",
-            "title": "Firing Rate",
+            "depths": depths,
+            "d_bin": d_bin,
         }
+        return self._fr_img_base_by_request[raster_request]
 
     def get_fr_amp_data_line(self):
         """Return firing-rate and amplitude depth-profile line payloads."""
@@ -256,21 +304,25 @@ class SpikePlotDataBuilder:
         t_bin = np.max(self.data["spikes"]["times"])
         d_bin = 10
         chn_min, chn_max = self._spike_depth_extent()
+        valid_idx = self._valid_spike_indices()
+        spike_times = self.data["spikes"]["times"][valid_idx]
+        spike_depths = self.data["spikes"]["depths"][valid_idx]
+        spike_amps = self.data["spikes"]["amps"][valid_idx]
         nspikes, _times, depths = bincount2D(
-            self.data["spikes"]["times"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+            spike_times,
+            spike_depths,
             t_bin,
             d_bin,
             ylim=[chn_min, chn_max],
         )
 
         amp, _times, depths = bincount2D(
-            self.data["spikes"]["amps"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+            spike_amps,
+            spike_depths,
             t_bin,
             d_bin,
             ylim=[chn_min, chn_max],
-            weights=self.data["spikes"]["amps"][self.spike_idx][self.kp_idx],
+            weights=spike_amps,
         )
         mean_fr = nspikes[:, 0] / t_bin
         mean_amp = np.divide(amp[:, 0], nspikes[:, 0]) * 1e6
@@ -300,9 +352,10 @@ class SpikePlotDataBuilder:
         t_bin = 0.05
         d_bin = 40
         chn_min, chn_max = self._spike_depth_extent()
+        valid_idx = self._valid_spike_indices()
         counts, _times, depths = bincount2D(
-            self.data["spikes"]["times"][self.spike_idx][self.kp_idx],
-            self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+            self.data["spikes"]["times"][valid_idx],
+            self.data["spikes"]["depths"][valid_idx],
             t_bin,
             d_bin,
             ylim=[chn_min, chn_max],
@@ -374,17 +427,19 @@ class SpikePlotDataBuilder:
         self.t_template = 1e3 * (np.arange(n_template)) / FS
 
     def _spike_depth_extent(self):
+        valid_idx = self._valid_spike_indices()
+        spike_depths = self.data["spikes"]["depths"][valid_idx]
         return (
             np.min(
                 np.r_[
                     self.chn_min,
-                    self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+                    spike_depths,
                 ]
             ),
             np.max(
                 np.r_[
                     self.chn_max,
-                    self.data["spikes"]["depths"][self.spike_idx][self.kp_idx],
+                    spike_depths,
                 ]
             ),
         )

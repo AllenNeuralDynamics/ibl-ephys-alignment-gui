@@ -148,9 +148,12 @@ class EphysPlotPayloadCache:
         """Return cluster firing-rate, duration, and amplitude scatter payloads."""
         return self.spike_builder.get_fr_p2t_data_scatter()
 
-    def get_fr_img(self):
+    def get_fr_img(self, *, raster_request=None):
         """Return time/depth firing-rate image payload."""
-        return self.spike_builder.get_fr_img(self.in_brain_depths_um)
+        return self.spike_builder.get_fr_img(
+            self.in_brain_depths_um,
+            raster_request=raster_request,
+        )
 
     def get_fr_amp_data_line(self):
         """Return firing-rate and amplitude depth-profile line payloads."""

@@ -113,6 +113,7 @@ class EphysPlotQueries:
         spec_key: str,
         *,
         raw_image_payloads: Mapping[Any, Any] | None = None,
+        raster_request: Any | None = None,
     ) -> Any:
         """Resolve a plot payload for the active shank."""
         payload_cache = self._active_payload_cache()
@@ -130,7 +131,11 @@ class EphysPlotQueries:
             spec_key=spec.key,
             renderer=spec.renderer,
         ):
-            return resolve_plot_payload(payload_cache, spec)
+            return resolve_plot_payload(
+                payload_cache,
+                spec,
+                raster_request=raster_request,
+            )
 
     def active_plot_bounds(
         self,

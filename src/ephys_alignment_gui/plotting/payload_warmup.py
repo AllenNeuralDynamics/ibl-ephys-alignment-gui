@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.plotting.menu_state import build_plot_menu_state
@@ -17,10 +18,6 @@ from ephys_alignment_gui.services.ephys_data import EphysStreamData
 
 logger = logging.getLogger(__name__)
 
-# These payloads do not depend on alignment-derived in-brain depths. Image/probe
-# payloads can use those depths for first-view levels, so leave them cold for now.
-DEFAULT_WARMUP_SPEC_KEYS = ("line.fr",)
-
 
 @dataclass(frozen=True)
 class PlotPayloadWarmupRequest:
@@ -30,7 +27,8 @@ class PlotPayloadWarmupRequest:
     stream: EphysStreamData
     shank_idx: int
     unit_filter: str
-    spec_keys: tuple[str, ...] = DEFAULT_WARMUP_SPEC_KEYS
+    spec_keys: tuple[str, ...] | None = None
+    raster_request: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -65,10 +63,11 @@ class PlotPayloadWarmupJob:
                 request.shank_idx,
             )
             payload_cache.filter_units(request.unit_filter)
-            build_plot_menu_state(payload_cache)
+            menu_state = build_plot_menu_state(payload_cache)
             warmed_spec_keys = self._warm_spec_payloads(
                 payload_cache,
-                request.spec_keys,
+                request.spec_keys or _selected_menu_spec_keys(menu_state),
+                raster_request=request.raster_request,
             )
         except Exception as exc:
             logger.warning(
@@ -92,12 +91,30 @@ class PlotPayloadWarmupJob:
     def _warm_spec_payloads(
         payload_cache: EphysPlotPayloadCache,
         spec_keys: tuple[str, ...],
+        *,
+        raster_request: Any | None = None,
     ) -> tuple[str, ...]:
         warmed: list[str] = []
         for spec_key in spec_keys:
             spec = plot_spec(spec_key)
             if spec.available is not None and not spec.available(payload_cache):
                 continue
-            if resolve_plot_payload(payload_cache, spec) is not None:
+            if (
+                resolve_plot_payload(
+                    payload_cache,
+                    spec,
+                    raster_request=raster_request,
+                )
+                is not None
+            ):
                 warmed.append(spec.key)
         return tuple(warmed)
+
+
+def _selected_menu_spec_keys(menu_state: Any) -> tuple[str, ...]:
+    """Return the per-menu plot keys that activation will render by default."""
+    return tuple(
+        group.selected_key
+        for group in menu_state.groups.values()
+        if group.selected_key is not None
+    )

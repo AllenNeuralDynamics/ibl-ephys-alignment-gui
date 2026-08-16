@@ -15,10 +15,12 @@ from ephys_alignment_gui.desktop.displays.ephys_panel_view import (
 
 
 class FakePlot:
-    def __init__(self) -> None:
+    def __init__(self, *, width: float = 900.0, height: float = 600.0) -> None:
         self.added: list[Any] = []
         self.removed: list[Any] = []
         self.x_ranges: list[dict[str, Any]] = []
+        self._width = width
+        self._height = height
 
     def addItem(self, item: Any) -> None:
         self.added.append(item)
@@ -28,6 +30,20 @@ class FakePlot:
 
     def setXRange(self, **kwargs: Any) -> None:
         self.x_ranges.append(kwargs)
+
+    def width(self) -> float:
+        return self._width
+
+    def height(self) -> float:
+        return self._height
+
+
+class FakeAxis:
+    def __init__(self, width: float = 100.0) -> None:
+        self._width = width
+
+    def width(self) -> float:
+        return self._width
 
 
 class FakeSignal:
@@ -104,6 +120,9 @@ class FakeColorBar:
     def getColourMap(self) -> str:
         return "lookup"
 
+    def getBrush(self, data: Any, levels: Any = None) -> list[Any]:
+        return [("brush", float(value), tuple(levels)) for value in data]
+
     def makeColourBar(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return {"args": args, "kwargs": kwargs, "cmap": self.name}
 
@@ -152,7 +171,7 @@ def _view(monkeypatch) -> tuple[DesktopEphysPanelView, dict[str, FakePlot], list
             widgets=EphysPanelWidgets(
                 area=object(),
                 graphics_layout=object(),
-                image_axis=object(),
+                image_axis=FakeAxis(),
             ),
             style=EphysPanelStyle(
                 line_pen="line-pen",
@@ -164,6 +183,15 @@ def _view(monkeypatch) -> tuple[DesktopEphysPanelView, dict[str, FakePlot], list
         plots,
         axis_calls,
     )
+
+
+def test_image_raster_request_uses_visible_plot_area(monkeypatch) -> None:
+    view, _plots, _axis_calls = _view(monkeypatch)
+
+    request = view.image_raster_request()
+
+    assert request.max_time_bins == 800
+    assert request.max_depth_bins == 600
 
 
 def test_render_image_owns_image_items_and_feature_coordinate_mapping(
@@ -224,6 +252,34 @@ def test_render_scatter_connects_cluster_clicks_and_maps_cluster_index(
     assert plot.sigClicked.connected
     assert view.cluster_index_for_plot_x(20.0) == 1
     assert view.cluster_index_for_plot_x(30.0) is None
+
+
+def test_render_scatter_maps_numeric_colours_through_color_bar(monkeypatch) -> None:
+    view, _plots, _axis_calls = _view(monkeypatch)
+
+    view.render_scatter(
+        {
+            "x": np.array([10.0, 20.0]),
+            "y": np.array([1.0, 2.0]),
+            "symbol": np.array(["o", "o"]),
+            "size": np.array([4, 4]),
+            "colours": np.array([5.0, 25.0]),
+            "pen": "pen",
+            "levels": np.array([0.0, 30.0]),
+            "cmap": "magma",
+            "title": "clusters",
+            "xrange": (5.0, 25.0),
+            "xaxis": "x",
+            "cluster": True,
+        }
+    )
+
+    plot = view.items.image_plots[0]
+    assert plot.data is not None
+    assert plot.data["brush"] == [
+        ("brush", 5.0, (0.0, 30.0)),
+        ("brush", 25.0, (0.0, 30.0)),
+    ]
 
 
 def test_render_line_and_probe_clear_previous_items(monkeypatch) -> None:

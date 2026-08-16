@@ -9,6 +9,7 @@ from ephys_alignment_gui.plotting.payload_warmup import (
     PlotPayloadWarmupJob,
     PlotPayloadWarmupRequest,
 )
+from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 
 
 class FakePayloadCache:
@@ -25,6 +26,8 @@ class FakePayloadCache:
         }
         self.filtered_subsets: list[str] = []
         self.cache: dict[Any, Any] = {}
+        self.fr_img_calls = 0
+        self.fr_img_raster_requests = []
 
     def get_or_build_payload(self, key: tuple[Any, ...], build):
         if key not in self.cache:
@@ -34,7 +37,9 @@ class FakePayloadCache:
     def filter_units(self, subset: str) -> None:
         self.filtered_subsets.append(subset)
 
-    def get_fr_img(self) -> Any:
+    def get_fr_img(self, *, raster_request=None) -> Any:
+        self.fr_img_calls += 1
+        self.fr_img_raster_requests.append(raster_request)
         return "fr-img"
 
     def get_depth_data_scatter(self) -> Any:
@@ -75,11 +80,13 @@ class FakePayloadCacheFactory:
 def test_plot_payload_warmup_filters_menu_availability_and_safe_payloads() -> None:
     factory = FakePayloadCacheFactory()
     stream = SimpleNamespace(name="stream")
+    raster_request = ImageRasterRequest(max_time_bins=320, max_depth_bins=240)
     request = PlotPayloadWarmupRequest(
         stream_key=("rec", "probeA"),
         stream=stream,
         shank_idx=0,
         unit_filter="unitrefine_neural",
+        raster_request=raster_request,
     )
 
     result = PlotPayloadWarmupJob(factory).run(request)
@@ -87,8 +94,10 @@ def test_plot_payload_warmup_filters_menu_availability_and_safe_payloads() -> No
     assert factory.calls == [(stream, 0)]
     assert result.payload_cache is factory.payload_cache
     assert result.unit_filter == "unitrefine_neural"
-    assert result.warmed_spec_keys == ("line.fr",)
+    assert result.warmed_spec_keys == ("image.fr", "line.fr")
     assert factory.payload_cache.filtered_subsets == ["unitrefine_neural"]
+    assert factory.payload_cache.fr_img_calls == 1
+    assert factory.payload_cache.fr_img_raster_requests == [raster_request]
     assert ("available_plot_specs_for_menu", "image") in factory.payload_cache.cache
     assert ("available_plot_specs_for_menu", "line") in factory.payload_cache.cache
     assert ("available_plot_specs_for_menu", "probe") in factory.payload_cache.cache

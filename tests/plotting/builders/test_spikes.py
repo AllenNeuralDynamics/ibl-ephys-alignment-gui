@@ -1,0 +1,61 @@
+"""Tests for spike-derived plot payload builders."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import numpy as np
+
+import ephys_alignment_gui.plotting.builders.spikes as spikes_module
+from ephys_alignment_gui.plotting.builders.spikes import SpikePlotDataBuilder
+from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
+
+
+def test_fr_image_reuses_binned_image_but_recomputes_levels(monkeypatch) -> None:
+    calls = []
+
+    def fake_bincount2d(*args, **kwargs):
+        calls.append((args, kwargs))
+        counts = np.array(
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [10.0, 10.0, 10.0, 10.0],
+                [100.0, 100.0, 100.0, 100.0],
+            ]
+        )
+        return counts, np.array([0.0, 1.0]), np.array([0.0, 5.0, 10.0])
+
+    monkeypatch.setattr(spikes_module, "bincount2D", fake_bincount2d)
+    builder = SpikePlotDataBuilder(
+        {
+            "spikes": {
+                "exists": True,
+                "times": np.array([0.1, 0.2, 0.3]),
+                "depths": np.array([0.0, 5.0, 10.0]),
+                "amps": np.array([1.0, 1.0, 1.0]),
+                "clusters": np.array([0, 0, 0]),
+            },
+            "clusters": {
+                "exists": True,
+                "metrics": {},
+                "waveforms": np.zeros((1, 3, 1)),
+            },
+            "spike_shanks": np.array([0, 0, 0]),
+        },
+        SimpleNamespace(chn_min=0.0, chn_max=10.0),
+        shank_idx=0,
+    )
+
+    raster_request = ImageRasterRequest(
+        max_time_bins=2,
+        max_depth_bins=1,
+        min_time_bin_s=0.0,
+        min_depth_bin_um=0.0,
+    )
+    unmasked = builder.get_fr_img(raster_request=raster_request)
+    masked = builder.get_fr_img(np.array([10.0]), raster_request=raster_request)
+
+    assert len(calls) == 1
+    np.testing.assert_allclose(calls[0][0][2:4], (0.1, 10.0))
+    assert masked["img"] is unmasked["img"]
+    assert not np.array_equal(masked["levels"], unmasked["levels"])

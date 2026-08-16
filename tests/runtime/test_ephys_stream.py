@@ -118,7 +118,7 @@ def test_plot_payload_for_shank_resolves_registered_plot_spec() -> None:
     payload = runtime.plot_payload_for_shank(1, "image.fr")
 
     assert payload["rows"].tolist() == [2, 3]
-    assert factory.payload_cache.calls == [("fr_img",)]
+    assert factory.payload_cache.calls == []
 
 
 def test_filtered_plot_payload_cache_for_shank_applies_unit_filter() -> None:

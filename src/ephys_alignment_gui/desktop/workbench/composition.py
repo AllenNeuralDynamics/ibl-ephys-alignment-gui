@@ -125,6 +125,7 @@ def build_desktop_workbench_coordinator_cluster(
         callbacks=_load_data_callbacks(
             ports.load_data,
             ports.busy,
+            displays,
             output_path_coordinator,
             render_cluster.shank_presenter,
             lifecycle_coordinator,
@@ -368,6 +369,7 @@ def _lifecycle_callbacks(
 def _load_data_callbacks(
     load_data_ports: DesktopLoadDataPorts,
     busy_ports: DesktopBusyPorts,
+    displays: DesktopDisplays,
     output_path_coordinator: DesktopOutputPathCoordinator,
     shank_presenter: Any,
     lifecycle_coordinator: DesktopLifecycleCoordinator,
@@ -387,6 +389,7 @@ def _load_data_callbacks(
                 preserve_plot_selection=preserve,
             )
         ),
+        image_raster_request=displays.ephys.panel.image_raster_request,
         clear_empty_state=load_data_ports.clear_empty_state,
         busy_context=busy_ports.busy_context,
     )

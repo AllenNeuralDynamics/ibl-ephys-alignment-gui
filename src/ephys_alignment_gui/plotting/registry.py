@@ -28,6 +28,7 @@ class PlotSpec:
     default: bool = False
     bounds_source: Callable[[Any], Any] | None = None
     available: Callable[[Any], bool] | None = None
+    raster_source: Callable[[Any, Any], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -289,7 +290,12 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         label="Firing Rate",
         menu="image",
         renderer="image",
-        source=_source(("fr_img",), lambda payload_cache: payload_cache.get_fr_img()),
+        source=lambda payload_cache: payload_cache.get_fr_img(),
+        raster_source=(
+            lambda payload_cache, raster_request: payload_cache.get_fr_img(
+                raster_request=raster_request
+            )
+        ),
         default=True,
         available=_data_exists("spikes"),
     ),
@@ -560,10 +566,17 @@ def _coerce_spec(spec_or_key: PlotSpec | str) -> PlotSpec:
     return plot_spec(spec_or_key)
 
 
-def resolve_plot_payload(payload_cache: Any, spec_or_key: PlotSpec | str) -> Any:
+def resolve_plot_payload(
+    payload_cache: Any,
+    spec_or_key: PlotSpec | str,
+    *,
+    raster_request: Any | None = None,
+) -> Any:
     """Resolve a plot payload from a cache using a plot spec key."""
     spec = _coerce_spec(spec_or_key)
     try:
+        if raster_request is not None and spec.raster_source is not None:
+            return spec.raster_source(payload_cache, raster_request)
         return spec.source(payload_cache)
     except Exception:
         logger.warning("Plot payload %s is unavailable", spec.key, exc_info=True)

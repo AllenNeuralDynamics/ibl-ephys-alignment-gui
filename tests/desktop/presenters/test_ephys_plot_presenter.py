@@ -12,6 +12,7 @@ from ephys_alignment_gui.desktop.presenters.ephys_plot_presenter import (
     EphysPlotRenderCallbacks,
 )
 from ephys_alignment_gui.plotting.menu_state import PlotMenuGroupState, PlotMenuState
+from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 from ephys_alignment_gui.plotting.registry import PlotSpec
 
 
@@ -119,8 +120,14 @@ class FakeQueries:
             active_plot_bounds=self.active_plot_bounds,
         )
 
-    def active_plot_payload(self, spec_key: str, *, raw_image_payloads):
-        self.payload_calls.append((spec_key, raw_image_payloads))
+    def active_plot_payload(
+        self,
+        spec_key: str,
+        *,
+        raw_image_payloads,
+        raster_request=None,
+    ):
+        self.payload_calls.append((spec_key, raw_image_payloads, raster_request))
         return {"payload": spec_key}
 
     def active_plot_bounds(self, spec_key: str, *, raw_image_payloads):
@@ -186,10 +193,12 @@ def _presenter(calls: list[Any]):
     queries = FakeQueries()
     commands = FakeCommands()
     app = SimpleNamespace(queries=queries, commands=commands)
+    raster_request = ImageRasterRequest(max_time_bins=320, max_depth_bins=240)
     presenter = DesktopEphysPlotPresenter(
         app=app,
         callbacks=EphysPlotRenderCallbacks(
             raw_image_payloads=lambda: {"raw": "payload"},
+            image_raster_request=lambda: raster_request,
             render_image=lambda data: calls.append(("image", data)),
             render_scatter=lambda data: calls.append(("scatter", data)),
             render_line=lambda data: calls.append(("line", data)),
@@ -201,11 +210,11 @@ def _presenter(calls: list[Any]):
     presenter.attach_plot_menus(FakeMenuBar())
     presenter.attach_unit_filter_menu(FakeMenuBar(), parent=object())
     presenter.render_menus(_plot_menu_state())
-    return presenter, queries, commands
+    return presenter, queries, commands, raster_request
 
 
 def test_ephys_plot_presenter_renders_menu_state_and_selected_keys() -> None:
-    presenter, _queries, _commands = _presenter([])
+    presenter, _queries, _commands, _raster_request = _presenter([])
 
     assert presenter.has_plot_menus()
     assert presenter.current_plot_keys() == {
@@ -216,7 +225,7 @@ def test_ephys_plot_presenter_renders_menu_state_and_selected_keys() -> None:
 
 
 def test_ephys_plot_presenter_marks_default_unit_filter_checked() -> None:
-    presenter, _queries, _commands = _presenter([])
+    presenter, _queries, _commands, _raster_request = _presenter([])
 
     assert presenter._unit_filter_actions_by_subset[DEFAULT_UNIT_FILTER].checked
     assert not presenter._unit_filter_actions_by_subset["all"].checked
@@ -224,18 +233,22 @@ def test_ephys_plot_presenter_marks_default_unit_filter_checked() -> None:
 
 def test_ephys_plot_presenter_toggles_and_dispatches_selected_plot() -> None:
     calls: list[Any] = []
-    presenter, queries, _commands = _presenter(calls)
+    presenter, queries, _commands, raster_request = _presenter(calls)
 
     presenter.toggle_plot("image")
 
     assert presenter.current_plot_keys()["image"] == "image.first"
     assert calls == [("image", {"payload": "image.first"})]
-    assert queries.payload_calls[-1] == ("image.first", {"raw": "payload"})
+    assert queries.payload_calls[-1] == (
+        "image.first",
+        {"raw": "payload"},
+        raster_request,
+    )
 
 
 def test_ephys_plot_presenter_dispatches_probe_plot_with_bounds() -> None:
     calls: list[Any] = []
-    presenter, queries, _commands = _presenter(calls)
+    presenter, queries, _commands, _raster_request = _presenter(calls)
 
     presenter.plot_from_spec("probe.depth")
 
@@ -245,7 +258,7 @@ def test_ephys_plot_presenter_dispatches_probe_plot_with_bounds() -> None:
 
 def test_ephys_plot_presenter_applies_unit_filter_and_redraws_current() -> None:
     calls: list[Any] = []
-    presenter, _queries, commands = _presenter(calls)
+    presenter, _queries, commands, _raster_request = _presenter(calls)
 
     presenter.filter_unit_pressed("KS good")
 
@@ -259,7 +272,7 @@ def test_ephys_plot_presenter_applies_unit_filter_and_redraws_current() -> None:
 
 def test_ephys_plot_presenter_unit_filter_preserves_user_selected_image_plot() -> None:
     calls: list[Any] = []
-    presenter, _queries, commands = _presenter(calls)
+    presenter, _queries, commands, _raster_request = _presenter(calls)
 
     presenter.toggle_plot("image")
     calls.clear()
@@ -276,7 +289,7 @@ def test_ephys_plot_presenter_unit_filter_preserves_user_selected_image_plot() -
 
 def test_ephys_plot_presenter_renders_defaults_for_new_shank() -> None:
     calls: list[Any] = []
-    presenter, _queries, _commands = _presenter(calls)
+    presenter, _queries, _commands, _raster_request = _presenter(calls)
     state = ActiveShankScreenState(
         shank_idx=0,
         shank_id=1,
@@ -300,7 +313,7 @@ def test_ephys_plot_presenter_renders_defaults_for_new_shank() -> None:
 
 def test_ephys_plot_presenter_redraws_preserved_selections() -> None:
     calls: list[Any] = []
-    presenter, _queries, commands = _presenter(calls)
+    presenter, _queries, commands, _raster_request = _presenter(calls)
     state = ActiveShankScreenState(
         shank_idx=0,
         shank_id=1,

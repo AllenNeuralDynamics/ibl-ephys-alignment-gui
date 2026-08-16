@@ -37,6 +37,7 @@ from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobProgress,
 )
 from ephys_alignment_gui.plotting.payload_warmup import PlotPayloadCacheWarmed
+from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 from ephys_alignment_gui.runtime.histology_loader import (
     HistologyDataLoaded,
     HistologyDataUnavailable,
@@ -343,7 +344,7 @@ class FakeCommands:
             shank_idx=request.shank_idx,
             unit_filter=request.unit_filter,
             payload_cache=SimpleNamespace(warmed=True),
-            warmed_spec_keys=("line.fr",),
+            warmed_spec_keys=request.spec_keys or ("image.fr", "line.fr"),
         )
 
     def attach_warmed_plot_payload_cache(self, warmed: PlotPayloadCacheWarmed):
@@ -734,12 +735,14 @@ def _fresh_completed(
 
 
 def _callbacks(calls: list[tuple]) -> DesktopLoadDataCallbacks:
+    raster_request = ImageRasterRequest(max_time_bins=320, max_depth_bins=240)
     return DesktopLoadDataCallbacks(
         reference_line_positions=lambda: calls.append(("positions",)) or ([1.0], [2.0]),
         prepare_for_fresh_stream_load=lambda: calls.append(("prepare-fresh",)),
         render_loaded_shank=lambda shank_idx, preserve: calls.append(
             ("render-shank", shank_idx, preserve)
         ),
+        image_raster_request=lambda: raster_request,
         clear_empty_state=lambda: calls.append(("clear-empty",)),
         busy_context=lambda *args, **kwargs: FakeBusyContext(calls, *args, **kwargs),
     )
@@ -991,7 +994,11 @@ def test_preload_completion_warms_plot_payload_cache_before_attachment() -> None
     assert request.stream_key == ("rec", "stream")
     assert request.shank_idx == 0
     assert request.unit_filter == "unitrefine_neural"
-    assert request.spec_keys == ("line.fr",)
+    assert request.spec_keys is None
+    assert request.raster_request == ImageRasterRequest(
+        max_time_bins=320,
+        max_depth_bins=240,
+    )
     assert commands.plot_warmup_attach_calls
 
 

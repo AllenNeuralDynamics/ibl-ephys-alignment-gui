@@ -20,12 +20,14 @@ class FakePayloadCache:
     def __init__(self, passive_events: dict[str, Any] | None = None) -> None:
         self.calls = []
         self.passive_events = passive_events if passive_events is not None else {}
+        self.fr_raster_requests = []
 
     def get_or_build_payload(self, key: tuple[Any, ...], build):
         self.calls.append(key)
         return build()
 
-    def get_fr_img(self) -> Any:
+    def get_fr_img(self, *, raster_request=None) -> Any:
+        self.fr_raster_requests.append(raster_request)
         return "fr-img"
 
     def get_depth_data_scatter(self) -> Any:
@@ -109,6 +111,22 @@ def test_resolve_plot_payload_uses_typed_cache_key_and_index() -> None:
     assert resolve_plot_payload(payload_cache, "probe.rms_ap") == "probe-rms"
 
     assert payload_cache.calls == [("rms_data_img_probe", "AP")]
+
+
+def test_resolve_plot_payload_passes_raster_request_to_raster_source() -> None:
+    payload_cache = FakePayloadCache()
+    raster_request = object()
+
+    assert (
+        resolve_plot_payload(
+            payload_cache,
+            "image.fr",
+            raster_request=raster_request,
+        )
+        == "fr-img"
+    )
+
+    assert payload_cache.fr_raster_requests == [raster_request]
 
 
 def test_plot_spec_contains_renderer_for_view_dispatch() -> None:

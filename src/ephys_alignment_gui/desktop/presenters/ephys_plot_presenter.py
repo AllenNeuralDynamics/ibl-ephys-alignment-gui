@@ -28,6 +28,7 @@ class EphysPlotRenderCallbacks:
     """Desktop callbacks for rendering resolved ephys plot payloads."""
 
     raw_image_payloads: Callable[[], Mapping[Any, Any]]
+    image_raster_request: Callable[[], Any]
     render_image: Callable[[Any], None]
     render_scatter: Callable[[Any], None]
     render_line: Callable[[Any], None]
@@ -270,6 +271,11 @@ class DesktopEphysPlotPresenter:
         return self.app.queries.ephys.active_plot_payload(
             spec.key,
             raw_image_payloads=self.callbacks.raw_image_payloads(),
+            raster_request=(
+                self.callbacks.image_raster_request()
+                if spec.renderer == "image"
+                else None
+            ),
         )
 
     def plot_bounds_for_spec(self, spec_key: str) -> Any:

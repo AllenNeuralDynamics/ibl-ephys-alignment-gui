@@ -72,9 +72,10 @@ def bincount2D(x, y, xbin=0, ybin=0, xlim=None, ylim=None, weights=None):
 
     xscale, xind = _get_scale_and_indices(x, xbin, xlim)
     yscale, yind = _get_scale_and_indices(y, ybin, ylim)
-    # aggregate by using bincount on absolute indices for a 2d array
+    # Aggregate by using bincount on flattened 2D indices. Computing the flat
+    # index directly avoids building a temporary ``N x 2`` coordinate array.
     nx, ny = [xscale.size, yscale.size]
-    ind2d = np.ravel_multi_index(np.c_[yind, xind].transpose(), dims=(ny, nx))
+    ind2d = yind * nx + xind
     r = np.bincount(ind2d, minlength=nx * ny, weights=weights).reshape(ny, nx)
 
     # if a set of specific values is requested output an array matching the scale dimensions

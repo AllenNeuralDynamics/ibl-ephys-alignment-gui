@@ -59,6 +59,7 @@ class DesktopLoadDataCallbacks:
     reference_line_positions: Callable[[], Any]
     prepare_for_fresh_stream_load: Callable[[], None]
     render_loaded_shank: Callable[[int, bool | None], None]
+    image_raster_request: Callable[[], Any]
     clear_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
 
@@ -579,6 +580,7 @@ class DesktopLoadDataCoordinator:
             stream=cached.stream_runtime.stream,
             shank_idx=cached.shank_idx,
             unit_filter=self.app.queries.ephys.active_unit_filter(),
+            raster_request=self.callbacks.image_raster_request(),
         )
         timer = start_timing(
             "plot_payload_warmup",

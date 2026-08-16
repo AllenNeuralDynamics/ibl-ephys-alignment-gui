@@ -14,6 +14,7 @@ from PyQt5 import QtGui
 from ephys_alignment_gui.desktop.displays.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.desktop.displays.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
+from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,17 @@ class DesktopEphysPanelView:
             "probe_width": self.plots.probe.width(),
         }
 
+    def image_raster_request(self) -> ImageRasterRequest:
+        """Return the current feature image plot raster target."""
+        width_px = (
+            _dimension(self.plots.image, "width")
+            - _dimension(self.widgets.image_axis, "width")
+        )
+        return ImageRasterRequest.from_plot_size(
+            width_px=max(1.0, width_px),
+            height_px=max(1.0, _dimension(self.plots.image, "height")),
+        )
+
     def feature_y_range(self) -> tuple[float, float]:
         """Return the current feature-depth y-range."""
         y_min, y_max = self.plots.image.viewRange()[1]
@@ -264,7 +276,11 @@ class DesktopEphysPanelView:
             y=data["y"],
             symbol=data["symbol"].tolist(),
             size=data["size"].tolist(),
-            brush=self._qt_colours(data["colours"]),
+            brush=self._scatter_brushes(
+                color_bar=color_bar,
+                colours=data["colours"],
+                levels=data["levels"],
+            ),
             pen=data["pen"],
         )
 
@@ -463,6 +479,46 @@ class DesktopEphysPanelView:
         return converted
 
     @staticmethod
+    def _scatter_brushes(*, color_bar: ColorBar, colours: Any, levels: Any) -> list[Any]:
+        """Return brushes for literal colors or scalar values mapped through a LUT."""
+        colour_values = np.asarray(colours)
+        if colour_values.dtype.kind in "fiu" and colour_values.ndim <= 1:
+            values = colour_values.astype(float, copy=False).ravel()
+            brush_levels = DesktopEphysPanelView._numeric_colour_levels(
+                levels,
+                values,
+            )
+            safe_values = np.where(np.isfinite(values), values, brush_levels[0])
+            return color_bar.getBrush(safe_values, levels=brush_levels)
+
+        return DesktopEphysPanelView._qt_colours(colours)
+
+    @staticmethod
+    def _numeric_colour_levels(levels: Any, values: np.ndarray) -> list[float]:
+        """Return a finite, non-degenerate color range for scalar scatter values."""
+        level_values = np.asarray(levels, dtype=float).ravel()
+        if level_values.size >= 2:
+            lo, hi = float(level_values[0]), float(level_values[1])
+        else:
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size == 0:
+                return [0.0, 1.0]
+            lo = float(np.min(finite_values))
+            hi = float(np.max(finite_values))
+
+        if not np.isfinite(lo) or not np.isfinite(hi):
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size == 0:
+                return [0.0, 1.0]
+            lo = float(np.min(finite_values))
+            hi = float(np.max(finite_values))
+
+        if lo == hi:
+            hi = lo + 1.0
+
+        return [lo, hi]
+
+    @staticmethod
     def _phase_legend_item() -> Any:
         from matplotlib.colors import hsv_to_rgb
 
@@ -490,6 +546,16 @@ class DesktopEphysPanelView:
 def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:
     y_min, y_max = depth_view.plot_y_range_um
     plot.setYRange(min=y_min, max=y_max, padding=padding)
+
+
+def _dimension(item: Any, method_name: str) -> float:
+    method = getattr(item, method_name, None)
+    if not callable(method):
+        return 0.0
+    try:
+        return float(method())
+    except Exception:
+        return 0.0
 
 
 def _add_depth_guides(

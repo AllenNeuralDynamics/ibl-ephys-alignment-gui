@@ -79,6 +79,7 @@ def build_desktop_render_cluster(
         app=app,
         callbacks=EphysPlotRenderCallbacks(
             raw_image_payloads=views.shank_screen.raw_image_payload_mapping,
+            image_raster_request=displays.ephys.panel.image_raster_request,
             render_image=displays.ephys.panel.render_image,
             render_scatter=displays.ephys.panel.render_scatter,
             render_line=displays.ephys.panel.render_line,
