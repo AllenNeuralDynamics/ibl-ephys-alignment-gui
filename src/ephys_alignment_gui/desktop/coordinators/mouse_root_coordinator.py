@@ -22,7 +22,6 @@ class DesktopMouseRootCallbacks:
     busy_context: Callable[..., AbstractContextManager[Any]]
     cancel_active_preload: Callable[[str], bool]
     evict_stream_cache: Callable[[], Any]
-    select_first_session: Callable[[], None]
 
 
 @dataclass
@@ -59,9 +58,9 @@ class DesktopMouseRootCoordinator:
 
             sessions = loaded_root.sessions
             self.selection_view.populate_sessions(sessions)
+            self.selection_view.select_session_index(-1)
             self.selection_view.clear_probes()
             self.selection_view.clear_shanks()
-            self.selection_view.set_load_data_enabled(False)
             n_probes = sum(
                 len(rec_probes) for rec_probes in loaded_root.probes.values()
             )
@@ -71,24 +70,18 @@ class DesktopMouseRootCoordinator:
                 len(sessions),
                 n_probes,
             )
-            if sessions:
-                self.selection_view.select_session_index(0)
-                self.callbacks.select_first_session()
         return True
 
     def mouse_root_edited(self) -> bool:
         """Handle direct text edits to the mouse-root line edit."""
         text = self.path_view.mouse_root_text().strip()
         if not text:
-            self.selection_view.set_load_data_enabled(False)
             return False
         try:
             path = Path(text)
         except Exception as exc:
             logger.error("Invalid mouse-root path: %s", exc)
-            self.selection_view.set_load_data_enabled(False)
             return False
         if not self.set_mouse_root(path):
-            self.selection_view.set_load_data_enabled(False)
             return False
         return True

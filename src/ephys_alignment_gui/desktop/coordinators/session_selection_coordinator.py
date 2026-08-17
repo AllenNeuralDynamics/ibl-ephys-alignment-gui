@@ -18,7 +18,6 @@ class DesktopSessionSelectionCallbacks:
     """Non-widget side effects for session selection."""
 
     capture_pending_reference_lines: Callable[[], None]
-    show_empty_state: Callable[[], None]
     select_first_probe: Callable[[], None]
 
 
@@ -46,17 +45,14 @@ class DesktopSessionSelectionCoordinator:
             return True
 
         callbacks.capture_pending_reference_lines()
-        self.app.commands.load.detach_active_stream()
         result = self.app.commands.metadata.select_recording_metadata(session_name)
         if isinstance(result, Failed):
             logger.error(result.message)
             return False
         assert isinstance(result, RecordingSelected)
 
-        callbacks.show_empty_state()
         self.selection_view.populate_probes(result.probes)
         self.selection_view.clear_shanks()
-        self.selection_view.set_load_data_enabled(False)
         if result.probes:
             self.selection_view.select_probe_index(0)
             callbacks.select_first_probe()

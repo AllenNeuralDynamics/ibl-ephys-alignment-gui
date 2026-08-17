@@ -111,13 +111,17 @@ class DesktopOutputFolderPrompt:
 
 @dataclass
 class DesktopLoadPreflightCoordinator:
-    """Own desktop preflight handling for the Load Data button."""
+    """Own desktop preflight handling before activating a selected stream."""
 
     can_load_data: Callable[[], PolicyResult]
-    load_heavy_data: Callable[[], None]
+    load_heavy_data: Callable[..., None]
     output_folder_prompt: DesktopOutputFolderPrompt
 
-    def load_data_button_pressed(self) -> bool:
+    def activate_selected_stream(
+        self,
+        *,
+        preserve_plot_selection: bool | None = None,
+    ) -> bool:
         """Run load-data policy checks, render blockers, and start heavy load."""
         result = self.can_load_data()
         if isinstance(result, Blocked):
@@ -130,8 +134,11 @@ class DesktopLoadPreflightCoordinator:
                 self.log_requirement(result.first)
             return False
 
-        logger.info("Load Data button pressed")
-        self.load_heavy_data()
+        logger.info("Activating selected stream")
+        if preserve_plot_selection is None:
+            self.load_heavy_data()
+        else:
+            self.load_heavy_data(preserve_plot_selection=preserve_plot_selection)
         return True
 
     def _handle_blocked_load(self, result: Blocked) -> bool:

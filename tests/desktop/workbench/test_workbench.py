@@ -395,7 +395,7 @@ class FakeLoadPreflightPresenter:
         self.load_count = 0
         self.logged: list[Any] = []
 
-    def load_data_button_pressed(self) -> bool:
+    def activate_selected_stream(self) -> bool:
         self.load_count += 1
         return True
 
@@ -422,7 +422,7 @@ class FakeSelectionActivationPresenter:
         self.shank_indices.append(idx)
         return True
 
-    def load_or_activate_selected_stream(self) -> bool:
+    def activate_selected_stream(self) -> bool:
         self.load_count += 1
         return True
 
@@ -1014,7 +1014,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.probe_selected()
     assert workbench.shank_selected(2)
     assert workbench.alignment_selected(3)
-    assert workbench.load_data_button_pressed()
+    assert workbench.activate_selected_stream()
     assert workbench.set_save_root("save-root")
     assert workbench.select_mouse_root()
     assert workbench.select_output_root()
@@ -1344,10 +1344,6 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert (
         coordinator_cluster.previous_alignment_load_coordinator.callbacks.select_alignment.__self__
         is render_cluster.alignment_selection_actions
-    )
-    assert (
-        coordinator_cluster.mouse_root_coordinator.callbacks.select_first_session.__self__
-        is coordinator_cluster.session_selection_coordinator
     )
     assert (
         coordinator_cluster.session_selection_coordinator.callbacks.select_first_probe.__self__

@@ -255,9 +255,9 @@ class DesktopWorkbench:
         """Select the current previous/original alignment choice."""
         return self.render_cluster.alignment_selection_actions.alignment_selected(idx)
 
-    def load_data_button_pressed(self) -> bool:
+    def activate_selected_stream(self) -> bool:
         """Load or activate the selected stream/shank through the shared path."""
-        return self.coordinator_cluster.selection_activation_coordinator.load_or_activate_selected_stream()
+        return self.coordinator_cluster.selection_activation_coordinator.activate_selected_stream()
 
     def fit_button_pressed(self) -> bool:
         """Fit the active alignment from current desktop reference lines."""

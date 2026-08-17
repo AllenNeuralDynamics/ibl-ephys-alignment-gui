@@ -20,7 +20,6 @@ def initialize_interaction_features(window) -> None:
     _initialize_input_controls(window)
     _initialize_alignment_selection_controls(window)
     _initialize_output_controls(window)
-    _initialize_load_button(window)
     _initialize_interaction_layouts(window)
     _initialize_qc_dialog(window)
 
@@ -123,20 +122,12 @@ def _initialize_output_controls(window) -> None:
     window.use_docdb_checkbox.stateChanged.connect(actions.on_use_docdb_changed)
 
 
-def _initialize_load_button(window) -> None:
-    window.load_data_button = QtWidgets.QToolButton()
-    window.load_data_button.setText("Load Data")
-    window.load_data_button.setEnabled(False)
-    window.load_data_button.clicked.connect(window.shell_actions.on_load_data_button_pressed)
-
-
 def _initialize_interaction_layouts(window) -> None:
     if not window.offline:
         window.interaction_layout1 = QtWidgets.QHBoxLayout()
         window.interaction_layout1.addWidget(window.subj_combobox, stretch=1)
         window.interaction_layout1.addWidget(window.sess_combobox, stretch=2)
         window.interaction_layout1.addWidget(window.align_combobox, stretch=2)
-        window.interaction_layout1.addWidget(window.data_button, stretch=1)
     else:
         window.interaction_layout1 = _build_offline_input_layout(window)
 
@@ -153,7 +144,6 @@ def _build_offline_input_layout(window) -> QtWidgets.QVBoxLayout:
     selection_layout.addWidget(window.session_combobox, stretch=2)
     selection_layout.addWidget(window.probe_combobox, stretch=2)
     selection_layout.addWidget(window.shank_combobox, stretch=1)
-    selection_layout.addWidget(window.load_data_button, stretch=0)
 
     alignment_layout = QtWidgets.QHBoxLayout()
     alignment_layout.addWidget(window.align_combobox, stretch=1)

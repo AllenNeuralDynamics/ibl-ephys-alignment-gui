@@ -102,13 +102,10 @@ class FakeSelectionView:
             return None
 
     def selection_widgets(self) -> list[str]:
-        return ["probe", "session"]
+        return ["session", "probe", "shank"]
 
     def populate_probe_shanks(self, shanks: list[str]) -> None:
         self.calls.append(("populate", shanks))
-
-    def set_load_data_enabled(self, enabled: bool) -> None:
-        self.calls.append(("enable", enabled))
 
 
 def _coordinator(
@@ -161,7 +158,6 @@ def _coordinator(
             present_cached_probe_selection=lambda session, probe, shank: (
                 calls.append(("cached", session, probe, shank)) or cached
             ),
-            show_empty_state=lambda: calls.append(("empty",)),
             busy_context=lambda *args, **kwargs: FakeBusyContext(
                 calls,
                 *args,
@@ -231,19 +227,17 @@ def test_probe_selected_cache_miss_loads_channel_info_for_fresh_load() -> None:
     assert coordinator.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
-    assert ("detach-app",) in calls
-    assert ("empty",) in calls
     assert (
         "busy",
         ("Loading channel info...", "Ready"),
-        {"disable_widgets": ["probe", "session"]},
+        {"disable_widgets": ["session", "probe", "shank"]},
     ) in calls
     assert ("populate", ["1/2", "2/2"]) in calls
     assert commands.shank_calls == [(0, "probe-selected")]
-    assert calls[-1] == ("enable", True)
+    assert ("detach-app",) not in calls
 
 
-def test_probe_selected_failure_disables_load_button() -> None:
+def test_probe_selected_failure_returns_false_without_detaching_active_stream() -> None:
     coordinator, commands, calls = _coordinator(
         commands=FakeCommands(probe_result=Failed("channel info failed"))
     )
@@ -251,11 +245,10 @@ def test_probe_selected_failure_disables_load_button() -> None:
     assert not coordinator.probe_selected()
 
     assert commands.calls == [("rec", "probeA")]
-    assert ("enable", False) in calls
-    assert ("detach-app",) in calls
+    assert ("detach-app",) not in calls
 
 
-def test_probe_selected_shank_selection_failure_disables_load_button() -> None:
+def test_probe_selected_shank_selection_failure_returns_false() -> None:
     coordinator, commands, calls = _coordinator(
         commands=FakeCommands(shank_result=Failed("bad shank"))
     )
@@ -264,4 +257,4 @@ def test_probe_selected_shank_selection_failure_disables_load_button() -> None:
 
     assert commands.calls == [("rec", "probeA")]
     assert commands.shank_calls == [(0, "probe-selected")]
-    assert ("enable", False) in calls
+    assert ("detach-app",) not in calls

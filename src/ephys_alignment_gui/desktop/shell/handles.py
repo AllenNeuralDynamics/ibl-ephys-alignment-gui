@@ -43,7 +43,6 @@ def view_handles_from_main_window(window: Any) -> DesktopViewHandles:
         probe_combobox=window.probe_combobox,
         shank_model=window.shank_list,
         shank_combobox=window.shank_combobox,
-        load_data_button=window.load_data_button,
         mouse_root_button=window.mouse_root_button,
         mouse_root_line=window.mouse_root_line,
         output_folder_line=window.output_folder_line,

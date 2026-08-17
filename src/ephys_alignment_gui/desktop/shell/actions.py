@@ -24,10 +24,6 @@ class DesktopShellActions:
     def workbench(self) -> Any:
         return self.window.desktop_workbench
 
-    def load_heavy_data(self) -> bool:
-        """Load all heavy runtime data for the selected stream/shank."""
-        return self.workbench.load_heavy_data()
-
     def load_existing_alignments(self, *_args: Any) -> bool:
         """Prompt for and load previously saved alignments."""
         return self.workbench.load_existing_alignments()
@@ -64,10 +60,6 @@ class DesktopShellActions:
         """Log DocDB checkbox state changes."""
         use_docdb = state == QtCore.Qt.Checked
         logger.info("Use DocDB: %s", use_docdb)
-
-    def on_load_data_button_pressed(self, *_args: Any) -> bool:
-        """Load or activate the selected stream through the shared path."""
-        return self.workbench.load_data_button_pressed()
 
     def ensure_output_directory_for_save(
         self,

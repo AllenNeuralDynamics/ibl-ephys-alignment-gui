@@ -120,6 +120,7 @@ class LoadDataCommandHandler:
         probe_name: str,
         target_shank: int,
         outgoing_reference_lines: ReferenceLineCapture = REFERENCE_LINES_NOT_PROVIDED,
+        preserve_plot_selection: bool | None = None,
     ) -> LoadDataBeginResult | Failed:
         """Prepare or activate the selected stream/shank load transaction."""
         stream_key = self._stream_key_for_selection(recording_id, probe_name)
@@ -169,7 +170,10 @@ class LoadDataCommandHandler:
         if isinstance(target, Failed):
             return target
 
-        prepared = self.prepare_fresh_ephys_load(stream_key)
+        prepared = self.prepare_fresh_ephys_load(
+            stream_key,
+            preserve_plot_selection=preserve_plot_selection,
+        )
         selected = self.controller.select_shank(target_shank)
         if isinstance(selected, Failed):
             return selected
@@ -490,9 +494,16 @@ class LoadDataCommandHandler:
     def prepare_fresh_ephys_load(
         self,
         stream_key: StreamKey | None,
+        *,
+        preserve_plot_selection: bool | None = None,
     ) -> LoadDataPrepared:
         """Mark data unloaded and discard stale active/cache state."""
         prepared = self.controller.prepare_load_data()
+        if preserve_plot_selection is not None:
+            prepared = replace(
+                prepared,
+                preserve_plot_selection=preserve_plot_selection,
+            )
         self.runtime.prepare_fresh_load(stream_key)
         self.display_state.reset_for_active_stream()
         return prepared

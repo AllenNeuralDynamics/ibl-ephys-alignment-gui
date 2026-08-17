@@ -61,9 +61,6 @@ class FakeSelectionView:
     def clear_shanks(self) -> None:
         self.calls.append(("clear-shanks",))
 
-    def set_load_data_enabled(self, enabled: bool) -> None:
-        self.calls.append(("enable-load", enabled))
-
     def select_session_index(self, idx: int) -> None:
         self.calls.append(("select-session", idx))
 
@@ -113,13 +110,12 @@ def _coordinator(
                 calls.append(("cancel-preload", reason)) or True
             ),
             evict_stream_cache=lambda: calls.append(("evict-app",)) or evict_result,
-            select_first_session=lambda: calls.append(("select-first-session",)),
         ),
     )
     return coordinator, commands, calls
 
 
-def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
+def test_set_mouse_root_populates_sessions_without_activating_default_session() -> None:
     coordinator, commands, calls = _coordinator()
 
     assert coordinator.set_mouse_root(Path("/data/mouse"))
@@ -137,11 +133,9 @@ def test_set_mouse_root_populates_sessions_and_selects_first_session() -> None:
         ("evict-app",),
         ("path", Path("/data/mouse")),
         ("sessions", ["rec1"]),
+        ("select-session", -1),
         ("clear-probes",),
         ("clear-shanks",),
-        ("enable-load", False),
-        ("select-session", 0),
-        ("select-first-session",),
         ("busy-exit", None),
     ]
 
@@ -164,7 +158,6 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
     assert ("cancel-preload", "mouse root changed") not in calls
     assert ("evict-app",) not in calls
     assert ("select-session", 0) not in calls
-    assert ("select-first-session",) not in calls
 
 
 def test_set_same_mouse_root_preserves_preload_and_stream_cache() -> None:
@@ -227,10 +220,10 @@ def test_set_mouse_root_stops_when_cache_eviction_is_blocked() -> None:
     ]
 
 
-def test_mouse_root_edited_disables_load_data_for_empty_text() -> None:
+def test_mouse_root_edited_ignores_empty_text() -> None:
     coordinator, commands, calls = _coordinator(path_text=" ")
 
     assert not coordinator.mouse_root_edited()
 
     assert commands.calls == []
-    assert calls == [("enable-load", False)]
+    assert calls == []

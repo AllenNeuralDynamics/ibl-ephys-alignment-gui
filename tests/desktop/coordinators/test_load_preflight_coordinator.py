@@ -142,9 +142,27 @@ def test_load_coordinator_retries_policy_after_output_prompt() -> None:
         )(),
     )
 
-    assert coordinator.load_data_button_pressed()
+    assert coordinator.activate_selected_stream()
     assert prompt_calls == [_output_requirement()]
     assert heavy_loads == ["loaded"]
+
+
+def test_load_coordinator_passes_preserve_plot_selection_override() -> None:
+    heavy_loads: list[bool | None] = []
+    coordinator = DesktopLoadPreflightCoordinator(
+        can_load_data=lambda: Ok(),
+        load_heavy_data=lambda **kwargs: heavy_loads.append(
+            kwargs.get("preserve_plot_selection")
+        ),
+        output_folder_prompt=type(
+            "Prompt",
+            (),
+            {"ensure_for_load": lambda _self, _req: True},
+        )(),
+    )
+
+    assert coordinator.activate_selected_stream(preserve_plot_selection=True)
+    assert heavy_loads == [True]
 
 
 def test_load_coordinator_does_not_load_when_prompt_is_cancelled() -> None:
@@ -159,7 +177,7 @@ def test_load_coordinator_does_not_load_when_prompt_is_cancelled() -> None:
         )(),
     )
 
-    assert not coordinator.load_data_button_pressed()
+    assert not coordinator.activate_selected_stream()
     assert heavy_loads == []
 
 
@@ -175,5 +193,5 @@ def test_load_coordinator_logs_non_actionable_requirement(caplog) -> None:
         )(),
     )
 
-    assert not coordinator.load_data_button_pressed()
+    assert not coordinator.activate_selected_stream()
     assert "Select a probe first." in caplog.text

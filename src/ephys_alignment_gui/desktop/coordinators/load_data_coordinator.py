@@ -151,7 +151,11 @@ class DesktopLoadDataCoordinator:
             return
         self._present_activated_stream(event)
 
-    def load_heavy_data(self) -> bool:
+    def load_heavy_data(
+        self,
+        *,
+        preserve_plot_selection: bool | None = None,
+    ) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
         callbacks = self.callbacks
         if self.load_runner.is_running:
@@ -171,11 +175,16 @@ class DesktopLoadDataCoordinator:
         self._active_switch_timer = timer
         with timer.activate():
             with timer.step("begin_load_data"):
+                begin_kwargs = {
+                    "recording_id": session_name,
+                    "probe_name": probe_name,
+                    "target_shank": target_shank,
+                    "outgoing_reference_lines": callbacks.reference_line_positions(),
+                }
+                if preserve_plot_selection is not None:
+                    begin_kwargs["preserve_plot_selection"] = preserve_plot_selection
                 begin_result = self.app.commands.load.begin_load_data(
-                    recording_id=session_name,
-                    probe_name=probe_name,
-                    target_shank=target_shank,
-                    outgoing_reference_lines=callbacks.reference_line_positions(),
+                    **begin_kwargs,
                 )
             if isinstance(begin_result, Failed):
                 logger.error(begin_result.message)
@@ -205,7 +214,7 @@ class DesktopLoadDataCoordinator:
                 self._open_load_context(
                     "Loading heavy data...",
                     "Data loaded successfully",
-                    disable_widgets=self.selection_view.load_data_widget(),
+                    disable_widgets=self.selection_view.selection_widgets(),
                 )
             logger.info("=== Starting heavy data load ===")
             with timer.step("prepare_for_fresh_stream_load"):
@@ -441,9 +450,11 @@ class DesktopLoadDataCoordinator:
                 else nullcontext()
             )
             with step:
-                published = self.app.commands.load.publish_started_fresh_load_job_result(
-                    execution,
-                    job_result,
+                published = (
+                    self.app.commands.load.publish_started_fresh_load_job_result(
+                        execution,
+                        job_result,
+                    )
                 )
         if isinstance(published, Failed):
             logger.error(published.message)
@@ -706,7 +717,6 @@ class DesktopLoadDataCoordinator:
             self._finish_switch_timer("failed", message=result.message)
             return False
         if isinstance(result, LoadDataAlreadyActiveResult):
-            self.selection_view.set_load_data_enabled(True)
             self._finish_switch_timer("already_active")
             self.schedule_next_probe_preload(session_name, probe_name)
             return True
@@ -741,8 +751,6 @@ class DesktopLoadDataCoordinator:
                 event.shank_idx,
                 event.preserve_plot_selection,
             )
-        with _timed_step(timer, "enable_load_button"):
-            self.selection_view.set_load_data_enabled(True)
 
     def _event_matches_active_load(self, load_id: int | None) -> bool:
         """Return whether a load event should affect the current desktop state."""

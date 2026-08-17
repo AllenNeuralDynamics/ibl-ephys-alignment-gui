@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,25 +15,41 @@ class DesktopSelectionActivationCoordinator:
     probe_selection_coordinator: Any
     shank_selection_actions: Any
     load_preflight_coordinator: Any
+    preserve_plot_selection: Callable[[], bool] = lambda: False
 
     def session_selected(self, idx: int | None = None) -> bool:
         """Select a recording/session, then load or activate the selected stream."""
+        preserve_plot_selection = self.preserve_plot_selection()
         if not self.session_selection_coordinator.session_selected(idx):
             return False
-        return self.load_or_activate_selected_stream()
+        return self.activate_selected_stream(
+            preserve_plot_selection=preserve_plot_selection,
+        )
 
     def probe_selected(self, idx: int | None = None) -> bool:
         """Select a probe, then load or activate the selected stream."""
+        preserve_plot_selection = self.preserve_plot_selection()
         if not self.probe_selection_coordinator.probe_selected(idx):
             return False
-        return self.load_or_activate_selected_stream()
+        return self.activate_selected_stream(
+            preserve_plot_selection=preserve_plot_selection,
+        )
 
     def shank_selected(self, _idx: int | None = None) -> bool:
         """Select a shank, then load or activate the selected stream."""
+        preserve_plot_selection = self.preserve_plot_selection()
         if not self.shank_selection_actions.shank_selected():
             return False
-        return self.load_or_activate_selected_stream()
+        return self.activate_selected_stream(
+            preserve_plot_selection=preserve_plot_selection,
+        )
 
-    def load_or_activate_selected_stream(self) -> bool:
+    def activate_selected_stream(
+        self,
+        *,
+        preserve_plot_selection: bool | None = None,
+    ) -> bool:
         """Run desktop load preflight and enter the selected stream/shank."""
-        return self.load_preflight_coordinator.load_data_button_pressed()
+        return self.load_preflight_coordinator.activate_selected_stream(
+            preserve_plot_selection=preserve_plot_selection,
+        )

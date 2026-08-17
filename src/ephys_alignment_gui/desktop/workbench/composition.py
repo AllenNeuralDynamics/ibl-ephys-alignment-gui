@@ -143,7 +143,6 @@ def build_desktop_workbench_coordinator_cluster(
             ports.busy,
             output_path_coordinator,
             load_data_coordinator,
-            lifecycle_coordinator.show_empty_state,
             render_cluster.reference_line_presenter,
         ),
     )
@@ -153,7 +152,6 @@ def build_desktop_workbench_coordinator_cluster(
         callbacks=_session_selection_callbacks(
             render_cluster.reference_line_presenter,
             probe_selection_coordinator,
-            lifecycle_coordinator.show_empty_state,
         ),
     )
     mouse_root_coordinator = DesktopMouseRootCoordinator(
@@ -162,7 +160,6 @@ def build_desktop_workbench_coordinator_cluster(
         selection_view=views.selection,
         callbacks=_mouse_root_callbacks(
             ports.busy,
-            session_selection_coordinator,
             load_data_coordinator.cancel_active_preload,
             app.commands.load.evict_stream_cache,
         ),
@@ -197,6 +194,9 @@ def build_desktop_workbench_coordinator_cluster(
         probe_selection_coordinator=probe_selection_coordinator,
         shank_selection_actions=render_cluster.shank_selection_actions,
         load_preflight_coordinator=load_preflight_coordinator,
+        preserve_plot_selection=(
+            lambda: app.queries.workspace.resolve_shank_preserve_plot_selection(None)
+        ),
     )
     save_coordinator = DesktopSaveCoordinator(
         commands=app.commands.persistence,
@@ -410,7 +410,6 @@ def _probe_selection_callbacks(
     busy_ports: DesktopBusyPorts,
     output_path_coordinator: DesktopOutputPathCoordinator,
     load_data_coordinator: DesktopLoadDataCoordinator,
-    show_empty_state: Callable[[], None],
     reference_line_presenter: Any,
 ) -> DesktopProbeSelectionCallbacks:
     """Build callbacks for probe selection."""
@@ -427,7 +426,6 @@ def _probe_selection_callbacks(
                 )
             )
         ),
-        show_empty_state=show_empty_state,
         busy_context=busy_ports.busy_context,
     )
 
@@ -435,21 +433,18 @@ def _probe_selection_callbacks(
 def _session_selection_callbacks(
     reference_line_presenter: Any,
     probe_selection_coordinator: DesktopProbeSelectionCoordinator,
-    show_empty_state: Callable[[], None],
 ) -> DesktopSessionSelectionCallbacks:
     """Build callbacks for session selection."""
     return DesktopSessionSelectionCallbacks(
         capture_pending_reference_lines=(
             reference_line_presenter.capture_pending_reference_lines
         ),
-        show_empty_state=show_empty_state,
         select_first_probe=probe_selection_coordinator.probe_selected,
     )
 
 
 def _mouse_root_callbacks(
     busy_ports: DesktopBusyPorts,
-    session_selection_coordinator: DesktopSessionSelectionCoordinator,
     cancel_active_preload: Callable[[str], bool],
     evict_stream_cache: Callable[[], Any],
 ) -> DesktopMouseRootCallbacks:
@@ -458,5 +453,4 @@ def _mouse_root_callbacks(
         busy_context=busy_ports.busy_context,
         cancel_active_preload=cancel_active_preload,
         evict_stream_cache=evict_stream_cache,
-        select_first_session=session_selection_coordinator.session_selected,
     )

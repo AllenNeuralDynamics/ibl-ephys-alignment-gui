@@ -27,7 +27,6 @@ class DesktopViewHandles:
     probe_combobox: Any
     shank_model: Any
     shank_combobox: Any
-    load_data_button: Any
     mouse_root_button: Any
     mouse_root_line: Any
     output_folder_line: Any
@@ -67,7 +66,6 @@ class DesktopViews:
             probe_combobox=handles.probe_combobox,
             shank_model=handles.shank_model,
             shank_combobox=handles.shank_combobox,
-            load_data_button=handles.load_data_button,
         )
         path = DesktopPathView(
             mouse_root_button=handles.mouse_root_button,

@@ -40,9 +40,6 @@ class FakeSelectionView:
     def clear_shanks(self) -> None:
         self.calls.append(("clear-shanks",))
 
-    def set_load_data_enabled(self, enabled: bool) -> None:
-        self.calls.append(("enable-load", enabled))
-
     def select_probe_index(self, idx: int) -> None:
         self.calls.append(("select-probe", idx))
 
@@ -61,10 +58,6 @@ class FakeCommands:
     def select_recording_metadata(self, recording_id: str):
         self.calls.append(recording_id)
         return self.result
-
-    def detach_active_stream(self) -> None:
-        if self.ui_calls is not None:
-            self.ui_calls.append(("detach-app",))
 
 
 def _coordinator(
@@ -107,7 +100,6 @@ def _coordinator(
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            show_empty_state=lambda: calls.append(("empty",)),
             select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
     )
@@ -149,11 +141,8 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
     assert commands.calls == ["rec"]
     assert calls == [
         ("capture",),
-        ("detach-app",),
-        ("empty",),
         ("populate-probes", ["probeA", "probeB"]),
         ("clear-shanks",),
-        ("enable-load", False),
         ("select-probe", 0),
         ("select-first-probe",),
     ]
@@ -184,11 +173,8 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
 
     assert calls == [
         ("capture",),
-        ("detach-app",),
-        ("empty",),
         ("populate-probes", []),
         ("clear-shanks",),
-        ("enable-load", False),
     ]
 
 
@@ -200,17 +186,14 @@ def test_session_selected_failure_does_not_mutate_selection_view() -> None:
     assert not coordinator.session_selected()
 
     assert commands.calls == ["rec"]
-    assert calls == [
-        ("capture",),
-        ("detach-app",),
-    ]
+    assert calls == [("capture",)]
 
 
-def test_session_selected_preserves_preload_and_stream_cache() -> None:
+def test_session_selected_preserves_active_stream_until_activation() -> None:
     coordinator, commands, calls = _coordinator()
 
     assert coordinator.session_selected()
 
     assert commands.calls == ["rec"]
-    assert ("detach-app",) in calls
+    assert ("detach-app",) not in calls
     assert not any(call[0] in {"cancel-preload", "evict-app"} for call in calls)

@@ -499,11 +499,8 @@ class FakeSelectionView:
     def populate_loaded_shanks(self, shanks: list[str], shank_idx: int) -> None:
         self.calls.append(("populate", shanks, shank_idx))
 
-    def set_load_data_enabled(self, enabled: bool) -> None:
-        self.calls.append(("enable-load", enabled))
-
-    def load_data_widget(self) -> str:
-        return "load-button"
+    def selection_widgets(self) -> list[str]:
+        return ["session", "probe", "shank"]
 
 
 class ImmediateFreshLoadRunner:
@@ -803,6 +800,15 @@ def test_load_heavy_data_skips_already_active_stream_shank() -> None:
     assert calls == [("positions",)]
 
 
+def test_load_heavy_data_passes_preserve_plot_selection_override() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    coordinator, commands, _queries, _calls = _coordinator(begin_result=prepared)
+
+    assert coordinator.load_heavy_data(preserve_plot_selection=True)
+
+    assert commands.begin_calls[0]["preserve_plot_selection"] is True
+
+
 def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
     coordinator, commands, _queries, calls = _coordinator(
         begin_result=_cached_transaction(shank_idx=0),
@@ -823,7 +829,6 @@ def test_load_heavy_data_presents_cached_stream_for_selected_shank() -> None:
         ("clear-empty",),
         ("populate", ["1/2", "2/2"], 0),
         ("render-shank", 0, True),
-        ("enable-load", True),
     ]
 
 
@@ -846,7 +851,6 @@ def test_probe_selection_presents_cached_stream_for_cached_shank() -> None:
         }
     ]
     assert ("render-shank", 1, True) in calls
-    assert ("enable-load", True) in calls
 
 
 def test_probe_selection_noops_for_already_active_stream_shank() -> None:
@@ -863,7 +867,7 @@ def test_probe_selection_noops_for_already_active_stream_shank() -> None:
     )
 
     assert commands.probe_cache_calls
-    assert calls == [("enable-load", True)]
+    assert calls == []
 
 
 def test_load_heavy_data_runs_fresh_load_and_renders_result() -> None:

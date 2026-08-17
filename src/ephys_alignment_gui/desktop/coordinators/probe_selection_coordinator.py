@@ -21,7 +21,6 @@ class DesktopProbeSelectionCallbacks:
 
     capture_pending_reference_lines: Callable[[], None]
     present_cached_probe_selection: Callable[[str, str, int], bool]
-    show_empty_state: Callable[[], None]
     busy_context: Callable[..., AbstractContextManager[Any]]
 
 
@@ -63,7 +62,6 @@ class DesktopProbeSelectionCoordinator:
         ):
             return True
 
-        self.app.commands.load.detach_active_stream()
         return self._prepare_probe_for_fresh_load(session_name, probe_name)
 
     def _prepare_probe_for_fresh_load(
@@ -72,9 +70,7 @@ class DesktopProbeSelectionCoordinator:
         probe_name: str,
     ) -> bool:
         """Load channel metadata and prepare the desktop for explicit Load."""
-        callbacks = self.callbacks
-        callbacks.show_empty_state()
-        with callbacks.busy_context(
+        with self.callbacks.busy_context(
             "Loading channel info...",
             "Ready",
             disable_widgets=self.selection_view.selection_widgets(),
@@ -85,7 +81,6 @@ class DesktopProbeSelectionCoordinator:
             )
             if isinstance(result, Failed):
                 logger.error(result.message)
-                self.selection_view.set_load_data_enabled(False)
                 return False
             assert isinstance(result, ProbeSelected)
 
@@ -96,13 +91,10 @@ class DesktopProbeSelectionCoordinator:
             selected = self.app.commands.shanks.select_shank(0, source="probe-selected")
             if isinstance(selected, Failed):
                 logger.error(selected.message)
-                self.selection_view.set_load_data_enabled(False)
                 return False
             if not isinstance(selected, ShankSelected):
-                self.selection_view.set_load_data_enabled(False)
                 return False
 
-        self.selection_view.set_load_data_enabled(True)
         return True
 
     def _selected_probe_name(self, idx: int | None) -> str:

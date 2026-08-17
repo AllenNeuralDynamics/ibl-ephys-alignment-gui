@@ -21,7 +21,6 @@ class DesktopSelectionView:
     probe_combobox: Any
     shank_model: Any
     shank_combobox: Any
-    load_data_button: Any
     item_factory: Callable[[str], Any] = QtGui.QStandardItem
 
     def current_session(self) -> str:
@@ -50,8 +49,8 @@ class DesktopSelectionView:
         return shank_id - 1
 
     def selection_widgets(self) -> list[Any]:
-        """Widgets disabled while probe metadata is loading."""
-        return [self.probe_combobox, self.session_combobox]
+        """Widgets disabled while selected stream state is changing."""
+        return [self.session_combobox, self.probe_combobox, self.shank_combobox]
 
     def populate_sessions(self, sessions: Sequence[str]) -> None:
         """Render session choices."""
@@ -85,14 +84,6 @@ class DesktopSelectionView:
     def select_probe_index(self, idx: int) -> None:
         """Select a probe by combobox index."""
         self.probe_combobox.setCurrentIndex(idx)
-
-    def set_load_data_enabled(self, enabled: bool) -> None:
-        """Enable or disable the Load Data button."""
-        self.load_data_button.setEnabled(enabled)
-
-    def load_data_widget(self) -> Any:
-        """Return the Load Data button widget for busy contexts."""
-        return self.load_data_button
 
     def _populate(self, values: Sequence[str], model: Any, combobox: Any) -> None:
         populate_choice_list(

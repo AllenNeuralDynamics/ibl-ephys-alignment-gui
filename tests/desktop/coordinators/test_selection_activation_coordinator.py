@@ -43,9 +43,15 @@ class FakeLoadPreflightCoordinator:
     def __init__(self, result: bool = True) -> None:
         self.result = result
         self.count = 0
+        self.preserve_values: list[bool | None] = []
 
-    def load_data_button_pressed(self) -> bool:
+    def activate_selected_stream(
+        self,
+        *,
+        preserve_plot_selection: bool | None = None,
+    ) -> bool:
         self.count += 1
+        self.preserve_values.append(preserve_plot_selection)
         return self.result
 
 
@@ -55,46 +61,63 @@ def _coordinator(
     probe: Any | None = None,
     shank: Any | None = None,
     load: Any | None = None,
+    preserve_plot_selection: bool = False,
 ) -> DesktopSelectionActivationCoordinator:
     return DesktopSelectionActivationCoordinator(
         session_selection_coordinator=(session or FakeSessionSelectionCoordinator()),
         probe_selection_coordinator=probe or FakeProbeSelectionCoordinator(),
         shank_selection_actions=shank or FakeShankSelectionActions(),
         load_preflight_coordinator=load or FakeLoadPreflightCoordinator(),
+        preserve_plot_selection=lambda: preserve_plot_selection,
     )
 
 
 def test_session_selection_loads_after_selecting_metadata() -> None:
     session = FakeSessionSelectionCoordinator()
     load = FakeLoadPreflightCoordinator()
-    coordinator = _coordinator(session=session, load=load)
+    coordinator = _coordinator(
+        session=session,
+        load=load,
+        preserve_plot_selection=True,
+    )
 
     assert coordinator.session_selected(2)
 
     assert session.indices == [2]
     assert load.count == 1
+    assert load.preserve_values == [True]
 
 
 def test_probe_selection_loads_after_selecting_metadata() -> None:
     probe = FakeProbeSelectionCoordinator()
     load = FakeLoadPreflightCoordinator()
-    coordinator = _coordinator(probe=probe, load=load)
+    coordinator = _coordinator(
+        probe=probe,
+        load=load,
+        preserve_plot_selection=True,
+    )
 
     assert coordinator.probe_selected(3)
 
     assert probe.indices == [3]
     assert load.count == 1
+    assert load.preserve_values == [True]
 
 
 def test_shank_selection_loads_after_selecting_shank() -> None:
     shank = FakeShankSelectionActions()
     load = FakeLoadPreflightCoordinator()
-    coordinator = _coordinator(shank=shank, load=load)
+    coordinator = _coordinator(
+        shank=shank,
+        load=load,
+        preserve_plot_selection=True,
+    )
 
     assert coordinator.shank_selected(1)
 
     assert shank.count == 1
     assert load.count == 1
+    assert load.preserve_values == [True]
 
 
 def test_failed_selection_does_not_load() -> None:
@@ -106,15 +129,17 @@ def test_failed_selection_does_not_load() -> None:
 
     assert session.indices == [2]
     assert load.count == 0
+    assert load.preserve_values == []
 
 
 def test_explicit_load_uses_same_preflight_path() -> None:
     load = FakeLoadPreflightCoordinator()
     coordinator = _coordinator(load=load)
 
-    assert coordinator.load_or_activate_selected_stream()
+    assert coordinator.activate_selected_stream()
 
     assert load.count == 1
+    assert load.preserve_values == [None]
 
 
 def test_load_preflight_failure_is_returned() -> None:

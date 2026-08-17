@@ -966,6 +966,23 @@ def test_commands_begin_load_data_prepares_fresh_load_and_captures_lines() -> No
     assert old_state.pending_reference_lines is not None
 
 
+def test_commands_begin_load_data_can_override_fresh_load_plot_preserve() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    workspace.document.mark_data_loaded(False)
+
+    result = workspace.app.commands.load.begin_load_data(
+        recording_id="rec",
+        probe_name="probeA",
+        target_shank=0,
+        preserve_plot_selection=True,
+    )
+
+    assert isinstance(result, LoadDataFreshPrepared)
+    assert result.preserve_plot_selection
+    assert not workspace.document.data_loaded
+
+
 def test_commands_complete_fresh_load_data_returns_typed_transaction_result() -> None:
     workspace = _workspace_with_probe_state(shank_idx=0)
     load_data_job = FakeLoadDataJob()
