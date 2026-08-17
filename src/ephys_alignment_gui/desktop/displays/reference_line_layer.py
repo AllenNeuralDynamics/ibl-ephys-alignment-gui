@@ -152,16 +152,12 @@ class ReferenceLineLayer:
             )
             return
 
-        raw_track_positions = self._warped_positions_to_track(warped_positions)
-
-        for feature_pos, warped_pos, raw_track_pos in zip(
+        for feature_pos, warped_pos in zip(
             feature_positions,
             warped_positions,
-            raw_track_positions,
         ):
             self._create_line(
                 feature_pos=feature_pos,
-                track_pos=raw_track_pos,
                 warped_pos=warped_pos,
             )
 
@@ -174,10 +170,9 @@ class ReferenceLineLayer:
                 self.points,
             ):
                 warped_pos = line_feature[0].getYPos()
-                track_pos = self._warped_positions_to_track([warped_pos])[0]
                 self._set_line_pos(line_track[0], warped_pos)
                 self._set_line_pos(line_track[1], warped_pos)
-                self._set_line_pos(line_track[2], track_pos)
+                self._set_line_pos(line_track[2], warped_pos)
                 point[0].setData(
                     x=[line_feature[0].pos().y()],
                     y=[warped_pos],
@@ -250,14 +245,12 @@ class ReferenceLineLayer:
 
         if self.lines_features.shape[0] != feature_positions.size:
             self.clear()
-            for feature_pos, warped_pos, raw_track_pos in zip(
+            for feature_pos, warped_pos in zip(
                 feature_positions,
                 warped_positions,
-                raw_track_positions,
             ):
                 self._create_line(
                     feature_pos=feature_pos,
-                    track_pos=raw_track_pos,
                     warped_pos=warped_pos,
                 )
             if notify:
@@ -268,14 +261,12 @@ class ReferenceLineLayer:
             for (
                 feature_pos,
                 warped_pos,
-                raw_track_pos,
                 line_feature,
                 line_track,
                 point,
             ) in zip(
                 feature_positions,
                 warped_positions,
-                raw_track_positions,
                 self.lines_features,
                 self.lines_tracks,
                 self.points,
@@ -284,7 +275,7 @@ class ReferenceLineLayer:
                     self._set_line_pos(line, feature_pos)
                 self._set_line_pos(line_track[0], warped_pos)
                 self._set_line_pos(line_track[1], warped_pos)
-                self._set_line_pos(line_track[2], raw_track_pos)
+                self._set_line_pos(line_track[2], warped_pos)
                 point[0].setData(
                     x=[feature_pos],
                     y=[warped_pos],
@@ -323,18 +314,12 @@ class ReferenceLineLayer:
         if idx[0].size == 0:
             return
         line_idx = idx[0][0]
-        plot_idx = idx[1][0]
-        if plot_idx == 2:
-            track_pos = line.value()
-            warped_pos = self._track_to_warped_positions([track_pos])[0]
-        else:
-            warped_pos = line.value()
-            track_pos = self._warped_positions_to_track([warped_pos])[0]
+        warped_pos = line.value()
 
         with self._linked_line_update():
             self._set_line_pos(self.lines_tracks[line_idx][0], warped_pos)
             self._set_line_pos(self.lines_tracks[line_idx][1], warped_pos)
-            self._set_line_pos(self.lines_tracks[line_idx][2], track_pos)
+            self._set_line_pos(self.lines_tracks[line_idx][2], warped_pos)
 
             self.points[line_idx][0].setData(
                 x=[self.lines_features[line_idx][0].pos().y()],
@@ -483,7 +468,6 @@ class ReferenceLineLayer:
         self,
         *,
         feature_pos: float,
-        track_pos: float,
         warped_pos: float,
     ) -> None:
         pen, brush = self._style_factory()
@@ -534,7 +518,7 @@ class ReferenceLineLayer:
         line_track_perp.setZValue(100)
         line_track_perp.sigPositionChanged.connect(self.update_track_line)
         line_track_reference = pg.InfiniteLine(
-            pos=track_pos,
+            pos=warped_pos,
             angle=0,
             pen=pen,
             hoverPen=hover_pen,

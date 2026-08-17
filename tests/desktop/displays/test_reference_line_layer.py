@@ -159,7 +159,7 @@ def test_create_lines_defaults_warped_display_to_feature_position(
     ]
     assert layer.lines_tracks[0][0].getYPos() == 30.0
     assert layer.lines_tracks[0][1].getYPos() == 30.0
-    assert layer.lines_tracks[0][2].getYPos() == 35.0
+    assert layer.lines_tracks[0][2].getYPos() == 30.0
     assert layer.points[0][0].data["x"] == [30.0]
     assert layer.points[0][0].data["y"] == [30.0]
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
@@ -208,7 +208,7 @@ def test_track_lines_use_and_return_warped_display_positions() -> None:
 
     assert layer.lines_tracks[0][0].getYPos() == 40.0
     assert layer.lines_tracks[0][1].getYPos() == 40.0
-    assert layer.lines_tracks[0][2].getYPos() == 45.0
+    assert layer.lines_tracks[0][2].getYPos() == 40.0
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
     np.testing.assert_array_equal(layer.positions()[1], [40.0])
 
@@ -217,7 +217,7 @@ def test_track_lines_use_and_return_warped_display_positions() -> None:
 
     assert layer.lines_tracks[0][0].getYPos() == 50.0
     assert layer.lines_tracks[0][1].getYPos() == 50.0
-    assert layer.lines_tracks[0][2].getYPos() == 55.0
+    assert layer.lines_tracks[0][2].getYPos() == 50.0
     np.testing.assert_array_equal(layer.positions()[1], [50.0])
     assert changes == ["changed"]
 
@@ -235,7 +235,7 @@ def test_replace_lines_from_raw_track_projects_to_warped_display() -> None:
     assert layer.lines_features[0][0].getYPos() == 30.0
     assert layer.lines_tracks[0][0].getYPos() == 30.0
     assert layer.lines_tracks[0][1].getYPos() == 30.0
-    assert layer.lines_tracks[0][2].getYPos() == 35.0
+    assert layer.lines_tracks[0][2].getYPos() == 30.0
     assert layer.points[0][0].data == {"x": [30.0], "y": [30.0]}
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
     np.testing.assert_array_equal(layer.positions()[1], [30.0])
