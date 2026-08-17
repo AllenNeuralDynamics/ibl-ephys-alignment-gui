@@ -13,7 +13,7 @@ from ephys_alignment_gui.application.results.autosave import (
 )
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.document_snapshot import AlignmentDocumentSnapshot
-from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.core.workflow import Failed, Ok
 
 AUTOSAVE_DIRECTORY_NAME = "autosave"
 AUTOSAVE_DOCUMENT_FILENAME = "alignment_document.json"
@@ -60,6 +60,12 @@ class AutosaveCheckpointCommandHandler:
             path=checkpoint_path,
             alignment_state_count=len(snapshot.alignment_states),
         )
+
+    def write_checkpoint_if_available(self) -> AutosaveCheckpointWritten | Ok | Failed:
+        """Write a checkpoint if the document already has an output package."""
+        if self.controller.document.output_package_directory is None:
+            return Ok()
+        return self.write_checkpoint()
 
     def read_checkpoint(
         self,

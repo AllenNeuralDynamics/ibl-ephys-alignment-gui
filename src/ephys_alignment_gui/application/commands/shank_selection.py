@@ -6,6 +6,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.results import (
     PendingReferenceLinesUpdated,
     ShankSelected,
@@ -30,6 +33,7 @@ class ShankSelectionCommandHandler:
 
     controller: AlignmentController
     events: EventBus
+    autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
 
     def select_shank(
         self,
@@ -50,6 +54,7 @@ class ShankSelectionCommandHandler:
             )
             if isinstance(capture_result, Failed):
                 return capture_result
+            self._write_autosave_checkpoint("outgoing reference-line capture")
 
         result = self.controller.select_shank(shank_idx)
         if isinstance(result, ShankSelected):
@@ -71,4 +76,18 @@ class ShankSelectionCommandHandler:
         reference_lines: tuple[Any, Any] | None,
     ) -> PendingReferenceLinesUpdated | Ok | Failed:
         """Capture active reference-line coordinates as document state."""
-        return capture_active_reference_lines(self.controller, reference_lines)
+        result = capture_active_reference_lines(self.controller, reference_lines)
+        if not isinstance(result, Failed):
+            self._write_autosave_checkpoint("active reference-line capture")
+        return result
+
+    def _write_autosave_checkpoint(self, action: str) -> None:
+        if self.autosave_checkpoints is None:
+            return
+        result = self.autosave_checkpoints.write_checkpoint_if_available()
+        if isinstance(result, Failed):
+            logger.warning(
+                "Autosave checkpoint failed after %s: %s",
+                action,
+                result.message,
+            )

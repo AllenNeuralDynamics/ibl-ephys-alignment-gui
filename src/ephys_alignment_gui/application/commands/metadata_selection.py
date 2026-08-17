@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.commands.path import PathCommandHandler
 from ephys_alignment_gui.application.results.metadata import (
     MouseRootLoaded,
@@ -18,6 +22,8 @@ from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.ephys_data import EphysDataService
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class MetadataSelectionCommandHandler:
@@ -28,6 +34,7 @@ class MetadataSelectionCommandHandler:
     ephys_data_service: EphysDataService
     path_commands: PathCommandHandler
     histology_context: HistologyDataContext | None = None
+    autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
 
     def clear_histology_context(self) -> Ok:
         """Clear loaded histology runtime data after a mouse-root change."""
@@ -43,6 +50,7 @@ class MetadataSelectionCommandHandler:
         if not mouse_root.is_dir():
             return Failed(f"Mouse-root is not a directory: {mouse_root}")
 
+        self._write_autosave_checkpoint("mouse-root selection")
         old_root = (
             self.data_context.mouse_root.root
             if self.data_context.mouse_root is not None
@@ -70,6 +78,7 @@ class MetadataSelectionCommandHandler:
         if not recording_id:
             return Failed("No recording selected.")
 
+        self._write_autosave_checkpoint("recording selection")
         self.controller.clear_probe_selection()
         try:
             probes = self.data_context.list_probes(recording_id)
@@ -92,6 +101,7 @@ class MetadataSelectionCommandHandler:
         if not probe_name:
             return Failed("No probe selected.")
 
+        self._write_autosave_checkpoint("probe selection")
         self.controller.record_probe_selected(recording_id, probe_name)
         try:
             self.data_context.select_probe(recording_id, probe_name)
@@ -124,3 +134,14 @@ class MetadataSelectionCommandHandler:
             n_shanks=self.data_context.n_shanks,
             output_directory=output_result.output_directory,
         )
+
+    def _write_autosave_checkpoint(self, action: str) -> None:
+        if self.autosave_checkpoints is None:
+            return
+        result = self.autosave_checkpoints.write_checkpoint_if_available()
+        if isinstance(result, Failed):
+            logger.warning(
+                "Autosave checkpoint failed before %s: %s",
+                action,
+                result.message,
+            )

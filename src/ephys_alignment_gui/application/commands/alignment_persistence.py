@@ -17,6 +17,9 @@ from ephys_alignment_gui.application.alignment_save_job import (
     PreparedAlignmentSave,
     PreparedAlignmentSaveTarget,
 )
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.output_paths import (
     alignment_output_package_directory,
     probe_alignment_output_directory,
@@ -110,6 +113,7 @@ class AlignmentPersistenceCommandHandler:
     output_builder: Any
     events: EventBus
     save_runtime_rehydrator: SaveRuntimeRehydrator | None = None
+    autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
@@ -177,6 +181,7 @@ class AlignmentPersistenceCommandHandler:
                     choices=tuple(result.choices),
                 )
             )
+            self._write_autosave_checkpoint("previous alignment load")
         elif isinstance(result, Failed):
             self.events.emit(
                 PreviousAlignmentLoadFailed(
@@ -245,6 +250,7 @@ class AlignmentPersistenceCommandHandler:
             )
 
         active_choices = self._emit_active_package_choices(loaded)
+        self._write_autosave_checkpoint("previous alignment package import")
         return PreviousAlignmentPackageLoaded(
             loaded_count=len(loaded),
             loaded_keys=tuple(
@@ -298,11 +304,14 @@ class AlignmentPersistenceCommandHandler:
         shank_idx: int | None = None,
     ) -> PreviousAlignmentSelected | Failed:
         """Select a previous/original alignment on a document-selected shank."""
-        return self.controller.select_previous_alignment(
+        result = self.controller.select_previous_alignment(
             idx,
             shank_idx=self._active_or_given_shank(shank_idx),
             mark_changed=True,
         )
+        if isinstance(result, PreviousAlignmentSelected):
+            self._write_autosave_checkpoint("previous alignment selection")
+        return result
 
     def can_save_alignment_output(self) -> Ok | Blocked:
         """Return whether edited alignment outputs can be saved."""
@@ -536,6 +545,7 @@ class AlignmentPersistenceCommandHandler:
             saved_outputs=saved_outputs,
             active_choices=active_choices,
         )
+        self._clear_autosave_checkpoint_after_save()
         self.events.emit(
             SaveCompleted(
                 saved_count=result.saved_count,
@@ -606,6 +616,27 @@ class AlignmentPersistenceCommandHandler:
 
     def _emit_save_failed(self, message: str) -> None:
         self.events.emit(SaveFailed(message=message))
+
+    def _write_autosave_checkpoint(self, action: str) -> None:
+        if self.autosave_checkpoints is None:
+            return
+        result = self.autosave_checkpoints.write_checkpoint_if_available()
+        if isinstance(result, Failed):
+            logger.warning(
+                "Autosave checkpoint failed after %s: %s",
+                action,
+                result.message,
+            )
+
+    def _clear_autosave_checkpoint_after_save(self) -> None:
+        if self.autosave_checkpoints is None:
+            return
+        result = self.autosave_checkpoints.clear_checkpoint()
+        if isinstance(result, Failed):
+            logger.warning(
+                "Failed to clear autosave checkpoint after full Save: %s",
+                result.message,
+            )
 
     @staticmethod
     def _docdb_statuses(

@@ -8,6 +8,9 @@ from typing import Any
 
 import numpy as np
 
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.results import (
     AlignmentEditApplied,
     AlignmentEditNoop,
@@ -31,6 +34,7 @@ class AlignmentEditCommandHandler:
     events: EventBus
     display_state: AlignmentDisplayState
     runtime: SessionRuntime
+    autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
 
     def set_unit_filter(self, unit_filter: str) -> Ok:
         """Select the unit subset used when preparing ephys plot data."""
@@ -264,3 +268,15 @@ class AlignmentEditCommandHandler:
                 lin_fit=result.lin_fit,
             )
         )
+        self._write_autosave_checkpoint(f"alignment {edit_kind}")
+
+    def _write_autosave_checkpoint(self, action: str) -> None:
+        if self.autosave_checkpoints is None:
+            return
+        result = self.autosave_checkpoints.write_checkpoint_if_available()
+        if isinstance(result, Failed):
+            logger.warning(
+                "Autosave checkpoint failed after %s: %s",
+                action,
+                result.message,
+            )

@@ -169,6 +169,9 @@ class AlignmentWorkspace:
             alignment_edit_service=self.alignment_edit_service,
             alignment_runtime_service=self.alignment_runtime_service,
         )
+        self.autosave_commands = AutosaveCheckpointCommandHandler(
+            controller=self.controller,
+        )
         self.path_commands = PathCommandHandler(
             controller=self.controller,
             data_context=self.data_context,
@@ -180,10 +183,12 @@ class AlignmentWorkspace:
             ephys_data_service=self.ephys_data_service,
             path_commands=self.path_commands,
             histology_context=self.histology_context,
+            autosave_checkpoints=self.autosave_commands,
         )
         self.shank_selection_commands = ShankSelectionCommandHandler(
             controller=self.controller,
             events=self.events,
+            autosave_checkpoints=self.autosave_commands,
         )
         self.load_data_commands = LoadDataCommandHandler(
             controller=self.controller,
@@ -224,15 +229,14 @@ class AlignmentWorkspace:
             output_builder=self.alignment_output_service,
             events=self.events,
             save_runtime_rehydrator=self.save_runtime_rehydrator,
-        )
-        self.autosave_commands = AutosaveCheckpointCommandHandler(
-            controller=self.controller,
+            autosave_checkpoints=self.autosave_commands,
         )
         self.edit_commands = AlignmentEditCommandHandler(
             controller=self.controller,
             events=self.events,
             display_state=self.display_state,
             runtime=self.runtime,
+            autosave_checkpoints=self.autosave_commands,
         )
         self.display_commands = DisplayCommandHandler(
             display_state=self.display_state,

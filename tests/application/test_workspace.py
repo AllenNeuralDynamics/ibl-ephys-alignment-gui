@@ -17,7 +17,15 @@ def test_workspace_wires_shared_services() -> None:
         workspace.metadata_commands.ephys_data_service is workspace.ephys_data_service
     )
     assert workspace.metadata_commands.path_commands is workspace.path_commands
+    assert (
+        workspace.metadata_commands.autosave_checkpoints
+        is workspace.autosave_commands
+    )
     assert workspace.load_data_commands.metadata_commands is workspace.metadata_commands
+    assert (
+        workspace.shank_selection_commands.autosave_checkpoints
+        is workspace.autosave_commands
+    )
     assert workspace.loaded_shank_commands.data_context is workspace.data_context
     assert (
         workspace.persistence_commands.alignment_repository
@@ -32,9 +40,14 @@ def test_workspace_wires_shared_services() -> None:
         is workspace.save_runtime_rehydrator
     )
     assert workspace.autosave_commands.controller is workspace.controller
+    assert (
+        workspace.persistence_commands.autosave_checkpoints
+        is workspace.autosave_commands
+    )
     assert workspace.save_runtime_rehydrator.runtime is workspace.runtime
     assert workspace.save_runtime_rehydrator.load_data_job is workspace.load_data_job
     assert workspace.edit_commands.runtime is workspace.runtime
+    assert workspace.edit_commands.autosave_checkpoints is workspace.autosave_commands
     assert workspace.app.commands.paths is workspace.path_commands
     assert workspace.app.commands.metadata is workspace.metadata_commands
     assert workspace.app.commands.shanks is workspace.shank_selection_commands
