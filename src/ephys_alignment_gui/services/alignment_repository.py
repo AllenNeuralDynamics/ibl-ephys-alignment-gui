@@ -16,6 +16,10 @@ from ephys_alignment_gui.io.docdb import (
     query_docdb_id,
     write_output_to_docdb,
 )
+from ephys_alignment_gui.services.alignment_output_package import (
+    load_previous_alignment_package_manifest,
+    upsert_alignment_output_datapackage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,7 @@ class SavedAlignmentOutputs:
     previous_alignments_path: Path
     ccf_channel_results_path: Path
     metadata_path: Path
+    datapackage_path: Path | None = None
     docdb_probe_name: str | None = None
     docdb_error: str | None = None
 
@@ -153,6 +158,17 @@ class AlignmentRepository:
         folder: Path,
     ) -> LoadedAlignmentPackage:
         """Load all previous-alignment histories in an output package."""
+        manifest_histories = load_previous_alignment_package_manifest(
+            Path(folder),
+        )
+        if manifest_histories is not None:
+            return LoadedAlignmentPackage(
+                {
+                    key: LoadedAlignmentHistory(alignments)
+                    for key, alignments in manifest_histories.items()
+                }
+            )
+
         histories: dict[tuple[str, str, int], LoadedAlignmentHistory] = {}
         for path in sorted(Path(folder).glob("*/*/prev_alignments*.json")):
             shank_idx = self._shank_idx_from_previous_alignment_path(path)
@@ -178,6 +194,8 @@ class AlignmentRepository:
         ccf_channel_results: dict,
         metadata: AlignmentOutputMetadata,
         use_docdb: bool,
+        output_package_directory: Path | None = None,
+        mouse_id: str | None = None,
     ) -> SavedAlignmentOutputs:
         """Persist alignment output JSON files and optionally DocDB output."""
         suffix = f"_shank{shank_idx + 1}" if multi_shank else ""
@@ -201,6 +219,18 @@ class AlignmentRepository:
             ),
         )
 
+        datapackage_path = None
+        if output_package_directory is not None:
+            datapackage_path = upsert_alignment_output_datapackage(
+                output_package_directory=output_package_directory,
+                metadata=metadata,
+                mouse_id=mouse_id,
+                channel_results_path=channel_results_path,
+                previous_alignments_path=prev_alignments_path,
+                ccf_channel_results_path=ccf_channel_results_path,
+                metadata_path=metadata_path,
+            )
+
         docdb_probe_name = None
         docdb_error = None
         if use_docdb:
@@ -221,6 +251,7 @@ class AlignmentRepository:
             previous_alignments_path=prev_alignments_path,
             ccf_channel_results_path=ccf_channel_results_path,
             metadata_path=metadata_path,
+            datapackage_path=datapackage_path,
             docdb_probe_name=docdb_probe_name,
             docdb_error=docdb_error,
         )

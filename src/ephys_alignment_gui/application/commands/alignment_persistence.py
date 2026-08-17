@@ -821,6 +821,10 @@ class AlignmentPersistenceCommandHandler:
                 ccf_channel_results=output.ccf_channel_results,
                 metadata=output_metadata,
                 use_docdb=use_docdb,
+                output_package_directory=(
+                    self.controller.document.output_package_directory
+                ),
+                mouse_id=self._output_package_mouse_id(),
             )
         except Exception as exc:
             return Failed(f"Failed to save alignment output: {exc}")
@@ -902,6 +906,14 @@ class AlignmentPersistenceCommandHandler:
             )
         self.controller.record_output_package_directory(output_package_directory)
         return output_package_directory
+
+    def _output_package_mouse_id(self) -> str | None:
+        mouse_id = self.controller.document.mouse_id
+        if mouse_id is not None:
+            return mouse_id
+        if self.data_context.mouse_root is not None:
+            return self.data_context.mouse_root.mouse_id
+        return None
 
     @staticmethod
     def _channel_identity_for_collection(collection: Any) -> ChannelOutputIdentity:

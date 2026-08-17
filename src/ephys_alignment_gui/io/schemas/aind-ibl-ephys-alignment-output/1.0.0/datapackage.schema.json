@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "GeneratedBy": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "GeneratedBy",
+      "type": "object"
+    },
+    "Probe": {
+      "additionalProperties": false,
+      "properties": {
+        "ephys_collection": {
+          "minLength": 1,
+          "title": "Ephys Collection",
+          "type": "string"
+        },
+        "logical_probe": {
+          "minLength": 1,
+          "title": "Logical Probe",
+          "type": "string"
+        },
+        "probe_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Probe Id"
+        },
+        "n_shanks": {
+          "minimum": 1,
+          "title": "N Shanks",
+          "type": "integer"
+        },
+        "shanks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Shank"
+          },
+          "title": "Shanks",
+          "type": "object"
+        }
+      },
+      "required": [
+        "ephys_collection",
+        "logical_probe",
+        "probe_id",
+        "n_shanks",
+        "shanks"
+      ],
+      "title": "Probe",
+      "type": "object"
+    },
+    "Recording": {
+      "additionalProperties": false,
+      "properties": {
+        "recording_id": {
+          "minLength": 1,
+          "title": "Recording Id",
+          "type": "string"
+        },
+        "probes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Probe"
+          },
+          "title": "Probes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "recording_id",
+        "probes"
+      ],
+      "title": "Recording",
+      "type": "object"
+    },
+    "Shank": {
+      "additionalProperties": false,
+      "properties": {
+        "shank_idx": {
+          "minimum": 0,
+          "title": "Shank Idx",
+          "type": "integer"
+        },
+        "shank_id": {
+          "minimum": 1,
+          "title": "Shank Id",
+          "type": "integer"
+        },
+        "files": {
+          "$ref": "#/$defs/ShankFiles"
+        }
+      },
+      "required": [
+        "shank_idx",
+        "shank_id",
+        "files"
+      ],
+      "title": "Shank",
+      "type": "object"
+    },
+    "ShankFiles": {
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "minLength": 1,
+          "title": "Metadata",
+          "type": "string"
+        },
+        "channel_locations": {
+          "minLength": 1,
+          "title": "Channel Locations",
+          "type": "string"
+        },
+        "prev_alignments": {
+          "minLength": 1,
+          "title": "Prev Alignments",
+          "type": "string"
+        },
+        "ccf_channel_locations": {
+          "minLength": 1,
+          "title": "Ccf Channel Locations",
+          "type": "string"
+        }
+      },
+      "required": [
+        "metadata",
+        "channel_locations",
+        "prev_alignments",
+        "ccf_channel_locations"
+      ],
+      "title": "ShankFiles",
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.allenneuraldynamics.org/aind-ibl-ephys-alignment-output/1.0.0/datapackage.schema.json",
+  "additionalProperties": false,
+  "description": "Top-level manifest for alignment outputs saved by the IBL ephys alignment GUI.",
+  "properties": {
+    "schema_name": {
+      "const": "aind-ibl-ephys-alignment-output",
+      "title": "Schema Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "generated_by": {
+      "$ref": "#/$defs/GeneratedBy"
+    },
+    "mouse_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mouse Id"
+    },
+    "recordings": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Recording"
+      },
+      "title": "Recordings",
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_name",
+    "schema_version",
+    "generated_by",
+    "mouse_id",
+    "recordings"
+  ],
+  "title": "AIND IBL Ephys Alignment GUI Output Package",
+  "type": "object"
+}

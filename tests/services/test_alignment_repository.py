@@ -72,7 +72,8 @@ def test_load_previous_alignment_package_scans_recording_probe_dirs(tmp_path):
 
 def test_save_alignment_outputs_writes_expected_files(tmp_path):
     repo = AlignmentRepository()
-    output_dir = tmp_path / "rec1" / "probeA"
+    output_package_dir = tmp_path
+    output_dir = output_package_dir / "rec1" / "probeA"
     output_dir.mkdir(parents=True)
 
     saved = repo.save_alignment_outputs(
@@ -91,6 +92,8 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
             n_shanks=2,
         ),
         use_docdb=False,
+        output_package_directory=output_package_dir,
+        mouse_id="mouse",
     )
 
     assert saved.channel_results_path == output_dir / "channel_locations_shank2.json"
@@ -102,6 +105,8 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
     assert (
         saved.metadata_path == output_dir / "alignment_output_metadata_shank2.json"
     )
+    assert saved.datapackage_path == output_package_dir / "datapackage.json"
+    assert saved.datapackage_path.exists()
     with open(saved.previous_alignments_path) as f:
         assert json.load(f) == {"saved": [[1.0], [2.0]]}
     with open(saved.metadata_path) as f:

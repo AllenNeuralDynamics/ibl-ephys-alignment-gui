@@ -2041,6 +2041,14 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         active_output_dir,
         output_package_dir / "rec" / "probeB",
     ]
+    assert [kwargs["output_package_directory"] for kwargs in repo.saved_kwargs] == [
+        output_package_dir,
+        output_package_dir,
+    ]
+    assert [kwargs["mouse_id"] for kwargs in repo.saved_kwargs] == [
+        "mouse",
+        "mouse",
+    ]
     assert [kwargs["multi_shank"] for kwargs in repo.saved_kwargs] == [True, False]
     assert not state_a.has_unsaved_alignment
     assert not state_b.has_unsaved_alignment
