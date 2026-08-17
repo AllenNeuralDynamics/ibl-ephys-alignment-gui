@@ -465,7 +465,9 @@ class FakeLoadDataJob:
         if self.result is None:
             return LoadDataJobCompleted(
                 target=request.target,
-                ephys=SimpleNamespace(stream=_ephys_stream()),
+                ephys=SimpleNamespace(
+                    stream=_ephys_stream(request.target.stream_key[1])
+                ),
                 histology=HistologyDataLoaded(),
             )
         return self.result
@@ -2370,6 +2372,84 @@ def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
     assert len(fake_job.calls) == 1
     assert list(output_builder.batched_alignments) == [key]
     assert not state.has_unsaved_alignment
+    assert not workspace.document.dirty
+
+
+def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace(
+        ephys_data_service=FakeEphysDataService(),
+        alignment_runtime_service=FakeRuntimeInitializer(),
+        probe_track_service=FakeProbeTrackService(),
+    )
+    workspace.runtime.max_cached_streams = 2
+    fake_job = FakeLoadDataJob()
+    workspace.save_runtime_rehydrator.load_data_job = fake_job
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_root = tmp_path / "results"
+    workspace.document.output_directory = tmp_path / "active"
+    probes = tuple(
+        _probe_info(probe_name=f"probe-{idx}", ephys_collection=f"stream-{idx}")
+        for idx in range(3)
+    )
+    workspace.data_context.mouse_root = _mouse_root_with_probes(*probes)
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+
+    for idx in range(3):
+        key = AlignmentKey("rec", f"stream-{idx}", 0)
+        state = workspace.document.alignment_state_for(key)
+        state.active_alignment = ActiveAlignment(
+            feature=np.array([1.0, 2.0]),
+            track=np.array([3.0, 4.0]),
+        )
+        state.mark_alignment_changed()
+
+    for idx in range(2):
+        stream_key = ("rec", f"stream-{idx}")
+        stream_runtime = FakeStreamRuntime(stream_key, n_shanks=2)
+        stream_runtime.shank_runtime_by_idx = {
+            0: _fake_shank_runtime(
+                ephysalign=f"aligner-{idx}",
+                chn_coords=np.array([[10.0 + idx, 20.0 + idx]]),
+            )
+        }
+        workspace.runtime.cache_loaded_stream(stream_runtime, activate=False)
+
+    plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
+
+    assert isinstance(plan, SaveRuntimeRehydrationPlan)
+    assert [dependency.stream_key for dependency in plan.dependencies] == [
+        ("rec", "stream-2")
+    ]
+
+    rehydrated = workspace.app.commands.persistence.run_save_runtime_rehydration(plan)
+
+    assert isinstance(rehydrated, SaveRuntimeRehydrated)
+    assert list(workspace.runtime.stream_cache) == [
+        ("rec", "stream-0"),
+        ("rec", "stream-1"),
+        ("rec", "stream-2"),
+    ]
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False,
+        rehydrate_missing=False,
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 3
+    assert len(fake_job.calls) == 1
+    assert list(output_builder.batched_alignments) == [
+        AlignmentKey("rec", "stream-0", 0),
+        AlignmentKey("rec", "stream-1", 0),
+        AlignmentKey("rec", "stream-2", 0),
+    ]
     assert not workspace.document.dirty
 
 

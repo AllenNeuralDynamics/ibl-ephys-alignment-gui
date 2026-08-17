@@ -209,7 +209,11 @@ class SaveRuntimeRehydrator:
         )
         if isinstance(initialized, Failed):
             return initialized
-        self.runtime.cache_loaded_stream(stream_runtime, activate=False)
+        self.runtime.cache_loaded_stream(
+            stream_runtime,
+            activate=False,
+            enforce_limit=False,
+        )
         return Ok()
 
     @staticmethod

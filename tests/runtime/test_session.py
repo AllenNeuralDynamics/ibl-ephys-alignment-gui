@@ -179,6 +179,25 @@ def test_cache_loaded_stream_evicts_oldest_inactive_stream_when_over_limit() -> 
     )
 
 
+def test_cache_loaded_stream_can_defer_cache_limit_enforcement() -> None:
+    runtime = SessionRuntime(max_cached_streams=2)
+    stream_a = _stream_runtime("streamA")
+    stream_b = _stream_runtime("streamB")
+    stream_c = _stream_runtime("streamC")
+
+    runtime.cache_loaded_stream(stream_a)
+    runtime.cache_loaded_stream(stream_b, activate=False)
+    runtime.cache_loaded_stream(stream_c, activate=False, enforce_limit=False)
+
+    assert list(runtime.stream_cache) == [
+        ("rec1", "streamA"),
+        ("rec1", "streamB"),
+        ("rec1", "streamC"),
+    ]
+    assert runtime.active_stream_runtime is stream_a
+    assert runtime.current_stream_key == ("rec1", "streamA")
+
+
 def test_cached_stream_access_refreshes_lru_order() -> None:
     runtime = SessionRuntime(max_cached_streams=3)
     runtime.cache_loaded_stream(_stream_runtime("streamA"))

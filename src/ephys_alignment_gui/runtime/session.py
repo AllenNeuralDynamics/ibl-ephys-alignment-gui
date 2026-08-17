@@ -146,6 +146,7 @@ class SessionRuntime:
         runtime: EphysStreamRuntime,
         *,
         activate: bool = True,
+        enforce_limit: bool = True,
     ) -> None:
         """Cache a freshly loaded stream runtime and optionally mark it active."""
         self.stream_cache[runtime.stream_key] = runtime
@@ -153,7 +154,8 @@ class SessionRuntime:
             self.active_stream_runtime = runtime
             self.current_stream_key = runtime.stream_key
         self._touch_cached_stream(runtime.stream_key)
-        self._enforce_stream_cache_limit()
+        if enforce_limit:
+            self._enforce_stream_cache_limit()
 
     def activate_stream_runtime(
         self,
