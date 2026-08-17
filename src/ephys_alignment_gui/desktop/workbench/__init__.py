@@ -398,6 +398,10 @@ class DesktopWorkbench:
         coordinator = self.coordinator_cluster.previous_alignment_load_coordinator
         return coordinator.load_existing_alignments()
 
+    def recover_autosave(self) -> bool:
+        """Prompt for and recover a document autosave checkpoint."""
+        return self.coordinator_cluster.autosave_recovery_coordinator.recover_autosave()
+
     def save_alignment_outputs(self) -> bool:
         """Save alignment outputs."""
         return self.coordinator_cluster.save_coordinator.save_alignment_outputs()

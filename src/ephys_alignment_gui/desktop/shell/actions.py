@@ -28,6 +28,10 @@ class DesktopShellActions:
         """Prompt for and load previously saved alignments."""
         return self.workbench.load_existing_alignments()
 
+    def recover_autosave(self, *_args: Any) -> bool:
+        """Prompt for and recover a document autosave checkpoint."""
+        return self.workbench.recover_autosave()
+
     def set_mouse_root(self, mouse_root: Path) -> bool:
         """Point the GUI at a preprocessed mouse-root directory."""
         return self.workbench.set_mouse_root(mouse_root)

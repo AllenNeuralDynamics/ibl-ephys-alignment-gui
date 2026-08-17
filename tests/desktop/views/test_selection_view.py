@@ -32,6 +32,9 @@ class FakeModel:
         except IndexError:
             return None
 
+    def rowCount(self) -> int:
+        return len(self.rows)
+
 
 class FakeMetrics:
     def width(self, text: str) -> int:
@@ -143,3 +146,19 @@ def test_selection_view_returns_none_for_invalid_shank_label() -> None:
     view.shank_combobox.text = "not-a-shank"
 
     assert view.current_shank_index() is None
+
+
+def test_selection_view_selects_session_and_probe_by_label() -> None:
+    view, _model, combobox = _view()
+    view.populate_sessions(["rec1", "rec2"])
+    view.populate_probes(["probeA", "probeB"])
+
+    assert view.select_session_text("rec2") == 1
+    assert combobox.current_index == 1
+    assert view.select_probe_text("probeB") == 1
+    assert view.probe_combobox.current_index == 1
+    assert view.select_session_text("missing") is None
+
+    view.select_shank_index(2)
+
+    assert view.shank_combobox.current_index == 2

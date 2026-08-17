@@ -6,6 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.desktop.coordinators.autosave_recovery_coordinator import (
+    AutosaveRecoveryCallbacks,
+    DesktopAutosaveRecoveryCoordinator,
+)
 from ephys_alignment_gui.desktop.coordinators.interaction_coordinator import (
     DesktopInteractionCallbacks,
     DesktopInteractionCoordinator,
@@ -67,6 +71,9 @@ from ephys_alignment_gui.desktop.displays.plot_exporter import (
 )
 from ephys_alignment_gui.desktop.shell.folder_dialog import DesktopFolderDialog
 from ephys_alignment_gui.desktop.views import DesktopViews
+from ephys_alignment_gui.desktop.views.autosave_recovery_dialog import (
+    DesktopAutosaveRecoveryDialog,
+)
 from ephys_alignment_gui.desktop.workbench.port_types import (
     DesktopBusyPorts,
     DesktopInteractionPorts,
@@ -97,6 +104,7 @@ class DesktopWorkbenchCoordinatorCluster:
     folder_dialog: DesktopFolderDialog
     save_coordinator: DesktopSaveCoordinator
     previous_alignment_load_coordinator: DesktopPreviousAlignmentLoadCoordinator
+    autosave_recovery_coordinator: DesktopAutosaveRecoveryCoordinator
     plot_exporter: DesktopPlotExporter
     plot_export_coordinator: DesktopPlotExportCoordinator
     interaction_coordinator: DesktopInteractionCoordinator
@@ -217,6 +225,30 @@ def build_desktop_workbench_coordinator_cluster(
             app.queries.workspace.active_output_package_directory,
         ),
     )
+    autosave_recovery_dialog = DesktopAutosaveRecoveryDialog(parent)
+    autosave_recovery_coordinator = DesktopAutosaveRecoveryCoordinator(
+        app=app,
+        selection_view=views.selection,
+        callbacks=AutosaveRecoveryCallbacks(
+            select_folder=lambda directory: folder_dialog.select_existing_directory(
+                "Recover Autosave",
+                directory=directory,
+            ),
+            default_folder=lambda: (
+                app.queries.workspace.active_output_package_directory()
+                or app.queries.workspace.active_output_root()
+                or app.queries.workspace.active_mouse_root_path()
+            ),
+            confirm_recovery=autosave_recovery_dialog.confirm_recovery,
+            set_mouse_root=mouse_root_coordinator.set_mouse_root,
+            activate_selected_stream=(
+                selection_activation_coordinator.activate_selected_stream
+            ),
+            render_output_paths=output_path_coordinator.render_output_paths,
+            busy_context=ports.busy.busy_context,
+            warning=autosave_recovery_dialog.warning,
+        ),
+    )
     interaction_coordinator = _interaction_coordinator(
         ports.interaction,
         app=app,
@@ -246,6 +278,7 @@ def build_desktop_workbench_coordinator_cluster(
         folder_dialog=folder_dialog,
         save_coordinator=save_coordinator,
         previous_alignment_load_coordinator=previous_alignment_load_coordinator,
+        autosave_recovery_coordinator=autosave_recovery_coordinator,
         plot_exporter=plot_exporter,
         plot_export_coordinator=plot_export_coordinator,
         interaction_coordinator=interaction_coordinator,

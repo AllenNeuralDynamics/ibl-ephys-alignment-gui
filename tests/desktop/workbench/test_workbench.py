@@ -514,6 +514,15 @@ class FakePreviousAlignmentLoadPresenter:
         return True
 
 
+class FakeAutosaveRecoveryCoordinator:
+    def __init__(self) -> None:
+        self.recover_count = 0
+
+    def recover_autosave(self) -> bool:
+        self.recover_count += 1
+        return True
+
+
 class FakePlotExporter:
     def __init__(self) -> None:
         self.exports: list[tuple[Any, str]] = []
@@ -701,6 +710,7 @@ def _workbench(
     folder_dialog: Any | None = None,
     save: Any | None = None,
     previous_alignment_load: Any | None = None,
+    autosave_recovery: Any | None = None,
     plot_exporter: Any | None = None,
     plot_export_coordinator: Any | None = None,
     interaction: Any | None = None,
@@ -762,6 +772,9 @@ def _workbench(
         save_coordinator=save or FakeSavePresenter(),
         previous_alignment_load_coordinator=(
             previous_alignment_load or FakePreviousAlignmentLoadPresenter()
+        ),
+        autosave_recovery_coordinator=(
+            autosave_recovery or FakeAutosaveRecoveryCoordinator()
         ),
         plot_exporter=plot_exporter or FakePlotExporter(),
         plot_export_coordinator=plot_export_coordinator or FakePlotExportPresenter(),
@@ -1016,6 +1029,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     folder_dialog = FakeFolderDialog()
     save = FakeSavePresenter()
     previous_alignment_load = FakePreviousAlignmentLoadPresenter()
+    autosave_recovery = FakeAutosaveRecoveryCoordinator()
     plot_exporter = FakePlotExporter()
     plot_export_coordinator = FakePlotExportPresenter()
     interaction = FakeInteractionPresenter()
@@ -1039,6 +1053,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         folder_dialog=folder_dialog,
         save=save,
         previous_alignment_load=previous_alignment_load,
+        autosave_recovery=autosave_recovery,
         plot_exporter=plot_exporter,
         plot_export_coordinator=plot_export_coordinator,
         interaction=interaction,
@@ -1074,6 +1089,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert workbench.display_qc_options()
     assert workbench.qc_button_clicked()
     assert workbench.load_existing_alignments()
+    assert workbench.recover_autosave()
     workbench.export_plots("plots", sess_info="session-")
     assert workbench.save_plots("save-plots")
     assert workbench.toggle_histology_boundaries()
@@ -1120,6 +1136,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert save.qc_display_count == 1
     assert save.qc_clicked_count == 1
     assert previous_alignment_load.load_count == 1
+    assert autosave_recovery.recover_count == 1
     assert plot_exporter.exports == [("plots", "session-")]
     assert plot_export_coordinator.saved_paths == ["save-plots"]
     assert display_actions.calls == [

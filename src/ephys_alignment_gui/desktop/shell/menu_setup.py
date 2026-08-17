@@ -14,6 +14,7 @@ def build_menu_bar(window: Any) -> None:
     menu_bar.setNativeMenuBar(False)
     window.setMenuBar(menu_bar)
 
+    _add_file_menu(window, menu_bar)
     _attach_plot_menus(window, menu_bar)
     _add_fit_options_menu(window, menu_bar)
     _add_display_options_menu(window, menu_bar)
@@ -25,6 +26,17 @@ def _attach_plot_menus(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
         menu_bar,
         parent=window,
         offline=window.offline,
+    )
+
+
+def _add_file_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    actions = window.shell_actions
+    file_menu = menu_bar.addMenu("File")
+    _add_actions(
+        file_menu,
+        [
+            _action(window, "Recover Autosave...", None, actions.recover_autosave),
+        ],
     )
 
 

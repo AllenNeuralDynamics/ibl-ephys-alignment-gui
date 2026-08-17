@@ -85,6 +85,18 @@ class DesktopSelectionView:
         """Select a probe by combobox index."""
         self.probe_combobox.setCurrentIndex(idx)
 
+    def select_session_text(self, session: str) -> int | None:
+        """Select a session by label and return the selected index."""
+        return self._select_text(self.session_model, self.session_combobox, session)
+
+    def select_probe_text(self, probe: str) -> int | None:
+        """Select a probe by label and return the selected index."""
+        return self._select_text(self.probe_model, self.probe_combobox, probe)
+
+    def select_shank_index(self, idx: int) -> None:
+        """Select a zero-based shank index."""
+        self.shank_combobox.setCurrentIndex(idx)
+
     def _populate(self, values: Sequence[str], model: Any, combobox: Any) -> None:
         populate_choice_list(
             values,
@@ -108,4 +120,12 @@ class DesktopSelectionView:
             return text()
         if text is not None:
             return str(text)
+        return None
+
+    @classmethod
+    def _select_text(cls, model: Any, combobox: Any, value: str) -> int | None:
+        for idx in range(getattr(model, "rowCount", lambda: 0)()):
+            if cls._text_at_index(model, idx) == value:
+                combobox.setCurrentIndex(idx)
+                return idx
         return None
