@@ -48,6 +48,11 @@ class DesktopSaveCallbacks:
     ephys_qc: Callable[[], str]
     selected_qc_descriptions: Callable[[], list[str]]
     warning: Callable[[str, str], Any]
+    unvisited_alignment_targets: Callable[[], tuple[AlignmentKey, ...]] = lambda: ()
+    confirm_incomplete_alignment_save: Callable[
+        [tuple[AlignmentKey, ...]],
+        bool,
+    ] = lambda _targets: True
     save_blocking_widgets: Callable[[], list[Any]] = lambda: []
 
 
@@ -199,6 +204,17 @@ class DesktopSaveCoordinator:
 
         if self.save_runner.is_running:
             logger.info("Save request ignored because save work is active")
+            return False
+
+        unvisited_targets = self.callbacks.unvisited_alignment_targets()
+        if unvisited_targets and not self.callbacks.confirm_incomplete_alignment_save(
+            unvisited_targets
+        ):
+            logger.info(
+                "Save cancelled before preparation; %d mouse-root probe/shank "
+                "target(s) were not visited",
+                len(unvisited_targets),
+            )
             return False
 
         use_docdb = self.callbacks.use_docdb()

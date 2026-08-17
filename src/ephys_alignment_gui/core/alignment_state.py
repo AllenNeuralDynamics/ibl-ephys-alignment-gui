@@ -174,6 +174,7 @@ class AlignmentState:
             self.merge_alignments(alignments)
         else:
             self.set_alignments(alignments)
+            self.activate_default_alignment_from_history()
 
     @staticmethod
     def _filtered_alignments(
@@ -264,6 +265,19 @@ class AlignmentState:
     def clear_pending_reference_lines(self) -> None:
         """Clear pending reference-line coordinates for this alignment."""
         self.pending_reference_lines = None
+
+    def activate_default_alignment_from_history(self) -> None:
+        """Make clean history saveable without requiring an explicit UI selection."""
+        if self.active_alignment is not None:
+            return
+        for idx, _label in enumerate(self.prev_align):
+            feature, track = self.get_alignment_idx(idx)
+            if feature is None or track is None:
+                continue
+            self.feature_prev = feature
+            self.track_prev = track
+            self.rebase_working_alignment(ActiveAlignment(feature, track))
+            return
 
     def get_alignment_idx(self, idx: int) -> tuple[NDArray | None, NDArray | None]:
         """Return ``(feature, track)`` for a dropdown index."""

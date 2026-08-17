@@ -19,6 +19,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
 )
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.session import LoadDataPlan, LoadDataTarget
@@ -203,6 +204,27 @@ class WorkspaceStateQueries:
     def mouse_root_loaded(self) -> bool:
         """Return whether an input mouse-root datapackage is loaded."""
         return self.active_mouse_root_path() is not None
+
+    def unvisited_alignment_targets(self) -> tuple[AlignmentKey, ...]:
+        """Return mouse-root probe/shank targets without saveable alignment state."""
+        input_dataset = (
+            None if self.data_context is None else self.data_context.input_dataset
+        )
+        if input_dataset is None:
+            return ()
+
+        saveable_keys = set(self.context.document.saveable_alignment_states())
+        missing: list[AlignmentKey] = []
+        for probe in input_dataset.probes:
+            for shank_idx in range(max(int(probe.num_shanks), 0)):
+                key = AlignmentKey(
+                    recording_id=probe.recording_id,
+                    ephys_collection=probe.ephys_collection,
+                    shank_idx=shank_idx,
+                )
+                if key not in saveable_keys:
+                    missing.append(key)
+        return tuple(missing)
 
     def active_output_root(self) -> Path | None:
         """Return the active output root, if one has been set."""

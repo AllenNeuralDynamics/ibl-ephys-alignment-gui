@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.views.export_view import DesktopExportView
 
 
@@ -75,6 +76,14 @@ class DesktopSavePorts:
     ephys_qc: Callable[[], str]
     selected_qc_descriptions: Callable[[], list[str]]
     warning: Callable[[str, str], Any]
+    unvisited_alignment_targets: Callable[
+        [],
+        tuple[AlignmentKey, ...],
+    ] = lambda: ()
+    confirm_incomplete_alignment_save: Callable[
+        [tuple[AlignmentKey, ...]],
+        bool,
+    ] = lambda _targets: True
     save_blocking_widgets: Callable[[], list[Any]] = lambda: []
 
 

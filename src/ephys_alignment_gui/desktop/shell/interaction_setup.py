@@ -113,7 +113,7 @@ def _initialize_output_controls(window) -> None:
 
     window.output_folder_line = QtWidgets.QLineEdit()
     window.output_folder_button = QtWidgets.QToolButton()
-    window.output_folder_button.setText("Output Directory")
+    window.output_folder_button.setText("Save Root")
     window.output_folder_button.clicked.connect(actions.on_output_folder_selected)
     window.output_folder_line.editingFinished.connect(actions.on_output_folder_edited)
 

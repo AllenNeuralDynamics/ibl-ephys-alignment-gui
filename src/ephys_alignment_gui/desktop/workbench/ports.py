@@ -9,6 +9,7 @@ from typing import Any
 
 from PyQt5 import QtWidgets
 
+from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.displays.axis_style import set_axis
 from ephys_alignment_gui.desktop.shell.busy_context import BusyContext
 from ephys_alignment_gui.desktop.views.save_progress_dialog import (
@@ -82,6 +83,30 @@ def desktop_workbench_ports_from_handles(
     def use_docdb() -> bool:
         return handles.use_docdb_checkbox.isChecked()
 
+    def unvisited_alignment_targets() -> tuple[AlignmentKey, ...]:
+        return getattr(
+            app.queries.workspace,
+            "unvisited_alignment_targets",
+            lambda: (),
+        )()
+
+    def confirm_incomplete_alignment_save(
+        unvisited_targets: tuple[AlignmentKey, ...],
+    ) -> bool:
+        box = QtWidgets.QMessageBox(parent)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle("Incomplete Alignment Set")
+        box.setText("Some probe/shank targets have not been visited.")
+        box.setInformativeText(
+            "Save only the visited shanks? Choose OK only if you intentionally "
+            "want an incomplete annotation package.\n\n"
+            f"{_format_unvisited_alignment_targets(unvisited_targets, limit=12)}"
+        )
+        box.setDetailedText(_format_unvisited_alignment_targets(unvisited_targets))
+        box.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+        return box.exec_() == QtWidgets.QMessageBox.Ok
+
     return DesktopWorkbenchPorts(
         alignment_edit_actions=DesktopAlignmentEditActionPorts(
             histology_available=histology_available,
@@ -107,9 +132,7 @@ def desktop_workbench_ports_from_handles(
                 ),
             ),
             shank=DesktopShankRenderPorts(
-                capture_plot_selection=lambda preserve,
-                ephys_plot_presenter,
-                slice_menu_coordinator: (
+                capture_plot_selection=lambda preserve, ephys_plot_presenter, slice_menu_coordinator: (
                     views.shank_screen.capture_plot_selection(
                         preserve,
                         ephys_plot_presenter=ephys_plot_presenter,
@@ -133,9 +156,7 @@ def desktop_workbench_ports_from_handles(
         ),
         save=DesktopSavePorts(
             use_docdb=use_docdb,
-            render_alignment_choices=(
-                views.alignment_screen.render_alignment_choices
-            ),
+            render_alignment_choices=(views.alignment_screen.render_alignment_choices),
             busy_context=busy_context,
             complete_button=lambda: handles.complete_button,
             save_progress_dialog=lambda: DesktopSaveProgressDialog(parent),
@@ -148,6 +169,8 @@ def desktop_workbench_ports_from_handles(
                 title,
                 message,
             ),
+            unvisited_alignment_targets=unvisited_alignment_targets,
+            confirm_incomplete_alignment_save=confirm_incomplete_alignment_save,
             save_blocking_widgets=lambda: (
                 [central_widget]
                 if (central_widget := parent.centralWidget()) is not None
@@ -157,9 +180,7 @@ def desktop_workbench_ports_from_handles(
         previous_alignment_load=DesktopPreviousAlignmentLoadPorts(
             use_docdb=use_docdb,
             set_reload_folder_text=handles.reload_folder_line.setText,
-            render_alignment_choices=(
-                views.alignment_screen.render_alignment_choices
-            ),
+            render_alignment_choices=(views.alignment_screen.render_alignment_choices),
             busy_context=busy_context,
             reload_button=lambda: handles.reload_folder_button,
         ),
@@ -180,3 +201,19 @@ def desktop_workbench_ports_from_handles(
             set_axis=set_axis,
         ),
     )
+
+
+def _format_unvisited_alignment_targets(
+    targets: tuple[AlignmentKey, ...],
+    *,
+    limit: int | None = None,
+) -> str:
+    """Return a human-readable list of unvisited alignment targets."""
+    visible = targets if limit is None else targets[:limit]
+    lines = [
+        f"- {key.recording_id} / {key.ephys_collection} / shank {key.shank_idx + 1}"
+        for key in visible
+    ]
+    if limit is not None and len(targets) > limit:
+        lines.append(f"- ... and {len(targets) - limit} more")
+    return "\n".join(lines)

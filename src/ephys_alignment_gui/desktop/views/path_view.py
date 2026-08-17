@@ -28,13 +28,16 @@ class DesktopPathView:
         self.mouse_root_line.setText(str(mouse_root))
 
     def set_output_directory(self, output_directory: Path | None) -> None:
-        """Render the active per-probe output directory if available."""
+        """Render secondary state for the active per-probe output directory."""
         if output_directory is None:
+            self.output_folder_line.setToolTip("")
             return
-        self.output_folder_line.setText(str(output_directory))
+        self.output_folder_line.setToolTip(
+            f"Active probe output directory: {output_directory}"
+        )
 
     def set_output_root(self, output_root: Path) -> None:
-        """Render the save root when no per-probe directory is active yet."""
+        """Render the editable save root."""
         self.output_folder_line.setText(str(output_root))
 
     def mouse_root_widgets(self) -> list[Any]:

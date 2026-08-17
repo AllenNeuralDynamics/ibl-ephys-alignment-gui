@@ -107,7 +107,10 @@ def test_derive_output_directory_renders_probe_output_path() -> None:
     assert coordinator.derive_output_directory_from_save_root()
 
     assert commands.derive_calls == 1
-    assert calls == [("output-dir", Path("/results/rec/probe"))]
+    assert calls == [
+        ("output-root", Path("/results")),
+        ("output-dir", Path("/results/rec/probe")),
+    ]
 
 
 def test_derive_output_directory_returns_false_without_probe_output() -> None:
@@ -117,7 +120,7 @@ def test_derive_output_directory_returns_false_without_probe_output() -> None:
 
     assert not coordinator.derive_output_directory_from_save_root()
 
-    assert calls == [("output-root", Path("/results"))]
+    assert calls == [("output-root", Path("/results")), ("output-dir", None)]
 
 
 def test_set_save_root_renders_probe_output_when_available() -> None:
@@ -126,7 +129,10 @@ def test_set_save_root_renders_probe_output_when_available() -> None:
     assert coordinator.set_save_root(Path("/results"))
 
     assert commands.set_calls == [Path("/results")]
-    assert calls == [("output-dir", Path("/results/rec/probe"))]
+    assert calls == [
+        ("output-root", Path("/results")),
+        ("output-dir", Path("/results/rec/probe")),
+    ]
 
 
 def test_set_save_root_renders_root_when_no_probe_output_exists() -> None:
@@ -138,7 +144,7 @@ def test_set_save_root_renders_root_when_no_probe_output_exists() -> None:
 
     assert coordinator.set_save_root(Path("/results"))
 
-    assert calls == [("output-root", Path("/results"))]
+    assert calls == [("output-root", Path("/results")), ("output-dir", None)]
 
 
 def test_set_save_root_failure_does_not_render_path() -> None:
@@ -158,7 +164,10 @@ def test_output_folder_edited_sets_save_root_from_text() -> None:
     assert coordinator.output_folder_edited()
 
     assert commands.set_calls == [Path("/edited/results")]
-    assert calls == [("output-dir", Path("/results/rec/probe"))]
+    assert calls == [
+        ("output-root", Path("/results")),
+        ("output-dir", Path("/results/rec/probe")),
+    ]
 
 
 def test_output_folder_edited_ignores_empty_text() -> None:

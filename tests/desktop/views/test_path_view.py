@@ -10,12 +10,16 @@ from ephys_alignment_gui.desktop.views.path_view import DesktopPathView
 class FakeLineEdit:
     def __init__(self, text: str = "") -> None:
         self._text = text
+        self.tooltip = ""
 
     def text(self) -> str:
         return self._text
 
     def setText(self, text: str) -> None:
         self._text = text
+
+    def setToolTip(self, text: str) -> None:
+        self.tooltip = text
 
 
 def test_path_view_wraps_text_fields_and_mouse_root_widgets() -> None:
@@ -32,7 +36,8 @@ def test_path_view_wraps_text_fields_and_mouse_root_widgets() -> None:
     view.set_output_directory(Path("/results/probe"))
 
     assert view.mouse_root_text() == "/data/new-mouse"
-    assert view.output_root_text() == "/results/probe"
+    assert view.output_root_text() == "/results"
+    assert output.tooltip == "Active probe output directory: /results/probe"
     assert view.mouse_root_widgets() == [button, mouse_root]
 
 
@@ -44,6 +49,8 @@ def test_path_view_can_show_save_root_when_no_probe_output_exists() -> None:
     )
 
     view.set_output_root(Path("/results"))
+    view.set_output_directory(Path("/results/package/rec/probe"))
     view.set_output_directory(None)
 
     assert view.output_root_text() == "/results"
+    assert view.output_folder_line.tooltip == ""

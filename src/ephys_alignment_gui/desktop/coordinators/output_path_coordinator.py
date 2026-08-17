@@ -90,9 +90,10 @@ class DesktopOutputPathCoordinator:
         output_directory: Path | None,
     ) -> None:
         """Render frontend output path state from app-owned path values."""
-        if output_directory is not None:
-            self.display_output_directory(output_directory)
-        elif output_root is not None:
+        if output_root is not None:
             self.path_view.set_output_root(output_root)
+            self.display_output_directory(output_directory)
+        elif output_directory is not None:
+            self.display_output_directory(output_directory)
         else:
             self.display_output_directory(None)

@@ -245,6 +245,25 @@ def test_alignment_state_can_clear_previous_alignment_selection() -> None:
     assert state.prev_align == ["saved", "original"]
 
 
+def test_alignment_state_import_selects_clean_history_as_saveable_alignment() -> None:
+    state = AlignmentState()
+
+    state.import_alignments(
+        {
+            "2026-08-16T12:00:00": [[0.0, 1.0], [2.0, 3.0]],
+            "2026-08-17T12:00:00": [[4.0, 5.0], [6.0, 7.0]],
+        }
+    )
+
+    assert state.has_saveable_alignment
+    assert not state.has_unsaved_alignment
+    assert state.active_alignment is not None
+    np.testing.assert_array_equal(state.active_alignment.feature, [4.0, 5.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [6.0, 7.0])
+    np.testing.assert_array_equal(state.feature_prev, [4.0, 5.0])
+    np.testing.assert_array_equal(state.track_prev, [6.0, 7.0])
+
+
 def test_alignment_state_import_merges_when_active_state_is_dirty() -> None:
     state = AlignmentState()
     state.set_alignments({"saved": [[0.0], [1.0]]})

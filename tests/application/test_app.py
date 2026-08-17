@@ -2037,6 +2037,53 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     assert queries.workspace.has_output_directory()
 
 
+def test_queries_report_unvisited_alignment_targets() -> None:
+    workspace = AlignmentWorkspace()
+    probe_a = _probe_info(
+        probe_name="probeA",
+        ephys_collection="streamA",
+        num_shanks=2,
+    )
+    probe_b = _probe_info(
+        probe_name="probeB",
+        ephys_collection="streamB",
+        num_shanks=1,
+    )
+    _attach_input_dataset(
+        workspace,
+        MouseRoot(
+            root=Path("/tmp/mouse"),
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=None,
+            histology=None,
+            probes={"rec": {"probeA": probe_a, "probeB": probe_b}},
+        ),
+    )
+    visited_shank = AlignmentKey("rec", "streamA", 1)
+    visited_state = workspace.document.alignment_state_for(visited_shank)
+    visited_state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    visited_probe = AlignmentKey("rec", "streamB", 0)
+    visited_probe_state = workspace.document.alignment_state_for(visited_probe)
+    visited_probe_state.active_alignment = ActiveAlignment(
+        feature=np.array([5.0, 6.0]),
+        track=np.array([7.0, 8.0]),
+    )
+
+    assert workspace.app.queries.workspace.unvisited_alignment_targets() == (
+        AlignmentKey("rec", "streamA", 0),
+    )
+    imported_shank = workspace.document.alignment_state_for(
+        AlignmentKey("rec", "streamA", 0)
+    )
+    imported_shank.import_alignments({"loaded": [[9.0, 10.0], [11.0, 12.0]]})
+
+    assert workspace.app.queries.workspace.unvisited_alignment_targets() == ()
+
+
 def test_commands_clear_histology_context() -> None:
     workspace = AlignmentWorkspace()
     workspace.histology_context.runtime_data = object()
@@ -3097,6 +3144,10 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
     assert repo.loaded_kwargs["shank_idx"] == 1
     state = workspace.document.alignment_state_for(AlignmentKey("rec", "stream", 1))
     assert state.alignments == {"saved": [[1.0], [2.0]]}
+    assert state.has_saveable_alignment
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.feature, [1.0])
+    np.testing.assert_allclose(state.active_alignment.track, [2.0])
     assert events == [
         PreviousAlignmentsLoaded(
             shank_idx=1,
@@ -3150,6 +3201,11 @@ def test_commands_load_previous_alignment_package_does_not_clobber_dirty_active_
         AlignmentKey("rec", "streamB", 0)
     )
     assert other_state.alignments == {"other-loaded": [[3.0], [4.0]]}
+    assert other_state.has_saveable_alignment
+    assert not other_state.has_unsaved_alignment
+    assert other_state.active_alignment is not None
+    np.testing.assert_allclose(other_state.active_alignment.feature, [3.0])
+    np.testing.assert_allclose(other_state.active_alignment.track, [4.0])
     assert events == [
         PreviousAlignmentsLoaded(
             shank_idx=1,

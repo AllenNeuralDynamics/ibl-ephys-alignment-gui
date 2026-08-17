@@ -305,6 +305,8 @@ def _save_callbacks(
         ephys_qc=ports.ephys_qc,
         selected_qc_descriptions=ports.selected_qc_descriptions,
         warning=ports.warning,
+        unvisited_alignment_targets=ports.unvisited_alignment_targets,
+        confirm_incomplete_alignment_save=ports.confirm_incomplete_alignment_save,
         save_blocking_widgets=ports.save_blocking_widgets,
     )
 

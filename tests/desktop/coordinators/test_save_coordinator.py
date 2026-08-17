@@ -341,6 +341,8 @@ def _coordinator(
     selected_descriptions: list[str] | None = None,
     save_runner: Any | None = None,
     complete_button: Any | None = None,
+    unvisited_targets: tuple[AlignmentKey, ...] = (),
+    confirm_incomplete_save: bool = True,
 ) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
     events = EventBus()
@@ -372,6 +374,10 @@ def _coordinator(
             ephys_qc=lambda: ephys_qc,
             selected_qc_descriptions=lambda: selected_descriptions or [],
             warning=lambda title, message: calls.append(("warning", title, message)),
+            unvisited_alignment_targets=lambda: unvisited_targets,
+            confirm_incomplete_alignment_save=lambda targets: (
+                calls.append(("confirm-incomplete", targets)) or confirm_incomplete_save
+            ),
             save_blocking_widgets=lambda: [],
         ),
         save_runner=save_runner or ManualAlignmentSaveRunner(),
@@ -421,6 +427,36 @@ def test_save_returns_false_when_output_prompt_is_cancelled() -> None:
 
     assert commands.save_calls == []
     assert calls == [("ensure-output", blocked.first)]
+
+
+def test_save_cancelled_when_unvisited_targets_are_not_confirmed() -> None:
+    missing = (AlignmentKey("rec", "stream", 0),)
+    coordinator, commands, calls = _coordinator(
+        unvisited_targets=missing,
+        confirm_incomplete_save=False,
+    )
+
+    assert not coordinator.save_alignment_outputs()
+
+    assert commands.ready_calls == 1
+    assert commands.prepare_calls == 0
+    assert commands.save_calls == []
+    assert calls == [("confirm-incomplete", missing)]
+
+
+def test_save_continues_when_unvisited_targets_are_confirmed() -> None:
+    missing = (AlignmentKey("rec", "stream", 0),)
+    coordinator, commands, calls = _coordinator(
+        unvisited_targets=missing,
+        confirm_incomplete_save=True,
+    )
+
+    assert coordinator.save_alignment_outputs()
+
+    assert commands.ready_calls == 1
+    assert commands.prepare_calls == 1
+    assert commands.save_calls == [{"use_docdb": True}]
+    assert ("confirm-incomplete", missing) in calls
 
 
 def test_save_logs_failed_command() -> None:
