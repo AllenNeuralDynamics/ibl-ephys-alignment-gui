@@ -16,6 +16,7 @@ import ephys_alignment_gui.services.alignment_output as alignment_output_service
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveCancelToken,
     AlignmentSaveJobCancelled,
+    AlignmentSaveJobCompleted,
     PreparedAlignmentSave,
 )
 from ephys_alignment_gui.application.queries import AlignmentQueries
@@ -319,6 +320,16 @@ class FakeBatchOutputBuilder:
             )
             for key in alignments
         }
+
+
+class FakeCancellableBatchOutputBuilder(FakeBatchOutputBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancel_tokens = []
+
+    def get_alignment_results_batch(self, alignments, *, cancel_token=None):
+        self.cancel_tokens.append(cancel_token)
+        return super().get_alignment_results_batch(alignments)
 
 
 class FakeMissingCcfBatchOutputBuilder(FakeBatchOutputBuilder):
@@ -2635,6 +2646,41 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     assert workspace.document.dirty
 
 
+def test_commands_prepared_alignment_save_passes_cancel_token_to_batch_builder(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeCancellableBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    _attach_single_probe_save_geometry(workspace, tmp_path)
+    _install_fake_save_channel_location_builder(workspace)
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
+        use_docdb=False,
+    )
+    assert isinstance(prepared, PreparedAlignmentSave)
+    cancel_token = AlignmentSaveCancelToken()
+
+    job_result = workspace.app.commands.persistence.run_prepared_alignment_save(
+        prepared,
+        cancel_token=cancel_token,
+    )
+
+    assert isinstance(job_result, AlignmentSaveJobCompleted)
+    assert output_builder.cancel_tokens == [cancel_token]
+
+
 def test_commands_save_edited_alignment_outputs_uses_lightweight_geometry_without_runtime(
     tmp_path,
 ) -> None:
@@ -2767,22 +2813,32 @@ def test_commands_full_save_batches_ccf_and_writes_complete_package_without_runt
     transform_calls = []
 
     def fake_apply_transforms_to_points(
-        dimension,
         points,
+        *,
+        dimension,
         transforms,
         whichtoinvert,
+        cancel_token=None,
     ):
-        transform_calls.append((dimension, points.copy(), transforms, whichtoinvert))
-        return pandas.DataFrame(
-            {
-                "x": np.linspace(-1.0, 1.0, len(points)),
-                "y": np.arange(len(points), dtype=float) * 0.01,
-                "z": np.arange(len(points), dtype=float) * 0.02,
-            }
+        transform_calls.append(
+            (
+                dimension,
+                pandas.DataFrame(points, columns=list("xyz")),
+                transforms,
+                whichtoinvert,
+                cancel_token,
+            )
+        )
+        return np.column_stack(
+            [
+                np.linspace(-1.0, 1.0, len(points)),
+                np.arange(len(points), dtype=float) * 0.01,
+                np.arange(len(points), dtype=float) * 0.02,
+            ]
         )
 
     monkeypatch.setattr(
-        alignment_output_service.ants,
+        alignment_output_service,
         "apply_transforms_to_points",
         fake_apply_transforms_to_points,
     )

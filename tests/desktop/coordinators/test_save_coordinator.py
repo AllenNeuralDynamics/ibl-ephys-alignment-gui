@@ -539,7 +539,12 @@ def test_cancel_active_save_requests_final_save_cancel() -> None:
 
 def test_cancelled_final_save_closes_busy_context_without_saved_event() -> None:
     runner = ManualAlignmentSaveRunner(auto_finish=False)
-    coordinator, commands, calls = _coordinator(save_runner=runner)
+    button_calls: list[tuple] = []
+    button = FakeButton(button_calls)
+    coordinator, commands, calls = _coordinator(
+        save_runner=runner,
+        complete_button=button,
+    )
 
     assert coordinator.save_alignment_outputs()
     runner.finish(AlignmentSaveJobCancelled(reason="cancelled by user"))
@@ -548,8 +553,11 @@ def test_cancelled_final_save_closes_busy_context_without_saved_event() -> None:
         AlignmentSaveJobCancelled(reason="cancelled by user")
     ]
     assert ("progress-cancelled", "Save cancelled: cancelled by user") in calls
+    assert ("progress-close",) in calls
     assert ("choices", ["saved", "original"]) not in calls
     assert ("busy-exit", RuntimeError) in calls
+    assert button.text_value == "Save"
+    assert button_calls[-1] == ("button-tooltip", "")
 
 
 def test_async_shutdown_treats_late_save_success_as_cancelled() -> None:

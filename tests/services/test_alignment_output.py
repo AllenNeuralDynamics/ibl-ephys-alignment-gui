@@ -13,6 +13,9 @@ import ephys_alignment_gui.services.alignment_output as alignment_output_service
 from ephys_alignment_gui.core.alignment_output import ChannelOutputIdentity
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
+from ephys_alignment_gui.services.ants_points_transform import (
+    AntsPointTransformCancelled,
+)
 from ephys_alignment_gui.services.ccf_transform_frame import (
     PIPELINE_FRAME,
     SPIM_NATIVE_FRAME,
@@ -141,22 +144,32 @@ def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
     calls = []
 
     def fake_apply_transforms_to_points(
-        dimension,
         points,
+        *,
+        dimension,
         transforms,
         whichtoinvert,
+        cancel_token=None,
     ):
-        calls.append((dimension, points.copy(), transforms, whichtoinvert))
-        return pandas.DataFrame(
-            {
-                "x": np.arange(len(points), dtype=float) * 0.1,
-                "y": np.arange(len(points), dtype=float) * 0.2,
-                "z": np.arange(len(points), dtype=float) * 0.3,
-            }
+        calls.append(
+            (
+                dimension,
+                pandas.DataFrame(points, columns=list("xyz")),
+                transforms,
+                whichtoinvert,
+                cancel_token,
+            )
+        )
+        return np.column_stack(
+            [
+                np.arange(len(points), dtype=float) * 0.1,
+                np.arange(len(points), dtype=float) * 0.2,
+                np.arange(len(points), dtype=float) * 0.3,
+            ]
         )
 
     monkeypatch.setattr(
-        alignment_output_service.ants,
+        alignment_output_service,
         "apply_transforms_to_points",
         fake_apply_transforms_to_points,
     )
@@ -249,21 +262,23 @@ def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
     monkeypatch,
 ) -> None:
     def fake_apply_transforms_to_points(
-        dimension,
         points,
+        *,
+        dimension,
         transforms,
         whichtoinvert,
+        cancel_token=None,
     ):
-        return pandas.DataFrame(
-            {
-                "x": [9.5, 0.0],
-                "y": [0.0, 0.0],
-                "z": [0.0, 0.0],
-            }
+        return np.asarray(
+            [
+                [9.5, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ],
+            dtype=float,
         )
 
     monkeypatch.setattr(
-        alignment_output_service.ants,
+        alignment_output_service,
         "apply_transforms_to_points",
         fake_apply_transforms_to_points,
     )
@@ -316,21 +331,23 @@ def test_alignment_output_service_omits_only_out_of_brain_ccf_rows(
     monkeypatch,
 ) -> None:
     def fake_apply_transforms_to_points(
-        dimension,
         points,
+        *,
+        dimension,
         transforms,
         whichtoinvert,
+        cancel_token=None,
     ):
-        return pandas.DataFrame(
-            {
-                "x": [0.25, 9.5],
-                "y": [0.0, 0.0],
-                "z": [0.0, 0.0],
-            }
+        return np.asarray(
+            [
+                [0.25, 0.0, 0.0],
+                [9.5, 0.0, 0.0],
+            ],
+            dtype=float,
         )
 
     monkeypatch.setattr(
-        alignment_output_service.ants,
+        alignment_output_service,
         "apply_transforms_to_points",
         fake_apply_transforms_to_points,
     )
@@ -374,6 +391,51 @@ def test_alignment_output_service_omits_only_out_of_brain_ccf_rows(
     assert status.issues[0].ml_range_mm == (9.5, 9.5)
 
 
+def test_alignment_output_service_propagates_ants_cancellation(monkeypatch) -> None:
+    def fake_apply_transforms_to_points(
+        points,
+        *,
+        dimension,
+        transforms,
+        whichtoinvert,
+        cancel_token=None,
+    ):
+        raise AntsPointTransformCancelled("cancelled by user")
+
+    monkeypatch.setattr(
+        alignment_output_service,
+        "apply_transforms_to_points",
+        fake_apply_transforms_to_points,
+    )
+    data_context = AlignmentDataContext()
+    data_context.mouse_root = SimpleNamespace(
+        transforms=SimpleNamespace(
+            image_to_template_affine="image_affine.mat",
+            image_to_template_warp="image_warp.nii.gz",
+            template_to_ccf_affine="ccf_affine.mat",
+            template_to_ccf_warp="ccf_warp.nii.gz",
+        )
+    )
+    histology_context = HistologyDataContext(
+        runtime_data=SimpleNamespace(
+            brain_atlas=FakeBrainAtlas(),
+            histology_images={},
+            lazy_channel_paths={},
+        )
+    )
+    service = AlignmentOutputService(data_context, histology_context)
+
+    with pytest.raises(AntsPointTransformCancelled):
+        service.get_alignment_results_batch(
+            {
+                ("rec", "stream", 0): (
+                    np.array([[0.0, 0.0, 0.0]]),
+                    np.array([[0.0, 0.0]]),
+                )
+            }
+        )
+
+
 @pytest.mark.parametrize(
     ("brain_atlas", "expected_x"),
     [
@@ -389,22 +451,18 @@ def test_alignment_output_service_conditionally_regrids_for_ccf_frame(
     calls = []
 
     def fake_apply_transforms_to_points(
-        dimension,
         points,
+        *,
+        dimension,
         transforms,
         whichtoinvert,
+        cancel_token=None,
     ):
-        calls.append(points.copy())
-        return pandas.DataFrame(
-            {
-                "x": [0.0],
-                "y": [0.0],
-                "z": [0.0],
-            }
-        )
+        calls.append(pandas.DataFrame(points, columns=list("xyz")))
+        return np.asarray([[0.0, 0.0, 0.0]], dtype=float)
 
     monkeypatch.setattr(
-        alignment_output_service.ants,
+        alignment_output_service,
         "apply_transforms_to_points",
         fake_apply_transforms_to_points,
     )

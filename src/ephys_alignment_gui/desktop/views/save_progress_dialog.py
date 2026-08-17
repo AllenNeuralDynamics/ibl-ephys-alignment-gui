@@ -97,7 +97,6 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self.set_cancel_enabled(cancel_enabled)
         self.show()
         self.raise_()
-        self._process_events()
 
     def update_progress(
         self,
@@ -128,7 +127,6 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
                 self._target_list.addItem(item)
             item.setText(f"{status_label} - {_describe_key(key)}")
             self._target_list.scrollToItem(item)
-        self._process_events()
 
     def show_finished(self, message: str, *, success: bool) -> None:
         """Render terminal save state and leave the dialog closable."""
@@ -142,7 +140,6 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self.set_cancel_enabled(False)
         self.show()
         self.raise_()
-        self._process_events()
 
     def show_cancelled(self, message: str) -> None:
         """Render terminal cancellation and leave the dialog closable."""
@@ -154,7 +151,6 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self.set_cancel_enabled(False)
         self.show()
         self.raise_()
-        self._process_events()
 
     def close_dialog(self) -> None:
         """Close the dialog regardless of active state."""
@@ -176,12 +172,6 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
             return
         if self._cancel_enabled and self._cancel_requested is not None:
             self._cancel_requested()
-
-    @staticmethod
-    def _process_events() -> None:
-        app = QtWidgets.QApplication.instance()
-        if app is not None:
-            app.processEvents()
 
 
 def _describe_key(key: AlignmentKey) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -388,9 +389,17 @@ class AlignmentPersistenceCommandHandler:
             multi_shank_by_key={
                 target.key: target.multi_shank for target in prepared.targets
             },
+            cancel_token=cancel_token,
         )
         if isinstance(outputs, Failed):
-            return outputs
+            cancelled = self._cancelled_save(
+                cancel_token,
+                progress,
+                phase="building_outputs",
+                completed=0,
+                total=len(output_inputs),
+            )
+            return cancelled if cancelled is not None else outputs
         cancelled = self._cancelled_save(
             cancel_token,
             progress,
@@ -658,13 +667,18 @@ class AlignmentPersistenceCommandHandler:
         alignments: dict[AlignmentKey, AlignmentOutputInput],
         *,
         multi_shank_by_key: dict[AlignmentKey, bool] | None = None,
+        cancel_token: AlignmentSaveCancelToken | None = None,
     ) -> dict[AlignmentKey, AlignmentOutputBuilt] | Failed:
         output_builder = self._output_builder()
         if output_builder is None:
             return Failed("No alignment output builder is configured.")
         try:
             if hasattr(output_builder, "get_alignment_results_batch"):
-                batch_results = output_builder.get_alignment_results_batch(alignments)
+                batch_results = self._get_alignment_results_batch(
+                    output_builder,
+                    alignments,
+                    cancel_token,
+                )
             else:
                 batch_results = {
                     key: self._get_alignment_results(output_builder, output_input)
@@ -691,6 +705,22 @@ class AlignmentPersistenceCommandHandler:
                 multi_shank,
             ) in batch_results.items()
         }
+
+    @staticmethod
+    def _get_alignment_results_batch(
+        output_builder: Any,
+        alignments: dict[AlignmentKey, AlignmentOutputInput],
+        cancel_token: AlignmentSaveCancelToken | None,
+    ) -> Any:
+        """Call a batch output builder, passing cancellation when supported."""
+        method = output_builder.get_alignment_results_batch
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            return method(alignments)
+        if "cancel_token" in signature.parameters:
+            return method(alignments, cancel_token=cancel_token)
+        return method(alignments)
 
     @staticmethod
     def _get_alignment_results(

@@ -6,9 +6,7 @@ import logging
 from collections.abc import Hashable, Mapping
 from typing import Any
 
-import ants
 import numpy as np
-import pandas
 from iblatlas.regions import BrainRegions
 from iblutil.util import Bunch
 from numpy.typing import NDArray
@@ -20,6 +18,11 @@ from ephys_alignment_gui.core.alignment_output import (
     ChannelOutputIdentity,
 )
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.services.ants_points_transform import (
+    AntsPointTransformCancelled,
+    CancelTokenLike,
+    apply_transforms_to_points,
+)
 from ephys_alignment_gui.services.ccf_transform_frame import (
     PIPELINE_FRAME,
     SPIM_NATIVE_FRAME,
@@ -84,6 +87,8 @@ class AlignmentOutputService:
     def get_alignment_results_batch(
         self,
         alignments: Mapping[Hashable, AlignmentOutputInputLike],
+        *,
+        cancel_token: CancelTokenLike | None = None,
     ) -> dict[Hashable, AlignmentOutputResult]:
         """Compute channel outputs for many alignments with one ANTs call."""
         logger.info("Saving channel locations locally")
@@ -117,11 +122,16 @@ class AlignmentOutputService:
         all_channel_locations_ras = np.concatenate(packed_points, axis=0)
         all_ccf_xyz: NDArray | None
         try:
-            all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
+            all_ccf_xyz = self._transform_locations_to_ccf(
+                all_channel_locations_ras,
+                cancel_token=cancel_token,
+            )
             all_ccf_xyz = self._validate_ccf_xyz_shape(
                 all_ccf_xyz,
                 expected_count=len(all_channel_locations_ras),
             )
+        except AntsPointTransformCancelled:
+            raise
         except Exception as exc:
             all_ccf_xyz = None
             message = (
@@ -195,6 +205,8 @@ class AlignmentOutputService:
     def _transform_locations_to_ccf(
         self,
         channel_locations_ras: NDArray,
+        *,
+        cancel_token: CancelTokenLike | None = None,
     ) -> NDArray:
         mouse_root = self.data_context.mouse_root
         brain_atlas = self.histology_context.brain_atlas
@@ -251,11 +263,6 @@ class AlignmentOutputService:
                 f"{SPIM_NATIVE_FRAME!r}"
             )
 
-        logger.info("Warping to ccf")
-        this_probe_df = pandas.DataFrame(
-            transform_input_points_array, columns=list("xyz")
-        )
-
         tx = mouse_root.transforms
         tx_list = [
             str(tx.image_to_template_affine),
@@ -266,17 +273,15 @@ class AlignmentOutputService:
         invert_list = [True, False, True, False]
 
         logger.info("applying transforms ...")
-        ccf_coordinates_dataframe: pandas.DataFrame = ants.apply_transforms_to_points(
-            ANTS_DIMENSION,
-            this_probe_df,
-            tx_list,
+        ccf_xyz = apply_transforms_to_points(
+            transform_input_points_array,
+            dimension=ANTS_DIMENSION,
+            transforms=tx_list,
             whichtoinvert=invert_list,
+            cancel_token=cancel_token,
         )
         logger.info("Done warping to ccf")
-
-        return ccf_coordinates_dataframe.loc[:, ["x", "y", "z"]].to_numpy(
-            dtype=np.float64
-        )
+        return ccf_xyz
 
     @staticmethod
     def _create_ccf_channel_dict(

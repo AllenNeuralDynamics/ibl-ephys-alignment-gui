@@ -163,6 +163,7 @@ class DesktopSaveCoordinator:
             self._progress_dialog.close_dialog()
         if self._save_ui_active():
             self._set_save_button_progress("Saved", "Saved successfully")
+            self._restore_save_button_state()
 
     def on_save_failed(self, event: SaveFailed) -> None:
         """Log save failure reported by the app layer."""
@@ -171,14 +172,17 @@ class DesktopSaveCoordinator:
             self._progress_dialog.show_finished(event.message, success=False)
         if self._save_ui_active():
             self._set_save_button_progress("Save failed", event.message)
+            self._restore_save_button_state()
 
     def on_save_cancelled(self, event: SaveCancelled) -> None:
         """Render user-requested save cancellation."""
         logger.info(event.message)
         if self._progress_dialog is not None:
             self._progress_dialog.show_cancelled(event.message)
+            self._progress_dialog.close_dialog()
         if self._save_ui_active():
             self._set_save_button_progress("Cancelled", event.message)
+            self._restore_save_button_state()
 
     def save_alignment_outputs(self) -> bool:
         """Save alignment outputs, prompting for output if needed."""
