@@ -241,10 +241,10 @@ class DesktopInteractionCoordinator:
 
     def on_mouse_hover(self, items: list[Any]) -> None:
         """Dispatch hover interactions to reference-line and histology views."""
+        self.reference_line_display.clear_selection()
         if len(items) <= 1:
             return
 
-        self.reference_line_display.clear_selection()
         if isinstance(items[0], self.infinite_line_type):
             self.reference_line_display.select_line(items[0])
         elif items[0] is self.widgets.scale_plot and isinstance(

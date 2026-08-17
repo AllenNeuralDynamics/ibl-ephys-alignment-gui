@@ -48,6 +48,8 @@ class ReferenceLineLayer:
         self.points: np.ndarray = np.empty((0, 1), dtype=object)
         self.selected_line: Any = []
         self._updating_linked_lines = False
+        self._line_styles: dict[int, tuple[Any, Any]] = {}
+        self._highlighted_lines: list[Any] = []
 
     def has_lines(self) -> bool:
         """Return whether the session has reference-line handles."""
@@ -125,11 +127,13 @@ class ReferenceLineLayer:
         """Remove, disconnect, and forget all reference-line handles."""
         self.remove_from_plots()
         self.disconnect()
+        self._clear_highlight()
         self.lines_features = np.empty((0, 3), dtype=object)
         self.lines_tracks = np.empty((0, 3), dtype=object)
         self.points = np.empty((0, 1), dtype=object)
         self.selected_line = []
         self._updating_linked_lines = False
+        self._line_styles.clear()
 
     def create_lines(
         self,
@@ -294,14 +298,19 @@ class ReferenceLineLayer:
 
     def select_line(self, line: Any) -> bool:
         """Select a managed reference-line handle."""
-        if self._line_index(line) is None:
-            self.selected_line = []
+        line_group = self._line_group(line)
+        if line_group is None:
+            self.clear_selection()
             return False
+        self.clear_selection()
         self.selected_line = line
+        line_idx, group_name = line_group
+        self._highlight_line_group(line_idx, group_name)
         return True
 
     def clear_selection(self) -> None:
         """Clear selected reference-line handle."""
+        self._clear_highlight()
         self.selected_line = []
 
     def delete_selected(self) -> bool:
@@ -314,6 +323,10 @@ class ReferenceLineLayer:
             self.selected_line = []
             return False
 
+        self._clear_highlight()
+        line_feature = self.lines_features[line_idx]
+        line_track = self.lines_tracks[line_idx]
+        point = self.points[line_idx]
         self._remove_item(self._plots.image, self.lines_features[line_idx, 0])
         self._remove_item(self._plots.line, self.lines_features[line_idx, 1])
         self._remove_item(self._plots.probe, self.lines_features[line_idx, 2])
@@ -321,6 +334,8 @@ class ReferenceLineLayer:
         self._remove_item(self._plots.perpendicular, self.lines_tracks[line_idx, 1])
         self._remove_item(self._plots.reference, self.lines_tracks[line_idx, 2])
         self._remove_item(self._plots.fit, self.points[line_idx, 0])
+        for item in (*line_feature, *line_track, point[0]):
+            self._forget_line_style(item)
         self.lines_features = np.delete(self.lines_features, line_idx, axis=0)
         self.lines_tracks = np.delete(self.lines_tracks, line_idx, axis=0)
         self.points = np.delete(self.points, line_idx, axis=0)
@@ -329,13 +344,53 @@ class ReferenceLineLayer:
         return True
 
     def _line_index(self, line: Any) -> int | None:
-        line_idx = np.where(self.lines_features == line)[0]
-        if line_idx.size == 0:
-            track_idx = np.where(self.lines_tracks[:, :2] == line)[0]
-            line_idx = track_idx
-        if line_idx.size == 0:
+        line_group = self._line_group(line)
+        if line_group is None:
             return None
-        return int(line_idx[0])
+        line_idx, _group_name = line_group
+        return line_idx
+
+    def _line_group(self, line: Any) -> tuple[int, str] | None:
+        feature_idx = np.where(self.lines_features == line)[0]
+        if feature_idx.size != 0:
+            return int(feature_idx[0]), "feature"
+        track_idx = np.where(self.lines_tracks[:, :2] == line)[0]
+        if track_idx.size != 0:
+            return int(track_idx[0]), "track"
+        return None
+
+    def _highlight_line_group(self, line_idx: int, group_name: str) -> None:
+        if group_name == "feature":
+            lines = list(self.lines_features[line_idx])
+        else:
+            lines = list(self.lines_tracks[line_idx, :2])
+        for line in lines:
+            self._set_line_highlighted(line, highlighted=True)
+        self._highlighted_lines = lines
+
+    def _clear_highlight(self) -> None:
+        for line in self._highlighted_lines:
+            self._set_line_highlighted(line, highlighted=False)
+        self._highlighted_lines = []
+
+    def _set_line_highlighted(self, line: Any, *, highlighted: bool) -> None:
+        style = self._line_styles.get(id(line))
+        if style is None:
+            return
+        pen, hover_pen = style
+        active_pen = hover_pen if highlighted else pen
+        set_pen = getattr(line, "setPen", None)
+        if callable(set_pen):
+            set_pen(active_pen)
+        set_hover_pen = getattr(line, "setHoverPen", None)
+        if callable(set_hover_pen):
+            set_hover_pen(active_pen)
+
+    def _remember_line_style(self, line: Any, pen: Any, hover_pen: Any) -> None:
+        self._line_styles[id(line)] = (pen, hover_pen)
+
+    def _forget_line_style(self, line: Any) -> None:
+        self._line_styles.pop(id(line), None)
 
     def _linked_line_update(self) -> _LinkedLineUpdate:
         return _LinkedLineUpdate(self)
@@ -369,6 +424,15 @@ class ReferenceLineLayer:
     def _warped_positions_to_track(self, positions: Any) -> np.ndarray:
         return np.asarray(self._warped_position_to_track(positions), dtype=float)
 
+    @staticmethod
+    def _make_hover_pen(pen: Any) -> Any:
+        hover_pen = pg.mkPen(pen)
+        width = getattr(hover_pen, "width", None)
+        set_width = getattr(hover_pen, "setWidth", None)
+        if callable(width) and callable(set_width):
+            set_width(max(width() + 2, 4))
+        return hover_pen
+
     def _create_line(
         self,
         *,
@@ -377,10 +441,12 @@ class ReferenceLineLayer:
         warped_pos: float,
     ) -> None:
         pen, brush = self._style_factory()
+        hover_pen = self._make_hover_pen(pen)
         line_track = pg.InfiniteLine(
             pos=warped_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=True,
         )
         line_track.sigPositionChanged.connect(self.update_track_line)
@@ -389,6 +455,7 @@ class ReferenceLineLayer:
             pos=feature_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=True,
         )
         line_feature1.setZValue(100)
@@ -397,6 +464,7 @@ class ReferenceLineLayer:
             pos=feature_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=True,
         )
         line_feature2.setZValue(100)
@@ -405,6 +473,7 @@ class ReferenceLineLayer:
             pos=feature_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=True,
         )
         line_feature3.setZValue(100)
@@ -413,6 +482,7 @@ class ReferenceLineLayer:
             pos=warped_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=True,
         )
         line_track_perp.setZValue(100)
@@ -421,6 +491,7 @@ class ReferenceLineLayer:
             pos=track_pos,
             angle=0,
             pen=pen,
+            hoverPen=hover_pen,
             movable=False,
         )
         line_track_reference.setZValue(100)
@@ -430,6 +501,15 @@ class ReferenceLineLayer:
         self._plots.probe.addItem(line_feature3)
         self._plots.perpendicular.addItem(line_track_perp)
         self._plots.reference.addItem(line_track_reference)
+        for line in (
+            line_track,
+            line_feature1,
+            line_feature2,
+            line_feature3,
+            line_track_perp,
+            line_track_reference,
+        ):
+            self._remember_line_style(line, pen, hover_pen)
 
         self.lines_features = np.vstack(
             [

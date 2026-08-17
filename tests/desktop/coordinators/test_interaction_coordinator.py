@@ -399,6 +399,15 @@ def test_mouse_hover_dispatches_reference_scale_and_region_items() -> None:
     assert state["histology_display"].selected_regions == [hist_region, ref_region]
 
 
+def test_mouse_hover_clears_reference_line_selection_when_no_target() -> None:
+    coordinator, state = _coordinator()
+
+    coordinator.on_mouse_hover([])
+
+    assert state["reference_line_display"].clear_calls == 1
+    assert state["reference_line_display"].selected == []
+
+
 def test_describe_labels_pressed_creates_region_popup() -> None:
     coordinator, state = _coordinator(active_region_id=314)
 

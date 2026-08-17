@@ -33,6 +33,8 @@ class FakeLine:
         self.blocked_states: list[bool] = []
         self._blocked = False
         self.on_set = None
+        self.pen = "normal"
+        self.hover_pen = "normal"
 
     def pos(self) -> FakePosition:
         return FakePosition(self._y)
@@ -53,6 +55,12 @@ class FakeLine:
         self._blocked = blocked
         self.blocked_states.append(blocked)
         return previous
+
+    def setPen(self, pen) -> None:
+        self.pen = pen
+
+    def setHoverPen(self, pen) -> None:
+        self.hover_pen = pen
 
 
 class FakePoint:
@@ -88,6 +96,8 @@ def _populate(layer: ReferenceLineLayer) -> tuple[FakeLine, FakeLine]:
     layer.lines_features = np.array([feature], dtype=object)
     layer.lines_tracks = np.array([track], dtype=object)
     layer.points = np.array([[FakePoint()]], dtype=object)
+    for line in (*feature, *track):
+        layer._remember_line_style(line, "normal", "highlight")
     return feature[0], track[0]
 
 
@@ -210,6 +220,58 @@ def test_original_reference_track_line_is_not_selectable() -> None:
 
     assert not layer.select_line(layer.lines_tracks[0][2])
     assert layer.selected_line == []
+
+
+def test_select_feature_line_highlights_feature_group_only() -> None:
+    layer, _, _ = _layer()
+    _populate(layer)
+
+    assert layer.select_line(layer.lines_features[0][1])
+
+    assert [line.pen for line in layer.lines_features[0]] == [
+        "highlight",
+        "highlight",
+        "highlight",
+    ]
+    assert [line.pen for line in layer.lines_tracks[0]] == [
+        "normal",
+        "normal",
+        "normal",
+    ]
+
+    layer.clear_selection()
+
+    assert [line.pen for line in layer.lines_features[0]] == [
+        "normal",
+        "normal",
+        "normal",
+    ]
+
+
+def test_select_warped_track_line_highlights_warped_track_group_only() -> None:
+    layer, _, _ = _layer()
+    _populate(layer)
+
+    assert layer.select_line(layer.lines_tracks[0][1])
+
+    assert [line.pen for line in layer.lines_features[0]] == [
+        "normal",
+        "normal",
+        "normal",
+    ]
+    assert [line.pen for line in layer.lines_tracks[0]] == [
+        "highlight",
+        "highlight",
+        "normal",
+    ]
+
+    layer.clear_selection()
+
+    assert [line.pen for line in layer.lines_tracks[0]] == [
+        "normal",
+        "normal",
+        "normal",
+    ]
 
 
 def test_replace_lines_can_notify_when_requested() -> None:
