@@ -175,7 +175,7 @@ class ReferenceLineLayer:
                 self._set_line_pos(line_track[2], warped_pos)
                 point[0].setData(
                     x=[line_feature[0].pos().y()],
-                    y=[warped_pos],
+                    y=[self._raw_track_position_for_warped(warped_pos)],
                 )
         self._on_lines_changed()
 
@@ -264,12 +264,14 @@ class ReferenceLineLayer:
                 line_feature,
                 line_track,
                 point,
+                raw_track_pos,
             ) in zip(
                 feature_positions,
                 warped_positions,
                 self.lines_features,
                 self.lines_tracks,
                 self.points,
+                raw_track_positions,
             ):
                 for line in line_feature:
                     self._set_line_pos(line, feature_pos)
@@ -278,7 +280,7 @@ class ReferenceLineLayer:
                 self._set_line_pos(line_track[2], warped_pos)
                 point[0].setData(
                     x=[feature_pos],
-                    y=[warped_pos],
+                    y=[raw_track_pos],
                 )
         if notify:
             self._on_lines_changed()
@@ -302,7 +304,11 @@ class ReferenceLineLayer:
 
             self.points[line_idx][0].setData(
                 x=[self.lines_features[line_idx][0].pos().y()],
-                y=[self.lines_tracks[line_idx][0].pos().y()],
+                y=[
+                    self._raw_track_position_for_warped(
+                        self.lines_tracks[line_idx][0].pos().y()
+                    )
+                ],
             )
         self._on_lines_changed()
 
@@ -323,7 +329,7 @@ class ReferenceLineLayer:
 
             self.points[line_idx][0].setData(
                 x=[self.lines_features[line_idx][0].pos().y()],
-                y=[warped_pos],
+                y=[self._raw_track_position_for_warped(warped_pos)],
             )
         self._on_lines_changed()
 
@@ -455,6 +461,9 @@ class ReferenceLineLayer:
     def _warped_positions_to_track(self, positions: Any) -> np.ndarray:
         return np.asarray(self._warped_position_to_track(positions), dtype=float)
 
+    def _raw_track_position_for_warped(self, position: float) -> float:
+        return float(self._warped_positions_to_track([position]).reshape(-1)[0])
+
     @staticmethod
     def _make_hover_pen(pen: Any) -> Any:
         hover_pen = pg.mkPen(pen)
@@ -554,7 +563,7 @@ class ReferenceLineLayer:
         point = pg.PlotDataItem()
         point.setData(
             x=[line_feature1.pos().y()],
-            y=[warped_pos],
+            y=[self._raw_track_position_for_warped(warped_pos)],
             symbolBrush=brush,
             symbol="o",
             symbolSize=10,

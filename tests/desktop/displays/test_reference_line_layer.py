@@ -161,13 +161,17 @@ def test_create_lines_defaults_warped_display_to_feature_position(
     assert layer.lines_tracks[0][1].getYPos() == 30.0
     assert layer.lines_tracks[0][2].getYPos() == 30.0
     assert layer.points[0][0].data["x"] == [30.0]
-    assert layer.points[0][0].data["y"] == [30.0]
+    assert layer.points[0][0].data["y"] == [35.0]
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
     np.testing.assert_array_equal(layer.positions()[1], [30.0])
 
 
 def test_sync_track_to_feature_updates_track_handles_and_fit_point() -> None:
     layer, _, changes = _layer()
+    layer.set_track_display_transform(
+        track_to_warped_position=lambda values: np.asarray(values) - 5.0,
+        warped_position_to_track=lambda values: np.asarray(values) + 5.0,
+    )
     _populate(layer)
 
     layer.sync_track_to_feature()
@@ -175,7 +179,7 @@ def test_sync_track_to_feature_updates_track_handles_and_fit_point() -> None:
     assert layer.lines_tracks[0][0].getYPos() == 10.0
     assert layer.lines_tracks[0][1].getYPos() == 10.0
     assert layer.lines_tracks[0][2].getYPos() == 10.0
-    assert layer.points[0][0].data == {"x": [10.0], "y": [10.0]}
+    assert layer.points[0][0].data == {"x": [10.0], "y": [15.0]}
     assert changes == ["changed"]
 
 
@@ -209,6 +213,7 @@ def test_track_lines_use_and_return_warped_display_positions() -> None:
     assert layer.lines_tracks[0][0].getYPos() == 40.0
     assert layer.lines_tracks[0][1].getYPos() == 40.0
     assert layer.lines_tracks[0][2].getYPos() == 40.0
+    assert layer.points[0][0].data == {"x": [30.0], "y": [45.0]}
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
     np.testing.assert_array_equal(layer.positions()[1], [40.0])
 
@@ -218,6 +223,7 @@ def test_track_lines_use_and_return_warped_display_positions() -> None:
     assert layer.lines_tracks[0][0].getYPos() == 50.0
     assert layer.lines_tracks[0][1].getYPos() == 50.0
     assert layer.lines_tracks[0][2].getYPos() == 50.0
+    assert layer.points[0][0].data == {"x": [30.0], "y": [55.0]}
     np.testing.assert_array_equal(layer.positions()[1], [50.0])
     assert changes == ["changed"]
 
@@ -236,7 +242,7 @@ def test_replace_lines_from_raw_track_projects_to_warped_display() -> None:
     assert layer.lines_tracks[0][0].getYPos() == 30.0
     assert layer.lines_tracks[0][1].getYPos() == 30.0
     assert layer.lines_tracks[0][2].getYPos() == 30.0
-    assert layer.points[0][0].data == {"x": [30.0], "y": [30.0]}
+    assert layer.points[0][0].data == {"x": [30.0], "y": [35.0]}
     np.testing.assert_array_equal(layer.positions()[0], [30.0])
     np.testing.assert_array_equal(layer.positions()[1], [30.0])
     assert changes == []
@@ -244,6 +250,10 @@ def test_replace_lines_from_raw_track_projects_to_warped_display() -> None:
 
 def test_feature_line_update_suppresses_recursive_sibling_signals() -> None:
     layer, _, changes = _layer()
+    layer.set_track_display_transform(
+        track_to_warped_position=lambda values: np.asarray(values) - 5.0,
+        warped_position_to_track=lambda values: np.asarray(values) + 5.0,
+    )
     feature_line, _track_line = _populate(layer)
     sibling_line = layer.lines_features[0][1]
     sibling_line.on_set = layer.update_feature_line
@@ -252,6 +262,7 @@ def test_feature_line_update_suppresses_recursive_sibling_signals() -> None:
     layer.update_feature_line(feature_line)
 
     assert sibling_line.getYPos() == 15.0
+    assert layer.points[0][0].data == {"x": [15.0], "y": [25.0]}
     assert sibling_line.blocked_states == [True, False]
     assert changes == ["changed"]
 

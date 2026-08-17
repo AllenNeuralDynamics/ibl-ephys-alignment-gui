@@ -27,14 +27,18 @@ Each correspondence point is represented by two linked display groups:
 - Warped line group: one coaxial line across the warped-space plots
   (warped annotation and perpendicular slice).
 
-The optional line on the original raw-track annotation panel is a passive echo
-only. It is derived from the warped line group by applying the inverse current
-warp, and it is not the coordinate captured for fitting.
+The optional line on the original annotation panel is a passive display echo
+only. It mirrors the warped line group in the shared depth viewport, and it is
+not a coordinate captured for fitting.
 
-The bottom-right fit plot shows the paired display coordinates:
+The bottom-right fit plot shows the paired fit coordinates:
 
 - x: feature-space line depth.
-- y: warped-space display line depth.
+- y: raw track depth selected by the warped-space display line.
+
+This means a reference-line pair keeps two display-space line positions, while
+its fit-plot dot derives a raw track coordinate from the warped-side display
+position through the current inverse warp.
 
 ## Creation
 
@@ -44,8 +48,7 @@ equal. The new pair should therefore appear coaxial across both display groups.
 
 After creation, dragging the feature group changes only the feature coordinate
 of the pair. Dragging the warped group changes only the warped display
-coordinate of the pair, and updates the passive raw-track echo by inverting the
-current warp.
+coordinate of the pair, and updates the passive original-panel display echo.
 
 ## Fitting
 
@@ -68,9 +71,12 @@ warped-side line for each correspondence should have the same displayed depth.
 ## Invariants
 
 - New reference line pairs are coaxial in display space.
+- New fit-plot dots start on the current feature-to-track warp line.
 - Feature-space plots share one line position per pair.
 - Warped-space plots share one line position per pair.
-- Raw-track annotation lines are passive derived echoes.
+- Original annotation lines are passive display echoes.
+- Fit-plot dots use raw track coordinates even though the stored pending line
+  state uses warped display coordinates.
 - Repeated fits with the same displayed correspondence pairs are idempotent:
   the active feature/track control points and the resulting warp do not change.
 - Rendering from document state must distinguish warped display coordinates
