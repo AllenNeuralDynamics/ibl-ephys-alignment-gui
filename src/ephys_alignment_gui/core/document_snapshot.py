@@ -429,6 +429,25 @@ class AlignmentDocumentSnapshot:
         }
         return document
 
+    def restore_into(self, document: AlignmentDocument) -> AlignmentDocument:
+        """Restore snapshot state into an existing document instance."""
+        restored = self.restore_document()
+        document.mouse_root = restored.mouse_root
+        document.mouse_id = restored.mouse_id
+        document.selected_recording = restored.selected_recording
+        document.selected_probe = restored.selected_probe
+        document.selected_shank = restored.selected_shank
+        document.selected_alignment_key = restored.selected_alignment_key
+        document.output_root = restored.output_root
+        document.output_package_directory = restored.output_package_directory
+        document.output_directory = restored.output_directory
+        document.channel_info_loaded = restored.channel_info_loaded
+        document.data_loaded = restored.data_loaded
+        document.dirty = restored.dirty
+        document.alignment_states.clear()
+        document.alignment_states.update(restored.alignment_states)
+        return document
+
     def write_json(self, path: Path) -> None:
         """Atomically write this snapshot to one JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)

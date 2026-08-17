@@ -12,6 +12,9 @@ from ephys_alignment_gui.application.commands.alignment_edit import (
 from ephys_alignment_gui.application.commands.alignment_persistence import (
     AlignmentPersistenceCommandHandler,
 )
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.commands.display import DisplayCommandHandler
 from ephys_alignment_gui.application.commands.load_data import LoadDataCommandHandler
 from ephys_alignment_gui.application.commands.load_data_lifecycle import (
@@ -136,6 +139,7 @@ class AlignmentWorkspace:
     load_data_commands: LoadDataCommandHandler = field(init=False)
     loaded_shank_commands: LoadedShankCommandHandler = field(init=False)
     persistence_commands: AlignmentPersistenceCommandHandler = field(init=False)
+    autosave_commands: AutosaveCheckpointCommandHandler = field(init=False)
     edit_commands: AlignmentEditCommandHandler = field(init=False)
     display_commands: DisplayCommandHandler = field(init=False)
     app: AlignmentApp = field(init=False)
@@ -221,6 +225,9 @@ class AlignmentWorkspace:
             events=self.events,
             save_runtime_rehydrator=self.save_runtime_rehydrator,
         )
+        self.autosave_commands = AutosaveCheckpointCommandHandler(
+            controller=self.controller,
+        )
         self.edit_commands = AlignmentEditCommandHandler(
             controller=self.controller,
             events=self.events,
@@ -239,6 +246,7 @@ class AlignmentWorkspace:
                 load=self.load_data_commands,
                 loaded_shank=self.loaded_shank_commands,
                 persistence=self.persistence_commands,
+                autosave=self.autosave_commands,
                 edit=self.edit_commands,
                 display=self.display_commands,
             ),

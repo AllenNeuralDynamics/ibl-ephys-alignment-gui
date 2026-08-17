@@ -10,6 +10,18 @@ from typing import Any
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
 )
+from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointCleared as AutosaveCheckpointCleared,
+)
+from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointRead as AutosaveCheckpointRead,
+)
+from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointRestored as AutosaveCheckpointRestored,
+)
+from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointWritten as AutosaveCheckpointWritten,
+)
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.results import (

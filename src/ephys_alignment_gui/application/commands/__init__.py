@@ -10,6 +10,9 @@ from ephys_alignment_gui.application.commands.alignment_edit import (
 from ephys_alignment_gui.application.commands.alignment_persistence import (
     AlignmentPersistenceCommandHandler,
 )
+from ephys_alignment_gui.application.commands.autosave import (
+    AutosaveCheckpointCommandHandler,
+)
 from ephys_alignment_gui.application.commands.display import DisplayCommandHandler
 from ephys_alignment_gui.application.commands.load_data import LoadDataCommandHandler
 from ephys_alignment_gui.application.commands.loaded_shank import (
@@ -34,5 +37,6 @@ class AlignmentCommands:
     load: LoadDataCommandHandler
     loaded_shank: LoadedShankCommandHandler
     persistence: AlignmentPersistenceCommandHandler
+    autosave: AutosaveCheckpointCommandHandler
     edit: AlignmentEditCommandHandler
     display: DisplayCommandHandler

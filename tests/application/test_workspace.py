@@ -31,6 +31,7 @@ def test_workspace_wires_shared_services() -> None:
         workspace.persistence_commands.save_runtime_rehydrator
         is workspace.save_runtime_rehydrator
     )
+    assert workspace.autosave_commands.controller is workspace.controller
     assert workspace.save_runtime_rehydrator.runtime is workspace.runtime
     assert workspace.save_runtime_rehydrator.load_data_job is workspace.load_data_job
     assert workspace.edit_commands.runtime is workspace.runtime
@@ -40,6 +41,7 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.app.commands.load is workspace.load_data_commands
     assert workspace.app.commands.loaded_shank is workspace.loaded_shank_commands
     assert workspace.app.commands.persistence is workspace.persistence_commands
+    assert workspace.app.commands.autosave is workspace.autosave_commands
     assert workspace.app.commands.edit is workspace.edit_commands
     assert workspace.app.commands.display is workspace.display_commands
     assert workspace.ephys_stream_loader.data_context is workspace.data_context

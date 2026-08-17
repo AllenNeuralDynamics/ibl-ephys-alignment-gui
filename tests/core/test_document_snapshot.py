@@ -150,3 +150,34 @@ def test_document_snapshot_writes_and_reads_json_atomically(tmp_path) -> None:
     assert restored.output_root == tmp_path / "results"
     assert restored.selected_alignment_key == key
     assert restored.has_unsaved_alignments
+
+
+def test_document_snapshot_restores_into_existing_document_instance(tmp_path) -> None:
+    source = AlignmentDocument(
+        mouse_root=tmp_path / "input",
+        mouse_id="mouse",
+        output_root=tmp_path / "results",
+        dirty=True,
+    )
+    key = AlignmentKey("rec", "stream", 0)
+    state = source.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    snapshot = AlignmentDocumentSnapshot.from_document(source)
+
+    target = AlignmentDocument(mouse_id="old")
+    target_states = target.alignment_states
+    target.alignment_state_for(AlignmentKey("old-rec", "old-stream", 0))
+
+    restored = snapshot.restore_into(target)
+
+    assert restored is target
+    assert target.alignment_states is target_states
+    assert target.mouse_root == tmp_path / "input"
+    assert target.mouse_id == "mouse"
+    assert target.selected_alignment_key == key
+    assert list(target.alignment_states) == [key]
+    assert target.has_unsaved_alignments
