@@ -16,6 +16,7 @@ from ephys_alignment_gui.application.results.metadata import (
     ProbeSelected,
     RecordingSelected,
 )
+from ephys_alignment_gui.application.save_geometry_catalog import SaveGeometryCatalog
 from ephys_alignment_gui.core.controller import AlignmentController
 from ephys_alignment_gui.core.workflow import Failed, Ok
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
@@ -35,6 +36,7 @@ class MetadataSelectionCommandHandler:
     path_commands: PathCommandHandler
     histology_context: HistologyDataContext | None = None
     autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
+    save_geometry_catalog: SaveGeometryCatalog | None = None
 
     def clear_histology_context(self) -> Ok:
         """Clear loaded histology runtime data after a mouse-root change."""
@@ -60,6 +62,10 @@ class MetadataSelectionCommandHandler:
             loaded_root = self.data_context.set_mouse_root(mouse_root)
         except Exception as exc:
             return Failed(f"Failed to load mouse root {mouse_root}: {exc}")
+        if self.save_geometry_catalog is not None:
+            self.save_geometry_catalog.set_input_dataset(
+                self.data_context.input_dataset
+            )
 
         root_changed = old_root is not None and old_root != loaded_root.root
         self.controller.record_mouse_root_loaded(

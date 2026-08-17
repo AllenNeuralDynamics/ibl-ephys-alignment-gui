@@ -21,6 +21,10 @@ def test_workspace_wires_shared_services() -> None:
         workspace.metadata_commands.autosave_checkpoints
         is workspace.autosave_commands
     )
+    assert (
+        workspace.metadata_commands.save_geometry_catalog
+        is workspace.save_geometry_catalog
+    )
     assert workspace.load_data_commands.metadata_commands is workspace.metadata_commands
     assert (
         workspace.shank_selection_commands.autosave_checkpoints
@@ -69,6 +73,7 @@ def test_workspace_wires_shared_services() -> None:
     )
     assert workspace.alignment_edit_service is not None
     assert workspace.alignment_derived_data_service is not None
+    assert workspace.save_geometry_catalog is not None
     assert workspace.probe_track_service is not None
     assert workspace.region_lookup_service is not None
     assert workspace.slice_service is not None

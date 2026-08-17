@@ -31,6 +31,7 @@ from ephys_alignment_gui.application.commands.shank_selection import (
     ShankSelectionCommandHandler,
 )
 from ephys_alignment_gui.application.queries import AlignmentQueries
+from ephys_alignment_gui.application.save_geometry_catalog import SaveGeometryCatalog
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrator,
 )
@@ -128,6 +129,9 @@ class AlignmentWorkspace:
     preload_data_lifecycle: LoadDataExecutionLifecycle = field(
         default_factory=LoadDataExecutionLifecycle
     )
+    save_geometry_catalog: SaveGeometryCatalog = field(
+        default_factory=SaveGeometryCatalog
+    )
     save_runtime_rehydrator: SaveRuntimeRehydrator = field(init=False)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
@@ -184,6 +188,7 @@ class AlignmentWorkspace:
             path_commands=self.path_commands,
             histology_context=self.histology_context,
             autosave_checkpoints=self.autosave_commands,
+            save_geometry_catalog=self.save_geometry_catalog,
         )
         self.shank_selection_commands = ShankSelectionCommandHandler(
             controller=self.controller,
