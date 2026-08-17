@@ -124,6 +124,8 @@ def test_set_mouse_root_clears_selected_probe_and_channel_table(
     loaded = context.set_mouse_root(tmp_path / "new")
 
     assert loaded.root == tmp_path / "new"
+    assert context.input_dataset is not None
+    assert context.input_dataset.probe_for_stream_key("rec2", "streamB") is not None
     assert context.probe_info is None
     assert context.channel_table is None
 

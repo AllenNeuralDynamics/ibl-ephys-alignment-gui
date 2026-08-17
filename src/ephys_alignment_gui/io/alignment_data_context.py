@@ -11,6 +11,7 @@ from ephys_alignment_gui.io.datapackage_loader import (
     ProbeInfo,
     load_mouse_root,
 )
+from ephys_alignment_gui.io.input_dataset_snapshot import InputDatasetSnapshot
 from ephys_alignment_gui.services.ephys_data import ChannelTable, EphysStreamData
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class AlignmentDataContext:
     """
 
     mouse_root: MouseRoot | None = None
+    input_dataset: InputDatasetSnapshot | None = None
     probe_info: ProbeInfo | None = None
     channel_table: ChannelTable | None = None
 
@@ -34,6 +36,8 @@ class AlignmentDataContext:
         """Resolve a mouse-root directory and clear selected-probe metadata."""
         loaded = load_mouse_root(Path(mouse_root))
         self.mouse_root = loaded
+        self.input_dataset = InputDatasetSnapshot.from_mouse_root(loaded)
+        self._warn_for_missing_save_critical_paths()
         self.probe_info = None
         self.channel_table = None
         return loaded
@@ -151,3 +155,21 @@ class AlignmentDataContext:
         if n_shanks > 1:
             return [f"{idx + 1}/{n_shanks}" for idx in range(n_shanks)]
         return []
+
+    def _warn_for_missing_save_critical_paths(self) -> None:
+        if self.input_dataset is None:
+            return
+        missing_paths = self.input_dataset.missing_save_critical_paths()
+        if not missing_paths:
+            return
+        examples = ", ".join(
+            f"{item.recording_id}/{item.ephys_collection}:{item.role}"
+            for item in missing_paths[:5]
+        )
+        if len(missing_paths) > 5:
+            examples = f"{examples}, ..."
+        logger.warning(
+            "Input dataset has %d missing save-critical path(s): %s",
+            len(missing_paths),
+            examples,
+        )
