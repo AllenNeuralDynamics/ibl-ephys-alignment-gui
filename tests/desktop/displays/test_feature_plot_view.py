@@ -26,11 +26,27 @@ class FakePosition:
         return self._y
 
 
+class FakeSceneRect:
+    def __init__(self, contains: bool) -> None:
+        self._contains = contains
+
+    def contains(self, _scene_pos) -> bool:
+        return self._contains
+
+
 class FakePlot:
-    def __init__(self, y: float = 4.0) -> None:
+    def __init__(
+        self, y: float = 4.0, *, contains_scene_pos: bool | None = None
+    ) -> None:
         self.sigClicked = FakeSignal()
         self._y = y
+        self._contains_scene_pos = contains_scene_pos
         self.scene_positions = []
+
+    def sceneBoundingRect(self):
+        if self._contains_scene_pos is None:
+            raise AttributeError
+        return FakeSceneRect(self._contains_scene_pos)
 
     def mapFromScene(self, scene_pos) -> FakePosition:
         self.scene_positions.append(scene_pos)
@@ -77,6 +93,15 @@ def test_feature_y_from_scene_maps_to_feature_units() -> None:
 
     assert view.feature_y_from_scene("scene-pos") == 220.0
     assert plot.scene_positions == ["scene-pos"]
+
+
+def test_feature_y_from_scene_ignores_positions_outside_active_plot() -> None:
+    plot = FakePlot(y=11.0, contains_scene_pos=False)
+    view = FeaturePlotView()
+    view.set_data_plot(plot, y_scale=20)
+
+    assert view.feature_y_from_scene("scene-pos") is None
+    assert plot.scene_positions == []
 
 
 def test_clear_disconnects_and_resets_state() -> None:

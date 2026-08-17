@@ -165,6 +165,7 @@ def test_alignment_state_pending_reference_lines_roundtrip() -> None:
     assert state.pending_reference_lines is lines
     assert not state.has_unsaved_alignment
     np.testing.assert_array_equal(lines.feature_positions_um, [100.0, 200.0])
+    np.testing.assert_array_equal(lines.warped_positions_um, [110.0, 210.0])
     np.testing.assert_array_equal(lines.track_positions_um, [110.0, 210.0])
 
     state.clear_pending_reference_lines()

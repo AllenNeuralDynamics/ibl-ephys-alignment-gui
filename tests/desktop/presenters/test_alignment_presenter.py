@@ -70,7 +70,7 @@ def _render_state() -> ActiveAlignmentRenderState:
 def _line_state() -> ActiveReferenceLineRenderState:
     return ActiveReferenceLineRenderState(
         feature_positions_um=np.array([1000.0]),
-        track_positions_um=np.array([1100.0]),
+        raw_track_positions_um=np.array([1100.0]),
     )
 
 

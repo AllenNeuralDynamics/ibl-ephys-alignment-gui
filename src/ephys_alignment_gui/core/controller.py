@@ -247,7 +247,7 @@ class AlignmentController:
         track_positions_um: Any,
         shank_idx: int | None = None,
     ) -> PendingReferenceLinesUpdated | Failed:
-        """Store active pending reference-line coordinates."""
+        """Store active pending feature and warped-display coordinates."""
         state_or_failed = self._active_state_for_shank(shank_idx)
         if isinstance(state_or_failed, Failed):
             return state_or_failed

@@ -56,6 +56,13 @@ class FakeLayer:
     def replace_lines(self, positions: Any, track_positions: Any = None) -> None:
         self.calls.append(("replace", positions, track_positions))
 
+    def replace_lines_from_raw_track(
+        self,
+        positions: Any,
+        raw_track_positions: Any,
+    ) -> None:
+        self.calls.append(("replace-raw", positions, raw_track_positions))
+
     def sync_track_to_feature(self) -> None:
         self.calls.append("sync")
 
@@ -119,6 +126,7 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
     display.reattach()
     display.create_lines([3.0], [4.0])
     display.replace_lines([6.0], [7.0])
+    display.replace_lines_from_raw_track([8.0], [9.0])
     display.sync_track_to_feature()
     assert display.select_line("line")
     display.clear_selection()
@@ -134,6 +142,7 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
         "add",
         ("create", [3.0], [4.0]),
         ("replace", [6.0], [7.0]),
+        ("replace-raw", [8.0], [9.0]),
         "sync",
         ("select", "line"),
         "clear_selection",

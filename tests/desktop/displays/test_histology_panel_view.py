@@ -31,6 +31,7 @@ class FakePlot:
     def __init__(self) -> None:
         self.update_count = 0
         self.clear_count = 0
+        self.vb = None
 
     def update(self) -> None:
         self.update_count += 1
@@ -58,6 +59,28 @@ class FakeSignal:
 class FakeLine:
     def __init__(self) -> None:
         self.sigPositionChanged = FakeSignal()
+
+
+class FakeRect:
+    def __init__(self, contains: bool) -> None:
+        self._contains = contains
+
+    def contains(self, _scene_pos: Any) -> bool:
+        return self._contains
+
+
+class FakeViewBox:
+    def __init__(self, *, contains: bool, y: float) -> None:
+        self._contains = contains
+        self._y = y
+        self.mapped_scene_positions: list[Any] = []
+
+    def sceneBoundingRect(self) -> FakeRect:
+        return FakeRect(self._contains)
+
+    def mapSceneToView(self, scene_pos: Any) -> Any:
+        self.mapped_scene_positions.append(scene_pos)
+        return type("FakePosition", (), {"y": lambda _self: self._y})()
 
 
 def _view() -> tuple[HistologyPanelView, FakeAxis, FakeAxis, FakePlot, FakePlot]:
@@ -103,6 +126,22 @@ def test_histology_panel_toggles_label_axis_visibility() -> None:
     assert reference_axis.text_pen == "k"
     assert aligned_plot.update_count == 2
     assert reference_plot.update_count == 2
+
+
+def test_warped_feature_y_from_scene_uses_aligned_or_perpendicular_panel() -> None:
+    view, _, _, aligned_plot, _reference_plot = _view()
+    perpendicular_plot = FakePlot()
+    aligned_plot.vb = FakeViewBox(contains=False, y=100.0)
+    perpendicular_plot.vb = FakeViewBox(contains=True, y=225.0)
+    view.plots = HistologyPanelPlots(
+        aligned=aligned_plot,
+        reference=view.plots.reference,
+        perpendicular=perpendicular_plot,
+    )
+
+    assert view.warped_feature_y_from_scene("scene-pos") == 225.0
+    assert aligned_plot.vb.mapped_scene_positions == []
+    assert perpendicular_plot.vb.mapped_scene_positions == ["scene-pos"]
 
 
 def test_histology_panel_owns_selected_region_lookup() -> None:

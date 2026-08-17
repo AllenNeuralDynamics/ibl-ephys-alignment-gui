@@ -29,6 +29,7 @@ class HistologyPanelPlots:
 
     aligned: Any
     reference: Any
+    perpendicular: Any | None = None
     scale: Any | None = None
     scale_colorbar: Any | None = None
     area: Any | None = None
@@ -214,6 +215,7 @@ class HistologyPanelView:
             plots=HistologyPanelPlots(
                 aligned=aligned,
                 reference=reference,
+                perpendicular=perpendicular_plot,
                 scale=scale,
                 scale_colorbar=scale_colorbar,
                 area=area,
@@ -242,6 +244,42 @@ class HistologyPanelView:
         if self.fit_items is None:
             return None
         return self.fit_items.linear_fit_checkbox
+
+    def warped_feature_y_from_scene(self, scene_pos: Any) -> float | None:
+        """Map a warped-panel scene position to displayed feature depth in um."""
+        for plot in (self.plots.aligned, self.plots.perpendicular):
+            y_pos = self._plot_y_from_scene(plot, scene_pos)
+            if y_pos is not None:
+                return y_pos
+        return None
+
+    @staticmethod
+    def _plot_y_from_scene(plot: Any, scene_pos: Any) -> float | None:
+        if plot is None:
+            return None
+        view_box = getattr(plot, "vb", None)
+        if view_box is None:
+            get_view_box = getattr(plot, "getViewBox", None)
+            view_box = get_view_box() if callable(get_view_box) else None
+        if view_box is None:
+            return None
+
+        scene_rect = getattr(view_box, "sceneBoundingRect", None)
+        if callable(scene_rect):
+            try:
+                rect = scene_rect()
+                contains = getattr(rect, "contains", None)
+                if callable(contains) and not contains(scene_pos):
+                    return None
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+
+        map_scene_to_view = getattr(view_box, "mapSceneToView", None)
+        if not callable(map_scene_to_view):
+            return None
+        pos = map_scene_to_view(scene_pos)
+        y = getattr(pos, "y", None)
+        return float(y()) if callable(y) else None
 
     def clear(self) -> None:
         """Clear histology-panel plot items and forget desktop handles."""

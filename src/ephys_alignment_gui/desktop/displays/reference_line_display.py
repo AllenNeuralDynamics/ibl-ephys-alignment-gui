@@ -79,7 +79,7 @@ class DesktopReferenceLineDisplay:
         return self.layer.has_lines()
 
     def positions(self) -> Any:
-        """Return feature/track reference-line positions in um."""
+        """Return feature and warped-space display positions in um."""
         return self.layer.positions()
 
     def clear(self) -> None:
@@ -99,13 +99,21 @@ class DesktopReferenceLineDisplay:
         self.remove_from_plots()
         self.add_to_plots()
 
-    def create_lines(self, positions: Any, track_positions: Any = None) -> None:
-        """Create linked feature/track reference lines."""
-        self.layer.create_lines(positions, track_positions)
+    def create_lines(self, positions: Any, warped_positions: Any = None) -> None:
+        """Create linked feature/warped-space reference lines."""
+        self.layer.create_lines(positions, warped_positions)
 
-    def replace_lines(self, positions: Any, track_positions: Any = None) -> None:
-        """Replace linked feature/track reference lines without user-edit capture."""
-        self.layer.replace_lines(positions, track_positions)
+    def replace_lines(self, positions: Any, warped_positions: Any = None) -> None:
+        """Replace linked feature/warped-space lines without user-edit capture."""
+        self.layer.replace_lines(positions, warped_positions)
+
+    def replace_lines_from_raw_track(
+        self,
+        positions: Any,
+        raw_track_positions: Any,
+    ) -> None:
+        """Replace linked lines from feature positions and raw track positions."""
+        self.layer.replace_lines_from_raw_track(positions, raw_track_positions)
 
     def sync_track_to_feature(self) -> None:
         """Move track-space reference lines to current feature-line positions."""

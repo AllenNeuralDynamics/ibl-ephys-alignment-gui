@@ -30,6 +30,28 @@ class FakeEphysAlignment:
         )
 
 
+class PiecewiseFakeEphysAlignment:
+    def __init__(self) -> None:
+        self.feature_init = np.array([0.0, 4.0])
+        self.track_init = np.array([0.0, 4.0])
+
+    @staticmethod
+    def feature2track(feature_new, feature_ref, track_ref):
+        return np.interp(feature_new, feature_ref, track_ref)
+
+    @staticmethod
+    def adjust_extremes_uniform(feature, track):
+        track = np.array(track, dtype=float, copy=True)
+        diff = np.diff(feature - track)
+        track[0] -= diff[0]
+        track[-1] += diff[-1]
+        return track
+
+    @staticmethod
+    def adjust_extremes_linear(feature, track, extend_feature=1):
+        return feature, track
+
+
 def test_go_next_noops_when_cursor_is_at_latest_edit() -> None:
     history = AlignmentEditHistory(max_idx=10)
 
@@ -170,7 +192,7 @@ def test_fit_to_reference_lines_appends_fit_edit() -> None:
     assert history.total_idx == 1
     assert result.alignment is not None
     np.testing.assert_array_equal(result.alignment.feature, [0.0, 2.0, 4.0])
-    np.testing.assert_array_equal(result.alignment.track, [21.0, 23.0, 25.0])
+    np.testing.assert_array_equal(result.alignment.track, [11.0, 23.0, 15.0])
     assert result.lin_fit is False
 
 
@@ -196,9 +218,46 @@ def test_fit_to_reference_lines_uses_linear_extremes_when_enabled() -> None:
     np.testing.assert_array_equal(result.alignment.feature, [2.0, 3.0, 4.0, 5.0, 6.0])
     np.testing.assert_array_equal(
         result.alignment.track,
-        [22.0, 23.0, 24.0, 25.0, 26.0],
+        [12.0, 23.0, 24.0, 25.0, 16.0],
     )
     assert result.lin_fit is True
+
+
+def test_fit_to_reference_lines_is_idempotent_for_same_display_pairs() -> None:
+    history = AlignmentEditHistory(max_idx=10)
+    history.set_current_alignment(
+        ActiveAlignment(
+            np.array([0.0, 1.0, 4.0]),
+            np.array([0.0, 2.0, 4.0]),
+        )
+    )
+    service = AlignmentEditService()
+    ephysalign = PiecewiseFakeEphysAlignment()
+
+    first = service.fit_to_reference_lines(
+        history,
+        ephysalign=ephysalign,
+        line_features_um=np.array([3_000_000.0]),
+        line_tracks_um=np.array([3_000_000.0]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+    assert first.alignment is not None
+    first_feature = np.array(first.alignment.feature, copy=True)
+    first_track = np.array(first.alignment.track, copy=True)
+
+    second = service.fit_to_reference_lines(
+        history,
+        ephysalign=ephysalign,
+        line_features_um=np.array([3_000_000.0]),
+        line_tracks_um=np.array([3_000_000.0]),
+        lin_fit=False,
+        extend_feature=2,
+    )
+
+    assert second.alignment is not None
+    np.testing.assert_allclose(second.alignment.feature, first_feature)
+    np.testing.assert_allclose(second.alignment.track, first_track)
 
 
 def test_fit_to_reference_lines_without_points_resets_to_initial_alignment() -> None:

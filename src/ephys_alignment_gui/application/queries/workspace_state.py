@@ -82,7 +82,7 @@ class WorkspaceStateQueries:
         if pending is not None:
             return ActiveReferenceLineRenderState(
                 feature_positions_um=pending.feature_positions_um,
-                track_positions_um=pending.track_positions_um,
+                warped_positions_um=pending.warped_positions_um,
             )
 
         feature_prev = state.feature_prev
@@ -109,7 +109,7 @@ class WorkspaceStateQueries:
             return None
         return ActiveReferenceLineRenderState(
             feature_positions_um=np.asarray(alignment.feature)[1:-1] * 1e6,
-            track_positions_um=np.asarray(alignment.track)[1:-1] * 1e6,
+            raw_track_positions_um=np.asarray(alignment.track)[1:-1] * 1e6,
         )
 
     def is_loaded_stream_shank(

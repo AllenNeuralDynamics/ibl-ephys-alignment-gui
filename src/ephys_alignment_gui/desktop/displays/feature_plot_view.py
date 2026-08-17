@@ -65,6 +65,15 @@ class FeaturePlotView:
         """Map a scene position to feature-space y in um."""
         if self.data_plot is None:
             return None
+        scene_rect = getattr(self.data_plot, "sceneBoundingRect", None)
+        if callable(scene_rect):
+            try:
+                rect = scene_rect()
+                contains = getattr(rect, "contains", None)
+                if callable(contains) and not contains(scene_pos):
+                    return None
+            except (AttributeError, RuntimeError, TypeError):
+                pass
         pos = self.data_plot.mapFromScene(scene_pos)
         return pos.y() * self.y_scale
 

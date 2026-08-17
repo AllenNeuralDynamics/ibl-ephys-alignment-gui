@@ -232,12 +232,26 @@ class DesktopInteractionCoordinator:
         if not event.double():
             return False
 
-        feature_y_um = self.ephys_panel.feature_y_from_scene(event.scenePos())
+        feature_y_um = self._reference_line_y_from_scene(event.scenePos())
         if feature_y_um is None:
             return False
         self.reference_line_display.create_lines([feature_y_um])
         self.callbacks.capture_pending_reference_lines()
         return True
+
+    def _reference_line_y_from_scene(self, scene_pos: Any) -> float | None:
+        feature_y_um = self.ephys_panel.feature_y_from_scene(scene_pos)
+        if feature_y_um is not None:
+            return feature_y_um
+
+        warped_y_from_scene = getattr(
+            self.histology_display,
+            "warped_feature_y_from_scene",
+            None,
+        )
+        if callable(warped_y_from_scene):
+            return warped_y_from_scene(scene_pos)
+        return None
 
     def on_mouse_hover(self, items: list[Any]) -> None:
         """Dispatch hover interactions to reference-line and histology views."""

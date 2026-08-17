@@ -260,10 +260,21 @@ def _render_reference_lines_from_alignment(
     if state is None:
         reference_lines.clear()
         return
-    reference_lines.replace_lines(
-        state.feature_positions_um,
-        state.track_positions_um,
-    )
+    if getattr(state, "raw_track_positions_um", None) is not None:
+        reference_lines.replace_lines_from_raw_track(
+            state.feature_positions_um,
+            state.raw_track_positions_um,
+        )
+    else:
+        warped_positions_um = getattr(
+            state,
+            "warped_positions_um",
+            getattr(state, "track_positions_um", None),
+        )
+        reference_lines.replace_lines(
+            state.feature_positions_um,
+            warped_positions_um,
+        )
     if visible:
         reference_lines.reattach()
     else:

@@ -125,8 +125,14 @@ class FakeHistologyPanel:
     def __init__(self) -> None:
         self.selected_idx: int | None = 1
         self.scale_factor = 1.234
+        self.warped_feature_y_um: float | None = None
+        self.warped_scene_pos_calls: list[Any] = []
         self.scale_factor_calls: list[Any] = []
         self.selected_regions: list[Any] = []
+
+    def warped_feature_y_from_scene(self, scene_pos: Any) -> float | None:
+        self.warped_scene_pos_calls.append(scene_pos)
+        return self.warped_feature_y_um
 
     def selected_region_index(self) -> int | None:
         return self.selected_idx
@@ -369,6 +375,20 @@ def test_double_click_creates_reference_line_and_captures_pending() -> None:
 
     assert state["ephys_panel"].scene_pos_calls == ["scene-pos"]
     assert state["reference_line_display"].created == [[125.0]]
+    assert state["calls"]["capture"] == 1
+
+
+def test_double_click_creates_reference_line_from_warped_histology() -> None:
+    coordinator, state = _coordinator()
+    state["ephys_panel"].feature_y_um = None
+    state["histology_display"].warped_feature_y_um = 225.0
+    event = SimpleNamespace(double=lambda: True, scenePos=lambda: "scene-pos")
+
+    assert coordinator.on_mouse_double_clicked(event)
+
+    assert state["ephys_panel"].scene_pos_calls == ["scene-pos"]
+    assert state["histology_display"].warped_scene_pos_calls == ["scene-pos"]
+    assert state["reference_line_display"].created == [[225.0]]
     assert state["calls"]["capture"] == 1
 
 

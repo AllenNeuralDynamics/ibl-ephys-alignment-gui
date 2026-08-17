@@ -115,7 +115,15 @@ class ActiveReferenceLineRenderState:
     """Reference-line coordinates ready for frontend overlay rendering."""
 
     feature_positions_um: Any
-    track_positions_um: Any | None = None
+    warped_positions_um: Any | None = None
+    raw_track_positions_um: Any | None = None
+
+    @property
+    def track_positions_um(self) -> Any | None:
+        """Backward-compatible alias for the state's second coordinate."""
+        if self.warped_positions_um is not None:
+            return self.warped_positions_um
+        return self.raw_track_positions_um
 
 
 @dataclass(frozen=True)

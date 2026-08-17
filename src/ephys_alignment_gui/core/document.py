@@ -200,7 +200,7 @@ class AlignmentDocument:
         feature_positions_um: Any,
         track_positions_um: Any,
     ) -> PendingReferenceLines | None:
-        """Store active-state reference-line coordinates."""
+        """Store active-state feature and warped-display line coordinates."""
         state = self._require_active_alignment_state()
         lines = PendingReferenceLines.from_values(
             feature_positions_um,

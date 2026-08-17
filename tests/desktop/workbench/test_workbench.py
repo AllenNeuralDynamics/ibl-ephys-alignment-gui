@@ -539,6 +539,7 @@ class FakeReferenceLineDisplay:
         self.reattach_count = 0
         self.created_lines: list[tuple[Any, Any]] = []
         self.replaced_lines: list[tuple[Any, Any]] = []
+        self.raw_replaced_lines: list[tuple[Any, Any]] = []
         self.lines_changed_callback = None
         self.current_positions = ([1.0], [2.0])
 
@@ -574,6 +575,13 @@ class FakeReferenceLineDisplay:
 
     def replace_lines(self, positions: Any, track_positions: Any = None) -> None:
         self.replaced_lines.append((positions, track_positions))
+
+    def replace_lines_from_raw_track(
+        self,
+        positions: Any,
+        raw_track_positions: Any,
+    ) -> None:
+        self.raw_replaced_lines.append((positions, raw_track_positions))
 
 
 def _displays(
@@ -1303,7 +1311,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     assert captured_reference_lines == [([1.0], [2.0])]
     line_state = SimpleNamespace(
         feature_positions_um=[3.0],
-        track_positions_um=[4.0],
+        raw_track_positions_um=[4.0],
     )
     render_cluster.alignment_presenter.callbacks.clear_reference_lines()
     render_cluster.alignment_presenter.callbacks.render_reference_lines_from_alignment(
@@ -1311,7 +1319,8 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     render_cluster.shank_presenter.callbacks.clear_reference_lines()
     assert reference_line_display.clear_count == 2
-    assert reference_line_display.replaced_lines == [([3.0], [4.0])]
+    assert reference_line_display.replaced_lines == []
+    assert reference_line_display.raw_replaced_lines == [([3.0], [4.0])]
     assert reference_line_display.reattach_count == 1
     assert (
         render_cluster.shank_presenter.callbacks.render_ephys_plots.__self__

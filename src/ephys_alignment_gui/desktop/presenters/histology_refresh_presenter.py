@@ -29,9 +29,14 @@ class DesktopHistologyRefreshPresenter:
 
         line_state = self.app.queries.workspace.active_reference_line_state(shank_idx)
         if line_state is not None:
+            warped_positions_um = getattr(
+                line_state,
+                "warped_positions_um",
+                getattr(line_state, "track_positions_um", None),
+            )
             self.reference_line_display.create_lines(
                 line_state.feature_positions_um,
-                line_state.track_positions_um,
+                warped_positions_um,
             )
             if not self.app.queries.workspace.reference_lines_visible():
                 self.reference_line_display.remove_from_plots()

@@ -749,6 +749,7 @@ def test_queries_active_reference_line_state_prefers_pending_lines() -> None:
 
     assert isinstance(result, ActiveReferenceLineRenderState)
     np.testing.assert_allclose(result.feature_positions_um, [10.0])
+    np.testing.assert_allclose(result.warped_positions_um, [11.0])
     np.testing.assert_allclose(result.track_positions_um, [11.0])
 
 
@@ -787,6 +788,7 @@ def test_queries_active_alignment_reference_line_state_uses_active_alignment() -
 
     assert isinstance(result, ActiveReferenceLineRenderState)
     np.testing.assert_allclose(result.feature_positions_um, [1000.0, 2000.0])
+    np.testing.assert_allclose(result.raw_track_positions_um, [1500.0, 2500.0])
     np.testing.assert_allclose(result.track_positions_um, [1500.0, 2500.0])
 
 
@@ -803,10 +805,13 @@ def test_queries_active_alignment_reference_line_state_allows_empty_interior() -
 
     assert isinstance(result, ActiveReferenceLineRenderState)
     assert result.feature_positions_um.size == 0
+    assert result.raw_track_positions_um.size == 0
     assert result.track_positions_um.size == 0
 
 
-def test_queries_project_reference_lines_between_track_and_warped_feature_space() -> None:
+def test_queries_project_reference_lines_between_track_and_warped_feature_space() -> (
+    None
+):
     workspace = AlignmentWorkspace()
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
@@ -1734,8 +1739,7 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
     assert queries.workspace.mouse_root_loaded()
     assert queries.workspace.active_output_root() == output_root
     assert (
-        queries.workspace.active_output_package_directory()
-        == output_package_directory
+        queries.workspace.active_output_package_directory() == output_package_directory
     )
     assert queries.workspace.has_output_directory()
 
@@ -2131,9 +2135,11 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
         progress=progress_events.append,
         cancel_token=cancel_token,
     )
-    published = workspace.app.commands.persistence.publish_prepared_alignment_save_result(
-        prepared,
-        job_result,
+    published = (
+        workspace.app.commands.persistence.publish_prepared_alignment_save_result(
+            prepared,
+            job_result,
+        )
     )
 
     assert job_result == AlignmentSaveJobCancelled(reason="cancelled by user")
@@ -2209,9 +2215,11 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
         progress=cancel_after_transform_starts,
         cancel_token=cancel_token,
     )
-    published = workspace.app.commands.persistence.publish_prepared_alignment_save_result(
-        prepared,
-        job_result,
+    published = (
+        workspace.app.commands.persistence.publish_prepared_alignment_save_result(
+            prepared,
+            job_result,
+        )
     )
 
     assert job_result == AlignmentSaveJobCancelled(reason="cancelled by user")
@@ -2520,12 +2528,8 @@ def test_commands_load_previous_alignment_package_does_not_clobber_dirty_active_
 ) -> None:
     repo = FakeAlignmentRepository()
     repo.loaded_package = {
-        ("rec", "probeA", 1): LoadedAlignmentHistory(
-            {"active-loaded": [[1.0], [2.0]]}
-        ),
-        ("rec", "probeB", 0): LoadedAlignmentHistory(
-            {"other-loaded": [[3.0], [4.0]]}
-        ),
+        ("rec", "probeA", 1): LoadedAlignmentHistory({"active-loaded": [[1.0], [2.0]]}),
+        ("rec", "probeB", 0): LoadedAlignmentHistory({"other-loaded": [[3.0], [4.0]]}),
     }
     workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
     probe_a = _probe_info()
@@ -2696,7 +2700,7 @@ def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
     assert result.lin_fit is False
     assert len(ephysalign.feature2track_calls) == 1
     depths_track, previous_feature, previous_track = ephysalign.feature2track_calls[0]
-    np.testing.assert_allclose(depths_track, [0.010, 0.011, 0.014])
+    np.testing.assert_allclose(depths_track, [0.011])
     np.testing.assert_allclose(previous_feature, [0.0, 0.004])
     np.testing.assert_allclose(previous_track, [0.010, 0.014])
     np.testing.assert_allclose(result.alignment.feature, [0.0, 0.001, 0.004])

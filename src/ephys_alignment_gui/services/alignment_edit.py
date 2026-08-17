@@ -74,15 +74,25 @@ class AlignmentEditService:
         lin_fit: bool,
         extend_feature: int,
     ) -> AlignmentEditResult:
-        """Append a fit edit from user-positioned feature and track lines."""
+        """Append a fit edit from user-positioned reference-line pairs.
+
+        ``line_tracks_um`` is the warped-panel display coordinate for the
+        track-side line. It is in feature-display units; this method converts
+        it through the previous warp to select the corresponding raw track
+        coordinate.
+        """
         line_feature = np.asarray(line_features_um, dtype=float) / 1e6
-        line_track = np.asarray(line_tracks_um, dtype=float) / 1e6
-        if line_feature.size == 0 or line_track.size == 0:
+        line_warped = np.asarray(line_tracks_um, dtype=float) / 1e6
+        if line_feature.size == 0 or line_warped.size == 0:
             return self.reset_to_initial(
                 history,
                 feature_init=ephysalign.feature_init,
                 track_init=ephysalign.track_init,
                 lin_fit=lin_fit,
+            )
+        if line_feature.shape != line_warped.shape:
+            raise ValueError(
+                "feature and warped reference-line positions must have matching shapes"
             )
 
         self._append_edit_slot(history, lin_fit=lin_fit, remember_previous=True)
@@ -90,13 +100,16 @@ class AlignmentEditService:
         previous_feature = np.asarray(history.features[history.idx_prev])
         previous_track = np.asarray(history.track[history.idx_prev])
 
-        depths_track = np.sort(np.r_[previous_track[[0, -1]], line_track])
-        track = ephysalign.feature2track(
-            depths_track,
+        line_track = ephysalign.feature2track(
+            line_warped,
             previous_feature,
             previous_track,
         )
-        feature = np.sort(np.r_[previous_feature[[0, -1]], line_feature])
+        feature = np.r_[previous_feature[[0]], line_feature, previous_feature[[-1]]]
+        track = np.r_[previous_track[[0]], line_track, previous_track[[-1]]]
+        sort_idx = np.argsort(feature)
+        feature = feature[sort_idx]
+        track = track[sort_idx]
 
         if feature.size >= 5 and lin_fit:
             feature, track = ephysalign.adjust_extremes_linear(

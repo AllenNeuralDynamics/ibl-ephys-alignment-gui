@@ -70,18 +70,18 @@ class ReferenceLineLayer:
         self._warped_position_to_track = warped_position_to_track
 
     def positions(self) -> tuple[np.ndarray, np.ndarray] | None:
-        """Return feature/track reference-line positions in um."""
+        """Return feature and warped-space display positions in um."""
         if not self.has_lines():
             return None
         feature = np.array(
             [line[0].pos().y() for line in self.lines_features],
             dtype=float,
         )
-        track = np.array(
-            [line[2].pos().y() for line in self.lines_tracks],
+        warped = np.array(
+            [line[0].pos().y() for line in self.lines_tracks],
             dtype=float,
         )
-        return feature, track
+        return feature, warped
 
     def remove_from_plots(self) -> None:
         """Remove current line handles from their plots without deleting them."""
@@ -138,30 +138,30 @@ class ReferenceLineLayer:
     def create_lines(
         self,
         positions: Any,
-        track_positions: Any = None,
+        warped_positions: Any = None,
     ) -> None:
-        """Create linked feature/track reference lines from coordinate arrays."""
+        """Create linked feature/warped-space reference lines."""
         feature_positions = np.asarray(positions, dtype=float)
-        if track_positions is None:
-            track_positions = self._warped_positions_to_track(feature_positions)
+        if warped_positions is None:
+            warped_positions = feature_positions
         else:
-            track_positions = np.asarray(track_positions, dtype=float)
-        if feature_positions.shape != track_positions.shape:
+            warped_positions = np.asarray(warped_positions, dtype=float)
+        if feature_positions.shape != warped_positions.shape:
             logger.error(
-                "Cannot create reference lines: feature/track positions differ"
+                "Cannot create reference lines: feature/warped positions differ"
             )
             return
 
-        warped_positions = self._track_to_warped_positions(track_positions)
+        raw_track_positions = self._warped_positions_to_track(warped_positions)
 
-        for feature_pos, track_pos, warped_pos in zip(
+        for feature_pos, warped_pos, raw_track_pos in zip(
             feature_positions,
-            track_positions,
             warped_positions,
+            raw_track_positions,
         ):
             self._create_line(
                 feature_pos=feature_pos,
-                track_pos=track_pos,
+                track_pos=raw_track_pos,
                 warped_pos=warped_pos,
             )
 
@@ -180,26 +180,65 @@ class ReferenceLineLayer:
                 self._set_line_pos(line_track[2], track_pos)
                 point[0].setData(
                     x=[line_feature[0].pos().y()],
-                    y=[track_pos],
+                    y=[warped_pos],
                 )
         self._on_lines_changed()
 
     def replace_lines(
         self,
         positions: Any,
-        track_positions: Any = None,
+        warped_positions: Any = None,
         *,
         notify: bool = False,
     ) -> None:
-        """Replace managed line positions with explicit feature/track coordinates."""
+        """Replace lines from feature and warped-space display coordinates."""
         feature_positions = np.asarray(positions, dtype=float)
-        if track_positions is None:
-            track_positions = self._warped_positions_to_track(feature_positions)
+        if warped_positions is None:
+            warped_positions = feature_positions
         else:
-            track_positions = np.asarray(track_positions, dtype=float)
-        if feature_positions.shape != track_positions.shape:
+            warped_positions = np.asarray(warped_positions, dtype=float)
+        raw_track_positions = self._warped_positions_to_track(warped_positions)
+        self._replace_lines(
+            feature_positions,
+            warped_positions,
+            raw_track_positions,
+            notify=notify,
+        )
+
+    def replace_lines_from_raw_track(
+        self,
+        positions: Any,
+        raw_track_positions: Any,
+        *,
+        notify: bool = False,
+    ) -> None:
+        """Replace lines from feature coordinates and raw track coordinates."""
+        feature_positions = np.asarray(positions, dtype=float)
+        raw_track_positions = np.asarray(raw_track_positions, dtype=float)
+        warped_positions = self._track_to_warped_positions(raw_track_positions)
+        self._replace_lines(
+            feature_positions,
+            warped_positions,
+            raw_track_positions,
+            notify=notify,
+        )
+
+    def _replace_lines(
+        self,
+        feature_positions: np.ndarray,
+        warped_positions: np.ndarray,
+        raw_track_positions: np.ndarray,
+        *,
+        notify: bool,
+    ) -> None:
+        if feature_positions.shape != warped_positions.shape:
             logger.error(
-                "Cannot replace reference lines: feature/track positions differ"
+                "Cannot replace reference lines: feature/warped positions differ"
+            )
+            return
+        if feature_positions.shape != raw_track_positions.shape:
+            logger.error(
+                "Cannot replace reference lines: feature/raw track positions differ"
             )
             return
 
@@ -211,25 +250,32 @@ class ReferenceLineLayer:
 
         if self.lines_features.shape[0] != feature_positions.size:
             self.clear()
-            self.create_lines(feature_positions, track_positions)
+            for feature_pos, warped_pos, raw_track_pos in zip(
+                feature_positions,
+                warped_positions,
+                raw_track_positions,
+            ):
+                self._create_line(
+                    feature_pos=feature_pos,
+                    track_pos=raw_track_pos,
+                    warped_pos=warped_pos,
+                )
             if notify:
                 self._on_lines_changed()
             return
 
-        warped_positions = self._track_to_warped_positions(track_positions)
-
         with self._linked_line_update():
             for (
                 feature_pos,
-                track_pos,
                 warped_pos,
+                raw_track_pos,
                 line_feature,
                 line_track,
                 point,
             ) in zip(
                 feature_positions,
-                track_positions,
                 warped_positions,
+                raw_track_positions,
                 self.lines_features,
                 self.lines_tracks,
                 self.points,
@@ -238,10 +284,10 @@ class ReferenceLineLayer:
                     self._set_line_pos(line, feature_pos)
                 self._set_line_pos(line_track[0], warped_pos)
                 self._set_line_pos(line_track[1], warped_pos)
-                self._set_line_pos(line_track[2], track_pos)
+                self._set_line_pos(line_track[2], raw_track_pos)
                 point[0].setData(
                     x=[feature_pos],
-                    y=[track_pos],
+                    y=[warped_pos],
                 )
         if notify:
             self._on_lines_changed()
@@ -265,7 +311,7 @@ class ReferenceLineLayer:
 
             self.points[line_idx][0].setData(
                 x=[self.lines_features[line_idx][0].pos().y()],
-                y=[self.lines_tracks[line_idx][2].pos().y()],
+                y=[self.lines_tracks[line_idx][0].pos().y()],
             )
         self._on_lines_changed()
 
@@ -292,7 +338,7 @@ class ReferenceLineLayer:
 
             self.points[line_idx][0].setData(
                 x=[self.lines_features[line_idx][0].pos().y()],
-                y=[track_pos],
+                y=[warped_pos],
             )
         self._on_lines_changed()
 
@@ -524,7 +570,7 @@ class ReferenceLineLayer:
         point = pg.PlotDataItem()
         point.setData(
             x=[line_feature1.pos().y()],
-            y=[line_track_reference.pos().y()],
+            y=[warped_pos],
             symbolBrush=brush,
             symbol="o",
             symbolSize=10,

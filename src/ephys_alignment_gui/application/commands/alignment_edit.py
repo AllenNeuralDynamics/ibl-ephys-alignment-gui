@@ -100,7 +100,10 @@ class AlignmentEditCommandHandler:
         lin_fit: bool,
         extend_feature: int,
     ) -> AlignmentEditApplied | AlignmentEditNoop | Failed:
-        """Apply a reference-line fit for a document-selected shank runtime."""
+        """Apply a reference-line fit for a document-selected shank runtime.
+
+        ``line_tracks_um`` is the legacy name for warped display depths.
+        """
         if self._reference_lines_empty(line_features_um, line_tracks_um):
             return self.reset_alignment_to_initial(
                 shank_runtime,
@@ -134,7 +137,7 @@ class AlignmentEditCommandHandler:
             line_tracks_um = np.array([], dtype=float)
         else:
             line_features_um = pending_lines.feature_positions_um
-            line_tracks_um = pending_lines.track_positions_um
+            line_tracks_um = pending_lines.warped_positions_um
 
         return self.fit_alignment_to_reference_lines(
             shank_runtime,

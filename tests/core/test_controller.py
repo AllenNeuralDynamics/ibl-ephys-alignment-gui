@@ -377,11 +377,11 @@ def test_fit_alignment_to_reference_lines_updates_active_document_state() -> Non
 
     assert isinstance(result, AlignmentEditApplied)
     np.testing.assert_array_equal(result.alignment.feature, [0.0, 2.0, 4.0])
-    np.testing.assert_array_equal(result.alignment.track, [21.0, 23.0, 25.0])
+    np.testing.assert_array_equal(result.alignment.track, [11.0, 23.0, 15.0])
     assert result.lin_fit is False
     assert state.active_alignment is not None
     np.testing.assert_array_equal(state.active_alignment.feature, [0.0, 2.0, 4.0])
-    np.testing.assert_array_equal(state.active_alignment.track, [21.0, 23.0, 25.0])
+    np.testing.assert_array_equal(state.active_alignment.track, [11.0, 23.0, 15.0])
 
 
 def test_offset_alignment_from_tip_updates_active_document_state() -> None:

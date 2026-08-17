@@ -45,12 +45,14 @@ class PendingReferenceLines:
     """Document-owned coordinates for user reference lines.
 
     The Qt/pyqtgraph line objects remain view state. This value object stores
-    only the paired feature/track y positions that should be recreated when a
-    shank/probe view is rebuilt.
+    only the paired feature-space and warped-space display y positions that
+    should be recreated when a shank/probe view is rebuilt. The warped-space
+    positions are not raw track depths; fitting converts them through the
+    current warp to select raw track positions.
     """
 
     feature_positions_um: NDArray[np.floating[Any]]
-    track_positions_um: NDArray[np.floating[Any]]
+    warped_positions_um: NDArray[np.floating[Any]]
 
     def __post_init__(self) -> None:
         feature_positions_um = np.array(
@@ -58,34 +60,39 @@ class PendingReferenceLines:
             dtype=float,
             copy=True,
         )
-        track_positions_um = np.array(
-            self.track_positions_um,
+        warped_positions_um = np.array(
+            self.warped_positions_um,
             dtype=float,
             copy=True,
         )
-        if feature_positions_um.ndim != 1 or track_positions_um.ndim != 1:
+        if feature_positions_um.ndim != 1 or warped_positions_um.ndim != 1:
             raise ValueError("reference-line positions must be 1D arrays")
-        if feature_positions_um.shape != track_positions_um.shape:
+        if feature_positions_um.shape != warped_positions_um.shape:
             raise ValueError(
-                "feature and track reference-line positions must have matching shapes"
+                "feature and warped reference-line positions must have matching shapes"
             )
         feature_positions_um.setflags(write=False)
-        track_positions_um.setflags(write=False)
+        warped_positions_um.setflags(write=False)
         object.__setattr__(self, "feature_positions_um", feature_positions_um)
-        object.__setattr__(self, "track_positions_um", track_positions_um)
+        object.__setattr__(self, "warped_positions_um", warped_positions_um)
+
+    @property
+    def track_positions_um(self) -> NDArray[np.floating[Any]]:
+        """Backward-compatible alias for warped-space display positions."""
+        return self.warped_positions_um
 
     @classmethod
     def from_values(
         cls,
         feature_positions_um: Any,
-        track_positions_um: Any,
+        warped_positions_um: Any,
     ) -> PendingReferenceLines | None:
         """Create pending reference lines, returning None for empty input."""
         feature = np.asarray(feature_positions_um, dtype=float)
-        track = np.asarray(track_positions_um, dtype=float)
-        if feature.size == 0 and track.size == 0:
+        warped = np.asarray(warped_positions_um, dtype=float)
+        if feature.size == 0 and warped.size == 0:
             return None
-        return cls(feature, track)
+        return cls(feature, warped)
 
 
 @dataclass

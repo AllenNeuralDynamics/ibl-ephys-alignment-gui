@@ -128,6 +128,10 @@ class DesktopHistologyDisplay:
         """Keep the tip line synchronized to the current top line."""
         self.panel.sync_tip_to_top()
 
+    def warped_feature_y_from_scene(self, scene_pos: Any) -> float | None:
+        """Map a warped histology scene position to displayed feature depth."""
+        return self.panel.warped_feature_y_from_scene(scene_pos)
+
     def select_region(self, item: Any) -> None:
         """Record the currently hovered/selected histology region item."""
         self.panel.select_region(item)

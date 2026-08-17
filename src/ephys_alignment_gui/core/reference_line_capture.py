@@ -29,10 +29,10 @@ def capture_outgoing_reference_lines(
     if outgoing_reference_lines is REFERENCE_LINES_NOT_PROVIDED:
         return None
 
-    feature_positions_um, track_positions_um = outgoing_reference_lines
+    feature_positions_um, warped_positions_um = outgoing_reference_lines
     return controller.set_pending_reference_lines(
         feature_positions_um=feature_positions_um,
-        track_positions_um=track_positions_um,
+        track_positions_um=warped_positions_um,
         shank_idx=outgoing_shank_idx,
     )
 
