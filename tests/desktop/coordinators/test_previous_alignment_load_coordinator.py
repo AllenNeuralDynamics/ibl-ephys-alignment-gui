@@ -241,6 +241,89 @@ def test_load_alignments_prompt_defaults_to_output_package_directory() -> None:
     ]
 
 
+def test_load_alignments_prompt_reuses_last_selected_folder() -> None:
+    commands = FakeCommands(load_result=NoPreviousAlignments())
+    events = EventBus()
+    commands.events = events
+    output_package_directory = Path(
+        "/tmp/results/ibl_annotations_mouse_2026-08-16_14-32-05"
+    )
+    selected_folder = Path("/tmp/imported-alignments")
+    prompt_defaults: list[Path | None] = []
+    selections = [selected_folder, selected_folder]
+    busy_factory = FakeBusyFactory()
+    coordinator = DesktopPreviousAlignmentLoadCoordinator(
+        commands=commands,
+        events=events,
+        callbacks=PreviousAlignmentLoadCallbacks(
+            select_folder=lambda directory: (
+                prompt_defaults.append(directory) or selections.pop(0)
+            ),
+            default_folder=lambda: output_package_directory,
+            use_docdb=lambda: False,
+            set_reload_folder_text=lambda _text: None,
+            render_alignment_choices=lambda _choices: None,
+            select_alignment=lambda _idx: True,
+            busy_context=busy_factory,
+            reload_button=lambda: "reload-button",
+        ),
+    )
+    coordinator.connect_previous_alignment_events()
+
+    assert coordinator.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
+
+    assert prompt_defaults == [output_package_directory, selected_folder]
+    assert commands.load_calls == [
+        {"folder": selected_folder, "use_docdb": False},
+        {"folder": selected_folder, "use_docdb": False},
+    ]
+
+
+def test_cancel_does_not_clobber_last_selected_alignment_folder() -> None:
+    commands = FakeCommands(load_result=NoPreviousAlignments())
+    events = EventBus()
+    commands.events = events
+    output_package_directory = Path(
+        "/tmp/results/ibl_annotations_mouse_2026-08-16_14-32-05"
+    )
+    selected_folder = Path("/tmp/imported-alignments")
+    prompt_defaults: list[Path | None] = []
+    selections = [selected_folder, None, selected_folder]
+    busy_factory = FakeBusyFactory()
+    coordinator = DesktopPreviousAlignmentLoadCoordinator(
+        commands=commands,
+        events=events,
+        callbacks=PreviousAlignmentLoadCallbacks(
+            select_folder=lambda directory: (
+                prompt_defaults.append(directory) or selections.pop(0)
+            ),
+            default_folder=lambda: output_package_directory,
+            use_docdb=lambda: False,
+            set_reload_folder_text=lambda _text: None,
+            render_alignment_choices=lambda _choices: None,
+            select_alignment=lambda _idx: True,
+            busy_context=busy_factory,
+            reload_button=lambda: "reload-button",
+        ),
+    )
+    coordinator.connect_previous_alignment_events()
+
+    assert coordinator.load_existing_alignments()
+    assert not coordinator.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
+
+    assert prompt_defaults == [
+        output_package_directory,
+        selected_folder,
+        selected_folder,
+    ]
+    assert commands.load_calls == [
+        {"folder": selected_folder, "use_docdb": False},
+        {"folder": selected_folder, "use_docdb": False},
+    ]
+
+
 def test_load_failure_returns_false_after_prompt() -> None:
     commands = FakeCommands(load_result=Failed("load failed"))
     coordinator, calls = _coordinator(

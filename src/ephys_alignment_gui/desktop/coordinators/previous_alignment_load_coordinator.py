@@ -46,6 +46,7 @@ class DesktopPreviousAlignmentLoadCoordinator:
     events: Any
     callbacks: PreviousAlignmentLoadCallbacks
     _last_selection_result: bool = field(default=True, init=False, repr=False)
+    _last_selected_folder: Path | None = field(default=None, init=False, repr=False)
 
     def connect_previous_alignment_events(self) -> list[EventSubscription]:
         """Subscribe desktop coordination to previous-alignment load events."""
@@ -98,12 +99,13 @@ class DesktopPreviousAlignmentLoadCoordinator:
             logger.error(ready.message)
             return False
 
-        selected = self.callbacks.select_folder(self.callbacks.default_folder())
+        selected = self.callbacks.select_folder(self._default_folder())
         if selected is None:
             return False
 
         use_docdb = self.callbacks.use_docdb()
         folder_path = selected
+        self._last_selected_folder = folder_path
         self.callbacks.set_reload_folder_text(str(folder_path))
 
         with self.callbacks.busy_context(
@@ -134,3 +136,9 @@ class DesktopPreviousAlignmentLoadCoordinator:
                 )
 
         return True
+
+    def _default_folder(self) -> Path | None:
+        """Return the folder the load dialog should open from."""
+        if self._last_selected_folder is not None:
+            return self._last_selected_folder
+        return self.callbacks.default_folder()
