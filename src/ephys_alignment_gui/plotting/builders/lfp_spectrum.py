@@ -5,7 +5,10 @@ from __future__ import annotations
 import numpy as np
 from scipy.interpolate import interp1d
 
-from ephys_alignment_gui.plotting.array_utils import safe_take
+from ephys_alignment_gui.plotting.array_utils import (
+    average_equal_depth_channels,
+    safe_take,
+)
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
 from ephys_alignment_gui.plotting.level_policy import (
     in_brain_depth_mask,
@@ -57,7 +60,10 @@ class LfpSpectrumPlotDataBuilder:
         )
         lfp_db = 10 * np.log10(np.maximum(lfp, 1e-20))
         lfp_db -= np.median(lfp_db, axis=1, keepdims=True)
-        img = self._average_equal_depth_channels(lfp_db)
+        img = average_equal_depth_channels(
+            lfp_db,
+            self.geometry.chn_coords[:, 1],
+        )
 
         freqs_linear = self.data["psd_lf"]["freqs"][freq_idx]
         freqs_log = np.geomspace(freq_range[0], freq_range[1], num=img.shape[0])
@@ -140,17 +146,3 @@ class LfpSpectrumPlotDataBuilder:
         if "freqs" not in entry or "power" not in entry:
             return ()
         return tuple(lfp_band_label(freq) for freq in FREQ_BANDS)
-
-    def _average_equal_depth_channels(self, values):
-        _, chn_depth, chn_count = np.unique(
-            self.geometry.chn_coords[:, 1],
-            return_index=True,
-            return_counts=True,
-        )
-        chn_depth_eq = np.copy(chn_depth)
-        chn_depth_eq[np.where(chn_count == 2)] += 1
-
-        def avg_chn_depth(row):
-            return np.mean([row[chn_depth], row[chn_depth_eq]], axis=0)
-
-        return np.apply_along_axis(avg_chn_depth, 1, values)

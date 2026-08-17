@@ -28,3 +28,37 @@ def safe_take(arr, indices, axis=0):
         result[tuple(slices)] = np.nan
         return result
     return np.take(arr, indices, axis=axis)
+
+
+def average_equal_depth_channels(values, channel_depths_um):
+    """Average columns that share a physical channel depth.
+
+    Image-style probe payloads collapse left/right contacts at the same depth
+    into one row. Channel-table order is not a geometry contract, so grouping
+    must use physical depth coordinates instead of adjacent column positions.
+    """
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 2:
+        raise ValueError(f"values must be 2D, got shape {values.shape}")
+    channel_depths_um = np.asarray(channel_depths_um, dtype=float)
+    if channel_depths_um.shape != (values.shape[1],):
+        raise ValueError(
+            "channel_depths_um must have one entry per value column: "
+            f"{channel_depths_um.shape} != ({values.shape[1]},)"
+        )
+
+    unique_depths = np.unique(channel_depths_um)
+    averaged = np.empty((values.shape[0], unique_depths.size), dtype=float)
+    for depth_idx, depth in enumerate(unique_depths):
+        columns = channel_depths_um == depth
+        group = values[:, columns]
+        finite = np.isfinite(group)
+        counts = np.sum(finite, axis=1)
+        sums = np.sum(np.where(finite, group, 0.0), axis=1)
+        averaged[:, depth_idx] = np.divide(
+            sums,
+            counts,
+            out=np.full(values.shape[0], np.nan),
+            where=counts > 0,
+        )
+    return averaged

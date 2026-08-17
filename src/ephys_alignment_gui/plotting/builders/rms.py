@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ephys_alignment_gui.plotting.array_utils import safe_take
+from ephys_alignment_gui.plotting.array_utils import (
+    average_equal_depth_channels,
+    safe_take,
+)
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
 from ephys_alignment_gui.plotting.level_policy import (
     in_brain_depth_mask,
@@ -30,7 +33,10 @@ class RmsPlotDataBuilder:
             return None, None
 
         rms = safe_take(entry["rms"], self.geometry.chn_ind, axis=1)
-        img = self._average_equal_depth_channels(rms * 1e6)
+        img = average_equal_depth_channels(
+            rms * 1e6,
+            self.geometry.chn_coords[:, 1],
+        )
         median = np.nanmean(np.nanmedian(img, axis=1))
         img = (img - np.nanmedian(img, axis=1, keepdims=True)) + median
 
@@ -56,10 +62,13 @@ class RmsPlotDataBuilder:
             "title": format + " RMS (uV)",
         }
 
-        rms_avg = safe_take(
-            np.mean(entry["rms"], axis=0),
-            indices=self.geometry.chn_ind,
-        ) * 1e6
+        rms_avg = (
+            safe_take(
+                np.mean(entry["rms"], axis=0),
+                indices=self.geometry.chn_ind,
+            )
+            * 1e6
+        )
         probe_levels = probe_colour_levels(
             rms_avg,
             channel_depths_um=self.geometry.chn_coords[:, 1],
@@ -81,17 +90,3 @@ class RmsPlotDataBuilder:
         }
 
         return data_img, data_probe
-
-    def _average_equal_depth_channels(self, values):
-        _, chn_depth, chn_count = np.unique(
-            self.geometry.chn_coords[:, 1],
-            return_index=True,
-            return_counts=True,
-        )
-        chn_depth_eq = np.copy(chn_depth)
-        chn_depth_eq[np.where(chn_count == 2)] += 1
-
-        def avg_chn_depth(row):
-            return np.mean([row[chn_depth], row[chn_depth_eq]], axis=0)
-
-        return np.apply_along_axis(avg_chn_depth, 1, values)
