@@ -110,6 +110,9 @@ def _coordinator(
                 calls.append(("cancel-preload", reason)) or True
             ),
             evict_stream_cache=lambda: calls.append(("evict-app",)) or evict_result,
+            start_histology_warmup=lambda mouse_root: calls.append(
+                ("warm-histology", mouse_root.root)
+            ),
         ),
     )
     return coordinator, commands, calls
@@ -136,6 +139,7 @@ def test_set_mouse_root_populates_sessions_without_activating_default_session() 
         ("select-session", -1),
         ("clear-probes",),
         ("clear-shanks",),
+        ("warm-histology", Path("/data/mouse")),
         ("busy-exit", None),
     ]
 
@@ -158,6 +162,7 @@ def test_set_mouse_root_without_sessions_does_not_select_session() -> None:
     assert ("cancel-preload", "mouse root changed") not in calls
     assert ("evict-app",) not in calls
     assert ("select-session", 0) not in calls
+    assert ("warm-histology", Path("/data/mouse")) in calls
 
 
 def test_set_same_mouse_root_preserves_preload_and_stream_cache() -> None:
@@ -177,6 +182,7 @@ def test_set_same_mouse_root_preserves_preload_and_stream_cache() -> None:
     assert _commands.clear_histology_calls == 0
     assert ("cancel-preload", "mouse root changed") not in calls
     assert ("evict-app",) not in calls
+    assert ("warm-histology", Path("/data/mouse")) in calls
 
 
 def test_set_mouse_root_failure_does_not_update_views() -> None:

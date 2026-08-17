@@ -201,6 +201,7 @@ class AlignmentWorkspace:
             ephys_data_service=self.ephys_data_service,
             path_commands=self.path_commands,
             histology_context=self.histology_context,
+            histology_runtime_loader=self.histology_runtime_loader,
             autosave_checkpoints=self.autosave_commands,
             save_geometry_catalog=self.save_geometry_catalog,
         )

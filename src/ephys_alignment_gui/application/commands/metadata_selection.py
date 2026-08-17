@@ -35,6 +35,7 @@ class MetadataSelectionCommandHandler:
     ephys_data_service: EphysDataService
     path_commands: PathCommandHandler
     histology_context: HistologyDataContext | None = None
+    histology_runtime_loader: Any | None = None
     autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
     save_geometry_catalog: SaveGeometryCatalog | None = None
 
@@ -42,6 +43,13 @@ class MetadataSelectionCommandHandler:
         """Clear loaded histology runtime data after a mouse-root change."""
         if self.histology_context is not None:
             self.histology_context.clear()
+        clear_warmup = getattr(
+            self.histology_runtime_loader,
+            "clear_warmup_results",
+            None,
+        )
+        if callable(clear_warmup):
+            clear_warmup()
         return Ok()
 
     def set_mouse_root(self, mouse_root: Path) -> MouseRootLoaded | Failed:

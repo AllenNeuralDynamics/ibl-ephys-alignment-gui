@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 from ephys_alignment_gui.runtime.histology_loader import (
@@ -22,6 +23,20 @@ class FakeHistologyService:
         self.calls.append(mouse_root)
         if self.exc is not None:
             raise self.exc
+        return self.data
+
+
+class BlockingHistologyService:
+    def __init__(self, data=None) -> None:
+        self.data = data or _histology_data("atlas")
+        self.calls: list[object] = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def load(self, mouse_root):
+        self.calls.append(mouse_root)
+        self.started.set()
+        self.release.wait(timeout=2)
         return self.data
 
 
@@ -105,3 +120,71 @@ def test_load_if_needed_reports_service_exception_as_non_fatal() -> None:
 
     assert isinstance(result, HistologyDataUnavailable)
     assert result.message == "Failed to load atlas/histology: boom"
+
+
+def test_load_for_mouse_root_joins_inflight_warmup() -> None:
+    mouse_root = SimpleNamespace(root="/tmp/mouse")
+    service = BlockingHistologyService()
+    loader = HistologyRuntimeLoader(
+        SimpleNamespace(mouse_root=mouse_root),
+        service,
+        SimpleNamespace(brain_atlas=None, set=lambda _data: None),
+    )
+    result_holder: list[object] = []
+
+    assert loader.start_warmup_for_mouse_root(mouse_root)
+    assert service.started.wait(timeout=2)
+
+    waiter = threading.Thread(
+        target=lambda: result_holder.append(
+            loader.load_for_mouse_root(mouse_root, store=False)
+        )
+    )
+    waiter.start()
+
+    assert service.calls == [mouse_root]
+    service.release.set()
+    waiter.join(timeout=2)
+
+    assert len(result_holder) == 1
+    assert isinstance(result_holder[0], HistologyDataLoaded)
+    assert service.calls == [mouse_root]
+
+
+def test_load_for_mouse_root_reuses_completed_warmup() -> None:
+    mouse_root = SimpleNamespace(root="/tmp/mouse")
+    service = BlockingHistologyService()
+    loader = HistologyRuntimeLoader(
+        SimpleNamespace(mouse_root=mouse_root),
+        service,
+        SimpleNamespace(brain_atlas=None, set=lambda _data: None),
+    )
+
+    assert loader.start_warmup_for_mouse_root(mouse_root)
+    assert service.started.wait(timeout=2)
+    service.release.set()
+    first = loader.load_for_mouse_root(mouse_root, store=False)
+    second = loader.load_for_mouse_root(mouse_root, store=False)
+
+    assert isinstance(first, HistologyDataLoaded)
+    assert second is first
+    assert service.calls == [mouse_root]
+
+
+def test_clear_warmup_results_discards_completed_warmup() -> None:
+    mouse_root = SimpleNamespace(root="/tmp/mouse")
+    service = FakeHistologyService()
+    loader = HistologyRuntimeLoader(
+        SimpleNamespace(mouse_root=mouse_root),
+        service,
+        SimpleNamespace(brain_atlas=None, set=lambda _data: None),
+    )
+
+    assert loader.start_warmup_for_mouse_root(mouse_root)
+    warm_result = loader.load_for_mouse_root(mouse_root, store=False)
+    loader.clear_warmup_results()
+    fresh_result = loader.load_for_mouse_root(mouse_root, store=False)
+
+    assert isinstance(warm_result, HistologyDataLoaded)
+    assert isinstance(fresh_result, HistologyDataLoaded)
+    assert service.calls == [mouse_root, mouse_root]

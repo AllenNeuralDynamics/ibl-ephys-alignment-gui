@@ -2007,11 +2007,31 @@ def test_queries_expose_active_paths_and_output_state(tmp_path) -> None:
 def test_commands_clear_histology_context() -> None:
     workspace = AlignmentWorkspace()
     workspace.histology_context.runtime_data = object()
+    clear_calls: list[str] = []
+    workspace.metadata_commands.histology_runtime_loader = SimpleNamespace(
+        clear_warmup_results=lambda: clear_calls.append("clear")
+    )
 
     result = workspace.app.commands.metadata.clear_histology_context()
 
     assert isinstance(result, Ok)
     assert workspace.histology_context.runtime_data is None
+    assert clear_calls == ["clear"]
+
+
+def test_commands_start_histology_warmup_delegates_to_runtime_loader() -> None:
+    workspace = AlignmentWorkspace()
+    mouse_root = _mouse_root_with_probe()
+    workspace.data_context.mouse_root = mouse_root
+    calls: list[object] = []
+    workspace.load_data_commands.histology_runtime_loader = SimpleNamespace(
+        start_warmup_for_mouse_root=lambda root: calls.append(root) or True
+    )
+
+    result = workspace.app.commands.load.start_histology_warmup()
+
+    assert isinstance(result, Ok)
+    assert calls == [mouse_root]
 
 
 def test_commands_select_probe_metadata_loads_channel_info() -> None:

@@ -161,6 +161,7 @@ def build_desktop_workbench_coordinator_cluster(
             ports.busy,
             load_data_coordinator.cancel_active_preload,
             app.commands.load.evict_stream_cache,
+            app.commands.load.start_histology_warmup,
         ),
     )
     folder_dialog = DesktopFolderDialog(parent=None)
@@ -444,10 +445,12 @@ def _mouse_root_callbacks(
     busy_ports: DesktopBusyPorts,
     cancel_active_preload: Callable[[str], bool],
     evict_stream_cache: Callable[[], Any],
+    start_histology_warmup: Callable[[Any], Any],
 ) -> DesktopMouseRootCallbacks:
     """Build callbacks for mouse-root loading."""
     return DesktopMouseRootCallbacks(
         busy_context=busy_ports.busy_context,
         cancel_active_preload=cancel_active_preload,
         evict_stream_cache=evict_stream_cache,
+        start_histology_warmup=start_histology_warmup,
     )

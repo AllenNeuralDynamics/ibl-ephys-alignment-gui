@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import Future
 from dataclasses import dataclass
 
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
@@ -39,6 +41,15 @@ HistologyLoadResult = (
 )
 
 
+@dataclass(frozen=True)
+class _HistologyWarmup:
+    """In-flight or completed mouse-root histology warmup result."""
+
+    root: object
+    mouse_root: MouseRoot
+    future: Future[HistologyLoadResult]
+
+
 class HistologyRuntimeLoader:
     """Load and cache subject-level histology runtime data."""
 
@@ -51,6 +62,9 @@ class HistologyRuntimeLoader:
         self.data_context = data_context
         self.histology_data_service = histology_data_service
         self.histology_context = histology_context
+        self._warmup_lock = threading.RLock()
+        self._active_warmup: _HistologyWarmup | None = None
+        self._completed_warmup: _HistologyWarmup | None = None
 
     def load_if_needed(self) -> HistologyLoadResult:
         """Load histology runtime data unless it is already cached."""
@@ -73,13 +87,79 @@ class HistologyRuntimeLoader:
                 getattr(self.histology_context, "runtime_data", None)
             )
 
+        warmup = self._warmup_for_mouse_root(mouse_root)
+        if warmup is not None:
+            result = warmup.future.result()
+            if store:
+                self.activate_result(result, mouse_root=mouse_root)
+            return result
+
+        result = self._load_uncached_for_mouse_root(mouse_root)
+        if store:
+            self.activate_result(result, mouse_root=mouse_root)
+        return result
+
+    def start_warmup_for_mouse_root(self, mouse_root: MouseRoot) -> bool:
+        """Begin a background histology load for a mouse root, if useful."""
+        if self._context_loaded_for(mouse_root):
+            return False
+
+        root = _root_key(mouse_root)
+        with self._warmup_lock:
+            if _warmup_matches(self._active_warmup, root) or _warmup_matches(
+                self._completed_warmup,
+                root,
+            ):
+                return False
+
+            future: Future[HistologyLoadResult] = Future()
+            warmup = _HistologyWarmup(root=root, mouse_root=mouse_root, future=future)
+            self._active_warmup = warmup
+            self._completed_warmup = None
+
+        thread = threading.Thread(
+            target=self._run_warmup,
+            args=(warmup,),
+            name=f"histology-warmup-{root}",
+            daemon=True,
+        )
+        thread.start()
+        return True
+
+    def clear_warmup_results(self) -> None:
+        """Forget in-flight/completed warmups after a mouse-root change."""
+        with self._warmup_lock:
+            self._active_warmup = None
+            self._completed_warmup = None
+
+    def _run_warmup(self, warmup: _HistologyWarmup) -> None:
+        result = self._load_uncached_for_mouse_root(warmup.mouse_root)
+        warmup.future.set_result(result)
+        with self._warmup_lock:
+            if self._active_warmup is warmup:
+                self._active_warmup = None
+                self._completed_warmup = warmup
+
+    def _warmup_for_mouse_root(
+        self,
+        mouse_root: MouseRoot,
+    ) -> _HistologyWarmup | None:
+        root = _root_key(mouse_root)
+        with self._warmup_lock:
+            if _warmup_matches(self._active_warmup, root):
+                return self._active_warmup
+            if _warmup_matches(self._completed_warmup, root):
+                return self._completed_warmup
+        return None
+
+    def _load_uncached_for_mouse_root(
+        self,
+        mouse_root: MouseRoot,
+    ) -> HistologyLoadResult:
         try:
             histology_data = self.histology_data_service.load(mouse_root)
         except Exception as exc:
             return HistologyDataUnavailable(f"Failed to load atlas/histology: {exc}")
-
-        if store:
-            self._store(histology_data, mouse_root)
 
         return HistologyDataLoaded(histology_data)
 
@@ -108,3 +188,11 @@ class HistologyRuntimeLoader:
             self.histology_context.set(histology_data, mouse_root=mouse_root)
         except TypeError:
             self.histology_context.set(histology_data)
+
+
+def _root_key(mouse_root: MouseRoot) -> object:
+    return getattr(mouse_root, "root", mouse_root)
+
+
+def _warmup_matches(warmup: _HistologyWarmup | None, root: object) -> bool:
+    return warmup is not None and warmup.root == root

@@ -816,6 +816,14 @@ class LoadDataCommandHandler:
         """Run one Qt-free plot payload warmup job."""
         return PlotPayloadWarmupJob(self.plot_payload_cache_factory).run(request)
 
+    def start_histology_warmup(self, mouse_root: object | None = None) -> Ok | Failed:
+        """Start a mouse-root scoped histology warmup, if one is useful."""
+        target_mouse_root = mouse_root or self.data_context.mouse_root
+        if target_mouse_root is None:
+            return Failed("Cannot warm histology without a loaded mouse root.")
+        self.histology_runtime_loader.start_warmup_for_mouse_root(target_mouse_root)
+        return Ok()
+
     def _cache_loaded_probe_data(
         self,
         loaded: LoadedEphysSelection,

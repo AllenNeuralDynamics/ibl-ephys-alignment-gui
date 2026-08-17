@@ -22,6 +22,7 @@ class DesktopMouseRootCallbacks:
     busy_context: Callable[..., AbstractContextManager[Any]]
     cancel_active_preload: Callable[[str], bool]
     evict_stream_cache: Callable[[], Any]
+    start_histology_warmup: Callable[[Any], Any]
 
 
 @dataclass
@@ -61,6 +62,9 @@ class DesktopMouseRootCoordinator:
             self.selection_view.select_session_index(-1)
             self.selection_view.clear_probes()
             self.selection_view.clear_shanks()
+            warmup_result = self.callbacks.start_histology_warmup(loaded_root)
+            if isinstance(warmup_result, Failed):
+                logger.warning(warmup_result.message)
             n_probes = sum(
                 len(rec_probes) for rec_probes in loaded_root.probes.values()
             )

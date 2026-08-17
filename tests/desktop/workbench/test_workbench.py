@@ -1236,6 +1236,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
             captured_reference_lines.append(positions) or Ok()
         ),
         evict_stream_cache=lambda: Ok(),
+        start_histology_warmup=lambda _mouse_root: Ok(),
     )
     commands = SimpleNamespace(
         paths=command_impl,
