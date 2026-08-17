@@ -38,8 +38,24 @@ class LoadDataJobTarget:
             self.mouse_root_path,
         )
 
+    @property
+    def product_identity(self) -> tuple[str, str, StreamKey, Path]:
+        """Equality key for the expensive stream product, independent of shank."""
+        return (
+            self.recording_id,
+            self.probe_name,
+            self.stream_key,
+            self.mouse_root_path,
+        )
+
     def same_identity(self, other: object) -> bool:
         """Return whether another target addresses the same stream/shank."""
         if not isinstance(other, LoadDataJobTarget):
             return False
         return self.identity == other.identity
+
+    def same_product_identity(self, other: object) -> bool:
+        """Return whether another target addresses the same loaded stream product."""
+        if not isinstance(other, LoadDataJobTarget):
+            return False
+        return self.product_identity == other.product_identity

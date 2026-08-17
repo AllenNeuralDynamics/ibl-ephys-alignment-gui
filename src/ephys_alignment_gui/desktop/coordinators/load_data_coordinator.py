@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ephys_alignment_gui.application.results import (
@@ -64,6 +64,14 @@ class DesktopLoadDataCallbacks:
     busy_context: Callable[..., AbstractContextManager[Any]]
 
 
+@dataclass(frozen=True)
+class _PromotedPreload:
+    preload_execution: FreshLoadExecution
+    foreground_execution: FreshLoadExecution
+    session_name: str
+    probe_name: str
+
+
 @dataclass
 class DesktopLoadDataCoordinator:
     """Coordinate desktop behavior for cached and fresh data loads."""
@@ -84,6 +92,16 @@ class DesktopLoadDataCoordinator:
     )
     _active_load_id: int | None = field(default=None, init=False, repr=False)
     _active_preload_id: int | None = field(default=None, init=False, repr=False)
+    _active_preload_execution: FreshLoadExecution | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _promoted_preload: _PromotedPreload | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _active_switch_timer: TimingSession | None = field(
         default=None,
         init=False,
@@ -158,7 +176,7 @@ class DesktopLoadDataCoordinator:
     ) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
         callbacks = self.callbacks
-        if self.load_runner.is_running:
+        if self._foreground_load_is_running():
             logger.info("Load request ignored because a foreground load is active")
             self.cancel_active_load("superseded by a newer load request")
             return False
@@ -201,6 +219,15 @@ class DesktopLoadDataCoordinator:
                 self.schedule_next_probe_preload(session_name, probe_name)
                 return True
             assert isinstance(begin_result, LoadDataFreshPrepared)
+            promoted = self._promote_matching_active_preload(
+                begin_result,
+                session_name=session_name,
+                probe_name=probe_name,
+                timer=timer,
+            )
+            if promoted is not None:
+                return True
+
             self.cancel_active_preload("foreground load requested")
             with timer.step("start_fresh_load"):
                 execution = self.app.commands.load.start_fresh_load_data(begin_result)
@@ -245,11 +272,18 @@ class DesktopLoadDataCoordinator:
 
     def cancel_active_load(self, reason: str) -> bool:
         """Request cancellation for any active foreground load."""
-        if self._active_load_id is None and not self.load_runner.is_running:
+        if (
+            self._active_load_id is None
+            and not self.load_runner.is_running
+            and not self._promoted_preload_is_running()
+        ):
             return False
 
         self.app.commands.load.cancel_active_fresh_load(reason)
-        if self.load_runner.is_running:
+        if self._promoted_preload_is_running():
+            self.app.commands.load.cancel_active_preload(reason)
+            self.preload_runner.cancel(reason)
+        elif self.load_runner.is_running:
             self.load_runner.cancel(reason)
         return True
 
@@ -347,6 +381,7 @@ class DesktopLoadDataCoordinator:
                 return False
 
             self._active_preload_id = execution.load_id
+            self._active_preload_execution = execution
             self._active_preload_timer = timer
             logger.info("Preloading next probe %s/%s", recording_id, probe_name)
             try:
@@ -363,6 +398,7 @@ class DesktopLoadDataCoordinator:
                     "failed to start background preload"
                 )
                 self._active_preload_id = None
+                self._active_preload_execution = None
                 self._finish_preload_timer(timer, "failed", message=str(exc))
                 logger.exception("Failed to start background preload")
                 return False
@@ -381,6 +417,9 @@ class DesktopLoadDataCoordinator:
             reason=reason,
         )
         self._active_preload_id = None
+        self._active_preload_execution = None
+        if self._promoted_preload is not None:
+            self._promoted_preload = None
         return True
 
     def shutdown_active_preload(
@@ -403,6 +442,8 @@ class DesktopLoadDataCoordinator:
                 reason=reason,
             )
             self._active_preload_id = None
+            self._active_preload_execution = None
+            self._promoted_preload = None
         return stopped
 
     def shutdown_plot_payload_warmup(
@@ -456,6 +497,18 @@ class DesktopLoadDataCoordinator:
                         job_result,
                     )
                 )
+        self._activate_published_fresh_load_result(
+            execution,
+            published,
+        )
+
+    def _activate_published_fresh_load_result(
+        self,
+        execution: FreshLoadExecution,
+        published: Any,
+    ) -> None:
+        """Activate a published fresh-load result or close the load context."""
+        timer = self._active_switch_timer
         if isinstance(published, Failed):
             logger.error(published.message)
             self._close_load_context(RuntimeError(published.message))
@@ -467,6 +520,11 @@ class DesktopLoadDataCoordinator:
                 RuntimeError(f"Load cancelled: {published.reason}")
             )
             self._finish_switch_timer("cancelled", reason=published.reason)
+            return
+        if isinstance(published, LoadDataStaleResultIgnored):
+            logger.info("Load result ignored: %s", published.reason)
+            self._close_load_context(RuntimeError(published.reason))
+            self._finish_switch_timer("stale", reason=published.reason)
             return
         if not isinstance(published, LoadDataJobCompleted):
             self._close_load_context(RuntimeError("Fresh load returned no result"))
@@ -520,6 +578,16 @@ class DesktopLoadDataCoordinator:
         """Log preload progress without touching active desktop rendering."""
         if execution.load_id != self._active_preload_id:
             return
+        promoted = self._promoted_preload
+        if (
+            promoted is not None
+            and promoted.preload_execution.load_id == execution.load_id
+        ):
+            self._on_load_worker_progress(
+                promoted.foreground_execution,
+                replace(event, load_id=promoted.foreground_execution.load_id),
+            )
+            return
         if self._active_preload_timer is not None:
             self._active_preload_timer.mark(
                 "preload_worker_progress",
@@ -538,6 +606,18 @@ class DesktopLoadDataCoordinator:
         """Cache successful preload results without activating the stream."""
         if execution.load_id != self._active_preload_id:
             return
+        promoted = self._promoted_preload
+        if (
+            promoted is not None
+            and promoted.preload_execution.load_id == execution.load_id
+        ):
+            self._on_promoted_preload_worker_finished(
+                promoted,
+                execution,
+                job_result,
+            )
+            return
+
         timer = self._active_preload_timer
         context = timer.activate() if timer is not None else nullcontext()
         try:
@@ -575,7 +655,44 @@ class DesktopLoadDataCoordinator:
         finally:
             if execution.load_id == self._active_preload_id:
                 self._active_preload_id = None
+                self._active_preload_execution = None
                 self._active_preload_timer = None
+
+    def _on_promoted_preload_worker_finished(
+        self,
+        promoted: _PromotedPreload,
+        execution: FreshLoadExecution,
+        job_result: FreshLoadJobResult,
+    ) -> None:
+        """Activate a preload result that was promoted to foreground ownership."""
+        timer = self._active_switch_timer
+        context = timer.activate() if timer is not None else nullcontext()
+        try:
+            with context:
+                step = (
+                    timer.step("publish_promoted_preload_result")
+                    if timer is not None
+                    else nullcontext()
+                )
+                with step:
+                    published = (
+                        self.app.commands.load.publish_promoted_preload_job_result(
+                            execution,
+                            promoted.foreground_execution,
+                            job_result,
+                        )
+                    )
+            self._activate_published_fresh_load_result(
+                promoted.foreground_execution,
+                published,
+            )
+        finally:
+            if execution.load_id == self._active_preload_id:
+                self._active_preload_id = None
+                self._active_preload_execution = None
+                self._active_preload_timer = None
+            if self._promoted_preload is promoted:
+                self._promoted_preload = None
 
     def start_plot_payload_warmup(self, cached: FreshEphysDataLoaded) -> bool:
         """Warm an inactive preloaded stream's plot payload cache."""
@@ -779,6 +896,87 @@ class DesktopLoadDataCoordinator:
             timer.finish(status, **fields)
             self._active_plot_warmup_timer = None
 
+    def _promote_matching_active_preload(
+        self,
+        prepared: LoadDataFreshPrepared,
+        *,
+        session_name: str,
+        probe_name: str,
+        timer: TimingSession,
+    ) -> _PromotedPreload | None:
+        preload_execution = self._active_preload_execution
+        if preload_execution is None or not self.preload_runner.is_running:
+            return None
+        if not _same_load_product(preload_execution.prepared, prepared):
+            return None
+
+        with timer.step("promote_active_preload"):
+            foreground_execution = self.app.commands.load.start_fresh_load_data(
+                prepared,
+            )
+            promoted = _PromotedPreload(
+                preload_execution=preload_execution,
+                foreground_execution=foreground_execution,
+                session_name=session_name,
+                probe_name=probe_name,
+            )
+            self._promoted_preload = promoted
+            self._active_load_id = foreground_execution.load_id
+            self._finish_preload_timer(
+                self._active_preload_timer,
+                "promoted",
+                foreground_load_id=foreground_execution.load_id,
+            )
+
+        with timer.step("open_load_context"):
+            self._open_load_context(
+                "Loading heavy data...",
+                "Data loaded successfully",
+                disable_widgets=self.selection_view.selection_widgets(),
+            )
+        logger.info(
+            "Promoting active preload for %s/%s to foreground load",
+            session_name,
+            probe_name,
+        )
+        with timer.step("prepare_for_fresh_stream_load"):
+            self.callbacks.prepare_for_fresh_stream_load()
+        return promoted
+
+    def _foreground_load_is_running(self) -> bool:
+        return self.load_runner.is_running or self._promoted_preload_is_running()
+
+    def _promoted_preload_is_running(self) -> bool:
+        return self._promoted_preload is not None and self.preload_runner.is_running
+
 
 def _timed_step(timer: TimingSession | None, name: str):
     return timer.step(name) if timer is not None else nullcontext()
+
+
+def _same_load_product(
+    left: LoadDataFreshPrepared,
+    right: LoadDataFreshPrepared,
+) -> bool:
+    left_target = left.target
+    right_target = right.target
+    if hasattr(left_target, "same_product_identity"):
+        return bool(left_target.same_product_identity(right_target))
+
+    return (
+        getattr(left_target, "recording_id", None)
+        == getattr(right_target, "recording_id", None)
+        and getattr(left_target, "probe_name", None)
+        == getattr(right_target, "probe_name", None)
+        and left.stream_key == right.stream_key
+        and _mouse_root_path(left_target) == _mouse_root_path(right_target)
+    )
+
+
+def _mouse_root_path(target: Any) -> Any:
+    if hasattr(target, "mouse_root_path"):
+        return target.mouse_root_path
+    mouse_root = getattr(target, "mouse_root", None)
+    if mouse_root is None:
+        return None
+    return getattr(mouse_root, "root", mouse_root)

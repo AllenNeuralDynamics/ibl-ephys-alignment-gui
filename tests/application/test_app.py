@@ -1374,6 +1374,79 @@ def test_commands_activate_started_load_ignores_stale_result() -> None:
     assert workspace.runtime.active_stream_runtime is None
 
 
+def test_commands_publish_promoted_preload_activates_foreground_shank() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=0)
+    preload_prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=0,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=0),
+    )
+    foreground_prepared = LoadDataFreshPrepared(
+        stream_key=("rec", "stream"),
+        shank_idx=1,
+        preserve_plot_selection=True,
+        target=_load_target(shank_idx=1),
+    )
+    workspace.data_context.mouse_root = foreground_prepared.target.mouse_root
+    workspace.data_context.probe_info = foreground_prepared.target.probe_info
+    job_result = LoadDataJobCompleted(
+        target=preload_prepared.target,
+        ephys=SimpleNamespace(stream=_ephys_stream()),
+        histology=HistologyDataLoaded(),
+    )
+    completed_events: list[FreshLoadCompleted] = []
+    stream_events: list[StreamActivated] = []
+    workspace.app.events.subscribe(FreshLoadCompleted, completed_events.append)
+    workspace.app.events.subscribe(StreamActivated, stream_events.append)
+
+    preload_execution = workspace.app.commands.load.start_preload_data(
+        preload_prepared
+    )
+    foreground_execution = workspace.app.commands.load.start_fresh_load_data(
+        foreground_prepared
+    )
+
+    published = workspace.app.commands.load.publish_promoted_preload_job_result(
+        preload_execution,
+        foreground_execution,
+        job_result,
+    )
+    completed = workspace.app.commands.load.activate_started_fresh_load_data(
+        foreground_execution,
+        published,
+    )
+
+    assert published is job_result
+    assert isinstance(completed, LoadDataFreshCompleted)
+    assert completed.target is foreground_prepared.target
+    assert completed.ephys.shank_idx == 1
+    assert workspace.document.data_loaded
+    assert workspace.document.selected_alignment_key == AlignmentKey(
+        "rec",
+        "stream",
+        1,
+    )
+    assert workspace.runtime.active_stream_runtime is completed.ephys.stream_runtime
+    assert completed_events == [
+        FreshLoadCompleted(
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            load_id=1,
+        )
+    ]
+    assert stream_events == [
+        StreamActivated(
+            source="fresh",
+            stream_key=("rec", "stream"),
+            shank_idx=1,
+            active_key=AlignmentKey("rec", "stream", 1),
+            preserve_plot_selection=True,
+            load_id=1,
+        )
+    ]
+
+
 def test_commands_cache_completed_fresh_load_data_without_activation() -> None:
     workspace = _workspace_with_probe_state(shank_idx=0)
     target = _load_target(shank_idx=1)

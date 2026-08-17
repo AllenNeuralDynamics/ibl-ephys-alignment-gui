@@ -130,6 +130,9 @@ class FakeCommands:
         self.preload_invocation_calls: list[LoadDataFreshPrepared] = []
         self.preload_cache_calls: list[tuple[LoadDataFreshPrepared, Any]] = []
         self.preload_cancel_calls: list[str] = []
+        self.promoted_publish_calls: list[
+            tuple[LoadDataFreshPrepared, LoadDataFreshPrepared, Any]
+        ] = []
         self.plot_warmup_run_calls: list[Any] = []
         self.plot_warmup_attach_calls: list[PlotPayloadCacheWarmed] = []
         self.probe_cache_calls: list[dict[str, Any]] = []
@@ -250,6 +253,24 @@ class FakeCommands:
             return job_result
         self._emit_fresh_load_completed(prepared, load_id=execution.load_id)
         return job_result
+
+    def publish_promoted_preload_job_result(
+        self,
+        preload_execution: FreshLoadExecution,
+        foreground_execution: FreshLoadExecution,
+        job_result: Any,
+    ):
+        self.promoted_publish_calls.append(
+            (
+                preload_execution.prepared,
+                foreground_execution.prepared,
+                job_result,
+            )
+        )
+        return self.publish_started_fresh_load_job_result(
+            foreground_execution,
+            job_result,
+        )
 
     def activate_completed_fresh_load_data(
         self,
@@ -683,15 +704,18 @@ def _fresh_prepared(
     *,
     shank_idx: int,
     preserve_plot_selection: bool = True,
+    recording_id: str = "rec",
+    probe_name: str = "probeA",
+    stream_key: tuple[str, str] = ("rec", "stream"),
 ) -> LoadDataFreshPrepared:
     return LoadDataFreshPrepared(
-        stream_key=("rec", "stream"),
+        stream_key=stream_key,
         shank_idx=shank_idx,
         preserve_plot_selection=preserve_plot_selection,
         target=SimpleNamespace(
-            recording_id="rec",
-            probe_name="probeA",
-            stream_key=("rec", "stream"),
+            recording_id=recording_id,
+            probe_name=probe_name,
+            stream_key=stream_key,
             shank_idx=shank_idx,
         ),
     )
@@ -754,10 +778,11 @@ def _coordinator(
     preload_runner: Any | None = None,
     plot_warmup_runner: Any | None = None,
     next_probe_name: str | None = None,
+    shank_idx: int = 0,
 ) -> tuple[DesktopLoadDataCoordinator, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
-    queries = FakeQueries(next_probe_name=next_probe_name)
+    queries = FakeQueries(shank_idx=shank_idx, next_probe_name=next_probe_name)
     commands = commands or FakeCommands(begin_result=begin_result)
     commands.events = events
     app = SimpleNamespace(events=events, queries=queries, commands=commands)
@@ -971,6 +996,77 @@ def test_load_heavy_data_preloads_after_qt_finished_before_thread_stops() -> Non
     assert commands.preload_invocation_calls
     assert commands.preload_cache_calls == []
     assert calls.count(("render-shank", 0, True)) == 1
+
+
+def test_load_heavy_data_promotes_matching_active_preload() -> None:
+    foreground_prepared = _fresh_prepared(shank_idx=1, preserve_plot_selection=True)
+    preload_runner = ManualFreshLoadRunner()
+    load_runner = ManualFreshLoadRunner()
+    commands = FakeCommands(
+        begin_result=foreground_prepared,
+        complete_result=_fresh_completed(shank_idx=1),
+    )
+    coordinator, commands, _queries, calls = _coordinator(
+        commands=commands,
+        load_runner=load_runner,
+        preload_runner=preload_runner,
+        shank_idx=1,
+    )
+
+    assert coordinator.start_probe_preload(recording_id="rec", probe_name="probeA")
+
+    preload_prepared = commands.preload_start_calls[0]
+    assert preload_runner.is_running
+
+    assert coordinator.load_heavy_data()
+
+    assert load_runner.start_args is None
+    assert commands.preload_cancel_calls == []
+    assert preload_runner.cancel_calls == []
+    assert commands.start_calls == [foreground_prepared]
+    assert commands.promoted_publish_calls == []
+    assert ("busy-enter",) in calls
+    assert ("prepare-fresh",) in calls
+    assert ("render-shank", 1, True) not in calls
+
+    preload_runner.finish()
+
+    assert commands.run_calls == [preload_prepared]
+    assert commands.preload_cache_calls == []
+    assert commands.promoted_publish_calls == [
+        (preload_prepared, foreground_prepared, commands.job_result)
+    ]
+    assert commands.activate_calls == [(foreground_prepared, commands.job_result)]
+    assert ("render-shank", 1, True) in calls
+    assert ("busy-exit", None) in calls
+
+
+def test_load_heavy_data_cancels_nonmatching_active_preload_before_fresh_load() -> (
+    None
+):
+    foreground_prepared = _fresh_prepared(
+        shank_idx=0,
+        probe_name="probeB",
+        stream_key=("rec", "streamB"),
+    )
+    preload_runner = ManualFreshLoadRunner()
+    load_runner = ManualFreshLoadRunner()
+    commands = FakeCommands(begin_result=foreground_prepared)
+    coordinator, commands, _queries, _calls = _coordinator(
+        commands=commands,
+        load_runner=load_runner,
+        preload_runner=preload_runner,
+    )
+
+    assert coordinator.start_probe_preload(recording_id="rec", probe_name="probeA")
+
+    assert coordinator.load_heavy_data()
+
+    assert commands.preload_cancel_calls == ["foreground load requested"]
+    assert preload_runner.cancel_calls == ["foreground load requested"]
+    assert load_runner.is_running
+    assert commands.start_calls == [foreground_prepared]
+    assert commands.promoted_publish_calls == []
 
 
 def test_preload_completion_warms_plot_payload_cache_before_attachment() -> None:

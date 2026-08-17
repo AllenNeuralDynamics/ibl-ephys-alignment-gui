@@ -403,6 +403,64 @@ class LoadDataCommandHandler:
             )
         return job_result
 
+    def publish_promoted_preload_job_result(
+        self,
+        preload_execution: FreshLoadExecution,
+        foreground_execution: FreshLoadExecution,
+        job_result: LoadDataJobCompleted | LoadDataJobCancelled | Failed,
+    ) -> (
+        LoadDataJobCompleted
+        | LoadDataJobCancelled
+        | LoadDataStaleResultIgnored
+        | Failed
+    ):
+        """Publish a completed preload as the foreground load result."""
+        try:
+            if isinstance(job_result, Failed | LoadDataJobCancelled):
+                return self.publish_started_fresh_load_job_result(
+                    foreground_execution,
+                    job_result,
+                )
+
+            if not self.preload_lifecycle.is_active(preload_execution):
+                cancelled = LoadDataJobCancelled(
+                    target=foreground_execution.prepared.target,
+                    reason="Promoted preload request is no longer active.",
+                )
+                return self.publish_started_fresh_load_job_result(
+                    foreground_execution,
+                    cancelled,
+                )
+
+            stale = self._stale_promoted_preload_result_reason(
+                preload_execution,
+                foreground_execution,
+                job_result,
+            )
+            if stale is not None:
+                self.load_lifecycle.finish(foreground_execution)
+                self.events.emit(
+                    LoadDataFailed(
+                        stream_key=foreground_execution.prepared.stream_key,
+                        shank_idx=foreground_execution.prepared.shank_idx,
+                        message=stale,
+                        load_id=foreground_execution.load_id,
+                    )
+                )
+                return LoadDataStaleResultIgnored(
+                    load_id=foreground_execution.load_id,
+                    stream_key=foreground_execution.prepared.stream_key,
+                    shank_idx=foreground_execution.prepared.shank_idx,
+                    reason=stale,
+                )
+
+            return self.publish_started_fresh_load_job_result(
+                foreground_execution,
+                job_result,
+            )
+        finally:
+            self.preload_lifecycle.finish(preload_execution)
+
     def activate_started_fresh_load_data(
         self,
         execution: FreshLoadExecution,
@@ -851,7 +909,7 @@ class LoadDataCommandHandler:
         prepared: LoadDataFreshPrepared,
         job_result: LoadDataJobCompleted,
     ) -> str | None:
-        if not prepared.target.same_identity(job_result.target):
+        if not prepared.target.same_product_identity(job_result.target):
             return "Loaded data target does not match the prepared load target."
 
         current_stream_key = self._stream_key_for_selection(
@@ -878,6 +936,20 @@ class LoadDataCommandHandler:
         ):
             return "Loaded data target is stale; selected mouse root changed."
 
+        return None
+
+    def _stale_promoted_preload_result_reason(
+        self,
+        preload_execution: FreshLoadExecution,
+        foreground_execution: FreshLoadExecution,
+        job_result: LoadDataJobCompleted,
+    ) -> str | None:
+        preload_target = preload_execution.prepared.target
+        foreground_target = foreground_execution.prepared.target
+        if not preload_target.same_product_identity(foreground_target):
+            return "Promoted preload target does not match the foreground load target."
+        if not foreground_target.same_product_identity(job_result.target):
+            return "Promoted preload result does not match the foreground load target."
         return None
 
     def _stale_preload_result_reason(
