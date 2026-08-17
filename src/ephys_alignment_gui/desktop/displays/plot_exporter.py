@@ -162,7 +162,7 @@ class DesktopPlotExporter:
 
     def _export_histology_image(self, output_dir: Path, sess_info: str) -> None:
         histology = self.histology_handles.histology_display
-        self.callbacks.set_axis(histology.extra_y_axis, "left")
+        self.callbacks.set_axis(histology.depth_ruler, "left")
         self.callbacks.set_axis(histology.aligned_plot, "bottom", label="aligned")
         self.callbacks.set_font(histology.aligned_plot, "bottom", ptsize=12)
         self.callbacks.set_axis(histology.reference_plot, "bottom", label="original")
@@ -171,7 +171,7 @@ class DesktopPlotExporter:
             histology.export_scene(),
             output_dir / f"{sess_info}hist.png",
         )
-        self.callbacks.set_axis(histology.extra_y_axis, "left", pen=None)
+        self.callbacks.set_axis(histology.depth_ruler, "left", pen="k")
         self.callbacks.set_font(histology.aligned_plot, "bottom", ptsize=8)
         self.callbacks.set_axis(
             histology.aligned_plot,

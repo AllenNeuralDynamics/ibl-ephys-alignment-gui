@@ -31,6 +31,8 @@ class FakeLine:
 
 
 def _depth_view(
+    *,
+    range_anchor_name: str | None = None,
 ) -> tuple[DesktopDepthPlotView, dict[str, FakePlot], FakeLine, FakeLine]:
     plots = {
         "image": FakePlot((10.0, 20.0)),
@@ -45,6 +47,7 @@ def _depth_view(
             probe_tip_lines=[tip_line],
             probe_top_lines=[top_line],
             padding=lambda: 0.05,
+            range_anchor_name=range_anchor_name,
         ),
         plots,
         tip_line,
@@ -89,6 +92,41 @@ def test_capture_and_restore_y_ranges() -> None:
     view.restore_y_ranges({"image": (100.0, 200.0), "missing": (1.0, 2.0)})
 
     assert ranges == {"image": (10.0, 20.0), "histology": (30.0, 40.0)}
+    assert plots["image"].set_ranges == [
+        {"min": 100.0, "max": 200.0, "padding": 0}
+    ]
+    assert plots["histology"].set_ranges == []
+
+
+def test_default_feature_y_range_uses_anchor_when_plots_are_linked() -> None:
+    depth_settings = SimpleNamespace(
+        probe_tip_um=0.0,
+        probe_top_um=1000.0,
+        probe_extra_um=100.0,
+    )
+    view, plots, _tip_line, _top_line = _depth_view(range_anchor_name="image")
+
+    view.set_default_feature_y_range(
+        depth_view=depth_settings,
+        in_brain_depths_um=np.array([100.0, 300.0]),
+    )
+
+    assert plots["image"].set_ranges == [
+        {"min": -100.0, "max": 800.0, "padding": 0.05}
+    ]
+    assert plots["histology"].set_ranges == []
+
+
+def test_restore_y_ranges_uses_anchor_when_plots_are_linked() -> None:
+    view, plots, _tip_line, _top_line = _depth_view(range_anchor_name="image")
+
+    view.restore_y_ranges(
+        {
+            "image": (100.0, 200.0),
+            "histology": (300.0, 400.0),
+        }
+    )
+
     assert plots["image"].set_ranges == [
         {"min": 100.0, "max": 200.0, "padding": 0}
     ]

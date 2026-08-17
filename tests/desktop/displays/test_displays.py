@@ -25,6 +25,8 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     probe_plot = FakePlot("probe")
     aligned_plot = FakePlot("aligned")
     reference_plot = FakePlot("reference")
+    scale_plot = FakePlot("scale")
+    depth_ruler = FakePlot("depth-ruler")
     perpendicular_plot = FakePlot("perpendicular")
     ephys = SimpleNamespace(
         panel=SimpleNamespace(
@@ -39,6 +41,8 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     histology = SimpleNamespace(
         aligned_plot=aligned_plot,
         reference_plot=reference_plot,
+        scale_plot=scale_plot,
+        depth_ruler=depth_ruler,
         fit_plot="fit-plot",
     )
     slice_display = SimpleNamespace(
@@ -107,10 +111,14 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     assert result.histology is histology
     assert result.reference_lines is reference_lines
     assert result.slice is slice_display
-    assert image_plot.y_links == [line_plot, aligned_plot]
-    assert line_plot.y_links == [aligned_plot]
+    assert image_plot.y_links == []
+    assert line_plot.y_links == [image_plot]
     assert probe_plot.y_links == [image_plot]
-    assert perpendicular_plot.y_links == [aligned_plot]
+    assert aligned_plot.y_links == [image_plot]
+    assert reference_plot.y_links == [image_plot]
+    assert scale_plot.y_links == [image_plot]
+    assert depth_ruler.y_links == [image_plot]
+    assert perpendicular_plot.y_links == [image_plot]
     assert calls[:3] == [
         ("ephys", None, "ephys-ports", None),
         ("slice", None, "slice-ports", None),

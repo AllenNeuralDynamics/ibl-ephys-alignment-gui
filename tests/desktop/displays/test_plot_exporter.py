@@ -120,7 +120,7 @@ class FakeSlicePlot:
 
 
 class FakeHistologyDisplay:
-    extra_y_axis = "extra-y"
+    depth_ruler = "depth-ruler"
     aligned_plot = "aligned-histology"
     reference_plot = "reference-histology"
 
@@ -232,8 +232,8 @@ def test_desktop_plot_exporter_restores_zoomed_slice_geometry() -> None:
     ]
     assert slice_plot.resizes == [(50, 80), (120, 80), (50, 80), (120, 80)]
     assert slice_plot.ranges == [{"rect": "slice-rect"}, {"rect": "slice-rect"}]
-    assert ("set_axis", ("extra-y", "left"), {}) in calls
-    assert ("set_axis", ("extra-y", "left"), {"pen": None}) in calls
+    assert ("set_axis", ("depth-ruler", "left"), {}) in calls
+    assert ("set_axis", ("depth-ruler", "left"), {"pen": "k"}) in calls
     assert (
         "set_axis",
         ("aligned-histology", "bottom"),

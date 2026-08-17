@@ -92,6 +92,7 @@ class DesktopViews:
             probe_tip_lines=displays.ephys.panel.probe_tip_lines,
             probe_top_lines=displays.ephys.panel.probe_top_lines,
             padding=handles.padding,
+            range_anchor_name="fig_img",
         )
         shank_screen = DesktopShankScreenView(
             depth_plots=depth,

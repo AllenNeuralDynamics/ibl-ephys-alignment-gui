@@ -32,7 +32,7 @@ def _panel() -> HistologyPanelView:
             scale_colorbar="scale-colorbar",
             area="area",
             layout=FakeLayout(),
-            extra_y_axis="extra-y-axis",
+            depth_ruler="depth-ruler",
             scale_axis="scale-axis",
         ),
         axes=HistologyPanelAxes(
@@ -81,7 +81,7 @@ def test_histology_display_composes_panel_handles() -> None:
     assert display.panel is panel
     assert display.aligned_plot == "aligned"
     assert display.reference_plot == "reference"
-    assert display.extra_y_axis == "extra-y-axis"
+    assert display.depth_ruler == "depth-ruler"
     assert display.export_scene() == "histology-scene"
     assert captured_kwargs["perpendicular_plot"] == "perpendicular"
     assert captured_kwargs["depth_view"].plot_y_range_um == (0.0, 1.0)

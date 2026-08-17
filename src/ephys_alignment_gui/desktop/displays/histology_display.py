@@ -70,9 +70,9 @@ class DesktopHistologyDisplay:
         return self.panel.plots.layout
 
     @property
-    def extra_y_axis(self) -> Any:
-        """Return the extra histology y-axis used during plot export."""
-        return self.panel.plots.extra_y_axis
+    def depth_ruler(self) -> Any:
+        """Return the shared histology depth-ruler plot handle."""
+        return self.panel.plots.depth_ruler
 
     @property
     def scale_plot(self) -> Any:

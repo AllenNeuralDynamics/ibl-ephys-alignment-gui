@@ -84,8 +84,22 @@ def _link_depth_plots(
     slice_display: DesktopSliceDisplay,
 ) -> None:
     """Link pyqtgraph y-axes across the desktop depth plots."""
-    ephys.panel.plots.image.setYLink(ephys.panel.plots.line)
-    ephys.panel.plots.image.setYLink(histology.aligned_plot)
-    ephys.panel.plots.line.setYLink(histology.aligned_plot)
-    ephys.panel.plots.probe.setYLink(ephys.panel.plots.image)
-    slice_display.set_perpendicular_depth_link(histology.aligned_plot)
+    depth_anchor = ephys.panel.plots.image
+    for plot in (
+        ephys.panel.plots.line,
+        ephys.panel.plots.probe,
+        histology.aligned_plot,
+        histology.reference_plot,
+        histology.scale_plot,
+        histology.depth_ruler,
+    ):
+        _set_depth_link(plot, depth_anchor)
+    slice_display.set_perpendicular_depth_link(depth_anchor)
+
+
+def _set_depth_link(plot: object | None, depth_anchor: object) -> None:
+    if plot is None or plot is depth_anchor:
+        return
+    set_y_link = getattr(plot, "setYLink", None)
+    if callable(set_y_link):
+        set_y_link(depth_anchor)

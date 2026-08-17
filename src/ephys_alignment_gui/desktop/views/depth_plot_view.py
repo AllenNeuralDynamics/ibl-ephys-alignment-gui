@@ -18,6 +18,7 @@ class DesktopDepthPlotView:
     probe_tip_lines: Sequence[Any]
     probe_top_lines: Sequence[Any]
     padding: Callable[[], float]
+    range_anchor_name: str | None = None
 
     def set_probe_limits(self, min_um: float, max_um: float) -> None:
         """Apply probe tip/top guide lines to desktop plots."""
@@ -51,7 +52,7 @@ class DesktopDepthPlotView:
             depth_view=depth_view,
             in_brain_depths_um=in_brain_depths_um,
         )
-        for plot in self.default_range_plots:
+        for plot in self._range_update_plots():
             plot.setYRange(min=y_min, max=y_max, padding=self.padding())
 
     def capture_y_ranges(self) -> dict[str, tuple[float, float]]:
@@ -67,8 +68,26 @@ class DesktopDepthPlotView:
 
     def restore_y_ranges(self, ranges: Mapping[str, tuple[float, float]]) -> None:
         """Restore y-ranges captured before an alignment redraw."""
+        anchor_plot = self._anchor_plot()
+        if anchor_plot is not None and self.range_anchor_name in ranges:
+            y_min, y_max = ranges[self.range_anchor_name]
+            if y_min != y_max:
+                anchor_plot.setYRange(min=y_min, max=y_max, padding=0)
+            return
+
         for name, (y_min, y_max) in ranges.items():
             plot = self.range_plots.get(name)
             if plot is None or y_min == y_max:
                 continue
             plot.setYRange(min=y_min, max=y_max, padding=0)
+
+    def _range_update_plots(self) -> tuple[Any, ...]:
+        anchor_plot = self._anchor_plot()
+        if anchor_plot is not None:
+            return (anchor_plot,)
+        return tuple(self.default_range_plots)
+
+    def _anchor_plot(self) -> Any | None:
+        if self.range_anchor_name is None:
+            return None
+        return self.range_plots.get(self.range_anchor_name)

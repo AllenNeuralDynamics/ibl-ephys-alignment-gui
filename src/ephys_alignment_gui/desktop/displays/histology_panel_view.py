@@ -18,7 +18,7 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
-from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar, replace_axis
+from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class HistologyPanelPlots:
     scale_colorbar: Any | None = None
     area: Any | None = None
     layout: Any | None = None
-    extra_y_axis: Any | None = None
+    depth_ruler: Any | None = None
     scale_axis: Any | None = None
 
 
@@ -115,9 +115,7 @@ class HistologyPanelView:
         aligned.setMouseEnabled(x=False)
         _set_depth_range(aligned, depth_view, padding)
         set_axis(aligned, "bottom", pen="w")
-        replace_axis(aligned)
-        aligned_axis = set_axis(aligned, "left", pen=None)
-        aligned_axis.setWidth(0)
+        aligned_axis = set_axis(aligned, "left", show=False)
 
         scale = pg.PlotItem()
         scale.setMaximumWidth(50)
@@ -140,9 +138,7 @@ class HistologyPanelView:
         reference.setYLink(aligned)
         set_axis(reference, "bottom", pen="w")
         set_axis(reference, "left", show=False)
-        replace_axis(reference, orientation="right", pos=(2, 2))
-        reference_axis = set_axis(reference, "right", pen=None)
-        reference_axis.setWidth(0)
+        reference_axis = set_axis(reference, "right", show=False)
 
         perpendicular_plot.setYLink(aligned)
 
@@ -151,17 +147,18 @@ class HistologyPanelView:
         area.scene().sigMouseClicked.connect(on_mouse_double_clicked)
         area.scene().sigMouseHover.connect(on_mouse_hover)
 
-        extra_y_axis = pg.PlotItem()
-        extra_y_axis.setMouseEnabled(x=False, y=False)
-        extra_y_axis.setMaximumWidth(2)
-        _set_depth_range(extra_y_axis, depth_view, padding)
-        set_axis(extra_y_axis, "bottom", pen="w")
-        extra_axis = set_axis(extra_y_axis, "left", pen=None)
-        extra_axis.setWidth(10)
+        depth_ruler = pg.PlotItem()
+        depth_ruler.setMouseEnabled(x=False, y=False)
+        depth_ruler.setMaximumWidth(48)
+        _set_depth_range(depth_ruler, depth_view, padding)
+        set_axis(depth_ruler, "bottom", show=False)
+        set_axis(depth_ruler, "right", show=False)
+        depth_axis = set_axis(depth_ruler, "left", pen="k")
+        depth_axis.setWidth(44)
 
         layout = pg.GraphicsLayout()
         layout.addItem(scale_colorbar, 0, 0, 1, 5)
-        layout.addItem(extra_y_axis, 1, 0)
+        layout.addItem(depth_ruler, 1, 0)
         layout.addItem(aligned, 1, 1)
         layout.addItem(perpendicular_plot, 1, 2)
         layout.addItem(scale, 1, 3)
@@ -220,7 +217,7 @@ class HistologyPanelView:
                 scale_colorbar=scale_colorbar,
                 area=area,
                 layout=layout,
-                extra_y_axis=extra_y_axis,
+                depth_ruler=depth_ruler,
                 scale_axis=scale_axis,
             ),
             axes=HistologyPanelAxes(
@@ -376,11 +373,6 @@ class HistologyPanelView:
 
         self.set_axis(fig, "bottom", label="dist to boundary (um)")
         fig.setXRange(min=0, max=100)
-        fig.setYRange(
-            min=state.probe_extent.probe_tip_um - state.probe_extent.probe_extra_um,
-            max=state.probe_extent.probe_top_um + state.probe_extent.probe_extra_um,
-            padding=self.padding_provider(),
-        )
 
         self._plot_nearby_region_curves(
             fig,
@@ -459,11 +451,6 @@ class HistologyPanelView:
             bound = pg.InfiniteLine(pos=regions[-1][1], angle=0, pen=colours[-1])
             self.plots.scale.addItem(bound)
 
-        self.plots.scale.setYRange(
-            min=state.probe_extent.probe_tip_um - state.probe_extent.probe_extra_um,
-            max=state.probe_extent.probe_top_um + state.probe_extent.probe_extra_um,
-            padding=self.padding_provider(),
-        )
         self.set_axis(self.plots.scale, "bottom", pen="w", label="blank")
         self.plots.scale_colorbar.addItem(cbar)
 
