@@ -61,7 +61,10 @@ class DesktopDisplayActions:
         self.histology_presenter.render_active_aligned()
         self.histology_presenter.render_active_reference()
         self.histology_presenter.render_active_scale_factor()
-        self.displays.reference_lines.reattach()
+        if self.app.queries.workspace.reference_lines_visible():
+            self.displays.reference_lines.reattach()
+        else:
+            self.displays.reference_lines.remove_from_plots()
 
     def on_reference_line_visibility_changed(
         self,

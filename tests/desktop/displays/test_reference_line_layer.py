@@ -61,20 +61,27 @@ class FakePoint:
 
 
 class FakePlot:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_remove: bool = False) -> None:
         self.added = []
         self.removed = []
+        self.fail_remove = fail_remove
 
     def addItem(self, item) -> None:
         self.added.append(item)
 
     def removeItem(self, item) -> None:
+        if self.fail_remove:
+            raise ValueError("item is not attached")
         self.removed.append(item)
 
 
 def _populate(layer: ReferenceLineLayer) -> tuple[FakeLine, FakeLine]:
-    feature = [FakeLine(10.0), FakeLine(10.0), FakeLine(10.0)]
-    track = [FakeLine(20.0), FakeLine(20.0)]
+    feature = [
+        FakeLine(10.0),
+        FakeLine(10.0),
+        FakeLine(10.0),
+    ]
+    track = [FakeLine(20.0), FakeLine(20.0), FakeLine(20.0)]
     layer.lines_features = np.array([feature], dtype=object)
     layer.lines_tracks = np.array([track], dtype=object)
     layer.points = np.array([[FakePoint()]], dtype=object)
@@ -84,6 +91,7 @@ def _populate(layer: ReferenceLineLayer) -> tuple[FakeLine, FakeLine]:
 def _layer() -> tuple[ReferenceLineLayer, ReferenceLinePlots, list[str]]:
     plots = ReferenceLinePlots(
         histology=FakePlot(),
+        reference=FakePlot(),
         image=FakePlot(),
         line=FakePlot(),
         probe=FakePlot(),
@@ -117,6 +125,7 @@ def test_sync_track_to_feature_updates_track_handles_and_fit_point() -> None:
 
     assert layer.lines_tracks[0][0].getYPos() == 10.0
     assert layer.lines_tracks[0][1].getYPos() == 10.0
+    assert layer.lines_tracks[0][2].getYPos() == 10.0
     assert layer.points[0][0].data == {"x": [10.0], "y": [10.0]}
     assert changes == ["changed"]
 
@@ -131,10 +140,45 @@ def test_replace_lines_updates_handles_without_notifying() -> None:
     assert track_line.getYPos() == 40.0
     assert layer.lines_features[0][1].getYPos() == 30.0
     assert layer.lines_tracks[0][1].getYPos() == 40.0
-    assert layer.points[0][0].data == {"x": [40.0], "y": [30.0]}
+    assert layer.lines_tracks[0][2].getYPos() == 40.0
+    assert layer.points[0][0].data == {"x": [30.0], "y": [40.0]}
     assert feature_line.blocked_states == [True, False]
     assert track_line.blocked_states == [True, False]
     assert changes == []
+
+
+def test_track_lines_use_warped_display_positions_and_return_raw_track() -> None:
+    layer, _, changes = _layer()
+    layer.set_track_display_transform(
+        track_to_warped_position=lambda values: np.asarray(values) - 5.0,
+        warped_position_to_track=lambda values: np.asarray(values) + 5.0,
+    )
+    _populate(layer)
+
+    layer.replace_lines([30.0], [40.0])
+
+    assert layer.lines_tracks[0][0].getYPos() == 35.0
+    assert layer.lines_tracks[0][1].getYPos() == 35.0
+    assert layer.lines_tracks[0][2].getYPos() == 40.0
+    np.testing.assert_array_equal(layer.positions()[0], [30.0])
+    np.testing.assert_array_equal(layer.positions()[1], [40.0])
+
+    layer.lines_tracks[0][1].setPos(50.0)
+    layer.update_track_line(layer.lines_tracks[0][1])
+
+    assert layer.lines_tracks[0][0].getYPos() == 50.0
+    assert layer.lines_tracks[0][1].getYPos() == 50.0
+    assert layer.lines_tracks[0][2].getYPos() == 55.0
+    np.testing.assert_array_equal(layer.positions()[1], [55.0])
+    assert changes == ["changed"]
+
+
+def test_original_reference_track_line_is_not_selectable() -> None:
+    layer, _, _ = _layer()
+    _populate(layer)
+
+    assert not layer.select_line(layer.lines_tracks[0][2])
+    assert layer.selected_line == []
 
 
 def test_replace_lines_can_notify_when_requested() -> None:
@@ -153,7 +197,7 @@ def test_replace_lines_with_no_positions_clears_without_notifying() -> None:
     layer.replace_lines([], [])
 
     assert layer.lines_features.shape == (0, 3)
-    assert layer.lines_tracks.shape == (0, 2)
+    assert layer.lines_tracks.shape == (0, 3)
     assert plots.image.removed
     assert changes == []
 
@@ -166,10 +210,12 @@ def test_delete_selected_removes_one_line_group_and_notifies() -> None:
     assert layer.delete_selected()
 
     assert layer.lines_features.shape == (0, 3)
-    assert layer.lines_tracks.shape == (0, 2)
+    assert layer.lines_tracks.shape == (0, 3)
     assert layer.points.shape == (0, 1)
     assert plots.image.removed
     assert plots.histology.removed
+    assert plots.reference.removed
+    assert plots.perpendicular.removed
     assert plots.fit.removed
     assert changes == ["changed"]
 
@@ -191,10 +237,33 @@ def test_clear_removes_disconnects_and_resets_handles() -> None:
     layer.clear()
 
     assert layer.lines_features.shape == (0, 3)
-    assert layer.lines_tracks.shape == (0, 2)
+    assert layer.lines_tracks.shape == (0, 3)
     assert layer.points.shape == (0, 1)
     assert layer.selected_line == []
     assert feature_line.sigPositionChanged.disconnects == 1
     assert track_line.sigPositionChanged.disconnects == 1
     assert plots.image.removed
+    assert plots.perpendicular.removed
+
+
+def test_remove_from_plots_tolerates_already_detached_items() -> None:
+    plots = ReferenceLinePlots(
+        histology=FakePlot(fail_remove=True),
+        reference=FakePlot(),
+        image=FakePlot(),
+        line=FakePlot(),
+        probe=FakePlot(),
+        perpendicular=FakePlot(),
+        fit=FakePlot(),
+    )
+    layer = ReferenceLineLayer(
+        plots=plots,
+        style_factory=lambda: (None, None),
+        on_lines_changed=lambda: None,
+    )
+    _populate(layer)
+
+    layer.remove_from_plots()
+
+    assert plots.reference.removed
     assert plots.perpendicular.removed

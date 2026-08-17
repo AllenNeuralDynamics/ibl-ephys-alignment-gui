@@ -61,6 +61,7 @@ class DesktopDisplays:
         reference_lines = DesktopReferenceLineDisplay.create(
             bindings=ReferenceLinePlotBindings(
                 histology_plot=histology.aligned_plot,
+                reference_plot=histology.reference_plot,
                 image_plot=ephys.panel.plots.image,
                 line_plot=ephys.panel.plots.line,
                 probe_plot=ephys.panel.plots.probe,

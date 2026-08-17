@@ -24,6 +24,7 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     line_plot = FakePlot("line")
     probe_plot = FakePlot("probe")
     aligned_plot = FakePlot("aligned")
+    reference_plot = FakePlot("reference")
     perpendicular_plot = FakePlot("perpendicular")
     ephys = SimpleNamespace(
         panel=SimpleNamespace(
@@ -37,6 +38,7 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     )
     histology = SimpleNamespace(
         aligned_plot=aligned_plot,
+        reference_plot=reference_plot,
         fit_plot="fit-plot",
     )
     slice_display = SimpleNamespace(
@@ -61,6 +63,7 @@ def test_desktop_displays_factory_composes_display_regions(monkeypatch) -> None:
     def create_reference_lines(*, bindings: Any) -> Any:
         calls.append(("reference_lines", None, bindings, None))
         assert bindings.histology_plot is aligned_plot
+        assert bindings.reference_plot is reference_plot
         assert bindings.image_plot is image_plot
         assert bindings.line_plot is line_plot
         assert bindings.probe_plot is probe_plot

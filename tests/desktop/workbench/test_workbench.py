@@ -535,6 +535,8 @@ class FakeReferenceLineDisplay:
     def __init__(self) -> None:
         self.clear_count = 0
         self.add_count = 0
+        self.remove_count = 0
+        self.reattach_count = 0
         self.created_lines: list[tuple[Any, Any]] = []
         self.replaced_lines: list[tuple[Any, Any]] = []
         self.lines_changed_callback = None
@@ -542,6 +544,15 @@ class FakeReferenceLineDisplay:
 
     def set_lines_changed_callback(self, callback: Any) -> None:
         self.lines_changed_callback = callback
+
+    def set_track_display_transform(
+        self,
+        *,
+        track_to_warped_position: Any,
+        warped_position_to_track: Any,
+    ) -> None:
+        self.track_to_warped_position = track_to_warped_position
+        self.warped_position_to_track = warped_position_to_track
 
     def positions(self) -> Any:
         return self.current_positions
@@ -551,6 +562,12 @@ class FakeReferenceLineDisplay:
 
     def add_to_plots(self) -> None:
         self.add_count += 1
+
+    def remove_from_plots(self) -> None:
+        self.remove_count += 1
+
+    def reattach(self) -> None:
+        self.reattach_count += 1
 
     def create_lines(self, positions: Any, track_positions: Any = None) -> None:
         self.created_lines.append((positions, track_positions))
@@ -1164,6 +1181,9 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         active_shank_selection=lambda: SimpleNamespace(shank_idx=0),
         fit_depth_um=lambda: [],
         linear_fit_enabled=lambda: False,
+        reference_lines_visible=lambda: True,
+        track_to_warped_feature_positions_um=lambda values: values,
+        warped_feature_to_track_positions_um=lambda values: values,
         mouse_root_loaded=lambda: True,
     )
     queries = SimpleNamespace(workspace=workspace_queries)
@@ -1292,6 +1312,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     render_cluster.shank_presenter.callbacks.clear_reference_lines()
     assert reference_line_display.clear_count == 2
     assert reference_line_display.replaced_lines == [([3.0], [4.0])]
+    assert reference_line_display.reattach_count == 1
     assert (
         render_cluster.shank_presenter.callbacks.render_ephys_plots.__self__
         is render_cluster.ephys_plot_presenter

@@ -240,6 +240,50 @@ class WorkspaceStateQueries:
         """Return whether fit commands use linear fitting."""
         return self.display_state.edit_settings.lin_fit
 
+    def reference_lines_visible(self) -> bool:
+        """Return whether reference-line overlays should be visible."""
+        return self.display_state.reference_lines_visible
+
+    def track_to_warped_feature_positions_um(self, track_positions_um: Any) -> Any:
+        """Project raw track depths into warped feature-depth display positions."""
+        context = self.context.active_alignment_context()
+        positions_um = np.asarray(track_positions_um, dtype=float)
+        if context is None:
+            return positions_um
+
+        alignment = context.active_alignment
+        return (
+            np.asarray(
+                context.shank_runtime.ephysalign.track2feature(
+                    positions_um * 1e-6,
+                    alignment.feature,
+                    alignment.track,
+                ),
+                dtype=float,
+            )
+            * 1e6
+        )
+
+    def warped_feature_to_track_positions_um(self, feature_positions_um: Any) -> Any:
+        """Map warped-panel feature-depth display positions back to raw track depth."""
+        context = self.context.active_alignment_context()
+        positions_um = np.asarray(feature_positions_um, dtype=float)
+        if context is None:
+            return positions_um
+
+        alignment = context.active_alignment
+        return (
+            np.asarray(
+                context.shank_runtime.ephysalign.feature2track(
+                    positions_um * 1e-6,
+                    alignment.feature,
+                    alignment.track,
+                ),
+                dtype=float,
+            )
+            * 1e6
+        )
+
     def active_brain_atlas(self) -> Any | None:
         """Return loaded brain-atlas runtime data for desktop rendering."""
         if self.histology_context is None:

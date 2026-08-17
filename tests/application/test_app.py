@@ -806,6 +806,33 @@ def test_queries_active_alignment_reference_line_state_allows_empty_interior() -
     assert result.track_positions_um.size == 0
 
 
+def test_queries_project_reference_lines_between_track_and_warped_feature_space() -> None:
+    workspace = AlignmentWorkspace()
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([0.1, 1.1]),
+    )
+    ephysalign = SimpleNamespace(
+        track2feature=lambda values, _feature, _track: np.asarray(values) - 100e-6,
+        feature2track=lambda values, _feature, _track: np.asarray(values) + 100e-6,
+    )
+    workspace.runtime.active_stream_runtime = SimpleNamespace(
+        shank_runtime_by_idx={0: SimpleNamespace(ephysalign=ephysalign)}
+    )
+
+    warped = workspace.app.queries.workspace.track_to_warped_feature_positions_um(
+        [200.0]
+    )
+    raw_track = workspace.app.queries.workspace.warped_feature_to_track_positions_um(
+        [100.0]
+    )
+
+    np.testing.assert_allclose(warped, [100.0])
+    np.testing.assert_allclose(raw_track, [200.0])
+
+
 def test_commands_prepare_fresh_ephys_load_marks_unloaded_and_evicts_stale() -> None:
     workspace = AlignmentWorkspace()
     workspace.document.mark_data_loaded(True)
@@ -3094,6 +3121,7 @@ def test_display_commands_update_app_owned_display_settings() -> None:
     assert workspace.display_state.histology_boundaries_visible is False
     assert workspace.display_state.region_annotation_source == "FranklinPaxinos"
     assert workspace.app.queries.workspace.linear_fit_enabled() is False
+    assert workspace.app.queries.workspace.reference_lines_visible() is False
     assert display_events == [
         ReferenceLineVisibilityChanged(visible=False),
         HistologyBoundariesVisibilityChanged(visible=False),

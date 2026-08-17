@@ -19,6 +19,20 @@ class FakeLayer:
         self.calls.append(("set-callback", callback))
         self.on_lines_changed = callback
 
+    def set_track_display_transform(
+        self,
+        *,
+        track_to_warped_position,
+        warped_position_to_track,
+    ) -> None:
+        self.calls.append(
+            (
+                "set-track-transform",
+                track_to_warped_position,
+                warped_position_to_track,
+            )
+        )
+
     def has_lines(self) -> bool:
         self.calls.append("has_lines")
         return True
@@ -62,6 +76,7 @@ def test_reference_line_display_constructs_layer_from_bindings() -> None:
     display = DesktopReferenceLineDisplay.create(
         bindings=ReferenceLinePlotBindings(
             histology_plot="histology",
+            reference_plot="reference",
             image_plot="image",
             line_plot="line",
             probe_plot="probe",
@@ -72,6 +87,7 @@ def test_reference_line_display_constructs_layer_from_bindings() -> None:
 
     plots = display.layer._plots
     assert plots.histology == "histology"
+    assert plots.reference == "reference"
     assert plots.image == "image"
     assert plots.line == "line"
     assert plots.probe == "probe"
@@ -86,8 +102,18 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
     layer = FakeLayer()
     display = DesktopReferenceLineDisplay(layer=layer)
 
+    def track_to_warped(value: Any) -> Any:
+        return value
+
+    def warped_to_track(value: Any) -> Any:
+        return value
+
     assert display.has_lines()
     display.set_lines_changed_callback(lambda: None)
+    display.set_track_display_transform(
+        track_to_warped_position=track_to_warped,
+        warped_position_to_track=warped_to_track,
+    )
     assert display.positions() == ([1.0], [2.0])
     display.clear()
     display.reattach()
@@ -101,6 +127,7 @@ def test_reference_line_display_delegates_overlay_operations() -> None:
     assert layer.calls == [
         "has_lines",
         ("set-callback", layer.on_lines_changed),
+        ("set-track-transform", track_to_warped, warped_to_track),
         "positions",
         "clear",
         "remove",

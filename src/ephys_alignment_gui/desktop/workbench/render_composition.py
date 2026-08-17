@@ -139,6 +139,14 @@ def build_desktop_render_cluster(
         app=app,
         reference_line_display=displays.reference_lines,
     )
+    displays.reference_lines.set_track_display_transform(
+        track_to_warped_position=(
+            app.queries.workspace.track_to_warped_feature_positions_um
+        ),
+        warped_position_to_track=(
+            app.queries.workspace.warped_feature_to_track_positions_um
+        ),
+    )
     displays.reference_lines.set_lines_changed_callback(
         reference_line_presenter.capture_pending_reference_lines
     )
@@ -220,6 +228,7 @@ def _alignment_render_callbacks(
             lambda state: _render_reference_lines_from_alignment(
                 displays.reference_lines,
                 state,
+                visible=app.queries.workspace.reference_lines_visible(),
             )
         ),
         set_default_feature_y_range=lambda: _set_default_feature_y_range(app, views),
@@ -244,6 +253,8 @@ def _restore_lin_fit_from_edit(
 def _render_reference_lines_from_alignment(
     reference_lines: Any,
     state: Any,
+    *,
+    visible: bool,
 ) -> None:
     """Render alignment-derived reference lines without recording a user edit."""
     if state is None:
@@ -253,6 +264,10 @@ def _render_reference_lines_from_alignment(
         state.feature_positions_um,
         state.track_positions_um,
     )
+    if visible:
+        reference_lines.reattach()
+    else:
+        reference_lines.remove_from_plots()
 
 
 def _set_default_feature_y_range(app: Any, views: DesktopViews) -> None:

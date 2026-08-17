@@ -21,6 +21,7 @@ class ReferenceLinePlotBindings:
     """Sibling display plot handles that receive linked reference-line overlays."""
 
     histology_plot: Any
+    reference_plot: Any
     image_plot: Any
     line_plot: Any
     probe_plot: Any
@@ -45,6 +46,7 @@ class DesktopReferenceLineDisplay:
             layer=ReferenceLineLayer(
                 plots=ReferenceLinePlots(
                     histology=bindings.histology_plot,
+                    reference=bindings.reference_plot,
                     image=bindings.image_plot,
                     line=bindings.line_plot,
                     probe=bindings.probe_plot,
@@ -59,6 +61,18 @@ class DesktopReferenceLineDisplay:
     def set_lines_changed_callback(self, callback: Callable[[], None]) -> None:
         """Set the callback invoked when reference-line positions change."""
         self.layer.set_on_lines_changed(callback)
+
+    def set_track_display_transform(
+        self,
+        *,
+        track_to_warped_position: Callable[[Any], Any],
+        warped_position_to_track: Callable[[Any], Any],
+    ) -> None:
+        """Set conversion callbacks for warped track-space overlay handles."""
+        self.layer.set_track_display_transform(
+            track_to_warped_position=track_to_warped_position,
+            warped_position_to_track=warped_position_to_track,
+        )
 
     def has_lines(self) -> bool:
         """Return whether the display has reference-line handles."""
@@ -130,6 +144,6 @@ def default_reference_line_style() -> tuple[Any, Any]:
     colour = QtGui.QColor(colours[randrange(len(colours))])
     style = styles[randrange(len(styles))]
     return (
-        pg.mkPen(color=colour, style=style, width=7),
+        pg.mkPen(color=colour, style=style, width=2),
         pg.mkBrush(color=colour),
     )

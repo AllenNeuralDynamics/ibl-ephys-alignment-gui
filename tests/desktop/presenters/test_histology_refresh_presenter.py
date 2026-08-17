@@ -11,12 +11,19 @@ from ephys_alignment_gui.desktop.presenters.histology_refresh_presenter import (
 
 
 class FakeQueries:
-    def __init__(self, line_state: Any = None) -> None:
+    def __init__(
+        self,
+        line_state: Any = None,
+        *,
+        reference_lines_visible: bool = True,
+    ) -> None:
         self.line_state = line_state
+        self._reference_lines_visible = reference_lines_visible
         self.line_calls: list[int] = []
         self.workspace = SimpleNamespace(
             active_shank_selection=self.active_shank_selection,
             active_reference_line_state=self.active_reference_line_state,
+            reference_lines_visible=self.reference_lines_visible,
         )
 
     def active_shank_selection(self) -> Any:
@@ -25,6 +32,9 @@ class FakeQueries:
     def active_reference_line_state(self, shank_idx: int) -> Any:
         self.line_calls.append(shank_idx)
         return self.line_state
+
+    def reference_lines_visible(self) -> bool:
+        return self._reference_lines_visible
 
 
 class FakeHistologyPresenter:
@@ -56,15 +66,20 @@ class FakeSliceMenuCoordinator:
 class FakeReferenceLineDisplay:
     def __init__(self) -> None:
         self.created: list[tuple[Any, Any]] = []
+        self.remove_count = 0
 
     def create_lines(self, positions: Any, track_positions: Any = None) -> None:
         self.created.append((positions, track_positions))
+
+    def remove_from_plots(self) -> None:
+        self.remove_count += 1
 
 
 def _presenter(
     *,
     line_state: Any = None,
     render_result: bool = True,
+    reference_lines_visible: bool = True,
 ) -> tuple[
     DesktopHistologyRefreshPresenter,
     FakeQueries,
@@ -72,7 +87,10 @@ def _presenter(
     FakeSlicePanelPresenter,
     FakeReferenceLineDisplay,
 ]:
-    queries = FakeQueries(line_state)
+    queries = FakeQueries(
+        line_state,
+        reference_lines_visible=reference_lines_visible,
+    )
     histology = FakeHistologyPresenter(render_result)
     slice_panel = FakeSlicePanelPresenter()
     slice_menu = FakeSliceMenuCoordinator()
@@ -107,6 +125,23 @@ def test_render_loaded_shank_histology_restores_reference_lines() -> None:
     assert slice_panel.refreshed_selections == ["slice-selection"]
     assert queries.line_calls == [1]
     assert reference_lines.created == [([1.0], [2.0])]
+    assert reference_lines.remove_count == 0
+
+
+def test_render_loaded_shank_histology_preserves_hidden_reference_lines() -> None:
+    line_state = SimpleNamespace(
+        feature_positions_um=[1.0],
+        track_positions_um=[2.0],
+    )
+    presenter, _queries, _histology, _slice_panel, reference_lines = _presenter(
+        line_state=line_state,
+        reference_lines_visible=False,
+    )
+
+    assert presenter.render_loaded_shank_histology(1)
+
+    assert reference_lines.created == [([1.0], [2.0])]
+    assert reference_lines.remove_count == 1
 
 
 def test_render_loaded_shank_histology_uses_active_shank_by_default() -> None:

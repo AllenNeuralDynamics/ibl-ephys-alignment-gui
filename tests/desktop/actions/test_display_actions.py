@@ -119,6 +119,18 @@ def test_region_annotation_source_refreshes_histology_from_display_event() -> No
     assert reference_lines.reattach_count == 1
 
 
+def test_region_annotation_source_refresh_preserves_hidden_reference_lines() -> None:
+    state = AlignmentDisplayState(reference_lines_visible=False)
+    reference_lines = FakeReferenceLines()
+    actions = _actions(state, reference_lines=reference_lines)
+    actions.connect_display_events()
+
+    actions.toggle_region_annotation_source()
+
+    assert reference_lines.reattach_count == 0
+    assert reference_lines.remove_count == 1
+
+
 def test_desktop_only_toggles_remain_local_display_actions() -> None:
     histology_display = FakeHistologyDisplay()
     slice_panel = FakeSlicePanelPresenter()
@@ -154,7 +166,11 @@ def _actions(
     app = SimpleNamespace(
         commands=SimpleNamespace(display=DisplayCommandHandler(state, events)),
         events=events,
-        queries=SimpleNamespace(),
+        queries=SimpleNamespace(
+            workspace=SimpleNamespace(
+                reference_lines_visible=lambda: state.reference_lines_visible,
+            )
+        ),
     )
     return DesktopDisplayActions(
         app=app,

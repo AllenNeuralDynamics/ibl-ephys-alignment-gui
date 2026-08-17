@@ -33,4 +33,6 @@ class DesktopHistologyRefreshPresenter:
                 line_state.feature_positions_um,
                 line_state.track_positions_um,
             )
+            if not self.app.queries.workspace.reference_lines_visible():
+                self.reference_line_display.remove_from_plots()
         return True
