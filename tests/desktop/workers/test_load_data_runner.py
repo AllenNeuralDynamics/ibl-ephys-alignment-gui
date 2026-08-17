@@ -7,7 +7,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from PyQt5 import QtCore
+from qt_helpers import qt_app, wait_for_qt
 
 from ephys_alignment_gui.application.results import (
     FreshLoadExecution,
@@ -25,8 +25,7 @@ from ephys_alignment_gui.io.load_data_job import (
 
 
 def test_qt_fresh_load_runner_delivers_callbacks_on_main_thread() -> None:
-    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
-    _ = app
+    qt_app()
     main_thread_id = threading.get_ident()
     target = SimpleNamespace(
         recording_id="rec",
@@ -50,7 +49,6 @@ def test_qt_fresh_load_runner_delivers_callbacks_on_main_thread() -> None:
     progress_thread_ids: list[int] = []
     finished_thread_ids: list[int] = []
     results: list[LoadDataJobCompleted] = []
-    loop = QtCore.QEventLoop()
 
     def run_job(invocation, *, progress=None):
         worker_thread_ids.append(threading.get_ident())
@@ -78,23 +76,17 @@ def test_qt_fresh_load_runner_delivers_callbacks_on_main_thread() -> None:
         results.append(result)
 
     runner = QtFreshLoadRunner()
-
-    def quit_when_done() -> None:
-        if results and not runner.is_running:
-            loop.quit()
-            return
-        QtCore.QTimer.singleShot(10, quit_when_done)
-
-    runner.start(
-        execution=execution,
-        invocation=invocation,
-        run_job=run_job,
-        on_progress=on_progress,
-        on_finished=on_finished,
-    )
-    QtCore.QTimer.singleShot(0, quit_when_done)
-    QtCore.QTimer.singleShot(3000, loop.quit)
-    loop.exec_()
+    try:
+        runner.start(
+            execution=execution,
+            invocation=invocation,
+            run_job=run_job,
+            on_progress=on_progress,
+            on_finished=on_finished,
+        )
+        assert wait_for_qt(lambda: bool(results) and not runner.is_running)
+    finally:
+        runner.shutdown("test cleanup", timeout_ms=3000)
 
     assert results
     assert worker_thread_ids and worker_thread_ids[0] != main_thread_id
@@ -103,8 +95,7 @@ def test_qt_fresh_load_runner_delivers_callbacks_on_main_thread() -> None:
 
 
 def test_qt_fresh_load_runner_shutdown_cancels_and_waits_for_worker() -> None:
-    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
-    _ = app
+    qt_app()
     target = SimpleNamespace(
         recording_id="rec",
         probe_name="probeA",
@@ -154,8 +145,7 @@ def test_qt_fresh_load_runner_shutdown_cancels_and_waits_for_worker() -> None:
 
 
 def test_qt_fresh_load_runner_rejects_start_while_worker_running() -> None:
-    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
-    _ = app
+    qt_app()
     target = SimpleNamespace(
         recording_id="rec",
         probe_name="probeA",
