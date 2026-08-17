@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pandas
+from iblutil.util import Bunch
 
+import ephys_alignment_gui.services.alignment_output as alignment_output_service
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveCancelToken,
     AlignmentSaveJobCancelled,
@@ -125,6 +129,7 @@ from ephys_alignment_gui.services.alignment_derived_data import (
     ScaleFactorData,
 )
 from ephys_alignment_gui.services.alignment_repository import (
+    AlignmentRepository,
     LoadedAlignmentHistory,
     LoadedAlignmentPackage,
     SavedAlignmentOutputs,
@@ -415,9 +420,42 @@ class FakeSliceService:
         return np.ones((n_perp_samples, n_depths))
 
 
+class FakeImage:
+    def TransformPhysicalPointToContinuousIndex(self, point):
+        return tuple(point)
+
+    def TransformContinuousIndexToPhysicalPoint(self, index):
+        return tuple(index)
+
+
+class FakeRegions:
+    @staticmethod
+    def get(labels):
+        labels = np.asarray(labels)
+        return Bunch(
+            id=labels,
+            xyz=np.zeros((labels.size, 3)),
+            axial=np.zeros(labels.size),
+            lateral=np.zeros(labels.size),
+            acronym=np.array([f"R{label}" for label in labels]),
+        )
+
+
 class FakeBrainAtlas:
+    regions = FakeRegions()
+    intensity_sitk_image_spim_native = FakeImage()
+    pipeline_sitk_image_spim_native = FakeImage()
+
     def __init__(self, dv_voxel_m: float = 20e-6) -> None:
         self.bc = SimpleNamespace(dxyz=[20e-6, 20e-6, dv_voxel_m])
+
+    @staticmethod
+    def get_labels(channel_locations_ras):
+        return np.arange(1, len(channel_locations_ras) + 1)
+
+    @staticmethod
+    def unrotate_to_spim_native(channel_locations_ras):
+        return np.asarray(channel_locations_ras)
 
 
 class FakeFitAligner:
@@ -557,11 +595,13 @@ def _attach_input_dataset(
 
 def _install_fake_save_channel_location_builder(
     workspace: AlignmentWorkspace,
+    *,
+    brain_atlas: Any = "atlas",
 ) -> FakeSaveChannelLocationBuilder:
     builder = FakeSaveChannelLocationBuilder()
     workspace.save_input_factory.channel_location_builder = builder
     workspace.save_input_factory.histology_context = workspace.histology_context
-    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas=brain_atlas)
     return builder
 
 
@@ -2623,6 +2663,138 @@ def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
         ("rec", "stream-0"),
         ("rec", "stream-1"),
     ]
+    assert not workspace.document.dirty
+
+
+def test_commands_full_save_batches_ccf_and_writes_complete_package_without_runtimes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    transform_calls = []
+
+    def fake_apply_transforms_to_points(
+        dimension,
+        points,
+        transforms,
+        whichtoinvert,
+    ):
+        transform_calls.append((dimension, points.copy(), transforms, whichtoinvert))
+        return pandas.DataFrame(
+            {
+                "x": np.linspace(-1.0, 1.0, len(points)),
+                "y": np.arange(len(points), dtype=float) * 0.01,
+                "z": np.arange(len(points), dtype=float) * 0.02,
+            }
+        )
+
+    monkeypatch.setattr(
+        alignment_output_service.ants,
+        "apply_transforms_to_points",
+        fake_apply_transforms_to_points,
+    )
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = AlignmentRepository()
+    workspace.persistence_commands.output_builder = workspace.alignment_output_service
+    output_root = tmp_path / "results"
+    output_package_dir = output_root / "ibl_annotations_mouse_2026-08-17_13-00-00"
+    workspace.document.output_root = output_root
+    workspace.document.output_package_directory = output_package_dir
+    workspace.document.output_directory = output_package_dir / "rec" / "probe-00"
+    workspace.document.output_directory.mkdir(parents=True)
+    brain_atlas = FakeBrainAtlas()
+    workspace.histology_context.runtime_data = SimpleNamespace(
+        brain_atlas=brain_atlas,
+        histology_images={},
+        lazy_channel_paths={},
+    )
+    probe_count = 20
+    probes = tuple(
+        _probe_info(
+            probe_name=f"probe-{idx:02d}",
+            ephys_collection=f"stream-{idx:02d}",
+            probe_id=f"probe-id-{idx:02d}",
+            num_shanks=1,
+            ephys_dir=tmp_path / "input" / "rec" / f"stream-{idx:02d}",
+            channel_table=_channel_table_paths(
+                tmp_path / "input" / "rec" / f"stream-{idx:02d}",
+                local_coordinates=np.array([[idx, idx * 10.0]]),
+                raw_ind=np.array([idx + 100]),
+                contact_ids=np.array([idx + 1000]),
+                shank_indices=np.array([0]),
+            ),
+        )
+        for idx in range(probe_count)
+    )
+    _attach_input_dataset(
+        workspace,
+        MouseRoot(
+            root=Path("/tmp/mouse"),
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=SimpleNamespace(
+                image_to_template_affine="image_affine.mat",
+                image_to_template_warp="image_warp.nii.gz",
+                template_to_ccf_affine="ccf_affine.mat",
+                template_to_ccf_warp="ccf_warp.nii.gz",
+            ),
+            histology=None,
+            probes={"rec": {probe.probe_name: probe for probe in probes}},
+        ),
+    )
+    workspace.data_context.probe_info = probes[0]
+    save_channel_builder = _install_fake_save_channel_location_builder(
+        workspace,
+        brain_atlas=brain_atlas,
+    )
+
+    expected_keys = []
+    for idx in range(probe_count):
+        key = AlignmentKey("rec", f"stream-{idx:02d}", 0)
+        expected_keys.append(key)
+        state = workspace.document.alignment_state_for(key)
+        state.active_alignment = ActiveAlignment(
+            feature=np.array([float(idx), float(idx + 1)]),
+            track=np.array([float(idx + 2), float(idx + 3)]),
+        )
+        state.mark_alignment_changed()
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == probe_count
+    assert workspace.runtime.stream_cache == {}
+    assert len(transform_calls) == 1
+    assert transform_calls[0][0] == 3
+    assert len(transform_calls[0][1]) == probe_count
+    assert [call["geometry"].key for call in save_channel_builder.calls] == (
+        expected_keys
+    )
+    assert list(result.saved_outputs) == expected_keys
+    datapackage_path = output_package_dir / "datapackage.json"
+    assert datapackage_path.exists()
+    with open(datapackage_path) as f:
+        datapackage = json.load(f)
+    probes_manifest = datapackage["recordings"]["rec"]["probes"]
+    assert sorted(probes_manifest) == [f"stream-{idx:02d}" for idx in range(20)]
+
+    for idx, key in enumerate(expected_keys):
+        probe_dir = output_package_dir / "rec" / f"probe-{idx:02d}"
+        assert (probe_dir / "channel_locations.json").exists()
+        assert (probe_dir / "ccf_channel_locations.json").exists()
+        assert (probe_dir / "prev_alignments.json").exists()
+        manifest_files = probes_manifest[key.ephys_collection]["shanks"]["1"]["files"]
+        assert manifest_files["channel_locations"] == (
+            f"rec/probe-{idx:02d}/channel_locations.json"
+        )
+        assert manifest_files["ccf_channel_locations"] == (
+            f"rec/probe-{idx:02d}/ccf_channel_locations.json"
+        )
+        with open(probe_dir / "ccf_channel_locations.json") as f:
+            ccf = json.load(f)
+        assert ccf["channel_0"]["raw_ind"] == idx + 100
+        assert ccf["channel_0"]["contact_id"] == idx + 1000
     assert not workspace.document.dirty
 
 
