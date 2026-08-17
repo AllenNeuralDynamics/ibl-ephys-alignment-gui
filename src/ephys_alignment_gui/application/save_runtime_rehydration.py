@@ -1,4 +1,4 @@
-"""Reload missing runtime data required by edited-alignment saves."""
+"""Reload missing runtime data required by alignment-output saves."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ class SaveRuntimeRehydrator:
             return Ok()
         if isinstance(result, SaveRuntimeRehydrationCancelled):
             return Failed(
-                f"Reload cancelled while saving edited alignments: {result.reason}"
+                f"Reload cancelled while saving alignment outputs: {result.reason}"
             )
         return result
 
@@ -143,14 +143,14 @@ class SaveRuntimeRehydrator:
         )
         if isinstance(job_result, Failed):
             return Failed(
-                "Failed to reload runtime needed to save edited alignment for "
+                "Failed to reload runtime needed to save alignment output for "
                 f"{self._describe(dependency)}: {job_result.message}"
             )
         if isinstance(job_result, LoadDataJobCancelled):
             return SaveRuntimeRehydrationCancelled(reason=job_result.reason)
         if not isinstance(job_result, LoadDataJobCompleted):
             return Failed(
-                "Failed to reload runtime needed to save edited alignment for "
+                "Failed to reload runtime needed to save alignment output for "
                 f"{self._describe(dependency)}."
             )
         cancelled = self._cancelled(cancel_token)
@@ -180,7 +180,7 @@ class SaveRuntimeRehydrator:
                 else "Brain atlas is not loaded."
             )
             return Failed(
-                "Cannot initialize runtime needed to save edited alignment for "
+                "Cannot initialize runtime needed to save alignment output for "
                 f"{self._describe(dependency)}: {message}"
             )
 
@@ -197,7 +197,7 @@ class SaveRuntimeRehydrator:
             )
         except Exception as exc:
             return Failed(
-                "Failed to load track annotations needed to save edited alignment "
+                "Failed to load track annotations needed to save alignment output "
                 f"for {self._describe(dependency)}: {exc}"
             )
 
@@ -234,14 +234,14 @@ class SaveRuntimeRehydrator:
             return dependency.load_target
         if dependency.mouse_root is None or dependency.probe is None:
             return Failed(
-                "Cannot reload runtime needed to save edited alignment for "
+                "Cannot reload runtime needed to save alignment output for "
                 f"{self._describe(dependency)}: missing datapackage metadata."
             )
         try:
             channel_table = self.ephys_data_service.load_channel_table(dependency.probe)
         except Exception as exc:
             return Failed(
-                "Failed to load channel metadata needed to save edited alignment "
+                "Failed to load channel metadata needed to save alignment output "
                 f"for {self._describe(dependency)}: {exc}"
             )
         return LoadDataJobTarget(

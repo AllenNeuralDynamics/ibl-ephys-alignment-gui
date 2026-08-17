@@ -2191,7 +2191,7 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     assert started_events == [
         SaveProgressStarted(
             targets=(key_a, key_b),
-            message="Saving 2 edited alignments...",
+            message="Saving 2 alignment outputs...",
         )
     ]
     assert any(
@@ -2221,6 +2221,110 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     assert [kwargs["multi_shank"] for kwargs in repo.saved_kwargs] == [True, False]
     assert not state_a.has_unsaved_alignment
     assert not state_b.has_unsaved_alignment
+    assert not workspace.document.dirty
+
+
+def test_commands_save_edited_alignment_outputs_includes_clean_saveable_states(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+
+    dirty_probe = _probe_info(
+        probe_name="dirty-probe",
+        ephys_collection="dirty-stream",
+        ephys_dir=tmp_path / "input" / "rec" / "dirty-stream",
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "dirty-stream",
+            local_coordinates=np.array([[10.0, 20.0]]),
+        ),
+    )
+    clean_probe = _probe_info(
+        probe_name="clean-probe",
+        ephys_collection="clean-stream",
+        ephys_dir=tmp_path / "input" / "rec" / "clean-stream",
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "clean-stream",
+            local_coordinates=np.array([[30.0, 40.0]]),
+        ),
+    )
+    output_root = tmp_path / "results"
+    output_package_dir = output_root / "ibl_annotations_mouse_2026-08-17_12-00-00"
+    workspace.document.output_root = output_root
+    workspace.document.output_package_directory = output_package_dir
+    workspace.document.output_directory = output_package_dir / "rec" / "dirty-probe"
+    workspace.document.output_directory.mkdir(parents=True)
+    _attach_input_dataset(
+        workspace,
+        MouseRoot(
+            root=Path("/tmp/mouse"),
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=None,
+            histology=None,
+            probes={"rec": {"dirty-probe": dirty_probe, "clean-probe": clean_probe}},
+        ),
+    )
+    workspace.data_context.probe_info = dirty_probe
+
+    dirty_key = AlignmentKey("rec", "dirty-stream", 0)
+    dirty_state = workspace.document.select_alignment_key(dirty_key)
+    dirty_state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    dirty_state.mark_alignment_changed()
+
+    clean_key = AlignmentKey("rec", "clean-stream", 0)
+    clean_state = workspace.document.alignment_state_for(clean_key)
+    clean_state.set_alignments({"saved-clean": [[5.0, 6.0], [7.0, 8.0]]})
+    clean_state.active_alignment = ActiveAlignment(
+        feature=np.array([5.0, 6.0]),
+        track=np.array([7.0, 8.0]),
+    )
+    assert not clean_state.has_unsaved_alignment
+
+    dirty_runtime = FakeStreamRuntime(("rec", "dirty-stream"), n_shanks=1)
+    dirty_runtime.shank_runtime_by_idx = {
+        0: _fake_shank_runtime(
+            ephysalign="dirty-aligner",
+            chn_coords=np.array([[10.0, 20.0]]),
+        )
+    }
+    clean_runtime = FakeStreamRuntime(("rec", "clean-stream"), n_shanks=1)
+    clean_runtime.shank_runtime_by_idx = {
+        0: _fake_shank_runtime(
+            ephysalign="clean-aligner",
+            chn_coords=np.array([[30.0, 40.0]]),
+        )
+    }
+    workspace.runtime.stream_cache = {
+        ("rec", "dirty-stream"): dirty_runtime,
+        ("rec", "clean-stream"): clean_runtime,
+    }
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 2
+    assert list(output_builder.batched_alignments) == [clean_key, dirty_key]
+    assert [call["ephysalign"] for call in derived.channel_location_calls] == [
+        "clean-aligner",
+        "dirty-aligner",
+    ]
+    assert [kwargs["previous_alignments"] for kwargs in repo.saved_kwargs] == [
+        {"saved-clean": [[5.0, 6.0], [7.0, 8.0]]},
+        dirty_state.alignments,
+    ]
+    assert not clean_state.has_unsaved_alignment
+    assert not dirty_state.has_unsaved_alignment
     assert not workspace.document.dirty
 
 
@@ -2703,8 +2807,8 @@ def test_commands_save_edited_alignment_outputs_emits_failed_event() -> None:
     )
 
     assert isinstance(result, Failed)
-    assert result.message == "No edited alignments are ready to save"
-    assert events == [SaveFailed(message="No edited alignments are ready to save")]
+    assert result.message == "No alignment outputs are ready to save"
+    assert events == [SaveFailed(message="No alignment outputs are ready to save")]
 
 
 def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) -> None:

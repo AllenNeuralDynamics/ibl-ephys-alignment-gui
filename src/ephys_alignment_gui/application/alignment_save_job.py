@@ -1,4 +1,4 @@
-"""Prepared edited-alignment save jobs."""
+"""Prepared alignment-output save jobs."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
 
 @dataclass(frozen=True)
 class PreparedAlignmentSaveTarget:
-    """Prepared save inputs for one edited alignment.
+    """Prepared save inputs for one alignment output.
 
     The worker phase uses the copied arrays, alignment history, and output path.
     The document ``state`` reference is only consumed later on the application

@@ -207,7 +207,7 @@ class SaveProgressUpdated:
 
 @dataclass(frozen=True)
 class SaveCompleted:
-    """Payload emitted after edited alignment outputs are persisted."""
+    """Payload emitted after alignment outputs are persisted."""
 
     saved_count: int
     active_choices: tuple[str, ...] | None = None
@@ -216,14 +216,14 @@ class SaveCompleted:
 
 @dataclass(frozen=True)
 class SaveFailed:
-    """Payload emitted when edited alignment output persistence fails."""
+    """Payload emitted when alignment output persistence fails."""
 
     message: str
 
 
 @dataclass(frozen=True)
 class SaveCancelled:
-    """Payload emitted when edited alignment output persistence is cancelled."""
+    """Payload emitted when alignment output persistence is cancelled."""
 
     reason: str
     message: str

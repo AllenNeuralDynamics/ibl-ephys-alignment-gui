@@ -162,12 +162,12 @@ class DesktopSaveCoordinator:
         if event.active_choices is not None:
             self.callbacks.render_alignment_choices(list(event.active_choices))
         logger.info(
-            "Channel locations saved to results folder for %d edited alignment(s)",
+            "Channel locations saved to results folder for %d alignment output(s)",
             event.saved_count,
         )
         if self._progress_dialog is not None:
             self._progress_dialog.show_finished(
-                f"Saved {event.saved_count} edited alignment"
+                f"Saved {event.saved_count} alignment output"
                 f"{'' if event.saved_count == 1 else 's'}.",
                 success=True,
             )
@@ -192,7 +192,7 @@ class DesktopSaveCoordinator:
             self._set_save_button_progress("Cancelled", event.message)
 
     def save_alignment_outputs(self) -> bool:
-        """Save edited alignment outputs, prompting for output if needed."""
+        """Save alignment outputs, prompting for output if needed."""
         save_ready = self.commands.can_save_alignment_output()
         if isinstance(save_ready, Blocked):
             if not self.callbacks.ensure_output_directory(save_ready.first):
@@ -227,7 +227,7 @@ class DesktopSaveCoordinator:
     ) -> bool:
         """Prepare a save job and run output generation in the background."""
         self._show_save_preparing()
-        self._set_save_button_progress("Saving...", "Saving edited alignments")
+        self._set_save_button_progress("Saving...", "Saving alignment outputs")
         if open_context and self._active_save_context_manager is None:
             self._open_save_context(
                 "Saving...",
@@ -479,7 +479,7 @@ class DesktopSaveCoordinator:
             targets,
             message=(
                 "Reloading runtime data for "
-                f"{len(targets)} edited alignment"
+                f"{len(targets)} alignment output"
                 f"{'' if len(targets) == 1 else 's'} before saving..."
             ),
             cancel_enabled=True,

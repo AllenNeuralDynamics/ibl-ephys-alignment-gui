@@ -496,7 +496,7 @@ def test_save_prompts_for_output_then_saves() -> None:
         ("progress-cancel-callback",),
         ("progress-cancel-enabled", True),
         ("choices", ["saved", "original"]),
-        ("progress-finished", "Saved 1 edited alignment.", True),
+        ("progress-finished", "Saved 1 alignment output.", True),
         ("progress-close",),
         ("busy-exit", None),
     ]
@@ -558,7 +558,7 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
         (
             "progress-started",
             (AlignmentKey("rec", "stream", 0),),
-            "Reloading runtime data for 1 edited alignment before saving...",
+            "Reloading runtime data for 1 alignment output before saving...",
             True,
         ),
         (
@@ -589,7 +589,7 @@ def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
     assert ("progress-cancel-enabled", False) in calls
     assert ("progress-cancel-enabled", True) in calls
     assert ("choices", ["saved", "original"]) in calls
-    assert ("progress-finished", "Saved 1 edited alignment.", True) in calls
+    assert ("progress-finished", "Saved 1 alignment output.", True) in calls
     assert ("progress-close",) in calls
     assert ("busy-exit", None) in calls
 
@@ -635,7 +635,7 @@ def test_save_progress_events_update_dialog_and_button() -> None:
     commands.events.emit(
         SaveProgressStarted(
             targets=(key,),
-            message="Saving 1 edited alignment...",
+            message="Saving 1 alignment output...",
         )
     )
     commands.events.emit(
@@ -645,7 +645,7 @@ def test_save_progress_events_update_dialog_and_button() -> None:
             status="started",
             completed=0,
             total=1,
-            message="Batching CCF transform points for 1 edited alignment...",
+            message="Batching CCF transform points for 1 alignment output...",
         )
     )
     commands.events.emit(
@@ -666,7 +666,7 @@ def test_save_progress_events_update_dialog_and_button() -> None:
     assert (
         "progress-started",
         (key,),
-        "Saving 1 edited alignment...",
+        "Saving 1 alignment output...",
         False,
     ) in calls
     assert (
@@ -676,7 +676,7 @@ def test_save_progress_events_update_dialog_and_button() -> None:
         "Running",
         0,
         1,
-        "Batching CCF transform points for 1 edited alignment...",
+        "Batching CCF transform points for 1 alignment output...",
     ) in calls
     assert (
         "progress-update",

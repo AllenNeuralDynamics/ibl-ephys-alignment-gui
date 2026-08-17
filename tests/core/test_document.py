@@ -167,6 +167,28 @@ def test_dirty_alignment_states_are_tracked_per_key() -> None:
     assert not doc.has_unsaved_alignments
 
 
+def test_saveable_alignment_items_include_clean_active_states_in_key_order() -> None:
+    doc = AlignmentDocument()
+    clean_key = AlignmentKey("rec2", "streamB", 0)
+    dirty_key = AlignmentKey("rec1", "streamA", 1)
+    inactive_key = AlignmentKey("rec1", "streamA", 0)
+    clean_state = doc.alignment_state_for(clean_key)
+    dirty_state = doc.alignment_state_for(dirty_key)
+    inactive_state = doc.alignment_state_for(inactive_key)
+    clean_state.active_alignment = ActiveAlignment(np.array([0.0]), np.array([1.0]))
+    dirty_state.active_alignment = ActiveAlignment(np.array([2.0]), np.array([3.0]))
+    dirty_state.mark_alignment_changed()
+
+    items = doc.saveable_alignment_items()
+
+    assert items == ((dirty_key, dirty_state), (clean_key, clean_state))
+    assert doc.saveable_alignment_states() == {
+        dirty_key: dirty_state,
+        clean_key: clean_state,
+    }
+    assert inactive_state.active_alignment is None
+
+
 def test_set_selected_shank_updates_active_alignment_key() -> None:
     doc = AlignmentDocument(selected_probe="probeA")
     doc.select_alignment_key(AlignmentKey("rec1", "streamA", 0))

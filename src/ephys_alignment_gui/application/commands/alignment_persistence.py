@@ -306,7 +306,7 @@ class AlignmentPersistenceCommandHandler:
         return result
 
     def can_save_alignment_output(self) -> Ok | Blocked:
-        """Return whether edited alignment outputs can be saved."""
+        """Return whether alignment outputs can be saved."""
         return self.controller.can_save_alignment_output()
 
     def save_edited_alignment_outputs(
@@ -315,7 +315,7 @@ class AlignmentPersistenceCommandHandler:
         use_docdb: bool,
         rehydrate_missing: bool = True,
     ) -> EditedAlignmentOutputsSaved | Blocked | Failed:
-        """Persist outputs for every dirty alignment state in the document."""
+        """Persist outputs for every saveable alignment state in the document."""
         prepared = self.prepare_edited_alignment_save(
             use_docdb=use_docdb,
             rehydrate_missing=rehydrate_missing,
@@ -340,29 +340,23 @@ class AlignmentPersistenceCommandHandler:
         if isinstance(ready, Blocked):
             return ready
 
-        target_keys = self._dirty_alignment_keys()
+        target_keys = self._saveable_alignment_keys()
         if not target_keys:
-            return self._save_failed("No edited alignments are ready to save")
+            return self._save_failed("No alignment outputs are ready to save")
         self._emit_save_progress_started(target_keys)
 
-        save_inputs = self._dirty_alignment_output_inputs(
+        save_inputs = self._saveable_alignment_output_inputs(
             rehydrate_missing=rehydrate_missing,
         )
         if isinstance(save_inputs, Failed):
             return self._save_failed(save_inputs.message)
         if not save_inputs:
-            return self._save_failed("No edited alignments are ready to save")
+            return self._save_failed("No alignment outputs are ready to save")
 
         targets: list[PreparedAlignmentSaveTarget] = []
         for key, save_input in save_inputs.items():
             state = save_input.state
-            alignment = state.active_alignment
-            alignments_to_save = state.alignments
-            if alignment is not None:
-                _, alignments_to_save = state.with_alignment_added(
-                    alignment.feature,
-                    alignment.track,
-                )
+            alignments_to_save = state.alignment_history_for_save()
             targets.append(
                 PreparedAlignmentSaveTarget(
                     key=key,
@@ -406,7 +400,7 @@ class AlignmentPersistenceCommandHandler:
                 total=len(output_inputs),
                 message=(
                     "Batching CCF transform points for "
-                    f"{len(output_inputs)} edited alignment(s)..."
+                    f"{len(output_inputs)} alignment output(s)..."
                 ),
             ),
         )
@@ -437,7 +431,7 @@ class AlignmentPersistenceCommandHandler:
                 total=len(output_inputs),
                 message=(
                     "Built CCF output dictionaries for "
-                    f"{len(output_inputs)} edited alignment(s)."
+                    f"{len(output_inputs)} alignment output(s)."
                 ),
             ),
         )
@@ -551,11 +545,12 @@ class AlignmentPersistenceCommandHandler:
     def prepare_save_runtime_rehydration(
         self,
     ) -> SaveRuntimeRehydrationPlan | Ok | Failed:
-        """Return save-runtime reload work needed before saving dirty outputs."""
+        """Return save-runtime reload work needed before saving outputs."""
         runtime_plan = plan_save_runtime_dependencies(
             document=self.controller.document,
             data_context=self.data_context,
             runtime=self.runtime,
+            keys=self._saveable_alignment_keys(),
         )
         if not runtime_plan.unavailable:
             return Ok()
@@ -588,7 +583,7 @@ class AlignmentPersistenceCommandHandler:
             return Ok()
         if isinstance(result, SaveRuntimeRehydrationCancelled):
             return self._save_failed(
-                f"Reload cancelled while saving edited alignments: {result.reason}"
+                f"Reload cancelled while saving alignment outputs: {result.reason}"
             )
         return self._save_failed(result.message)
 
@@ -643,20 +638,22 @@ class AlignmentPersistenceCommandHandler:
             )
         return tuple(statuses)
 
-    def _dirty_alignment_output_inputs(
+    def _saveable_alignment_output_inputs(
         self,
         *,
         rehydrate_missing: bool = True,
     ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
-        """Collect save inputs for every dirty document alignment state."""
-        dirty_items = self._dirty_alignment_items()
-        if not dirty_items:
+        """Collect save inputs for every saveable document alignment state."""
+        saveable_items = self._saveable_alignment_items()
+        if not saveable_items:
             return {}
+        target_keys = tuple(key for key, _state in saveable_items)
 
         runtime_plan = plan_save_runtime_dependencies(
             document=self.controller.document,
             data_context=self.data_context,
             runtime=self.runtime,
+            keys=target_keys,
         )
         if (
             rehydrate_missing
@@ -670,14 +667,15 @@ class AlignmentPersistenceCommandHandler:
                 document=self.controller.document,
                 data_context=self.data_context,
                 runtime=self.runtime,
+                keys=target_keys,
             )
         if runtime_plan.unavailable:
             return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
         runtime_by_key = runtime_plan.by_key
 
         save_inputs: dict[AlignmentKey, AlignmentSaveInput] = {}
-        total = len(dirty_items)
-        for input_index, (key, state) in enumerate(dirty_items, start=1):
+        total = len(saveable_items)
+        for input_index, (key, state) in enumerate(saveable_items, start=1):
             alignment = state.active_alignment
             assert alignment is not None
             self._emit_save_progress_updated(
@@ -697,13 +695,13 @@ class AlignmentPersistenceCommandHandler:
             shank_runtime = stream_runtime.shank_runtime_by_idx.get(key.shank_idx)
             if shank_runtime is None:
                 return Failed(
-                    "Cannot save edited alignment for "
+                    "Cannot save alignment output for "
                     f"{key.recording_id}/{key.ephys_collection} shank "
                     f"{key.shank_idx + 1}: shank runtime is not initialized."
                 )
             if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
                 return Failed(
-                    "Cannot save edited alignment for "
+                    "Cannot save alignment output for "
                     f"{key.recording_id}/{key.ephys_collection} shank "
                     f"{key.shank_idx + 1}: channel geometry is not initialized."
                 )
@@ -739,24 +737,15 @@ class AlignmentPersistenceCommandHandler:
             )
         return save_inputs
 
-    def _dirty_alignment_keys(self) -> tuple[AlignmentKey, ...]:
-        """Return dirty alignment keys that have active alignment data to save."""
-        return tuple(key for key, _state in self._dirty_alignment_items())
+    def _saveable_alignment_keys(self) -> tuple[AlignmentKey, ...]:
+        """Return alignment keys that have active output data to save."""
+        return tuple(key for key, _state in self._saveable_alignment_items())
 
-    def _dirty_alignment_items(self) -> tuple[tuple[AlignmentKey, AlignmentState], ...]:
-        """Return sorted dirty alignment states with active alignment data."""
-        return tuple(
-            (key, state)
-            for key, state in sorted(
-                self.controller.document.dirty_alignment_states().items(),
-                key=lambda item: (
-                    item[0].recording_id,
-                    item[0].ephys_collection,
-                    item[0].shank_idx,
-                ),
-            )
-            if state.active_alignment is not None
-        )
+    def _saveable_alignment_items(
+        self,
+    ) -> tuple[tuple[AlignmentKey, AlignmentState], ...]:
+        """Return sorted alignment states with active output data."""
+        return self.controller.document.saveable_alignment_items()
 
     def _build_alignment_outputs(
         self,
@@ -863,7 +852,7 @@ class AlignmentPersistenceCommandHandler:
         output_root = document.output_root
         if output_root is None:
             return Failed(
-                "Choose an output root before saving edited alignments from "
+                "Choose an output root before saving alignment outputs from "
                 "non-active streams."
             )
 
@@ -874,7 +863,7 @@ class AlignmentPersistenceCommandHandler:
             )
         except Exception as exc:
             return Failed(
-                f"Cannot resolve output directory for edited alignment: {exc}"
+                f"Cannot resolve output directory for alignment output: {exc}"
             )
 
         output_package_directory = self._output_package_directory_for_save(output_root)
@@ -952,7 +941,7 @@ class AlignmentPersistenceCommandHandler:
             SaveProgressStarted(
                 targets=target_keys,
                 message=(
-                    f"Saving {len(target_keys)} edited alignment"
+                    f"Saving {len(target_keys)} alignment output"
                     f"{'' if len(target_keys) == 1 else 's'}..."
                 ),
             )

@@ -367,7 +367,7 @@ class DesktopWorkbench:
         return coordinator.load_existing_alignments()
 
     def save_alignment_outputs(self) -> bool:
-        """Save edited alignment outputs."""
+        """Save alignment outputs."""
         return self.coordinator_cluster.save_coordinator.save_alignment_outputs()
 
     def display_qc_options(self) -> bool:

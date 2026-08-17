@@ -145,6 +145,25 @@ class AlignmentDocument:
             if state.has_unsaved_alignment
         }
 
+    def saveable_alignment_items(self) -> tuple[tuple[AlignmentKey, AlignmentState], ...]:
+        """Return sorted alignment states with active output to materialize."""
+        return tuple(
+            (key, state)
+            for key, state in sorted(
+                self.alignment_states.items(),
+                key=lambda item: (
+                    item[0].recording_id,
+                    item[0].ephys_collection,
+                    item[0].shank_idx,
+                ),
+            )
+            if state.has_saveable_alignment
+        )
+
+    def saveable_alignment_states(self) -> dict[AlignmentKey, AlignmentState]:
+        """Return alignment states with active output to materialize."""
+        return dict(self.saveable_alignment_items())
+
     @property
     def has_unsaved_alignments(self) -> bool:
         """Whether any per-key alignment state has unsaved edits."""

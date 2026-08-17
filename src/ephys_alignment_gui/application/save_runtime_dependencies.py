@@ -1,4 +1,4 @@
-"""Plan runtime dependencies required to save edited alignments."""
+"""Plan runtime dependencies required to save alignment outputs."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ SaveRuntimeStatus = Literal["active", "cached", "missing", "unresolvable"]
 
 @dataclass(frozen=True)
 class SaveRuntimeDependency:
-    """Runtime and metadata dependency for saving one edited alignment."""
+    """Runtime and metadata dependency for saving one alignment output."""
 
     key: AlignmentKey
     stream_key: StreamKey
@@ -49,7 +49,7 @@ class SaveRuntimeDependency:
 
 @dataclass(frozen=True)
 class SaveRuntimeDependencyPlan:
-    """Plan for the runtime dependencies of dirty document alignments."""
+    """Plan for the runtime dependencies of document alignment outputs."""
 
     dependencies: tuple[SaveRuntimeDependency, ...]
 
@@ -86,11 +86,22 @@ def plan_save_runtime_dependencies(
     document: AlignmentDocument,
     data_context: AlignmentDataContext,
     runtime: SessionRuntime,
+    keys: Iterable[AlignmentKey] | None = None,
 ) -> SaveRuntimeDependencyPlan:
-    """Build a read-only plan for saving all dirty document alignments."""
+    """Build a read-only plan for saving document alignment outputs.
+
+    When ``keys`` is omitted, dependencies are planned for dirty states only.
+    Callers that are preparing a full output-package save should pass the
+    document's saveable keys explicitly.
+    """
+    target_keys = (
+        _sorted_keys(document.dirty_alignment_states())
+        if keys is None
+        else _sorted_key_iterable(keys)
+    )
     dependencies = [
         _dependency_for_key(key, data_context=data_context, runtime=runtime)
-        for key in _sorted_keys(document.dirty_alignment_states())
+        for key in target_keys
     ]
     return SaveRuntimeDependencyPlan(tuple(dependencies))
 
@@ -122,7 +133,7 @@ def _dependency_for_key(
             status=status if stream_runtime is not None else "unresolvable",
             stream_runtime=stream_runtime,
             message=(
-                "Cannot save edited alignment for "
+                "Cannot save alignment output for "
                 f"{key.recording_id}/{key.ephys_collection} shank "
                 f"{key.shank_idx + 1}: no mouse root is loaded."
             ),
@@ -141,7 +152,7 @@ def _dependency_for_key(
             stream_runtime=stream_runtime,
             mouse_root=mouse_root,
             message=(
-                "Cannot resolve runtime needed to save edited alignment for "
+                "Cannot resolve runtime needed to save alignment output for "
                 f"{key.recording_id}/{key.ephys_collection} shank "
                 f"{key.shank_idx + 1}: {exc}"
             ),
@@ -181,7 +192,7 @@ def _dependency_for_key(
         channel_table=channel_table,
         load_target=load_target,
         message=(
-            "Cannot save edited alignment for "
+            "Cannot save alignment output for "
             f"{key.recording_id}/{key.ephys_collection} shank "
             f"{key.shank_idx + 1}: stream runtime is not loaded."
         ),
@@ -253,8 +264,12 @@ def _load_target_for_dependency(
 
 
 def _sorted_keys(states: dict[AlignmentKey, object]) -> list[AlignmentKey]:
+    return _sorted_key_iterable(states.keys())
+
+
+def _sorted_key_iterable(keys: Iterable[AlignmentKey]) -> list[AlignmentKey]:
     return sorted(
-        states,
+        keys,
         key=lambda key: (
             key.recording_id,
             key.ephys_collection,

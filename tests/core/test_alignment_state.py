@@ -100,6 +100,39 @@ def test_alignment_state_can_prepare_history_without_mutating() -> None:
     assert alignments[key] == [feature.tolist(), track.tolist()]
 
 
+def test_alignment_state_save_history_represents_active_alignment_once() -> None:
+    state = AlignmentState()
+    state.set_alignments({"saved": [[0.0, 1.0], [2.0, 3.0]]})
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+
+    alignments = state.alignment_history_for_save()
+
+    assert alignments == state.alignments
+
+
+def test_alignment_state_save_history_adds_new_active_alignment_without_mutating(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(alignment_state, "datetime", _FixedDatetime)
+    state = AlignmentState()
+    state.set_alignments({"saved": [[0.0, 1.0], [2.0, 3.0]]})
+    state.active_alignment = ActiveAlignment(
+        np.array([4.0, 5.0]),
+        np.array([6.0, 7.0]),
+    )
+
+    alignments = state.alignment_history_for_save()
+
+    assert state.alignments == {"saved": [[0.0, 1.0], [2.0, 3.0]]}
+    assert alignments == {
+        "saved": [[0.0, 1.0], [2.0, 3.0]],
+        "2026-07-09T12:00:00": [[4.0, 5.0], [6.0, 7.0]],
+    }
+
+
 def test_alignment_state_same_second_keys_disambiguate(monkeypatch) -> None:
     monkeypatch.setattr(alignment_state, "datetime", _FixedDatetime)
     state = AlignmentState()

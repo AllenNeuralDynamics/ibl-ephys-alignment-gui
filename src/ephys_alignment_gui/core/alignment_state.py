@@ -136,6 +136,11 @@ class AlignmentState:
         """Whether this state has saveable edits not yet persisted."""
         return self.save_state.is_dirty(self._active_alignment_signature())
 
+    @property
+    def has_saveable_alignment(self) -> bool:
+        """Whether this state has active alignment output to materialize."""
+        return self.active_alignment is not None
+
     def mark_alignment_changed(self) -> None:
         """Record that the current working alignment changed via user edit."""
         self.save_state.mark_changed()
@@ -215,6 +220,14 @@ class AlignmentState:
         alignments[date] = [feature.tolist(), track.tolist()]
         return date, alignments
 
+    def alignment_history_for_save(self) -> dict[str, list[list[float]]]:
+        """Return persisted history with the active alignment represented once."""
+        alignment = self.active_alignment
+        if alignment is None or self._active_alignment_is_in_history(alignment):
+            return dict(self.alignments)
+        _key, alignments = self.with_alignment_added(alignment.feature, alignment.track)
+        return alignments
+
     def select_alignment_idx(
         self,
         idx: int,
@@ -274,6 +287,30 @@ class AlignmentState:
             tuple(float(value) for value in alignment.feature),
             tuple(float(value) for value in alignment.track),
             alignment.lin_fit,
+        )
+
+    def _active_alignment_is_in_history(self, alignment: ActiveAlignment) -> bool:
+        return any(
+            self._history_entry_matches_alignment(value, alignment)
+            for value in self.alignments.values()
+        )
+
+    @staticmethod
+    def _history_entry_matches_alignment(
+        value: Any,
+        alignment: ActiveAlignment,
+    ) -> bool:
+        try:
+            feature, track = value
+            feature_arr = np.asarray(feature, dtype=float)
+            track_arr = np.asarray(track, dtype=float)
+        except (TypeError, ValueError):
+            return False
+        return (
+            feature_arr.shape == alignment.feature.shape
+            and track_arr.shape == alignment.track.shape
+            and np.allclose(feature_arr, alignment.feature)
+            and np.allclose(track_arr, alignment.track)
         )
 
     @staticmethod

@@ -79,6 +79,48 @@ def test_plan_save_runtime_dependencies_reports_missing_runtime_reload_need() ->
     assert "stream runtime is not loaded" in plan.failure_message()
 
 
+def test_plan_save_runtime_dependencies_defaults_to_dirty_scope() -> None:
+    dirty_key = AlignmentKey("rec", "dirty-stream", 0)
+    clean_key = AlignmentKey("rec", "clean-stream", 0)
+    document = _document_with_dirty_alignment(dirty_key)
+    clean_state = document.alignment_state_for(clean_key)
+    clean_state.active_alignment = ActiveAlignment(
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+    )
+
+    plan = plan_save_runtime_dependencies(
+        document=document,
+        data_context=FakeDataContext(),
+        runtime=SessionRuntime(),
+    )
+
+    assert [dependency.key for dependency in plan.dependencies] == [dirty_key]
+
+
+def test_plan_save_runtime_dependencies_accepts_explicit_saveable_scope() -> None:
+    dirty_key = AlignmentKey("rec", "dirty-stream", 0)
+    clean_key = AlignmentKey("rec", "clean-stream", 0)
+    document = _document_with_dirty_alignment(dirty_key)
+    clean_state = document.alignment_state_for(clean_key)
+    clean_state.active_alignment = ActiveAlignment(
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+    )
+
+    plan = plan_save_runtime_dependencies(
+        document=document,
+        data_context=FakeDataContext(),
+        runtime=SessionRuntime(),
+        keys=document.saveable_alignment_states(),
+    )
+
+    assert [dependency.key for dependency in plan.dependencies] == [
+        clean_key,
+        dirty_key,
+    ]
+
+
 def test_plan_save_runtime_dependencies_protects_runtime_without_metadata() -> None:
     key = AlignmentKey("rec", "stream", 0)
     document = _document_with_dirty_alignment(key)
