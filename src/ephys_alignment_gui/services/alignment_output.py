@@ -23,6 +23,8 @@ from ephys_alignment_gui.services.histology_data import HistologyDataContext
 logger = logging.getLogger(__name__)
 
 ANTS_DIMENSION = 3
+CCF_25UM_ML_BOUNDS_MM = (-5.739, 5.636)
+CCF_ML_SAVE_MARGIN_MM = 1.0
 AlignmentOutputResult = tuple[
     dict[str, dict[str, Any]],
     dict[str, dict[str, Any]],
@@ -102,6 +104,10 @@ class AlignmentOutputService:
 
         all_channel_locations_ras = np.concatenate(packed_points, axis=0)
         all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
+        self._validate_ccf_xyz(
+            all_ccf_xyz,
+            expected_count=len(all_channel_locations_ras),
+        )
 
         results: dict[Hashable, AlignmentOutputResult] = {}
         for key, channel_dict in channel_dicts.items():
@@ -205,6 +211,11 @@ class AlignmentOutputService:
         channel_dict: dict[str, dict[str, Any]],
         ccf_xyz: NDArray,
     ) -> dict[str, dict[str, Any]]:
+        if len(ccf_xyz) != len(channel_dict):
+            raise RuntimeError(
+                "CCF transform returned a different number of points than the "
+                f"channel output rows: {len(ccf_xyz)} != {len(channel_dict)}"
+            )
         ccf_channel_dict: dict[str, dict[str, Any]] = {}
         for ch, (x, y, z) in zip(channel_dict.keys(), ccf_xyz):
             info = channel_dict[ch]
@@ -221,6 +232,30 @@ class AlignmentOutputService:
                 "brain_region": info["brain_region"],
             }
         return ccf_channel_dict
+
+    @staticmethod
+    def _validate_ccf_xyz(ccf_xyz: NDArray, *, expected_count: int) -> None:
+        ccf_xyz = np.asarray(ccf_xyz, dtype=np.float64)
+        if ccf_xyz.shape != (expected_count, ANTS_DIMENSION):
+            raise RuntimeError(
+                "CCF transform returned coordinates with shape "
+                f"{ccf_xyz.shape}, expected ({expected_count}, {ANTS_DIMENSION})"
+            )
+        if not np.all(np.isfinite(ccf_xyz)):
+            raise RuntimeError("CCF transform returned non-finite coordinates")
+
+        min_ml = CCF_25UM_ML_BOUNDS_MM[0] - CCF_ML_SAVE_MARGIN_MM
+        max_ml = CCF_25UM_ML_BOUNDS_MM[1] + CCF_ML_SAVE_MARGIN_MM
+        ml_values = ccf_xyz[:, 0]
+        if np.any((ml_values < min_ml) | (ml_values > max_ml)):
+            raise RuntimeError(
+                "CCF transform returned ML coordinates outside Allen CCF bounds "
+                f"plus {CCF_ML_SAVE_MARGIN_MM:g} mm margin: "
+                f"range=({float(np.min(ml_values)):.3f}, "
+                f"{float(np.max(ml_values)):.3f}) mm. This usually indicates "
+                "an image orientation/origin mismatch at the anatomical-to-CCF "
+                "save boundary."
+            )
 
     @staticmethod
     def _normalize_output_input(value: Any) -> AlignmentOutputInput:

@@ -121,9 +121,9 @@ def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
         calls.append((dimension, points.copy(), transforms, whichtoinvert))
         return pandas.DataFrame(
             {
-                "x": np.arange(len(points), dtype=float) + 100.0,
-                "y": np.arange(len(points), dtype=float) + 200.0,
-                "z": np.arange(len(points), dtype=float) + 300.0,
+                "x": np.arange(len(points), dtype=float) * 0.1,
+                "y": np.arange(len(points), dtype=float) * 0.2,
+                "z": np.arange(len(points), dtype=float) * 0.3,
             }
         )
 
@@ -175,13 +175,93 @@ def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
     assert len(calls[0][1]) == 3
     first_ccf = results[first_key][1]
     second_ccf = results[second_key][1]
-    assert first_ccf["channel_0"]["x"] == 100.0
-    assert first_ccf["channel_1"]["x"] == 101.0
+    assert first_ccf["channel_0"]["x"] == 0.0
+    assert first_ccf["channel_1"]["x"] == 0.1
     assert first_ccf["channel_0"]["raw_ind"] == 5
     assert first_ccf["channel_0"]["contact_id"] == 105
     assert first_ccf["channel_0"]["shank_idx"] == 0
-    assert second_ccf["channel_0"]["x"] == 102.0
+    assert second_ccf["channel_0"]["x"] == 0.2
     assert second_ccf["channel_0"]["raw_ind"] == 0
     assert second_ccf["channel_0"]["contact_id"] is None
     assert second_ccf["channel_0"]["shank_idx"] == 0
     assert results[first_key][2]
+
+
+def test_alignment_output_service_rejects_ccf_shape_mismatch() -> None:
+    channel_dict = {
+        "channel_0": {
+            "axial": 0.0,
+            "lateral": 0.0,
+            "raw_ind": 0,
+            "contact_id": None,
+            "shank_idx": 0,
+            "brain_region_id": 1,
+            "brain_region": "R1",
+        },
+        "channel_1": {
+            "axial": 20.0,
+            "lateral": 0.0,
+            "raw_ind": 1,
+            "contact_id": None,
+            "shank_idx": 0,
+            "brain_region_id": 2,
+            "brain_region": "R2",
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="different number of points"):
+        AlignmentOutputService._create_ccf_channel_dict(
+            channel_dict,
+            np.array([[0.0, 0.0, 0.0]]),
+        )
+
+
+def test_alignment_output_service_rejects_out_of_bounds_ccf_ml(
+    monkeypatch,
+) -> None:
+    def fake_apply_transforms_to_points(
+        dimension,
+        points,
+        transforms,
+        whichtoinvert,
+    ):
+        return pandas.DataFrame(
+            {
+                "x": [9.5],
+                "y": [0.0],
+                "z": [0.0],
+            }
+        )
+
+    monkeypatch.setattr(
+        alignment_output_service.ants,
+        "apply_transforms_to_points",
+        fake_apply_transforms_to_points,
+    )
+    data_context = AlignmentDataContext()
+    data_context.mouse_root = SimpleNamespace(
+        transforms=SimpleNamespace(
+            image_to_template_affine="image_affine.mat",
+            image_to_template_warp="image_warp.nii.gz",
+            template_to_ccf_affine="ccf_affine.mat",
+            template_to_ccf_warp="ccf_warp.nii.gz",
+        )
+    )
+    histology_context = HistologyDataContext(
+        runtime_data=SimpleNamespace(
+            brain_atlas=FakeBrainAtlas(),
+            histology_images={},
+            lazy_channel_paths={},
+        )
+    )
+    service = AlignmentOutputService(data_context, histology_context)
+
+    with pytest.raises(RuntimeError, match="outside Allen CCF bounds"):
+        service.get_alignment_results_batch(
+            {
+                ("rec", "stream", 0): (
+                    np.array([[0.0, 0.0, 0.0]]),
+                    np.array([[0.0, 0.0]]),
+                )
+            }
+        )
