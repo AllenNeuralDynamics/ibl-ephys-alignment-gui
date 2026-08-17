@@ -12,9 +12,6 @@ from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveJobCancelled,
 )
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
-from ephys_alignment_gui.application.save_runtime_rehydration import (
-    SaveRuntimeRehydrationPlan,
-)
 from ephys_alignment_gui.core.alignment_events import (
     SaveCancelled,
     SaveCompleted,
@@ -30,12 +27,6 @@ from ephys_alignment_gui.desktop.workers.alignment_save_runner import (
     AlignmentSaveRunner,
     QtAlignmentSaveRunner,
 )
-from ephys_alignment_gui.desktop.workers.save_rehydration_runner import (
-    QtSaveRuntimeRehydrationRunner,
-    SaveRuntimeRehydrationResult,
-    SaveRuntimeRehydrationRunner,
-)
-from ephys_alignment_gui.io.load_data_job import LoadDataJobProgress
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +57,6 @@ class DesktopSaveCoordinator:
     commands: Any
     events: Any
     callbacks: DesktopSaveCallbacks
-    rehydration_runner: SaveRuntimeRehydrationRunner = field(
-        default_factory=QtSaveRuntimeRehydrationRunner
-    )
     save_runner: AlignmentSaveRunner = field(default_factory=QtAlignmentSaveRunner)
     _active_save_context: Any | None = field(default=None, init=False, repr=False)
     _active_save_context_manager: Any | None = field(
@@ -76,7 +64,6 @@ class DesktopSaveCoordinator:
         init=False,
         repr=False,
     )
-    _pending_use_docdb: bool | None = field(default=None, init=False, repr=False)
     _progress_dialog: Any | None = field(default=None, init=False, repr=False)
     _save_button_original_text: str | None = field(
         default=None,
@@ -85,11 +72,6 @@ class DesktopSaveCoordinator:
     )
     _save_button_original_tooltip: str | None = field(
         default=None,
-        init=False,
-        repr=False,
-    )
-    _rehydration_targets: tuple[AlignmentKey, ...] = field(
-        default=(),
         init=False,
         repr=False,
     )
@@ -204,19 +186,11 @@ class DesktopSaveCoordinator:
                 self.callbacks.log_requirement(save_ready.first)
             return False
 
-        if self.rehydration_runner.is_running or self.save_runner.is_running:
+        if self.save_runner.is_running:
             logger.info("Save request ignored because save work is active")
             return False
 
         use_docdb = self.callbacks.use_docdb()
-        rehydration = self.commands.prepare_save_runtime_rehydration()
-        if isinstance(rehydration, Failed):
-            self.commands.publish_save_runtime_rehydration_result(rehydration)
-            return False
-        if isinstance(rehydration, SaveRuntimeRehydrationPlan):
-            return self._start_rehydration_then_save(rehydration, use_docdb=use_docdb)
-
-        assert isinstance(rehydration, Ok)
         return self._start_prepared_save(use_docdb=use_docdb)
 
     def _start_prepared_save(
@@ -240,7 +214,6 @@ class DesktopSaveCoordinator:
         try:
             prepared = self.commands.prepare_edited_alignment_save(
                 use_docdb=use_docdb,
-                rehydrate_missing=False,
             )
         except Exception as exc:
             self._close_save_context(exc)
@@ -287,40 +260,6 @@ class DesktopSaveCoordinator:
             cancel_enabled=False,
         )
 
-    def _start_rehydration_then_save(
-        self,
-        plan: SaveRuntimeRehydrationPlan,
-        *,
-        use_docdb: bool,
-    ) -> bool:
-        """Start background runtime reload, then save from the completion callback."""
-        self._show_rehydration_started(plan)
-        self._set_save_button_progress(
-            f"Reloading 0/{max(len(plan.dependencies), 1)}",
-            "Reloading runtime data needed for save",
-        )
-        self._open_save_context(
-            "Reloading data needed for save...",
-            "Saved successfully",
-            disable_widgets=self._save_disable_widgets(),
-        )
-        self._pending_use_docdb = use_docdb
-        try:
-            self.rehydration_runner.start(
-                plan=plan,
-                run_job=self.commands.run_save_runtime_rehydration,
-                on_progress=self._on_rehydration_progress,
-                on_finished=self._on_rehydration_finished,
-            )
-        except Exception as exc:
-            self._pending_use_docdb = None
-            failed = Failed(f"Failed to start save-runtime reload: {exc}")
-            self.commands.publish_save_runtime_rehydration_result(failed)
-            self._close_save_context(exc)
-            logger.exception("Failed to start save-runtime reload")
-            return False
-        return True
-
     def shutdown_active_save(
         self,
         reason: str = "application closing",
@@ -329,16 +268,12 @@ class DesktopSaveCoordinator:
     ) -> bool:
         """Settle active save workers before desktop teardown."""
         stopped = True
-        if self.rehydration_runner.is_running:
-            stopped = self.rehydration_runner.shutdown(reason, timeout_ms=timeout_ms)
         if self.save_runner.is_running:
             stopped = self.save_runner.shutdown(reason, timeout_ms=timeout_ms) and stopped
         if stopped and (
-            self._pending_use_docdb is not None
-            or self._progress_dialog is not None
+            self._progress_dialog is not None
             or self._active_save_context_manager is not None
         ):
-            self._pending_use_docdb = None
             if self._progress_dialog is not None:
                 self._progress_dialog.close_dialog()
             self._close_save_context(RuntimeError(f"Save cancelled: {reason}"))
@@ -346,20 +281,6 @@ class DesktopSaveCoordinator:
 
     def cancel_active_save(self, reason: str = "cancelled by user") -> bool:
         """Request cooperative cancellation for active save work."""
-        if self.rehydration_runner.is_running:
-            self.rehydration_runner.cancel(reason)
-            if self._progress_dialog is not None:
-                self._progress_dialog.set_cancel_enabled(False)
-                self._progress_dialog.update_progress(
-                    key=None,
-                    phase_label="Reloading runtime",
-                    status_label="Cancelling",
-                    completed=0,
-                    total=max(len(self._rehydration_targets), 1),
-                    message="Cancelling save runtime reload...",
-                )
-            self._set_save_button_progress("Cancelling...", "Cancelling save")
-            return True
         if self.save_runner.is_running:
             self.save_runner.cancel(reason)
             if self._progress_dialog is not None:
@@ -375,47 +296,6 @@ class DesktopSaveCoordinator:
             self._set_save_button_progress("Cancelling...", "Cancelling save")
             return True
         return False
-
-    def _on_rehydration_progress(self, event: LoadDataJobProgress) -> None:
-        """Update save progress while missing runtimes are reloaded."""
-        if self._active_save_context is not None:
-            self._active_save_context.update_message(event.message)
-        key = self._key_from_load_target(getattr(event, "target", None))
-        total = len(self._rehydration_targets)
-        index = _target_index(self._rehydration_targets, key)
-        completed = index if event.status == "completed" else max(index - 1, 0)
-        self._set_save_button_progress(
-            f"Reloading {completed}/{max(total, 1)}",
-            event.message,
-        )
-        if self._progress_dialog is not None:
-            self._progress_dialog.update_progress(
-                key=key,
-                phase_label="Reloading runtime",
-                status_label=("Loaded" if event.status == "completed" else "Loading"),
-                completed=completed,
-                total=total,
-                message=event.message,
-            )
-
-    def _on_rehydration_finished(
-        self,
-        result: SaveRuntimeRehydrationResult,
-    ) -> None:
-        """Publish reload completion and run the final save transaction."""
-        published = self.commands.publish_save_runtime_rehydration_result(result)
-        if isinstance(published, Failed):
-            self._pending_use_docdb = None
-            self._close_save_context(RuntimeError(published.message))
-            return
-
-        use_docdb = bool(self._pending_use_docdb)
-        self._pending_use_docdb = None
-        if self._active_save_context is not None:
-            self._active_save_context.update_message("Saving output files...")
-        if self._progress_dialog is not None:
-            self._progress_dialog.set_cancel_enabled(False)
-        self._start_prepared_save(use_docdb=use_docdb, open_context=False)
 
     def _on_save_job_progress(self, event: Any) -> None:
         """Publish save-job progress from the GUI thread."""
@@ -465,25 +345,8 @@ class DesktopSaveCoordinator:
         finally:
             self._active_save_context = None
             self._active_save_context_manager = None
-            self._rehydration_targets = ()
             self._save_targets = ()
             self._restore_save_button_state()
-
-    def _show_rehydration_started(self, plan: SaveRuntimeRehydrationPlan) -> None:
-        """Show cancellable runtime reload progress before final saving."""
-        targets = tuple(dependency.key for dependency in plan.dependencies)
-        self._rehydration_targets = targets
-        dialog = self._save_progress_dialog()
-        dialog.set_cancel_callback(lambda: self.cancel_active_save("cancelled by user"))
-        dialog.show_started(
-            targets,
-            message=(
-                "Reloading runtime data for "
-                f"{len(targets)} alignment output"
-                f"{'' if len(targets) == 1 else 's'} before saving..."
-            ),
-            cancel_enabled=True,
-        )
 
     def _save_progress_dialog(self) -> Any:
         """Return the active save progress dialog, creating it if needed."""
@@ -533,22 +396,6 @@ class DesktopSaveCoordinator:
             or self._save_button_original_tooltip is not None
         )
 
-    @staticmethod
-    def _key_from_load_target(target: Any | None) -> AlignmentKey | None:
-        if target is None:
-            return None
-        stream_key = getattr(target, "stream_key", None)
-        shank_idx = getattr(target, "shank_idx", None)
-        if not isinstance(stream_key, tuple) or len(stream_key) != 2:
-            return None
-        if shank_idx is None:
-            return None
-        return AlignmentKey(
-            recording_id=str(stream_key[0]),
-            ephys_collection=str(stream_key[1]),
-            shank_idx=int(shank_idx),
-        )
-
     def display_qc_options(self) -> bool:
         """Open the QC dialog if histology is available."""
         if not self.callbacks.histology_available():
@@ -581,7 +428,6 @@ class DesktopSaveCoordinator:
 def _phase_label(phase: str) -> str:
     return {
         "preparing": "Preparing",
-        "rehydrating": "Reloading runtime",
         "building_outputs": "Transforming CCF",
         "writing_files": "Writing files",
     }.get(phase, str(phase).replace("_", " ").title())
@@ -594,12 +440,3 @@ def _status_label(status: str) -> str:
         "completed": "Done",
         "cancelled": "Cancelled",
     }.get(status, str(status).title())
-
-
-def _target_index(targets: tuple[AlignmentKey, ...], key: AlignmentKey | None) -> int:
-    if key is None:
-        return 1 if targets else 0
-    try:
-        return targets.index(key) + 1
-    except ValueError:
-        return 1 if targets else 0

@@ -51,10 +51,6 @@ def test_workspace_wires_shared_services() -> None:
         workspace.persistence_commands.output_builder
         is workspace.alignment_output_service
     )
-    assert (
-        workspace.persistence_commands.save_runtime_rehydrator
-        is workspace.save_runtime_rehydrator
-    )
     assert workspace.autosave_commands.controller is workspace.controller
     assert (
         workspace.persistence_commands.autosave_checkpoints
@@ -64,8 +60,6 @@ def test_workspace_wires_shared_services() -> None:
         workspace.persistence_commands.save_input_factory
         is workspace.save_input_factory
     )
-    assert workspace.save_runtime_rehydrator.runtime is workspace.runtime
-    assert workspace.save_runtime_rehydrator.load_data_job is workspace.load_data_job
     assert workspace.edit_commands.runtime is workspace.runtime
     assert workspace.edit_commands.autosave_checkpoints is workspace.autosave_commands
     assert workspace.app.commands.paths is workspace.path_commands

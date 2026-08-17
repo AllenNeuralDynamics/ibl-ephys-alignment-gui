@@ -38,12 +38,6 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
     PreviousAlignmentPackageLoaded,
 )
-from ephys_alignment_gui.application.save_runtime_rehydration import (
-    SaveRuntimeRehydrated,
-    SaveRuntimeRehydrationCancelled,
-    SaveRuntimeRehydrationPlan,
-    SaveRuntimeRehydrator,
-)
 from ephys_alignment_gui.core.alignment_events import (
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
@@ -72,11 +66,6 @@ from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventBus
 from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
-from ephys_alignment_gui.io.load_data_job import (
-    LoadDataCancelToken,
-    LoadDataProgressCallback,
-)
-from ephys_alignment_gui.runtime.session import SessionRuntime
 from ephys_alignment_gui.services.alignment_derived_data import (
     AlignmentDerivedDataService,
 )
@@ -95,12 +84,10 @@ class AlignmentPersistenceCommandHandler:
 
     controller: AlignmentController
     data_context: AlignmentDataContext
-    runtime: SessionRuntime
     derived_data_service: AlignmentDerivedDataService
     alignment_repository: AlignmentRepository
     output_builder: Any
     events: EventBus
-    save_runtime_rehydrator: SaveRuntimeRehydrator | None = None
     autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
     save_input_factory: AlignmentSaveInputFactory | None = None
 
@@ -310,12 +297,10 @@ class AlignmentPersistenceCommandHandler:
         self,
         *,
         use_docdb: bool,
-        rehydrate_missing: bool = True,
     ) -> EditedAlignmentOutputsSaved | Blocked | Failed:
         """Persist outputs for every saveable alignment state in the document."""
         prepared = self.prepare_edited_alignment_save(
             use_docdb=use_docdb,
-            rehydrate_missing=rehydrate_missing,
         )
         if isinstance(prepared, Blocked | Failed):
             return prepared
@@ -330,7 +315,6 @@ class AlignmentPersistenceCommandHandler:
         self,
         *,
         use_docdb: bool,
-        rehydrate_missing: bool = True,
     ) -> PreparedAlignmentSave | Blocked | Failed:
         """Prepare immutable save-job inputs on the application thread."""
         ready = self.controller.can_save_alignment_output()
@@ -342,9 +326,7 @@ class AlignmentPersistenceCommandHandler:
             return self._save_failed("No alignment outputs are ready to save")
         self._emit_save_progress_started(target_keys)
 
-        save_inputs = self._saveable_alignment_output_inputs(
-            rehydrate_missing=rehydrate_missing,
-        )
+        save_inputs = self._saveable_alignment_output_inputs()
         if isinstance(save_inputs, Failed):
             return self._save_failed(save_inputs.message)
         if not save_inputs:
@@ -539,41 +521,6 @@ class AlignmentPersistenceCommandHandler:
         )
         return result
 
-    def prepare_save_runtime_rehydration(
-        self,
-    ) -> SaveRuntimeRehydrationPlan | Ok | Failed:
-        """Return save-runtime reload work needed before saving outputs."""
-        return Ok()
-
-    def run_save_runtime_rehydration(
-        self,
-        plan: SaveRuntimeRehydrationPlan,
-        *,
-        progress: LoadDataProgressCallback | None = None,
-        cancel_token: LoadDataCancelToken | None = None,
-    ) -> SaveRuntimeRehydrated | SaveRuntimeRehydrationCancelled | Failed:
-        """Reload missing save runtimes without publishing app events."""
-        if self.save_runtime_rehydrator is None:
-            return Failed("No save-runtime rehydrator is configured.")
-        return self.save_runtime_rehydrator.run_rehydration_plan(
-            plan,
-            progress=progress,
-            cancel_token=cancel_token,
-        )
-
-    def publish_save_runtime_rehydration_result(
-        self,
-        result: SaveRuntimeRehydrated | SaveRuntimeRehydrationCancelled | Failed,
-    ) -> Ok | Failed:
-        """Publish the terminal semantic result of save-runtime rehydration."""
-        if isinstance(result, SaveRuntimeRehydrated):
-            return Ok()
-        if isinstance(result, SaveRuntimeRehydrationCancelled):
-            return self._save_failed(
-                f"Reload cancelled while saving alignment outputs: {result.reason}"
-            )
-        return self._save_failed(result.message)
-
     def _save_failed(self, message: str) -> Failed:
         self.controller.document.dirty = self.controller.document.has_unsaved_alignments
         self._emit_save_failed(message)
@@ -627,11 +574,8 @@ class AlignmentPersistenceCommandHandler:
 
     def _saveable_alignment_output_inputs(
         self,
-        *,
-        rehydrate_missing: bool = True,
     ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
         """Collect save inputs for every saveable document alignment state."""
-        del rehydrate_missing
         saveable_items = self._saveable_alignment_items()
         if not saveable_items:
             return {}

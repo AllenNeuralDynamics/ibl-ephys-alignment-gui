@@ -178,7 +178,6 @@ class SaveDocDbStatus:
 
 SaveProgressPhase = Literal[
     "preparing",
-    "rehydrating",
     "building_outputs",
     "writing_files",
 ]

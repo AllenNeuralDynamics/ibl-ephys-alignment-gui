@@ -329,7 +329,7 @@ class FakeRuntimeInitializer:
         self.calls.append((shank_runtime, kwargs))
         if self.error is not None:
             raise self.error
-        shank_runtime.ephysalign = "rehydrated-aligner"
+        shank_runtime.ephysalign = "initialized-aligner"
         shank_runtime.track_annotations_ras = kwargs["track_annotations_ras"]
         return SimpleNamespace(
             feature_init=np.array([1.0, 2.0]),
@@ -2376,7 +2376,6 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
 
     prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
         use_docdb=False,
-        rehydrate_missing=False,
     )
 
     assert isinstance(prepared, PreparedAlignmentSave)
@@ -2441,7 +2440,6 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     state.mark_alignment_changed()
     prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
         use_docdb=False,
-        rehydrate_missing=False,
     )
     assert isinstance(prepared, PreparedAlignmentSave)
     cancel_token = AlignmentSaveCancelToken()
@@ -2494,8 +2492,6 @@ def test_commands_save_edited_alignment_outputs_uses_lightweight_geometry_withou
         alignment_runtime_service=runtime_initializer,
         probe_track_service=probe_track_service,
     )
-    fake_job = FakeLoadDataJob()
-    workspace.save_runtime_rehydrator.load_data_job = fake_job
     workspace.persistence_commands.alignment_repository = repo
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
@@ -2518,7 +2514,6 @@ def test_commands_save_edited_alignment_outputs_uses_lightweight_geometry_withou
 
     assert isinstance(result, EditedAlignmentOutputsSaved)
     assert result.saved_count == 1
-    assert fake_job.calls == []
     assert ephys_data_service.loaded_probe is None
     assert probe_track_service.calls == []
     assert runtime_initializer.calls == []
@@ -2531,57 +2526,7 @@ def test_commands_save_edited_alignment_outputs_uses_lightweight_geometry_withou
     assert not workspace.document.dirty
 
 
-def test_commands_prepare_save_runtime_rehydration_is_noop_for_full_save(
-    tmp_path,
-) -> None:
-    repo = FakeAlignmentRepository()
-    output_builder = FakeBatchOutputBuilder()
-    derived = FakeDerivedDataService()
-    ephys_data_service = FakeEphysDataService()
-    runtime_initializer = FakeRuntimeInitializer()
-    probe_track_service = FakeProbeTrackService()
-    workspace = AlignmentWorkspace(
-        ephys_data_service=ephys_data_service,
-        alignment_runtime_service=runtime_initializer,
-        probe_track_service=probe_track_service,
-    )
-    fake_job = FakeLoadDataJob()
-    workspace.save_runtime_rehydrator.load_data_job = fake_job
-    workspace.persistence_commands.alignment_repository = repo
-    workspace.persistence_commands.output_builder = output_builder
-    workspace.persistence_commands.derived_data_service = derived
-    workspace.document.output_root = tmp_path / "results"
-    workspace.document.output_directory = tmp_path / "active"
-    _attach_single_probe_save_geometry(workspace, tmp_path)
-    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
-
-    key = AlignmentKey("rec", "stream", 0)
-    state = workspace.document.select_alignment_key(key)
-    state.active_alignment = ActiveAlignment(
-        feature=np.array([1.0, 2.0]),
-        track=np.array([3.0, 4.0]),
-    )
-    state.mark_alignment_changed()
-
-    plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
-
-    assert isinstance(plan, Ok)
-
-    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
-        use_docdb=False,
-        rehydrate_missing=False,
-    )
-
-    assert isinstance(result, EditedAlignmentOutputsSaved)
-    assert result.saved_count == 1
-    assert fake_job.calls == []
-    assert list(output_builder.batched_alignments) == [key]
-    assert [call["geometry"].key for call in save_channel_builder.calls] == [key]
-    assert not state.has_unsaved_alignment
-    assert not workspace.document.dirty
-
-
-def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
+def test_commands_full_save_does_not_load_or_evict_cached_runtimes(
     tmp_path,
 ) -> None:
     repo = FakeAlignmentRepository()
@@ -2593,8 +2538,6 @@ def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
         probe_track_service=FakeProbeTrackService(),
     )
     workspace.runtime.max_cached_streams = 2
-    fake_job = FakeLoadDataJob()
-    workspace.save_runtime_rehydrator.load_data_job = fake_job
     workspace.persistence_commands.alignment_repository = repo
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
@@ -2637,13 +2580,8 @@ def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
         }
         workspace.runtime.cache_loaded_stream(stream_runtime, activate=False)
 
-    plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
-
-    assert isinstance(plan, Ok)
-
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False,
-        rehydrate_missing=False,
     )
 
     assert isinstance(result, EditedAlignmentOutputsSaved)
@@ -2658,7 +2596,6 @@ def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
         AlignmentKey("rec", "stream-1", 0),
         AlignmentKey("rec", "stream-2", 0),
     ]
-    assert fake_job.calls == []
     assert list(workspace.runtime.stream_cache) == [
         ("rec", "stream-0"),
         ("rec", "stream-1"),
@@ -2814,7 +2751,6 @@ def test_commands_save_without_input_snapshot_fails_for_missing_save_geometry(
 
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False,
-        rehydrate_missing=False,
     )
 
     assert isinstance(result, Failed)
@@ -2855,7 +2791,6 @@ def test_commands_save_edited_alignment_outputs_does_not_cache_failed_preparatio
         ephys_data_service=FakeEphysDataService(),
         probe_track_service=FakeProbeTrackService(),
     )
-    workspace.save_runtime_rehydrator.load_data_job = FakeLoadDataJob()
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
     _attach_single_probe_save_geometry(workspace, tmp_path)

@@ -14,10 +14,6 @@ from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
 )
-from ephys_alignment_gui.application.save_runtime_rehydration import (
-    SaveRuntimeRehydrated,
-    SaveRuntimeRehydrationPlan,
-)
 from ephys_alignment_gui.core.alignment_events import (
     SaveCancelled,
     SaveCompleted,
@@ -40,7 +36,6 @@ from ephys_alignment_gui.desktop.coordinators.save_coordinator import (
     DesktopSaveCallbacks,
     DesktopSaveCoordinator,
 )
-from ephys_alignment_gui.io.load_data_job import LoadDataJobProgress
 from ephys_alignment_gui.services.alignment_repository import SavedAlignmentOutputs
 
 
@@ -134,52 +129,6 @@ class FakeSaveProgressDialog:
         self.calls.append(("progress-close",))
 
 
-class ManualSaveRehydrationRunner:
-    def __init__(self, *, result: Any | None = None) -> None:
-        self.result = result
-        self.active = False
-        self.start_calls: list[SaveRuntimeRehydrationPlan] = []
-        self.cancel_calls: list[str] = []
-        self.shutdown_calls: list[tuple[str, int]] = []
-        self.shutdown_result = True
-        self._plan = None
-        self._run_job = None
-        self._on_progress = None
-        self._on_finished = None
-
-    @property
-    def is_running(self) -> bool:
-        return self.active
-
-    def start(self, *, plan, run_job, on_progress, on_finished) -> None:
-        self.active = True
-        self.start_calls.append(plan)
-        self._plan = plan
-        self._run_job = run_job
-        self._on_progress = on_progress
-        self._on_finished = on_finished
-
-    def finish(self, result: Any | None = None) -> None:
-        assert self._plan is not None
-        assert self._run_job is not None
-        assert self._on_finished is not None
-        terminal = result if result is not None else self.result
-        if terminal is None:
-            terminal = self._run_job(self._plan, progress=self._on_progress)
-        self.active = False
-        self._on_finished(terminal)
-
-    def cancel(self, reason: str) -> None:
-        self.cancel_calls.append(reason)
-        self.active = False
-
-    def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
-        self.shutdown_calls.append((reason, timeout_ms))
-        if self.shutdown_result:
-            self.active = False
-        return self.shutdown_result
-
-
 class ManualAlignmentSaveRunner:
     def __init__(
         self,
@@ -242,19 +191,14 @@ class FakeCommands:
         ready_results: list[Any] | None = None,
         save_result: Any | None = None,
         prepare_result: Any | None = None,
-        rehydration_result: Any | None = None,
     ) -> None:
         self.events = events
         self.ready_results = ready_results or [Ok()]
         self.save_result = save_result or _saved_result()
         self.prepare_result = prepare_result or Ok()
-        self.rehydration_result = rehydration_result or SaveRuntimeRehydrated(1)
         self.ready_calls = 0
         self.save_calls: list[dict[str, Any]] = []
-        self.save_rehydrate_missing: list[bool] = []
         self.prepare_calls = 0
-        self.rehydrate_calls: list[SaveRuntimeRehydrationPlan] = []
-        self.publish_calls: list[Any] = []
         self.prepared_saves: list[PreparedAlignmentSave] = []
         self.publish_save_calls: list[Any] = []
 
@@ -263,39 +207,12 @@ class FakeCommands:
         self.ready_calls += 1
         return result
 
-    def prepare_save_runtime_rehydration(self):
-        self.prepare_calls += 1
-        return self.prepare_result
-
-    def run_save_runtime_rehydration(self, plan, *, progress=None, cancel_token=None):
-        self.rehydrate_calls.append(plan)
-        if callable(progress):
-            progress(
-                LoadDataJobProgress(
-                    target=plan.dependencies[0].load_target,
-                    phase="ephys",
-                    status="started",
-                    message="Reloading runtime data...",
-                )
-            )
-        return self.rehydration_result
-
-    def publish_save_runtime_rehydration_result(self, result):
-        self.publish_calls.append(result)
-        if isinstance(result, SaveRuntimeRehydrated):
-            return Ok()
-        failed = result if isinstance(result, Failed) else Failed(str(result))
-        self._emit_save_event(failed)
-        return failed
-
     def save_edited_alignment_outputs(
         self,
         *,
         use_docdb: bool,
-        rehydrate_missing: bool = True,
     ):
         self.save_calls.append({"use_docdb": use_docdb})
-        self.save_rehydrate_missing.append(rehydrate_missing)
         self._emit_save_event(self.save_result)
         return self.save_result
 
@@ -303,8 +220,8 @@ class FakeCommands:
         self,
         *,
         use_docdb: bool,
-        rehydrate_missing: bool = True,
     ):
+        self.prepare_calls += 1
         prepared = PreparedAlignmentSave((), use_docdb=use_docdb)
         self.prepared_saves.append(prepared)
         return prepared
@@ -317,7 +234,6 @@ class FakeCommands:
         cancel_token=None,
     ):
         self.save_calls.append({"use_docdb": prepared.use_docdb})
-        self.save_rehydrate_missing.append(False)
         if isinstance(self.save_result, Failed):
             return self.save_result
         return AlignmentSaveJobCompleted(saved_outputs=dict(self.save_result.saved_outputs))
@@ -404,22 +320,6 @@ def _saved_result(
     )
 
 
-def _rehydration_plan() -> SaveRuntimeRehydrationPlan:
-    key = AlignmentKey("rec", "stream", 0)
-    target = type(
-        "Target",
-        (),
-        {
-            "recording_id": "rec",
-            "probe_name": "probeA",
-            "stream_key": ("rec", "stream"),
-            "shank_idx": 0,
-        },
-    )()
-    dependency = type("Dependency", (), {"key": key, "load_target": target})()
-    return SaveRuntimeRehydrationPlan((dependency,))
-
-
 def _coordinator(
     *,
     commands: FakeCommands | None = None,
@@ -428,7 +328,6 @@ def _coordinator(
     histology_available: bool = True,
     ephys_qc: str = "Pass",
     selected_descriptions: list[str] | None = None,
-    rehydration_runner: Any | None = None,
     save_runner: Any | None = None,
     complete_button: Any | None = None,
 ) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
@@ -464,7 +363,6 @@ def _coordinator(
             warning=lambda title, message: calls.append(("warning", title, message)),
             save_blocking_widgets=lambda: [],
         ),
-        rehydration_runner=rehydration_runner or ManualSaveRehydrationRunner(),
         save_runner=save_runner or ManualAlignmentSaveRunner(),
     )
     coordinator.connect_save_events()
@@ -482,7 +380,6 @@ def test_save_prompts_for_output_then_saves() -> None:
     assert commands.ready_calls == 2
     assert commands.prepare_calls == 1
     assert commands.save_calls == [{"use_docdb": True}]
-    assert commands.save_rehydrate_missing == [False]
     assert calls == [
         ("ensure-output", blocked.first),
         ("progress-cancel-callback",),
@@ -523,7 +420,6 @@ def test_save_logs_failed_command() -> None:
     assert coordinator.save_alignment_outputs()
 
     assert commands.save_calls == [{"use_docdb": True}]
-    assert commands.save_rehydrate_missing == [False]
     assert calls == [
         ("progress-cancel-callback",),
         ("progress-started", (), "Preparing save...", False),
@@ -538,92 +434,6 @@ def test_save_logs_failed_command() -> None:
         ("progress-finished", "save failed", False),
         ("busy-exit", RuntimeError),
     ]
-
-
-def test_save_rehydrates_missing_runtime_in_background_before_saving() -> None:
-    plan = _rehydration_plan()
-    runner = ManualSaveRehydrationRunner()
-    coordinator, commands, calls = _coordinator(
-        commands=FakeCommands(prepare_result=plan),
-        rehydration_runner=runner,
-    )
-
-    assert coordinator.save_alignment_outputs()
-
-    assert runner.is_running
-    assert runner.start_calls == [plan]
-    assert commands.save_calls == []
-    assert calls == [
-        ("progress-cancel-callback",),
-        (
-            "progress-started",
-            (AlignmentKey("rec", "stream", 0),),
-            "Reloading runtime data for 1 alignment output before saving...",
-            True,
-        ),
-        (
-            "busy",
-            ("Reloading data needed for save...", "Saved successfully"),
-            {"disable_widgets": ["complete-button"]},
-        ),
-        ("busy-enter",),
-    ]
-
-    runner.finish()
-
-    assert commands.rehydrate_calls == [plan]
-    assert isinstance(commands.publish_calls[0], SaveRuntimeRehydrated)
-    assert commands.save_calls == [{"use_docdb": True}]
-    assert commands.save_rehydrate_missing == [False]
-    assert ("message", "Reloading runtime data...") in calls
-    assert (
-        "progress-update",
-        AlignmentKey("rec", "stream", 0),
-        "Reloading runtime",
-        "Loading",
-        0,
-        1,
-        "Reloading runtime data...",
-    ) in calls
-    assert ("message", "Saving output files...") in calls
-    assert ("progress-cancel-enabled", False) in calls
-    assert ("progress-cancel-enabled", True) in calls
-    assert ("choices", ["saved", "original"]) in calls
-    assert ("progress-finished", "Saved 1 alignment output.", True) in calls
-    assert ("progress-close",) in calls
-    assert ("busy-exit", None) in calls
-
-
-def test_save_rehydration_failure_does_not_save() -> None:
-    plan = _rehydration_plan()
-    runner = ManualSaveRehydrationRunner(result=Failed("reload failed"))
-    coordinator, commands, calls = _coordinator(
-        commands=FakeCommands(prepare_result=plan),
-        rehydration_runner=runner,
-    )
-
-    assert coordinator.save_alignment_outputs()
-    runner.finish()
-
-    assert commands.save_calls == []
-    assert commands.publish_calls == [Failed("reload failed")]
-    assert ("busy-exit", RuntimeError) in calls
-
-
-def test_shutdown_active_save_settles_rehydration() -> None:
-    runner = ManualSaveRehydrationRunner()
-    runner.active = True
-    coordinator, _commands, calls = _coordinator(rehydration_runner=runner)
-    coordinator._open_save_context(
-        "Reloading data needed for save...",
-        "Saved successfully",
-        disable_widgets="complete-button",
-    )
-
-    assert coordinator.shutdown_active_save("closing", timeout_ms=123)
-
-    assert runner.shutdown_calls == [("closing", 123)]
-    assert ("busy-exit", RuntimeError) in calls
 
 
 def test_save_progress_events_update_dialog_and_button() -> None:
@@ -686,26 +496,6 @@ def test_save_progress_events_update_dialog_and_button() -> None:
         1,
         1,
         "Wrote output files.",
-    ) in calls
-
-
-def test_cancel_active_save_requests_rehydration_cancel() -> None:
-    plan = _rehydration_plan()
-    runner = ManualSaveRehydrationRunner()
-    coordinator, _commands, calls = _coordinator(rehydration_runner=runner)
-
-    assert coordinator._start_rehydration_then_save(plan, use_docdb=True)
-    assert coordinator.cancel_active_save()
-
-    assert runner.cancel_calls == ["cancelled by user"]
-    assert (
-        "progress-update",
-        None,
-        "Reloading runtime",
-        "Cancelling",
-        0,
-        1,
-        "Cancelling save runtime reload...",
     ) in calls
 
 
@@ -782,5 +572,4 @@ def test_qc_button_saves_when_description_is_selected() -> None:
     assert coordinator.qc_button_clicked()
 
     assert commands.save_calls == [{"use_docdb": True}]
-    assert commands.save_rehydrate_missing == [False]
     assert ("choices", ["saved", "original"]) in calls
