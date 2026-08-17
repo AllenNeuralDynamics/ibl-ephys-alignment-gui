@@ -1050,9 +1050,7 @@ def test_load_heavy_data_promotes_matching_active_preload() -> None:
     assert ("busy-exit", None) in calls
 
 
-def test_load_heavy_data_cancels_nonmatching_active_preload_before_fresh_load() -> (
-    None
-):
+def test_load_heavy_data_cancels_nonmatching_active_preload_before_fresh_load() -> None:
     foreground_prepared = _fresh_prepared(
         shank_idx=0,
         probe_name="probeB",
@@ -1271,6 +1269,45 @@ def test_request_async_shutdown_cancels_active_plot_warmup_without_waiting() -> 
 
     assert plot_warmup_runner.cancel_calls == ["closing"]
     assert plot_warmup_runner.shutdown_calls == []
+
+
+def test_async_shutdown_treats_late_fresh_load_success_as_cancelled() -> None:
+    prepared = _fresh_prepared(shank_idx=0, preserve_plot_selection=True)
+    runner = ManualFreshLoadRunner()
+    coordinator, commands, _queries, calls = _coordinator(
+        begin_result=prepared,
+        load_runner=runner,
+        next_probe_name="probeB",
+    )
+
+    assert coordinator.load_heavy_data()
+    assert coordinator.request_async_shutdown("closing")
+    runner.finish()
+
+    assert commands.activate_calls == []
+    assert commands.preload_begin_calls == []
+    assert ("render-shank", 0, True) not in calls
+    assert ("busy-exit", RuntimeError) in calls
+
+
+def test_async_shutdown_ignores_late_plot_warmup_success() -> None:
+    plot_warmup_runner = ManualPlotWarmupRunner()
+    cached = FreshEphysDataLoaded(
+        stream_runtime=SimpleNamespace(
+            stream_key=("rec", "stream"),
+            stream=SimpleNamespace(name="stream"),
+        ),
+        shank_idx=0,
+    )
+    coordinator, commands, _queries, _calls = _coordinator(
+        plot_warmup_runner=plot_warmup_runner,
+    )
+
+    assert coordinator.start_plot_payload_warmup(cached)
+    assert coordinator.request_async_shutdown("closing")
+    plot_warmup_runner.finish()
+
+    assert commands.plot_warmup_attach_calls == []
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:

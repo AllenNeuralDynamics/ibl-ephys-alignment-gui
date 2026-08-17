@@ -236,7 +236,9 @@ class FakeCommands:
         self.save_calls.append({"use_docdb": prepared.use_docdb})
         if isinstance(self.save_result, Failed):
             return self.save_result
-        return AlignmentSaveJobCompleted(saved_outputs=dict(self.save_result.saved_outputs))
+        return AlignmentSaveJobCompleted(
+            saved_outputs=dict(self.save_result.saved_outputs)
+        )
 
     def publish_prepared_alignment_save_result(self, prepared, result):
         self.publish_save_calls.append(result)
@@ -531,6 +533,22 @@ def test_cancelled_final_save_closes_busy_context_without_saved_event() -> None:
         AlignmentSaveJobCancelled(reason="cancelled by user")
     ]
     assert ("progress-cancelled", "Save cancelled: cancelled by user") in calls
+    assert ("choices", ["saved", "original"]) not in calls
+    assert ("busy-exit", RuntimeError) in calls
+
+
+def test_async_shutdown_treats_late_save_success_as_cancelled() -> None:
+    runner = ManualAlignmentSaveRunner(auto_finish=False)
+    coordinator, commands, calls = _coordinator(save_runner=runner)
+
+    assert coordinator.save_alignment_outputs()
+    assert coordinator.request_async_shutdown("closing")
+    runner.finish(
+        AlignmentSaveJobCompleted(saved_outputs=dict(_saved_result().saved_outputs))
+    )
+
+    assert commands.publish_save_calls == [AlignmentSaveJobCancelled(reason="closing")]
+    assert ("progress-cancelled", "Save cancelled: closing") in calls
     assert ("choices", ["saved", "original"]) not in calls
     assert ("busy-exit", RuntimeError) in calls
 

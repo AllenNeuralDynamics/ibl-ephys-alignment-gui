@@ -10,6 +10,7 @@ from typing import Any
 
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveJobCancelled,
+    AlignmentSaveJobCompleted,
 )
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.core.alignment_events import (
@@ -77,6 +78,11 @@ class DesktopSaveCoordinator:
     )
     _save_targets: tuple[AlignmentKey, ...] = field(
         default=(),
+        init=False,
+        repr=False,
+    )
+    _save_cancel_requested_reason: str | None = field(
+        default=None,
         init=False,
         repr=False,
     )
@@ -200,6 +206,7 @@ class DesktopSaveCoordinator:
         open_context: bool = True,
     ) -> bool:
         """Prepare a save job and run output generation in the background."""
+        self._save_cancel_requested_reason = None
         self._show_save_preparing()
         self._set_save_button_progress("Saving...", "Saving alignment outputs")
         if open_context and self._active_save_context_manager is None:
@@ -269,6 +276,7 @@ class DesktopSaveCoordinator:
         """Settle active save workers before desktop teardown."""
         stopped = True
         if self.save_runner.is_running:
+            self._save_cancel_requested_reason = reason
             stopped = (
                 self.save_runner.shutdown(reason, timeout_ms=timeout_ms) and stopped
             )
@@ -283,7 +291,9 @@ class DesktopSaveCoordinator:
 
     def has_active_work(self) -> bool:
         """Return whether save work or save UI state is still settling."""
-        return self.save_runner.is_running or self._active_save_context_manager is not None
+        return (
+            self.save_runner.is_running or self._active_save_context_manager is not None
+        )
 
     def request_async_shutdown(self, reason: str = "application closing") -> bool:
         """Request cancellation for active save work without waiting."""
@@ -292,6 +302,7 @@ class DesktopSaveCoordinator:
     def cancel_active_save(self, reason: str = "cancelled by user") -> bool:
         """Request cooperative cancellation for active save work."""
         if self.save_runner.is_running:
+            self._save_cancel_requested_reason = reason
             self.save_runner.cancel(reason)
             if self._progress_dialog is not None:
                 self._progress_dialog.set_cancel_enabled(False)
@@ -317,6 +328,13 @@ class DesktopSaveCoordinator:
         result: AlignmentSaveJobResult,
     ) -> None:
         """Publish final save result and close desktop busy state."""
+        if self._save_cancel_requested_reason is not None and isinstance(
+            result,
+            AlignmentSaveJobCompleted,
+        ):
+            result = AlignmentSaveJobCancelled(
+                reason=self._save_cancel_requested_reason
+            )
         try:
             published = self.commands.publish_prepared_alignment_save_result(
                 prepared,
@@ -335,6 +353,8 @@ class DesktopSaveCoordinator:
         except Exception as exc:
             logger.exception("Failed to publish edited-alignment save result")
             self._close_save_context(exc)
+        finally:
+            self._save_cancel_requested_reason = None
 
     def _open_save_context(self, *args: Any, **kwargs: Any) -> None:
         """Enter and hold the desktop busy context for async save work."""

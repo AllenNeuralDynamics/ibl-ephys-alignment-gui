@@ -118,6 +118,12 @@ class DesktopLoadDataCoordinator:
         init=False,
         repr=False,
     )
+    _async_shutdown_reason: str | None = field(default=None, init=False, repr=False)
+    _plot_warmup_cancel_reason: str | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def connect_load_events(self) -> list[EventSubscription]:
         """Subscribe desktop load coordination to semantic load events."""
@@ -176,6 +182,9 @@ class DesktopLoadDataCoordinator:
         preserve_plot_selection: bool | None = None,
     ) -> bool:
         """Load or activate the selected stream/shank for desktop display."""
+        if self._async_shutdown_reason is not None:
+            logger.info("Load request ignored because shutdown is in progress")
+            return False
         callbacks = self.callbacks
         if self._foreground_load_is_running():
             logger.info("Load request ignored because a foreground load is active")
@@ -302,6 +311,7 @@ class DesktopLoadDataCoordinator:
 
     def request_async_shutdown(self, reason: str = "application closing") -> bool:
         """Request cancellation for active load-related workers without waiting."""
+        self._async_shutdown_reason = reason
         requested = False
         requested = self.cancel_plot_payload_warmup(reason) or requested
         if self._promoted_preload_is_running() or self.load_runner.is_running:
@@ -360,6 +370,8 @@ class DesktopLoadDataCoordinator:
         allow_foreground_runner_settling: bool = False,
     ) -> bool:
         """Start a background preload that only populates the inactive cache."""
+        if self._async_shutdown_reason is not None:
+            return False
         if self.load_runner.is_running and not allow_foreground_runner_settling:
             return False
         if self.preload_runner.is_running:
@@ -451,6 +463,7 @@ class DesktopLoadDataCoordinator:
         """Request cancellation for active plot payload warmup."""
         if not self.plot_warmup_runner.is_running:
             return False
+        self._plot_warmup_cancel_reason = reason
         self.plot_warmup_runner.cancel(reason)
         self._finish_plot_warmup_timer("cancelled", reason=reason)
         return True
@@ -488,6 +501,7 @@ class DesktopLoadDataCoordinator:
         """Settle any active plot-cache warmup before desktop teardown."""
         if not self.plot_warmup_runner.is_running:
             return True
+        self._plot_warmup_cancel_reason = reason
         stopped = self.plot_warmup_runner.shutdown(reason, timeout_ms=timeout_ms)
         if stopped:
             self._finish_plot_warmup_timer("cancelled", reason=reason)
@@ -515,6 +529,14 @@ class DesktopLoadDataCoordinator:
         job_result: FreshLoadJobResult,
     ) -> None:
         """Publish worker completion and activate successful fresh-load data."""
+        if self._async_shutdown_reason is not None and isinstance(
+            job_result,
+            LoadDataJobCompleted,
+        ):
+            job_result = LoadDataJobCancelled(
+                target=execution.prepared.target,
+                reason=self._async_shutdown_reason,
+            )
         timer = self._active_switch_timer
         context = timer.activate() if timer is not None else nullcontext()
         with context:
@@ -597,11 +619,12 @@ class DesktopLoadDataCoordinator:
         logger.info("=== Heavy data load complete ===")
         self._close_load_context()
         self._finish_switch_timer("fresh")
-        self.schedule_next_probe_preload(
-            completed.target.recording_id,
-            completed.target.probe_name,
-            allow_foreground_runner_settling=True,
-        )
+        if self._async_shutdown_reason is None:
+            self.schedule_next_probe_preload(
+                completed.target.recording_id,
+                completed.target.probe_name,
+                allow_foreground_runner_settling=True,
+            )
 
     def _on_preload_worker_progress(
         self,
@@ -639,6 +662,14 @@ class DesktopLoadDataCoordinator:
         """Cache successful preload results without activating the stream."""
         if execution.load_id != self._active_preload_id:
             return
+        if self._async_shutdown_reason is not None and isinstance(
+            job_result,
+            LoadDataJobCompleted,
+        ):
+            job_result = LoadDataJobCancelled(
+                target=execution.prepared.target,
+                reason=self._async_shutdown_reason,
+            )
         promoted = self._promoted_preload
         if (
             promoted is not None
@@ -698,6 +729,14 @@ class DesktopLoadDataCoordinator:
         job_result: FreshLoadJobResult,
     ) -> None:
         """Activate a preload result that was promoted to foreground ownership."""
+        if self._async_shutdown_reason is not None and isinstance(
+            job_result,
+            LoadDataJobCompleted,
+        ):
+            job_result = LoadDataJobCancelled(
+                target=execution.prepared.target,
+                reason=self._async_shutdown_reason,
+            )
         timer = self._active_switch_timer
         context = timer.activate() if timer is not None else nullcontext()
         try:
@@ -729,6 +768,8 @@ class DesktopLoadDataCoordinator:
 
     def start_plot_payload_warmup(self, cached: FreshEphysDataLoaded) -> bool:
         """Warm an inactive preloaded stream's plot payload cache."""
+        if self._async_shutdown_reason is not None:
+            return False
         if self.plot_warmup_runner.is_running:
             logger.debug(
                 "Skipping plot payload warmup for %s because another warmup is running",
@@ -751,6 +792,7 @@ class DesktopLoadDataCoordinator:
             unit_filter=request.unit_filter,
         )
         self._active_plot_warmup_timer = timer
+        self._plot_warmup_cancel_reason = None
         with timer.activate():
             try:
                 with timer.step("start_plot_payload_warmup_worker"):
@@ -770,45 +812,59 @@ class DesktopLoadDataCoordinator:
         request: PlotPayloadWarmupRequest,
         result: PlotPayloadWarmupResult,
     ) -> None:
+        cancel_reason = self._plot_warmup_cancel_reason
+        if cancel_reason is not None and isinstance(result, PlotPayloadCacheWarmed):
+            result = PlotPayloadWarmupCancelled(
+                stream_key=request.stream_key,
+                shank_idx=request.shank_idx,
+                reason=cancel_reason,
+            )
         timer = self._active_plot_warmup_timer
         context = timer.activate() if timer is not None else nullcontext()
-        with context:
-            if isinstance(result, Failed):
-                logger.debug(result.message)
-                self._finish_plot_warmup_timer("failed", message=result.message)
-                return
-            if isinstance(result, PlotPayloadWarmupCancelled):
-                logger.debug("Plot payload warmup cancelled: %s", result.reason)
-                self._finish_plot_warmup_timer("cancelled", reason=result.reason)
-                return
-            assert isinstance(result, PlotPayloadCacheWarmed)
-            step = (
-                timer.step("attach_warmed_plot_payload_cache")
-                if timer is not None
-                else nullcontext()
-            )
-            with step:
-                attached = self.app.commands.load.attach_warmed_plot_payload_cache(
-                    result,
+        try:
+            with context:
+                if isinstance(result, Failed):
+                    logger.debug(result.message)
+                    self._finish_plot_warmup_timer("failed", message=result.message)
+                    return
+                if isinstance(result, PlotPayloadWarmupCancelled):
+                    logger.debug("Plot payload warmup cancelled: %s", result.reason)
+                    self._finish_plot_warmup_timer("cancelled", reason=result.reason)
+                    return
+                assert isinstance(result, PlotPayloadCacheWarmed)
+                step = (
+                    timer.step("attach_warmed_plot_payload_cache")
+                    if timer is not None
+                    else nullcontext()
                 )
-            if isinstance(attached, Failed):
-                logger.warning(attached.message)
-                self._finish_plot_warmup_timer("failed", message=attached.message)
-                return
-            if isinstance(attached, LoadDataStaleResultIgnored):
-                logger.debug("Ignoring warmed plot cache: %s", attached.reason)
-                self._finish_plot_warmup_timer("stale", reason=attached.reason)
-                return
-            logger.info(
-                "Warmed plot payload cache for %s shank %s (%s)",
-                request.stream_key,
-                request.shank_idx,
-                ", ".join(result.warmed_spec_keys) or "no payloads",
-            )
-            self._finish_plot_warmup_timer(
-                "completed",
-                warmed_spec_keys=result.warmed_spec_keys,
-            )
+                with step:
+                    attached = self.app.commands.load.attach_warmed_plot_payload_cache(
+                        result,
+                    )
+                if isinstance(attached, Failed):
+                    logger.warning(attached.message)
+                    self._finish_plot_warmup_timer("failed", message=attached.message)
+                    return
+                if isinstance(attached, LoadDataStaleResultIgnored):
+                    logger.debug("Ignoring warmed plot cache: %s", attached.reason)
+                    self._finish_plot_warmup_timer("stale", reason=attached.reason)
+                    return
+                logger.info(
+                    "Warmed plot payload cache for %s shank %s (%s)",
+                    request.stream_key,
+                    request.shank_idx,
+                    ", ".join(result.warmed_spec_keys) or "no payloads",
+                )
+                self._finish_plot_warmup_timer(
+                    "completed",
+                    warmed_spec_keys=result.warmed_spec_keys,
+                )
+        finally:
+            if (
+                cancel_reason is None
+                or self._plot_warmup_cancel_reason == cancel_reason
+            ):
+                self._plot_warmup_cancel_reason = None
 
     def _open_load_context(self, *args: Any, **kwargs: Any) -> None:
         """Enter and hold the desktop busy context for an async load."""
