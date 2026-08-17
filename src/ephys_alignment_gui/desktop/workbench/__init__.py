@@ -232,7 +232,7 @@ class DesktopWorkbench:
         return self.coordinator_cluster.mouse_root_coordinator.mouse_root_edited()
 
     def session_selected(self, idx: int | None = None) -> bool:
-        """Select and load or activate the current recording/session."""
+        """Select the current recording/session and render probe choices."""
         return (
             self.coordinator_cluster.selection_activation_coordinator.session_selected(
                 idx

@@ -100,7 +100,6 @@ def _coordinator(
         selection_view=selection_view,
         callbacks=DesktopSessionSelectionCallbacks(
             capture_pending_reference_lines=lambda: calls.append(("capture",)),
-            select_first_probe=lambda: calls.append(("select-first-probe",)),
         ),
     )
     return coordinator, commands, calls
@@ -133,7 +132,7 @@ def test_session_selected_noops_for_current_session() -> None:
     assert calls == []
 
 
-def test_session_selected_populates_probes_and_selects_first_probe() -> None:
+def test_session_selected_populates_probes_with_blank_probe_selection() -> None:
     coordinator, commands, calls = _coordinator()
 
     assert coordinator.session_selected()
@@ -142,9 +141,8 @@ def test_session_selected_populates_probes_and_selects_first_probe() -> None:
     assert calls == [
         ("capture",),
         ("populate-probes", ["probeA", "probeB"]),
+        ("select-probe", -1),
         ("clear-shanks",),
-        ("select-probe", 0),
-        ("select-first-probe",),
     ]
 
 
@@ -164,7 +162,7 @@ def test_session_selected_uses_activated_index_over_stale_current_text() -> None
     assert ("populate-probes", ["probeC", "probeD"]) in calls
 
 
-def test_session_selected_without_probes_does_not_select_first_probe() -> None:
+def test_session_selected_without_probes_still_blanks_probe_selection() -> None:
     coordinator, _commands, calls = _coordinator(
         commands=FakeCommands(result=RecordingSelected("rec", []))
     )
@@ -174,6 +172,7 @@ def test_session_selected_without_probes_does_not_select_first_probe() -> None:
     assert calls == [
         ("capture",),
         ("populate-probes", []),
+        ("select-probe", -1),
         ("clear-shanks",),
     ]
 

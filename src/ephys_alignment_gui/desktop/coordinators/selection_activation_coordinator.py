@@ -18,13 +18,8 @@ class DesktopSelectionActivationCoordinator:
     preserve_plot_selection: Callable[[], bool] = lambda: False
 
     def session_selected(self, idx: int | None = None) -> bool:
-        """Select a recording/session, then load or activate the selected stream."""
-        preserve_plot_selection = self.preserve_plot_selection()
-        if not self.session_selection_coordinator.session_selected(idx):
-            return False
-        return self.activate_selected_stream(
-            preserve_plot_selection=preserve_plot_selection,
-        )
+        """Select a recording/session and render probe choices without loading."""
+        return self.session_selection_coordinator.session_selected(idx)
 
     def probe_selected(self, idx: int | None = None) -> bool:
         """Select a probe, then load or activate the selected stream."""

@@ -151,7 +151,6 @@ def build_desktop_workbench_coordinator_cluster(
         selection_view=views.selection,
         callbacks=_session_selection_callbacks(
             render_cluster.reference_line_presenter,
-            probe_selection_coordinator,
         ),
     )
     mouse_root_coordinator = DesktopMouseRootCoordinator(
@@ -432,14 +431,12 @@ def _probe_selection_callbacks(
 
 def _session_selection_callbacks(
     reference_line_presenter: Any,
-    probe_selection_coordinator: DesktopProbeSelectionCoordinator,
 ) -> DesktopSessionSelectionCallbacks:
     """Build callbacks for session selection."""
     return DesktopSessionSelectionCallbacks(
         capture_pending_reference_lines=(
             reference_line_presenter.capture_pending_reference_lines
         ),
-        select_first_probe=probe_selection_coordinator.probe_selected,
     )
 
 

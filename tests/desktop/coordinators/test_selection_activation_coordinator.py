@@ -72,7 +72,7 @@ def _coordinator(
     )
 
 
-def test_session_selection_loads_after_selecting_metadata() -> None:
+def test_session_selection_populates_metadata_without_loading() -> None:
     session = FakeSessionSelectionCoordinator()
     load = FakeLoadPreflightCoordinator()
     coordinator = _coordinator(
@@ -84,8 +84,8 @@ def test_session_selection_loads_after_selecting_metadata() -> None:
     assert coordinator.session_selected(2)
 
     assert session.indices == [2]
-    assert load.count == 1
-    assert load.preserve_values == [True]
+    assert load.count == 0
+    assert load.preserve_values == []
 
 
 def test_probe_selection_loads_after_selecting_metadata() -> None:

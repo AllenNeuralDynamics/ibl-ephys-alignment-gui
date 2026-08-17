@@ -18,7 +18,6 @@ class DesktopSessionSelectionCallbacks:
     """Non-widget side effects for session selection."""
 
     capture_pending_reference_lines: Callable[[], None]
-    select_first_probe: Callable[[], None]
 
 
 @dataclass
@@ -52,10 +51,8 @@ class DesktopSessionSelectionCoordinator:
         assert isinstance(result, RecordingSelected)
 
         self.selection_view.populate_probes(result.probes)
+        self.selection_view.select_probe_index(-1)
         self.selection_view.clear_shanks()
-        if result.probes:
-            self.selection_view.select_probe_index(0)
-            callbacks.select_first_probe()
         return True
 
     def _selected_session_name(self, idx: int | None) -> str:

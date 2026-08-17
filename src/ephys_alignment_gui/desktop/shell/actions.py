@@ -49,7 +49,7 @@ class DesktopShellActions:
         self.window._show_one_unsupported("Session selection")
 
     def on_session_combobox_activated(self, idx: int) -> bool:
-        """Select the session and load or activate its selected stream."""
+        """Select the session and render its probe choices."""
         return self.workbench.session_selected(idx)
 
     def on_probe_combobox_activated(self, idx: int) -> bool:
