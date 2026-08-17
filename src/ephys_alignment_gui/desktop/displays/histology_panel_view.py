@@ -122,7 +122,7 @@ class HistologyPanelView:
         set_depth_panel_bottom_axis(
             aligned,
             set_axis,
-            label="Warped annotations",
+            label="Warped",
             ticks=False,
         )
         aligned_axis = set_axis(aligned, "left", show=False)
@@ -149,7 +149,7 @@ class HistologyPanelView:
         set_depth_panel_bottom_axis(
             reference,
             set_axis,
-            label="Original annotations",
+            label="Original",
             ticks=False,
         )
         set_axis(reference, "left", show=False)
@@ -193,8 +193,8 @@ class HistologyPanelView:
         view_min, view_max = depth_view.view_range_um
         fit_plot.setXRange(min=view_min, max=view_max)
         fit_plot.setYRange(min=view_min, max=view_max)
-        set_axis(fit_plot, "bottom", label="Ephys reference depth (μm)")
-        set_axis(fit_plot, "left", label="Atlas reference depth (μm)")
+        set_axis(fit_plot, "bottom", label="Ephys reference depth (µm)")
+        set_axis(fit_plot, "left", label="Atlas reference depth (µm)")
         baseline = pg.PlotCurveItem()
         baseline.setData(
             x=depth_view.fit_depth_um,
@@ -338,7 +338,7 @@ class HistologyPanelView:
         set_depth_panel_bottom_axis(
             self.plots.aligned,
             self.set_axis,
-            label="Warped annotations",
+            label="Warped",
             ticks=False,
         )
 
@@ -369,7 +369,7 @@ class HistologyPanelView:
         set_depth_panel_bottom_axis(
             self.plots.reference,
             self.set_axis,
-            label="Original annotations",
+            label="Original",
             ticks=False,
         )
 
@@ -400,7 +400,7 @@ class HistologyPanelView:
         set_depth_panel_bottom_axis(
             fig,
             self.set_axis,
-            label="dist to boundary (um)",
+            label="dist to boundary (µm)",
         )
         fig.setXRange(min=0, max=100)
 
@@ -631,7 +631,7 @@ class HistologyPanelView:
         feature_top_um = probe_extent.feature_max_um - 1.0
         if probe_extent.probe_top_um > feature_top_um:
             logger.warning(
-                "Probe span (%.0f um) exceeds feature range (%.0f um). "
+                "Probe span (%.0f µm) exceeds feature range (%.0f µm). "
                 "Using safe fallback bounds. Consider recording with larger "
                 "channel span or adjusting initialization range.",
                 probe_extent.probe_top_um,

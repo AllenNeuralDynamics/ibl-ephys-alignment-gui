@@ -104,7 +104,7 @@ class DesktopEphysPanelView:
             probe_top_lines=probe_top_lines,
         )
         set_depth_panel_bottom_axis(image, set_axis)
-        image_axis = set_axis(image, "left", label="Distance from probe tip (uV)")
+        image_axis = set_axis(image, "left", label="Distance from probe tip (µm)")
 
         image_colorbar = pg.PlotItem()
         image_colorbar.setMaximumHeight(_EPHYS_COLORBAR_MAX_HEIGHT)
@@ -258,7 +258,34 @@ class DesktopEphysPanelView:
 
     def feature_y_from_scene(self, scene_pos: Any) -> float | None:
         """Map a scene position to feature-space y in micrometres."""
+        if self.feature_plot.data_plot is None:
+            return None
+
+        view_box_handled, y_from_view_box = self._feature_y_from_view_box(scene_pos)
+        if view_box_handled:
+            return y_from_view_box
+
         return self.feature_plot.feature_y_from_scene(scene_pos)
+
+    def _feature_y_from_view_box(self, scene_pos: Any) -> tuple[bool, float | None]:
+        """Map a scene position through the full image plot viewport."""
+        get_view_box = getattr(self.plots.image, "getViewBox", None)
+        if not callable(get_view_box):
+            return False, None
+        try:
+            view_box = get_view_box()
+            scene_rect = getattr(view_box, "sceneBoundingRect", None)
+            if callable(scene_rect):
+                rect = scene_rect()
+                contains = getattr(rect, "contains", None)
+                if callable(contains) and not contains(scene_pos):
+                    return True, None
+            map_scene_to_view = getattr(view_box, "mapSceneToView", None)
+            if not callable(map_scene_to_view):
+                return False, None
+            return True, float(map_scene_to_view(scene_pos).y())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return False, None
 
     def cluster_index_for_plot_x(self, x_value: float) -> int | None:
         """Return the cluster index represented by a plotted x coordinate."""

@@ -147,7 +147,7 @@ def test_ephys_panel_layout_applies_view_3_probe_line_image() -> None:
     assert graphics_layout.layout.column_stretches == [(0, 1), (1, 1), (2, 6)]
     assert (
         (plots["probe"], "left"),
-        {"label": "Distance from probe tip (um)"},
+        {"label": "Distance from probe tip (µm)"},
     ) in calls[0]
 
 

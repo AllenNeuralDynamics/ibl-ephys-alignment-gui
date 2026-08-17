@@ -169,7 +169,7 @@ class DesktopEphysPlotExporter:
         self.callbacks.set_axis(
             plots.probe,
             "left",
-            label="Distance from probe tip (uV)",
+            label="Distance from probe tip (µm)",
         )
         plots.probe.setFixedWidth(sizes.probe_width + sizes.axis_width + 20)
         self.callbacks.set_font(
@@ -218,16 +218,14 @@ class DesktopEphysPlotExporter:
         plots = self.panel.plots
         self.layout.graphics_layout.addItem(plots.probe_colorbar, 0, 0, 1, 2)
         plots.probe_colorbar.clear()
-        probe_colorbar_label = plots.probe_colorbar.getAxis(
-            "top"
-        ).label.toPlainText()
+        probe_colorbar_label = plots.probe_colorbar.getAxis("top").label.toPlainText()
         self.callbacks.set_axis(plots.probe_colorbar, "top", pen="w")
         self.layout.graphics_layout.addItem(plots.line, 1, 0)
 
         self.callbacks.set_axis(
             plots.line,
             "left",
-            label="Distance from probe tip (um)",
+            label="Distance from probe tip (µm)",
         )
         self.callbacks.set_font(
             plots.line,

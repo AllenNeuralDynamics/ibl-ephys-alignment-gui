@@ -140,7 +140,7 @@ class SlicePanelView:
         set_depth_panel_bottom_axis(
             perpendicular,
             set_axis,
-            label="Perpendicular distance (um)",
+            label="Perpendicular distance (µm)",
         )
         set_axis(perpendicular, "left", show=False)
         return cls(

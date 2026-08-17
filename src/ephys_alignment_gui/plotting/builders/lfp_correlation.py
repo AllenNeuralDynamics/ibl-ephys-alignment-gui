@@ -341,7 +341,7 @@ class LfpCorrelationPlotDataBuilder:
                     "xrange": overall_xrange,
                     "cmap": "RdBu_r",
                     "title": f"LFP correlation ({band_name})",
-                    "xaxis": "Distance from probe tip (um)",
+                    "xaxis": "Distance from probe tip (µm)",
                 }
                 continue
 
@@ -390,7 +390,7 @@ class LfpCorrelationPlotDataBuilder:
                 "xrange": x_range,
                 "cmap": "RdBu_r",
                 "title": f"LFP correlation ({band_name})",
-                "xaxis": "Distance from probe tip (um)",
+                "xaxis": "Distance from probe tip (µm)",
             }
         return all_data
 
@@ -484,7 +484,7 @@ class LfpCorrelationPlotDataBuilder:
                     "xrange": coh_x_range,
                     "cmap": None,
                     "title": f"LFP coherency phase ({band_name})",
-                    "xaxis": "Distance from probe tip (um)",
+                    "xaxis": "Distance from probe tip (µm)",
                 }
             except Exception:
                 logger.warning(
@@ -561,7 +561,7 @@ class LfpCorrelationPlotDataBuilder:
             ),
             "cmap": None,
             "title": f"LFP coherency phase ({band_name})",
-            "xaxis": "Distance from probe tip (um)",
+            "xaxis": "Distance from probe tip (µm)",
         }
 
     @staticmethod

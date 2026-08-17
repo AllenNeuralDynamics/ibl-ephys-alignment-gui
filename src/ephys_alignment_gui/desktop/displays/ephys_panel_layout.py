@@ -112,7 +112,7 @@ class DesktopEphysPanelLayout:
         self.callbacks.set_axis(
             plots.probe,
             "left",
-            label="Distance from probe tip (um)",
+            label="Distance from probe tip (µm)",
         )
         plots.probe.setFixedWidth(sizes.probe_width + sizes.axis_width)
         plots.image.setPreferredWidth(sizes.image_width)
@@ -138,7 +138,7 @@ class DesktopEphysPanelLayout:
         self.callbacks.set_axis(
             self.panel.plots.image,
             "left",
-            label="Distance from probe tip (um)",
+            label="Distance from probe tip (µm)",
         )
 
     def _set_stretch_factors(self, col0: int, col1: int, col2: int) -> None:

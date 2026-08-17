@@ -15,13 +15,20 @@ from ephys_alignment_gui.desktop.displays.ephys_panel_view import (
 
 
 class FakePlot:
-    def __init__(self, *, width: float = 900.0, height: float = 600.0) -> None:
+    def __init__(
+        self,
+        *,
+        width: float = 900.0,
+        height: float = 600.0,
+        view_box: Any = None,
+    ) -> None:
         self.added: list[Any] = []
         self.removed: list[Any] = []
         self.x_ranges: list[dict[str, Any]] = []
         self.y_ranges: list[dict[str, Any]] = []
         self._width = width
         self._height = height
+        self._view_box = view_box
         self.axes = {
             "top": FakeConfiguredAxis(),
             "bottom": FakeConfiguredAxis(),
@@ -43,6 +50,11 @@ class FakePlot:
 
     def getAxis(self, orientation: str) -> Any:
         return self.axes[orientation]
+
+    def getViewBox(self) -> Any:
+        if self._view_box is None:
+            raise AttributeError
+        return self._view_box
 
     def width(self) -> float:
         return self._width
@@ -109,6 +121,28 @@ class FakePosition:
 
     def y(self) -> float:
         return self._y
+
+
+class FakeSceneRect:
+    def __init__(self, contains: bool) -> None:
+        self._contains = contains
+
+    def contains(self, _scene_pos: Any) -> bool:
+        return self._contains
+
+
+class FakeViewBox:
+    def __init__(self, *, contains: bool = True, y: float = 31.0) -> None:
+        self._contains = contains
+        self._y = y
+        self.mapped_scene_positions: list[Any] = []
+
+    def sceneBoundingRect(self) -> FakeSceneRect:
+        return FakeSceneRect(self._contains)
+
+    def mapSceneToView(self, scene_pos: Any) -> FakePosition:
+        self.mapped_scene_positions.append(scene_pos)
+        return FakePosition(self._y)
 
 
 class FakePlotItem:
@@ -283,6 +317,50 @@ def test_render_image_owns_image_items_and_feature_coordinate_mapping(
     assert cbar["kwargs"]["axis_height"] == 42
 
 
+def test_feature_y_from_scene_uses_full_image_viewbox(monkeypatch) -> None:
+    view, plots, _axis_calls = _view(monkeypatch)
+    view_box = FakeViewBox(contains=True, y=4321.0)
+
+    view.render_image(
+        {
+            "img": np.array([[1.0, 2.0], [3.0, 4.0]]),
+            "scale": [2.0, 3.0],
+            "offset": [10.0, 20.0],
+            "cmap": "viridis",
+            "levels": [1.0, 4.0],
+            "title": "feature",
+            "xrange": (0.0, 100.0),
+            "xaxis": "depth",
+        }
+    )
+    plots["image"]._view_box = view_box
+
+    assert view.feature_y_from_scene("scene") == 4321.0
+    assert view_box.mapped_scene_positions == ["scene"]
+
+
+def test_feature_y_from_scene_rejects_positions_outside_image_viewbox(
+    monkeypatch,
+) -> None:
+    view, plots, _axis_calls = _view(monkeypatch)
+
+    view.render_image(
+        {
+            "img": np.array([[1.0, 2.0], [3.0, 4.0]]),
+            "scale": [2.0, 3.0],
+            "offset": [10.0, 20.0],
+            "cmap": "viridis",
+            "levels": [1.0, 4.0],
+            "title": "feature",
+            "xrange": (0.0, 100.0),
+            "xaxis": "depth",
+        }
+    )
+    plots["image"]._view_box = FakeViewBox(contains=False, y=4321.0)
+
+    assert view.feature_y_from_scene("scene") is None
+
+
 def test_render_image_overlays_no_data_mask(monkeypatch) -> None:
     view, plots, _axis_calls = _view(monkeypatch)
 
@@ -422,7 +500,7 @@ def test_render_phase_image_configures_full_colorbar(monkeypatch) -> None:
             "levels": None,
             "title": "LFP coherency phase (theta)",
             "xrange": (0.0, 100.0),
-            "xaxis": "Distance from probe tip (um)",
+            "xaxis": "Distance from probe tip (µm)",
         }
     )
 

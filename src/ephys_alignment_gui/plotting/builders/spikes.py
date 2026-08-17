@@ -130,9 +130,9 @@ class SpikePlotDataBuilder:
         amp_range = np.quantile(spike_amps, [0, 0.9])
         amp_bins = np.linspace(amp_range[0], amp_range[1], A_BIN)
         colour_bin = np.linspace(0.0, 1.0, A_BIN + 1)
-        colours = ((cm.get_cmap("BuPu")(colour_bin)[np.newaxis, :, :3][0]) * 255).astype(
-            np.int32
-        )
+        colours = (
+            (cm.get_cmap("BuPu")(colour_bin)[np.newaxis, :, :3][0]) * 255
+        ).astype(np.int32)
         spikes_colours = np.empty(spike_amps.size, dtype=object)
         spikes_size = np.empty(spike_amps.size)
         for i_a in range(amp_bins.size):
@@ -141,8 +141,7 @@ class SpikePlotDataBuilder:
                 spikes_colours[idx] = (64, 0, 128)
             else:
                 idx = np.where(
-                    (spike_amps > amp_bins[i_a])
-                    & (spike_amps <= amp_bins[i_a + 1])
+                    (spike_amps > amp_bins[i_a]) & (spike_amps <= amp_bins[i_a + 1])
                 )[0]
                 spikes_colours[idx] = tuple(int(channel) for channel in colours[i_a])
 
@@ -418,7 +417,7 @@ class SpikePlotDataBuilder:
             "xrange": np.array([self.chn_min, self.chn_max]),
             "cmap": "viridis",
             "title": "Correlation",
-            "xaxis": "Distance from probe tip (um)",
+            "xaxis": "Distance from probe tip (µm)",
         }
 
     def get_autocorr(self, clust_idx):
