@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from aind_data_access_api.helpers.data_schema import get_quality_control_by_id
@@ -264,8 +264,8 @@ class AlignmentRepository:
         previous_alignments_path: Path,
         ccf_channel_results_path: Path,
     ) -> dict:
-        return {
-            "schema_version": "1.0.0",
+        metadata_dict = {
+            "schema_version": "1.1.0" if metadata.ccf_export is not None else "1.0.0",
             "recording_id": metadata.recording_id,
             "ephys_collection": metadata.ephys_collection,
             "logical_probe": metadata.logical_probe,
@@ -279,6 +279,9 @@ class AlignmentRepository:
                 "ccf_channel_locations": ccf_channel_results_path.name,
             },
         }
+        if metadata.ccf_export is not None:
+            metadata_dict["ccf_export"] = asdict(metadata.ccf_export)
+        return metadata_dict
 
     @staticmethod
     def _write_dict_to_json(file_path: Path, data_dict: dict) -> None:

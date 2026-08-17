@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ephys_alignment_gui.core.alignment_output import CcfExportStatus
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.services.alignment_repository import (
     AlignmentHistory,
@@ -32,6 +33,7 @@ class AlignmentOutputBuilt:
     channel_results: dict
     ccf_channel_results: dict
     multi_shank: bool
+    ccf_export_status: CcfExportStatus | None = None
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 
-from ephys_alignment_gui.core.alignment_output import AlignmentOutputMetadata
+from ephys_alignment_gui.core.alignment_output import (
+    AlignmentOutputMetadata,
+    CcfExportIssue,
+    CcfExportStatus,
+)
 from ephys_alignment_gui.services.alignment_repository import AlignmentRepository
 
 
@@ -102,9 +106,7 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
         saved.ccf_channel_results_path
         == output_dir / "ccf_channel_locations_shank2.json"
     )
-    assert (
-        saved.metadata_path == output_dir / "alignment_output_metadata_shank2.json"
-    )
+    assert saved.metadata_path == output_dir / "alignment_output_metadata_shank2.json"
     assert saved.datapackage_path == output_package_dir / "datapackage.json"
     assert saved.datapackage_path.exists()
     with open(saved.previous_alignments_path) as f:
@@ -127,3 +129,68 @@ def test_save_alignment_outputs_writes_expected_files(tmp_path):
         },
     }
     assert saved.docdb_probe_name is None
+
+
+def test_save_alignment_outputs_writes_ccf_export_metadata(tmp_path):
+    repo = AlignmentRepository()
+    output_dir = tmp_path / "rec1" / "probeA"
+    output_dir.mkdir(parents=True)
+
+    saved = repo.save_alignment_outputs(
+        output_directory=output_dir,
+        shank_idx=0,
+        multi_shank=False,
+        channel_results={"channel": {"x": 1}},
+        previous_alignments={"saved": [[1.0], [2.0]]},
+        ccf_channel_results={},
+        metadata=AlignmentOutputMetadata(
+            recording_id="rec1",
+            ephys_collection="probeA",
+            logical_probe="logicalA",
+            probe_id="probe-id",
+            shank_idx=0,
+            n_shanks=1,
+            ccf_export=CcfExportStatus(
+                status="partial",
+                total_channel_count=2,
+                ccf_channel_count=1,
+                omitted_channel_count=1,
+                in_brain_channel_count=1,
+                bounds_ml_mm=(-6.739, 6.636),
+                in_brain_ml_range_mm=(0.25, 0.25),
+                issues=(
+                    CcfExportIssue(
+                        reason="out_of_brain_channel_location",
+                        message="outside brain",
+                        channel_count=1,
+                        ml_range_mm=(9.5, 9.5),
+                        bounds_ml_mm=(-6.739, 6.636),
+                    ),
+                ),
+            ),
+        ),
+        use_docdb=False,
+    )
+
+    with open(saved.metadata_path) as f:
+        metadata = json.load(f)
+
+    assert metadata["schema_version"] == "1.1.0"
+    assert metadata["ccf_export"] == {
+        "status": "partial",
+        "total_channel_count": 2,
+        "ccf_channel_count": 1,
+        "omitted_channel_count": 1,
+        "in_brain_channel_count": 1,
+        "bounds_ml_mm": [-6.739, 6.636],
+        "in_brain_ml_range_mm": [0.25, 0.25],
+        "issues": [
+            {
+                "reason": "out_of_brain_channel_location",
+                "message": "outside brain",
+                "channel_count": 1,
+                "ml_range_mm": [9.5, 9.5],
+                "bounds_ml_mm": [-6.739, 6.636],
+            }
+        ],
+    }

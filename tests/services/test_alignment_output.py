@@ -100,7 +100,9 @@ class FakeRegions:
             xyz=np.zeros((labels.size, 3)),
             axial=np.zeros(labels.size),
             lateral=np.zeros(labels.size),
-            acronym=np.array([f"R{label}" for label in labels]),
+            acronym=np.array(
+                ["void" if label == 0 else f"R{label}" for label in labels]
+            ),
         )
 
 
@@ -127,6 +129,12 @@ class FakePipelineFrameBrainAtlas(FakeBrainAtlas):
 
 class FakeSpimNativeFrameBrainAtlas(FakePipelineFrameBrainAtlas):
     ccf_transform_input_frame = SPIM_NATIVE_FRAME
+
+
+class FakeVoidSecondChannelBrainAtlas(FakeBrainAtlas):
+    @staticmethod
+    def get_labels(channel_locations_ras):
+        return np.array([1, 0])
 
 
 def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
@@ -248,9 +256,9 @@ def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
     ):
         return pandas.DataFrame(
             {
-                "x": [9.5],
-                "y": [0.0],
-                "z": [0.0],
+                "x": [9.5, 0.0],
+                "y": [0.0, 0.0],
+                "z": [0.0, 0.0],
             }
         )
 
@@ -280,18 +288,90 @@ def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
     with caplog.at_level("WARNING", logger=alignment_output_service.__name__):
         results = service.get_alignment_results_batch(
             {
-                ("rec", "stream", 0): (
+                ("rec", "bad", 0): (
                     np.array([[0.0, 0.0, 0.0]]),
                     np.array([[0.0, 0.0]]),
-                )
+                ),
+                ("rec", "good", 0): (
+                    np.array([[0.001, 0.0, 0.0]]),
+                    np.array([[0.0, 0.0]]),
+                ),
             }
         )
 
-    channel_results, ccf_results, multi_shank = results[("rec", "stream", 0)]
+    channel_results, ccf_results, multi_shank = results[("rec", "bad", 0)]
     assert channel_results["channel_0"]["raw_ind"] == 0
     assert ccf_results == {}
+    assert results[("rec", "good", 0)][1]["channel_0"]["x"] == 0.0
     assert not multi_shank
-    assert "saving anatomical channel locations" in caplog.text
+    assert "in-brain ML coordinates outside Allen CCF bounds" in caplog.text
+    bad_status = service.ccf_export_status_by_key[("rec", "bad", 0)]
+    good_status = service.ccf_export_status_by_key[("rec", "good", 0)]
+    assert bad_status.status == "omitted"
+    assert bad_status.issues[0].reason == "in_brain_ml_out_of_ccf_bounds"
+    assert good_status.status == "complete"
+
+
+def test_alignment_output_service_omits_only_out_of_brain_ccf_rows(
+    monkeypatch,
+) -> None:
+    def fake_apply_transforms_to_points(
+        dimension,
+        points,
+        transforms,
+        whichtoinvert,
+    ):
+        return pandas.DataFrame(
+            {
+                "x": [0.25, 9.5],
+                "y": [0.0, 0.0],
+                "z": [0.0, 0.0],
+            }
+        )
+
+    monkeypatch.setattr(
+        alignment_output_service.ants,
+        "apply_transforms_to_points",
+        fake_apply_transforms_to_points,
+    )
+    data_context = AlignmentDataContext()
+    data_context.mouse_root = SimpleNamespace(
+        transforms=SimpleNamespace(
+            image_to_template_affine="image_affine.mat",
+            image_to_template_warp="image_warp.nii.gz",
+            template_to_ccf_affine="ccf_affine.mat",
+            template_to_ccf_warp="ccf_warp.nii.gz",
+        )
+    )
+    histology_context = HistologyDataContext(
+        runtime_data=SimpleNamespace(
+            brain_atlas=FakeVoidSecondChannelBrainAtlas(),
+            histology_images={},
+            lazy_channel_paths={},
+        )
+    )
+    service = AlignmentOutputService(data_context, histology_context)
+
+    results = service.get_alignment_results_batch(
+        {
+            ("rec", "stream", 0): (
+                np.array([[0.0, 0.0, 0.0], [0.001, 0.0, 0.0]]),
+                np.array([[0.0, 0.0], [0.0, 20.0]]),
+            )
+        }
+    )
+
+    _channel_results, ccf_results, _multi_shank = results[("rec", "stream", 0)]
+    assert list(ccf_results) == ["channel_0"]
+    assert ccf_results["channel_0"]["x"] == 0.25
+    status = service.ccf_export_status_by_key[("rec", "stream", 0)]
+    assert status.status == "partial"
+    assert status.total_channel_count == 2
+    assert status.ccf_channel_count == 1
+    assert status.omitted_channel_count == 1
+    assert status.in_brain_channel_count == 1
+    assert status.issues[0].reason == "out_of_brain_channel_location"
+    assert status.issues[0].ml_range_mm == (9.5, 9.5)
 
 
 @pytest.mark.parametrize(

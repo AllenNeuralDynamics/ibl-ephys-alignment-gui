@@ -91,6 +91,7 @@ from ephys_alignment_gui.core.alignment_events import (
 from ephys_alignment_gui.core.alignment_events import (
     StreamCacheEvicted as StreamCacheEvictedEvent,
 )
+from ephys_alignment_gui.core.alignment_output import CcfExportStatus
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveAlignmentEditScreenState,
     ActiveReferenceLineRenderState,
@@ -323,6 +324,16 @@ class FakeBatchOutputBuilder:
 class FakeMissingCcfBatchOutputBuilder(FakeBatchOutputBuilder):
     def get_alignment_results_batch(self, alignments):
         self.batched_alignments = alignments
+        self.ccf_export_status_by_key = {
+            key: CcfExportStatus(
+                status="failed",
+                total_channel_count=1,
+                ccf_channel_count=0,
+                omitted_channel_count=1,
+                in_brain_channel_count=1,
+            )
+            for key in alignments
+        }
         return {
             key: (
                 {"channel": key.shank_idx},
@@ -2278,6 +2289,7 @@ def test_commands_save_edited_alignment_outputs_warns_and_writes_without_ccf(
     assert result.saved_count == 1
     assert repo.saved_kwargs[0]["channel_results"] == {"channel": 0}
     assert repo.saved_kwargs[0]["ccf_channel_results"] == {}
+    assert repo.saved_kwargs[0]["metadata"].ccf_export.status == "failed"
     assert not state.has_unsaved_alignment
     assert any(
         event.phase == "building_outputs"

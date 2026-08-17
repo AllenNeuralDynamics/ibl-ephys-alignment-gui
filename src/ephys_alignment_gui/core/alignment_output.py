@@ -75,6 +75,31 @@ class AlignmentOutputInput:
 
 
 @dataclass(frozen=True)
+class CcfExportIssue:
+    """Summary of why CCF channel output was omitted for some rows."""
+
+    reason: str
+    message: str
+    channel_count: int
+    ml_range_mm: tuple[float, float] | None = None
+    bounds_ml_mm: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
+class CcfExportStatus:
+    """Per-shank CCF export status written next to alignment outputs."""
+
+    status: str
+    total_channel_count: int
+    ccf_channel_count: int
+    omitted_channel_count: int
+    in_brain_channel_count: int
+    bounds_ml_mm: tuple[float, float] | None = None
+    in_brain_ml_range_mm: tuple[float, float] | None = None
+    issues: tuple[CcfExportIssue, ...] = ()
+
+
+@dataclass(frozen=True)
 class AlignmentOutputMetadata:
     """Probe/shank identity written next to GUI alignment output files."""
 
@@ -84,3 +109,4 @@ class AlignmentOutputMetadata:
     shank_idx: int
     n_shanks: int
     probe_id: str | None = None
+    ccf_export: CcfExportStatus | None = None

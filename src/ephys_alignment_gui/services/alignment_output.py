@@ -15,6 +15,8 @@ from numpy.typing import NDArray
 
 from ephys_alignment_gui.core.alignment_output import (
     AlignmentOutputInput,
+    CcfExportIssue,
+    CcfExportStatus,
     ChannelOutputIdentity,
 )
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
@@ -29,6 +31,10 @@ logger = logging.getLogger(__name__)
 ANTS_DIMENSION = 3
 CCF_25UM_ML_BOUNDS_MM = (-5.739, 5.636)
 CCF_ML_SAVE_MARGIN_MM = 1.0
+CCF_ML_SAVE_BOUNDS_MM = (
+    CCF_25UM_ML_BOUNDS_MM[0] - CCF_ML_SAVE_MARGIN_MM,
+    CCF_25UM_ML_BOUNDS_MM[1] + CCF_ML_SAVE_MARGIN_MM,
+)
 AlignmentOutputResult = tuple[
     dict[str, dict[str, Any]],
     dict[str, dict[str, Any]],
@@ -51,6 +57,7 @@ class AlignmentOutputService:
     ) -> None:
         self.data_context = data_context
         self.histology_context = histology_context
+        self.ccf_export_status_by_key: dict[Hashable, CcfExportStatus] = {}
 
     def get_alignment_results(
         self,
@@ -80,6 +87,7 @@ class AlignmentOutputService:
     ) -> dict[Hashable, AlignmentOutputResult]:
         """Compute channel outputs for many alignments with one ANTs call."""
         logger.info("Saving channel locations locally")
+        self.ccf_export_status_by_key = {}
         brain_atlas = self.histology_context.brain_atlas
         if brain_atlas is None:
             raise ValueError("Brain atlas not loaded, cannot save channel locations")
@@ -110,18 +118,25 @@ class AlignmentOutputService:
         all_ccf_xyz: NDArray | None
         try:
             all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
-            self._validate_ccf_xyz(
+            all_ccf_xyz = self._validate_ccf_xyz_shape(
                 all_ccf_xyz,
                 expected_count=len(all_channel_locations_ras),
             )
         except Exception as exc:
             all_ccf_xyz = None
+            message = (
+                "CCF channel coordinate export failed before row-level validation; "
+                "saving anatomical channel locations and alignment histories without "
+                f"CCF channel coordinates: {exc}"
+            )
             logger.warning(
-                "CCF channel coordinate export failed; saving anatomical channel "
-                "locations and alignment histories without CCF channel coordinates: "
-                "%s",
-                exc,
+                message,
                 exc_info=True,
+            )
+            self._mark_all_ccf_failed(
+                channel_dicts,
+                reason="ccf_transform_failed",
+                message=message,
             )
 
         results: dict[Hashable, AlignmentOutputResult] = {}
@@ -130,9 +145,19 @@ class AlignmentOutputService:
                 results[key] = (channel_dict, {}, multi_shank)
                 continue
             ccf_xyz = all_ccf_xyz[point_slices[key]]
+            valid_mask, status = self._ccf_validity_for_channel_dict(
+                key,
+                channel_dict,
+                ccf_xyz,
+            )
+            self.ccf_export_status_by_key[key] = status
             results[key] = (
                 channel_dict,
-                self._create_ccf_channel_dict(channel_dict, ccf_xyz),
+                self._create_ccf_channel_dict(
+                    channel_dict,
+                    ccf_xyz,
+                    valid_mask=valid_mask,
+                ),
                 multi_shank,
             )
         return results
@@ -257,14 +282,26 @@ class AlignmentOutputService:
     def _create_ccf_channel_dict(
         channel_dict: dict[str, dict[str, Any]],
         ccf_xyz: NDArray,
+        valid_mask: NDArray | None = None,
     ) -> dict[str, dict[str, Any]]:
         if len(ccf_xyz) != len(channel_dict):
             raise RuntimeError(
                 "CCF transform returned a different number of points than the "
                 f"channel output rows: {len(ccf_xyz)} != {len(channel_dict)}"
             )
+        if valid_mask is None:
+            valid_mask = np.ones(len(channel_dict), dtype=bool)
+        else:
+            valid_mask = np.asarray(valid_mask, dtype=bool)
+            if valid_mask.shape != (len(channel_dict),):
+                raise RuntimeError(
+                    "CCF validity mask has shape "
+                    f"{valid_mask.shape}, expected ({len(channel_dict)},)"
+                )
         ccf_channel_dict: dict[str, dict[str, Any]] = {}
-        for ch, (x, y, z) in zip(channel_dict.keys(), ccf_xyz):
+        for ch, (x, y, z), is_valid in zip(channel_dict.keys(), ccf_xyz, valid_mask):
+            if not is_valid:
+                continue
             info = channel_dict[ch]
             ccf_channel_dict[ch] = {
                 "x": float(x),
@@ -281,27 +318,181 @@ class AlignmentOutputService:
         return ccf_channel_dict
 
     @staticmethod
-    def _validate_ccf_xyz(ccf_xyz: NDArray, *, expected_count: int) -> None:
+    def _validate_ccf_xyz_shape(ccf_xyz: NDArray, *, expected_count: int) -> NDArray:
         ccf_xyz = np.asarray(ccf_xyz, dtype=np.float64)
         if ccf_xyz.shape != (expected_count, ANTS_DIMENSION):
             raise RuntimeError(
                 "CCF transform returned coordinates with shape "
                 f"{ccf_xyz.shape}, expected ({expected_count}, {ANTS_DIMENSION})"
             )
-        if not np.all(np.isfinite(ccf_xyz)):
-            raise RuntimeError("CCF transform returned non-finite coordinates")
+        return ccf_xyz
 
-        min_ml = CCF_25UM_ML_BOUNDS_MM[0] - CCF_ML_SAVE_MARGIN_MM
-        max_ml = CCF_25UM_ML_BOUNDS_MM[1] + CCF_ML_SAVE_MARGIN_MM
-        ml_values = ccf_xyz[:, 0]
-        if np.any((ml_values < min_ml) | (ml_values > max_ml)):
+    def _ccf_validity_for_channel_dict(
+        self,
+        key: Hashable,
+        channel_dict: dict[str, dict[str, Any]],
+        ccf_xyz: NDArray,
+    ) -> tuple[NDArray, CcfExportStatus]:
+        if len(ccf_xyz) != len(channel_dict):
             raise RuntimeError(
-                "CCF transform returned ML coordinates outside Allen CCF bounds "
-                f"plus {CCF_ML_SAVE_MARGIN_MM:g} mm margin: "
-                f"range=({float(np.min(ml_values)):.3f}, "
-                f"{float(np.max(ml_values)):.3f}) mm. This usually indicates "
-                "an image orientation/origin mismatch at the anatomical-to-CCF "
-                "save boundary."
+                "CCF transform returned a different number of points than the "
+                f"channel output rows: {len(ccf_xyz)} != {len(channel_dict)}"
+            )
+        if len(channel_dict) == 0:
+            return np.zeros(0, dtype=bool), CcfExportStatus(
+                status="complete",
+                total_channel_count=0,
+                ccf_channel_count=0,
+                omitted_channel_count=0,
+                in_brain_channel_count=0,
+                bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+            )
+
+        ccf_xyz = np.asarray(ccf_xyz, dtype=np.float64)
+        finite_mask = np.all(np.isfinite(ccf_xyz), axis=1)
+        in_brain_mask = self._in_brain_mask(channel_dict)
+        ml_values = ccf_xyz[:, 0]
+        ml_bounds_mask = (ml_values >= CCF_ML_SAVE_BOUNDS_MM[0]) & (
+            ml_values <= CCF_ML_SAVE_BOUNDS_MM[1]
+        )
+        valid_mask = finite_mask & in_brain_mask & ml_bounds_mask
+        issues = self._ccf_export_issues(
+            in_brain_mask=in_brain_mask,
+            finite_mask=finite_mask,
+            ml_bounds_mask=ml_bounds_mask,
+            ml_values=ml_values,
+        )
+        ccf_channel_count = int(np.count_nonzero(valid_mask))
+        omitted_channel_count = int(len(channel_dict) - ccf_channel_count)
+        status = "complete"
+        if omitted_channel_count == len(channel_dict):
+            status = "omitted"
+        elif omitted_channel_count:
+            status = "partial"
+
+        in_brain_finite_ml = ml_values[in_brain_mask & finite_mask]
+        export_status = CcfExportStatus(
+            status=status,
+            total_channel_count=len(channel_dict),
+            ccf_channel_count=ccf_channel_count,
+            omitted_channel_count=omitted_channel_count,
+            in_brain_channel_count=int(np.count_nonzero(in_brain_mask)),
+            bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+            in_brain_ml_range_mm=_range_tuple(in_brain_finite_ml),
+            issues=tuple(issues),
+        )
+
+        if np.any(in_brain_mask & finite_mask & ~ml_bounds_mask):
+            logger.warning(
+                "CCF transform returned in-brain ML coordinates outside Allen "
+                "CCF bounds plus %g mm margin for %s; omitting affected CCF "
+                "rows. In-brain ML range: %s mm",
+                CCF_ML_SAVE_MARGIN_MM,
+                key,
+                export_status.in_brain_ml_range_mm,
+            )
+        elif status == "omitted":
+            logger.warning(
+                "No valid in-brain CCF channel coordinates are available for %s; "
+                "saving anatomical channel locations without CCF rows. Issues: %s",
+                key,
+                ", ".join(issue.reason for issue in issues) or "none",
+            )
+        elif status == "partial":
+            logger.info(
+                "Omitting %d of %d CCF channel rows for %s. Issues: %s",
+                omitted_channel_count,
+                len(channel_dict),
+                key,
+                ", ".join(issue.reason for issue in issues) or "none",
+            )
+
+        return valid_mask, export_status
+
+    @staticmethod
+    def _in_brain_mask(channel_dict: dict[str, dict[str, Any]]) -> NDArray:
+        return np.asarray(
+            [_is_in_brain_region(info) for info in channel_dict.values()],
+            dtype=bool,
+        )
+
+    @staticmethod
+    def _ccf_export_issues(
+        *,
+        in_brain_mask: NDArray,
+        finite_mask: NDArray,
+        ml_bounds_mask: NDArray,
+        ml_values: NDArray,
+    ) -> list[CcfExportIssue]:
+        issues: list[CcfExportIssue] = []
+        out_of_brain = ~in_brain_mask
+        if np.any(out_of_brain):
+            issues.append(
+                CcfExportIssue(
+                    reason="out_of_brain_channel_location",
+                    message=(
+                        "Channel location is outside the anatomical brain mask; "
+                        "CCF coordinates are omitted because extrapolated CCF "
+                        "transforms are not meaningful for these rows."
+                    ),
+                    channel_count=int(np.count_nonzero(out_of_brain)),
+                    ml_range_mm=_range_tuple(ml_values[out_of_brain & finite_mask]),
+                    bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+                )
+            )
+        in_brain_nonfinite = in_brain_mask & ~finite_mask
+        if np.any(in_brain_nonfinite):
+            issues.append(
+                CcfExportIssue(
+                    reason="nonfinite_ccf_coordinate",
+                    message="CCF transform returned non-finite coordinates.",
+                    channel_count=int(np.count_nonzero(in_brain_nonfinite)),
+                    bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+                )
+            )
+        in_brain_out_of_bounds = in_brain_mask & finite_mask & ~ml_bounds_mask
+        if np.any(in_brain_out_of_bounds):
+            issues.append(
+                CcfExportIssue(
+                    reason="in_brain_ml_out_of_ccf_bounds",
+                    message=(
+                        "In-brain CCF ML coordinates are outside Allen CCF bounds "
+                        "plus the save margin. This usually indicates an image "
+                        "orientation/origin mismatch at the anatomical-to-CCF "
+                        "save boundary."
+                    ),
+                    channel_count=int(np.count_nonzero(in_brain_out_of_bounds)),
+                    ml_range_mm=_range_tuple(ml_values[in_brain_out_of_bounds]),
+                    bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+                )
+            )
+        return issues
+
+    def _mark_all_ccf_failed(
+        self,
+        channel_dicts: Mapping[Hashable, dict[str, dict[str, Any]]],
+        *,
+        reason: str,
+        message: str,
+    ) -> None:
+        for key, channel_dict in channel_dicts.items():
+            self.ccf_export_status_by_key[key] = CcfExportStatus(
+                status="failed",
+                total_channel_count=len(channel_dict),
+                ccf_channel_count=0,
+                omitted_channel_count=len(channel_dict),
+                in_brain_channel_count=int(
+                    np.count_nonzero(self._in_brain_mask(channel_dict))
+                ),
+                bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+                issues=(
+                    CcfExportIssue(
+                        reason=reason,
+                        message=message,
+                        channel_count=len(channel_dict),
+                        bounds_ml_mm=CCF_ML_SAVE_BOUNDS_MM,
+                    ),
+                ),
             )
 
     @staticmethod
@@ -375,3 +566,20 @@ def _json_scalar(value: Any) -> Any:
     if isinstance(value, np.generic):
         return value.item()
     return value
+
+
+def _is_in_brain_region(info: Mapping[str, Any]) -> bool:
+    region_name = str(info.get("brain_region", "")).strip().lower()
+    if region_name == "void":
+        return False
+    try:
+        return int(info.get("brain_region_id", 0)) != 0
+    except (TypeError, ValueError):
+        return True
+
+
+def _range_tuple(values: NDArray) -> tuple[float, float] | None:
+    values = np.asarray(values, dtype=np.float64)
+    if values.size == 0:
+        return None
+    return (float(np.min(values)), float(np.max(values)))

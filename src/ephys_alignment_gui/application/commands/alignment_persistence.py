@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -673,6 +673,7 @@ class AlignmentPersistenceCommandHandler:
         except Exception as exc:
             return Failed(f"Failed to build alignment outputs: {exc}")
 
+        ccf_export_statuses = getattr(output_builder, "ccf_export_status_by_key", {})
         return {
             key: AlignmentOutputBuilt(
                 channel_results=channel_results,
@@ -682,6 +683,7 @@ class AlignmentPersistenceCommandHandler:
                     if multi_shank_by_key is not None
                     else multi_shank
                 ),
+                ccf_export_status=ccf_export_statuses.get(key),
             )
             for key, (
                 channel_results,
@@ -721,6 +723,12 @@ class AlignmentPersistenceCommandHandler:
             for key, value in alignments.items()
             if key != LEGACY_AUTO_ALIGNMENT_LABEL
         }
+        metadata = output_metadata
+        if output.ccf_export_status is not None:
+            metadata = replace(
+                output_metadata,
+                ccf_export=output.ccf_export_status,
+            )
         try:
             saved = self._alignment_repository().save_alignment_outputs(
                 output_directory=output_directory,
@@ -729,7 +737,7 @@ class AlignmentPersistenceCommandHandler:
                 channel_results=output.channel_results,
                 previous_alignments=persistable_alignments,
                 ccf_channel_results=output.ccf_channel_results,
-                metadata=output_metadata,
+                metadata=metadata,
                 use_docdb=use_docdb,
                 output_package_directory=(
                     self.controller.document.output_package_directory
