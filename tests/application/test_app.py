@@ -50,9 +50,8 @@ from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
 )
-from ephys_alignment_gui.application.save_runtime_rehydration import (
-    SaveRuntimeRehydrated,
-    SaveRuntimeRehydrationPlan,
+from ephys_alignment_gui.application.save_channel_locations import (
+    SaveChannelLocationError,
 )
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
@@ -382,6 +381,24 @@ class FakeDerivedDataService:
         return np.array([[1.0, 2.0, 3.0]])
 
 
+class FakeSaveChannelLocationBuilder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def compute(self, **kwargs):
+        self.calls.append(kwargs)
+        geometry = kwargs["geometry"]
+        return np.tile(
+            np.array([[1.0, 2.0, 3.0]], dtype=float),
+            (len(geometry.channel_coordinates), 1),
+        )
+
+
+class FailingSaveChannelLocationBuilder:
+    def compute(self, **_kwargs):
+        raise SaveChannelLocationError("channel prep failed")
+
+
 class FakeSliceService:
     def __init__(self) -> None:
         self.slice_set_calls: list[dict[str, Any]] = []
@@ -536,6 +553,16 @@ def _attach_input_dataset(
     workspace.save_geometry_catalog.set_input_dataset(
         workspace.data_context.input_dataset
     )
+
+
+def _install_fake_save_channel_location_builder(
+    workspace: AlignmentWorkspace,
+) -> FakeSaveChannelLocationBuilder:
+    builder = FakeSaveChannelLocationBuilder()
+    workspace.save_input_factory.channel_location_builder = builder
+    workspace.save_input_factory.histology_context = workspace.histology_context
+    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    return builder
 
 
 def _channel_table_paths(
@@ -2009,6 +2036,7 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     probe = _probe_info(channel_table=channel_table)
     _attach_input_dataset(workspace, _mouse_root_with_probe(probe))
     workspace.data_context.probe_info = probe
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
     active_key = AlignmentKey("rec", "stream", 1)
     active_state = workspace.document.select_alignment_key(active_key)
     active_state.active_alignment = ActiveAlignment(
@@ -2016,18 +2044,6 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
         track=np.array([3.0, 4.0]),
     )
     active_state.mark_alignment_changed()
-    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
-    workspace.runtime.current_stream_key = ("rec", "stream")
-    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        1: _fake_shank_runtime(
-            ephysalign="aligner",
-            chn_coords=np.array([[10.0, 20.0]]),
-            shank_idx=1,
-            raw_ind=np.array([42]),
-            contact_ids=np.array([142]),
-            shank_indices=np.array([1]),
-        )
-    }
     events: list[SaveCompleted] = []
     workspace.app.events.subscribe(SaveCompleted, events.append)
 
@@ -2052,14 +2068,15 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     np.testing.assert_array_equal(output_input.channel_identity.raw_ind, [42])
     np.testing.assert_array_equal(output_input.channel_identity.contact_id, [142])
     np.testing.assert_array_equal(output_input.channel_identity.shank_idx, [1])
-    assert len(derived.channel_location_calls) == 1
-    assert derived.channel_location_calls[0]["ephysalign"] == "aligner"
+    assert derived.channel_location_calls == []
+    assert len(save_channel_builder.calls) == 1
+    assert save_channel_builder.calls[0]["geometry"].key == active_key
     np.testing.assert_allclose(
-        derived.channel_location_calls[0]["feature"],
+        save_channel_builder.calls[0]["feature"],
         active_state.active_alignment.feature,
     )
     np.testing.assert_allclose(
-        derived.channel_location_calls[0]["track"],
+        save_channel_builder.calls[0]["track"],
         active_state.active_alignment.track,
     )
     assert len(active_state.alignments) == 1
@@ -2138,6 +2155,7 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         ),
     )
     workspace.data_context.probe_info = probe_a
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
 
     key_a = AlignmentKey("rec", "stream", 1)
     state_a = workspace.document.select_alignment_key(key_a)
@@ -2155,26 +2173,6 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     )
     state_b.mark_alignment_changed()
 
-    runtime_a = FakeStreamRuntime(("rec", "stream"), n_shanks=2)
-    runtime_a.shank_runtime_by_idx = {
-        1: _fake_shank_runtime(
-            ephysalign="aligner-a",
-            chn_coords=np.array([[10.0, 20.0]]),
-            shank_idx=1,
-        )
-    }
-    runtime_b = FakeStreamRuntime(("rec", "streamB"), n_shanks=1)
-    runtime_b.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="aligner-b",
-            chn_coords=np.array([[30.0, 40.0]]),
-            shank_idx=0,
-        )
-    }
-    workspace.runtime.stream_cache = {
-        ("rec", "stream"): runtime_a,
-        ("rec", "streamB"): runtime_b,
-    }
     started_events: list[SaveProgressStarted] = []
     progress_events: list[SaveProgressUpdated] = []
     workspace.app.events.subscribe(SaveProgressStarted, started_events.append)
@@ -2202,9 +2200,10 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         and "Batching CCF transform points" in event.message
         for event in progress_events
     )
-    assert [call["ephysalign"] for call in derived.channel_location_calls] == [
-        "aligner-a",
-        "aligner-b",
+    assert derived.channel_location_calls == []
+    assert [call["geometry"].key for call in save_channel_builder.calls] == [
+        key_a,
+        key_b,
     ]
     assert [kwargs["output_directory"] for kwargs in repo.saved_kwargs] == [
         active_output_dir,
@@ -2271,6 +2270,7 @@ def test_commands_save_edited_alignment_outputs_includes_clean_saveable_states(
         ),
     )
     workspace.data_context.probe_info = dirty_probe
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
 
     dirty_key = AlignmentKey("rec", "dirty-stream", 0)
     dirty_state = workspace.document.select_alignment_key(dirty_key)
@@ -2289,25 +2289,6 @@ def test_commands_save_edited_alignment_outputs_includes_clean_saveable_states(
     )
     assert not clean_state.has_unsaved_alignment
 
-    dirty_runtime = FakeStreamRuntime(("rec", "dirty-stream"), n_shanks=1)
-    dirty_runtime.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="dirty-aligner",
-            chn_coords=np.array([[10.0, 20.0]]),
-        )
-    }
-    clean_runtime = FakeStreamRuntime(("rec", "clean-stream"), n_shanks=1)
-    clean_runtime.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="clean-aligner",
-            chn_coords=np.array([[30.0, 40.0]]),
-        )
-    }
-    workspace.runtime.stream_cache = {
-        ("rec", "dirty-stream"): dirty_runtime,
-        ("rec", "clean-stream"): clean_runtime,
-    }
-
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False
     )
@@ -2315,9 +2296,10 @@ def test_commands_save_edited_alignment_outputs_includes_clean_saveable_states(
     assert isinstance(result, EditedAlignmentOutputsSaved)
     assert result.saved_count == 2
     assert list(output_builder.batched_alignments) == [clean_key, dirty_key]
-    assert [call["ephysalign"] for call in derived.channel_location_calls] == [
-        "clean-aligner",
-        "dirty-aligner",
+    assert derived.channel_location_calls == []
+    assert [call["geometry"].key for call in save_channel_builder.calls] == [
+        clean_key,
+        dirty_key,
     ]
     assert [kwargs["previous_alignments"] for kwargs in repo.saved_kwargs] == [
         {"saved-clean": [[5.0, 6.0], [7.0, 8.0]]},
@@ -2340,6 +2322,7 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
     _attach_single_probe_save_geometry(workspace, tmp_path)
+    _install_fake_save_channel_location_builder(workspace)
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2347,14 +2330,6 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
         track=np.array([3.0, 4.0]),
     )
     state.mark_alignment_changed()
-    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
-    workspace.runtime.current_stream_key = ("rec", "stream")
-    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="aligner",
-            chn_coords=np.array([[10.0, 20.0]]),
-        )
-    }
     cancelled_events: list[SaveCancelled] = []
     progress_events: list[SaveProgressUpdated] = []
     workspace.app.events.subscribe(SaveCancelled, cancelled_events.append)
@@ -2416,6 +2391,7 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
     _attach_single_probe_save_geometry(workspace, tmp_path)
+    _install_fake_save_channel_location_builder(workspace)
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2423,14 +2399,6 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
         track=np.array([3.0, 4.0]),
     )
     state.mark_alignment_changed()
-    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
-    workspace.runtime.current_stream_key = ("rec", "stream")
-    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="aligner",
-            chn_coords=np.array([[10.0, 20.0]]),
-        )
-    }
     prepared = workspace.app.commands.persistence.prepare_edited_alignment_save(
         use_docdb=False,
         rehydrate_missing=False,
@@ -2472,66 +2440,7 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     assert workspace.document.dirty
 
 
-def test_commands_save_edited_alignment_outputs_reloads_dirty_missing_runtime(
-    tmp_path,
-) -> None:
-    repo = FakeAlignmentRepository()
-    output_builder = FakeBatchOutputBuilder()
-    derived = FakeDerivedDataService()
-    ephys_data_service = FakeEphysDataService()
-    runtime_initializer = FakeRuntimeInitializer()
-    probe_track_service = FakeProbeTrackService()
-    workspace = AlignmentWorkspace(
-        ephys_data_service=ephys_data_service,
-        alignment_runtime_service=runtime_initializer,
-        probe_track_service=probe_track_service,
-    )
-    fake_job = FakeLoadDataJob()
-    workspace.save_runtime_rehydrator.load_data_job = fake_job
-    workspace.persistence_commands.alignment_repository = repo
-    workspace.persistence_commands.output_builder = output_builder
-    workspace.persistence_commands.derived_data_service = derived
-    workspace.document.output_root = tmp_path / "results"
-    workspace.document.output_directory = tmp_path / "active"
-    probe = _attach_single_probe_save_geometry(workspace, tmp_path)
-    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
-
-    key = AlignmentKey("rec", "stream", 0)
-    state = workspace.document.select_alignment_key(key)
-    state.active_alignment = ActiveAlignment(
-        feature=np.array([1.0, 2.0]),
-        track=np.array([3.0, 4.0]),
-    )
-    state.mark_alignment_changed()
-
-    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
-        use_docdb=False
-    )
-
-    assert isinstance(result, EditedAlignmentOutputsSaved)
-    assert result.saved_count == 1
-    assert len(fake_job.calls) == 1
-    assert fake_job.calls[0].target.identity == _load_target(shank_idx=0).identity
-    assert ephys_data_service.loaded_probe is probe
-    assert probe_track_service.calls == [
-        {
-            "probe": probe,
-            "shank_idx": 0,
-            "brain_atlas": "atlas",
-        }
-    ]
-    assert runtime_initializer.calls[0][0].shank_idx == 0
-    assert list(output_builder.batched_alignments) == [key]
-    assert [call["ephysalign"] for call in derived.channel_location_calls] == [
-        "rehydrated-aligner"
-    ]
-    assert ("rec", "stream") in workspace.runtime.stream_cache
-    assert workspace.runtime.active_stream_runtime is None
-    assert not state.has_unsaved_alignment
-    assert not workspace.document.dirty
-
-
-def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
+def test_commands_save_edited_alignment_outputs_uses_lightweight_geometry_without_runtime(
     tmp_path,
 ) -> None:
     repo = FakeAlignmentRepository()
@@ -2553,7 +2462,58 @@ def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
     _attach_single_probe_save_geometry(workspace, tmp_path)
-    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
+
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 1
+    assert fake_job.calls == []
+    assert ephys_data_service.loaded_probe is None
+    assert probe_track_service.calls == []
+    assert runtime_initializer.calls == []
+    assert list(output_builder.batched_alignments) == [key]
+    assert derived.channel_location_calls == []
+    assert [call["geometry"].key for call in save_channel_builder.calls] == [key]
+    assert workspace.runtime.stream_cache == {}
+    assert workspace.runtime.active_stream_runtime is None
+    assert not state.has_unsaved_alignment
+    assert not workspace.document.dirty
+
+
+def test_commands_prepare_save_runtime_rehydration_is_noop_for_full_save(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    ephys_data_service = FakeEphysDataService()
+    runtime_initializer = FakeRuntimeInitializer()
+    probe_track_service = FakeProbeTrackService()
+    workspace = AlignmentWorkspace(
+        ephys_data_service=ephys_data_service,
+        alignment_runtime_service=runtime_initializer,
+        probe_track_service=probe_track_service,
+    )
+    fake_job = FakeLoadDataJob()
+    workspace.save_runtime_rehydrator.load_data_job = fake_job
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_root = tmp_path / "results"
+    workspace.document.output_directory = tmp_path / "active"
+    _attach_single_probe_save_geometry(workspace, tmp_path)
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
 
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
@@ -2565,15 +2525,7 @@ def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
 
     plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
 
-    assert isinstance(plan, SaveRuntimeRehydrationPlan)
-    assert len(plan.dependencies) == 1
-
-    rehydrated = workspace.app.commands.persistence.run_save_runtime_rehydration(plan)
-
-    assert isinstance(rehydrated, SaveRuntimeRehydrated)
-    assert rehydrated.dependency_count == 1
-    assert len(fake_job.calls) == 1
-    assert ("rec", "stream") in workspace.runtime.stream_cache
+    assert isinstance(plan, Ok)
 
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False,
@@ -2582,13 +2534,14 @@ def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
 
     assert isinstance(result, EditedAlignmentOutputsSaved)
     assert result.saved_count == 1
-    assert len(fake_job.calls) == 1
+    assert fake_job.calls == []
     assert list(output_builder.batched_alignments) == [key]
+    assert [call["geometry"].key for call in save_channel_builder.calls] == [key]
     assert not state.has_unsaved_alignment
     assert not workspace.document.dirty
 
 
-def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
+def test_commands_full_save_does_not_rehydrate_or_evict_cached_runtimes(
     tmp_path,
 ) -> None:
     repo = FakeAlignmentRepository()
@@ -2622,7 +2575,7 @@ def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
         for idx in range(3)
     )
     _attach_input_dataset(workspace, _mouse_root_with_probes(*probes))
-    workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
+    save_channel_builder = _install_fake_save_channel_location_builder(workspace)
 
     for idx in range(3):
         key = AlignmentKey("rec", f"stream-{idx}", 0)
@@ -2646,19 +2599,7 @@ def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
 
     plan = workspace.app.commands.persistence.prepare_save_runtime_rehydration()
 
-    assert isinstance(plan, SaveRuntimeRehydrationPlan)
-    assert [dependency.stream_key for dependency in plan.dependencies] == [
-        ("rec", "stream-2")
-    ]
-
-    rehydrated = workspace.app.commands.persistence.run_save_runtime_rehydration(plan)
-
-    assert isinstance(rehydrated, SaveRuntimeRehydrated)
-    assert list(workspace.runtime.stream_cache) == [
-        ("rec", "stream-0"),
-        ("rec", "stream-1"),
-        ("rec", "stream-2"),
-    ]
+    assert isinstance(plan, Ok)
 
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False,
@@ -2667,19 +2608,30 @@ def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
 
     assert isinstance(result, EditedAlignmentOutputsSaved)
     assert result.saved_count == 3
-    assert len(fake_job.calls) == 1
     assert list(output_builder.batched_alignments) == [
         AlignmentKey("rec", "stream-0", 0),
         AlignmentKey("rec", "stream-1", 0),
         AlignmentKey("rec", "stream-2", 0),
     ]
+    assert [call["geometry"].key for call in save_channel_builder.calls] == [
+        AlignmentKey("rec", "stream-0", 0),
+        AlignmentKey("rec", "stream-1", 0),
+        AlignmentKey("rec", "stream-2", 0),
+    ]
+    assert fake_job.calls == []
+    assert list(workspace.runtime.stream_cache) == [
+        ("rec", "stream-0"),
+        ("rec", "stream-1"),
+    ]
     assert not workspace.document.dirty
 
 
-def test_commands_save_without_rehydration_fails_for_missing_runtime(tmp_path) -> None:
+def test_commands_save_without_input_snapshot_fails_for_missing_save_geometry(
+    tmp_path,
+) -> None:
     workspace = AlignmentWorkspace()
     workspace.document.output_directory = tmp_path
-    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    workspace.data_context.probe_info = _probe_info()
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2694,15 +2646,16 @@ def test_commands_save_without_rehydration_fails_for_missing_runtime(tmp_path) -
     )
 
     assert isinstance(result, Failed)
-    assert "stream runtime is not loaded" in result.message
+    assert "No input dataset snapshot is loaded" in result.message
     assert state.has_unsaved_alignment
 
 
-def test_commands_save_edited_alignment_outputs_fails_for_unresolvable_dirty_runtime(
+def test_commands_save_edited_alignment_outputs_fails_without_input_metadata(
     tmp_path,
 ) -> None:
     workspace = AlignmentWorkspace()
     workspace.document.output_directory = tmp_path
+    workspace.data_context.probe_info = _probe_info()
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2718,25 +2671,25 @@ def test_commands_save_edited_alignment_outputs_fails_for_unresolvable_dirty_run
     )
 
     assert isinstance(result, Failed)
-    assert "no mouse root is loaded" in result.message
+    assert "No input dataset snapshot is loaded" in result.message
     assert state.has_unsaved_alignment
     assert events == [SaveFailed(message=result.message)]
 
 
-def test_commands_save_edited_alignment_outputs_does_not_cache_failed_rehydration(
+def test_commands_save_edited_alignment_outputs_does_not_cache_failed_preparation(
     tmp_path,
 ) -> None:
-    runtime_initializer = FakeRuntimeInitializer()
-    runtime_initializer.error = RuntimeError("init failed")
     workspace = AlignmentWorkspace(
         ephys_data_service=FakeEphysDataService(),
-        alignment_runtime_service=runtime_initializer,
         probe_track_service=FakeProbeTrackService(),
     )
     workspace.save_runtime_rehydrator.load_data_job = FakeLoadDataJob()
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
-    workspace.data_context.mouse_root = _mouse_root_with_probe()
+    _attach_single_probe_save_geometry(workspace, tmp_path)
+    workspace.save_input_factory.channel_location_builder = (
+        FailingSaveChannelLocationBuilder()
+    )
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
@@ -2751,7 +2704,7 @@ def test_commands_save_edited_alignment_outputs_does_not_cache_failed_rehydratio
     )
 
     assert isinstance(result, Failed)
-    assert "init failed" in result.message
+    assert "channel prep failed" in result.message
     assert workspace.runtime.stream_cache == {}
     assert state.has_unsaved_alignment
 
@@ -2769,6 +2722,7 @@ def test_commands_save_edited_alignment_outputs_does_not_commit_history_on_failu
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
     _attach_single_probe_save_geometry(workspace, tmp_path)
+    _install_fake_save_channel_location_builder(workspace)
     active_key = AlignmentKey("rec", "stream", 0)
     active_state = workspace.document.select_alignment_key(active_key)
     active_state.active_alignment = ActiveAlignment(
@@ -2776,14 +2730,6 @@ def test_commands_save_edited_alignment_outputs_does_not_commit_history_on_failu
         track=np.array([3.0, 4.0]),
     )
     active_state.mark_alignment_changed()
-    workspace.runtime.active_stream_runtime = FakeStreamRuntime()
-    workspace.runtime.current_stream_key = ("rec", "stream")
-    workspace.runtime.active_stream_runtime.shank_runtime_by_idx = {
-        0: _fake_shank_runtime(
-            ephysalign="aligner",
-            chn_coords=np.array([[10.0, 20.0]]),
-        )
-    }
 
     result = workspace.app.commands.persistence.save_edited_alignment_outputs(
         use_docdb=False

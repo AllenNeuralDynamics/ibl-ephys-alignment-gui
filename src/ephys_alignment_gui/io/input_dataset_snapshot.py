@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ephys_alignment_gui.io.datapackage_loader import (
     ChannelTablePaths,
+    DataPackageError,
     HistologyImagePaths,
     MouseRoot,
     ProbeInfo,
@@ -61,6 +62,42 @@ class InputProbeSnapshot:
         """Return the stable ephys stream key for this probe."""
         return self.recording_id, self.ephys_collection
 
+    def picks_for_shank(self, shank_idx: int) -> XyzPicks:
+        """Return the xyz-picks entry for a given 0-based shank index."""
+        if self.num_shanks == 1:
+            return self.xyz_picks[0]
+
+        for field_name in ("ephys_shank", "shank"):
+            picks_by_index = self._picks_by_normalized_shank_field(field_name)
+            if picks_by_index and shank_idx in picks_by_index:
+                return picks_by_index[shank_idx]
+
+        want = shank_idx + 1
+        raise DataPackageError(
+            f"Probe {self.probe_name!r} has no shank {want} "
+            f"(shanks available: {[pk.shank for pk in self.xyz_picks]})"
+        )
+
+    def _picks_by_normalized_shank_field(
+        self,
+        field_name: str,
+    ) -> dict[int, XyzPicks]:
+        values = [getattr(pk, field_name) for pk in self.xyz_picks]
+        if any(value is None for value in values):
+            return {}
+        unique_values = sorted(set(int(value) for value in values))
+        value_to_local = {value: idx for idx, value in enumerate(unique_values)}
+        picks_by_index: dict[int, XyzPicks] = {}
+        for pick, value in zip(self.xyz_picks, values, strict=True):
+            local_idx = value_to_local[int(value)]
+            if local_idx in picks_by_index:
+                raise DataPackageError(
+                    f"Probe {self.probe_name!r} has duplicate {field_name} "
+                    f"value {value!r} in xyz_picks"
+                )
+            picks_by_index[local_idx] = pick
+        return picks_by_index
+
     def missing_save_critical_paths(self) -> tuple[MissingInputPath, ...]:
         """Return absent channel-table paths needed for lightweight saving."""
         if self.channel_table is None:
@@ -106,9 +143,7 @@ class InputDatasetSnapshot:
         """Return a snapshot for a loaded mouse-root datapackage."""
         probes = tuple(
             InputProbeSnapshot.from_probe(probe)
-            for _recording_id, probes_for_recording in sorted(
-                mouse_root.probes.items()
-            )
+            for _recording_id, probes_for_recording in sorted(mouse_root.probes.items())
             for _probe_name, probe in sorted(probes_for_recording.items())
         )
         return cls(

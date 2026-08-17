@@ -34,6 +34,9 @@ from ephys_alignment_gui.application.commands.shank_selection import (
     ShankSelectionCommandHandler,
 )
 from ephys_alignment_gui.application.queries import AlignmentQueries
+from ephys_alignment_gui.application.save_channel_locations import (
+    AlignmentSaveChannelLocationBuilder,
+)
 from ephys_alignment_gui.application.save_geometry_catalog import SaveGeometryCatalog
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrator,
@@ -136,6 +139,9 @@ class AlignmentWorkspace:
         default_factory=SaveGeometryCatalog
     )
     save_input_factory: AlignmentSaveInputFactory = field(init=False)
+    save_channel_location_builder: AlignmentSaveChannelLocationBuilder = field(
+        init=False
+    )
     save_runtime_rehydrator: SaveRuntimeRehydrator = field(init=False)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
@@ -180,8 +186,13 @@ class AlignmentWorkspace:
         self.autosave_commands = AutosaveCheckpointCommandHandler(
             controller=self.controller,
         )
+        self.save_channel_location_builder = AlignmentSaveChannelLocationBuilder(
+            probe_track_service=self.probe_track_service,
+        )
         self.save_input_factory = AlignmentSaveInputFactory(
             save_geometry_catalog=self.save_geometry_catalog,
+            channel_location_builder=self.save_channel_location_builder,
+            histology_context=self.histology_context,
         )
         self.path_commands = PathCommandHandler(
             controller=self.controller,

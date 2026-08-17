@@ -38,9 +38,6 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
     PreviousAlignmentPackageLoaded,
 )
-from ephys_alignment_gui.application.save_runtime_dependencies import (
-    plan_save_runtime_dependencies,
-)
 from ephys_alignment_gui.application.save_runtime_rehydration import (
     SaveRuntimeRehydrated,
     SaveRuntimeRehydrationCancelled,
@@ -546,17 +543,7 @@ class AlignmentPersistenceCommandHandler:
         self,
     ) -> SaveRuntimeRehydrationPlan | Ok | Failed:
         """Return save-runtime reload work needed before saving outputs."""
-        runtime_plan = plan_save_runtime_dependencies(
-            document=self.controller.document,
-            data_context=self.data_context,
-            runtime=self.runtime,
-            keys=self._saveable_alignment_keys(),
-        )
-        if not runtime_plan.unavailable:
-            return Ok()
-        if self.save_runtime_rehydrator is None:
-            return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
-        return self.save_runtime_rehydrator.prepare_rehydration(runtime_plan)
+        return Ok()
 
     def run_save_runtime_rehydration(
         self,
@@ -644,40 +631,14 @@ class AlignmentPersistenceCommandHandler:
         rehydrate_missing: bool = True,
     ) -> dict[AlignmentKey, AlignmentSaveInput] | Failed:
         """Collect save inputs for every saveable document alignment state."""
+        del rehydrate_missing
         saveable_items = self._saveable_alignment_items()
         if not saveable_items:
             return {}
-        target_keys = tuple(key for key, _state in saveable_items)
-
-        runtime_plan = plan_save_runtime_dependencies(
-            document=self.controller.document,
-            data_context=self.data_context,
-            runtime=self.runtime,
-            keys=target_keys,
-        )
-        if (
-            rehydrate_missing
-            and runtime_plan.unavailable
-            and self.save_runtime_rehydrator is not None
-        ):
-            rehydrated = self.save_runtime_rehydrator.rehydrate_missing(runtime_plan)
-            if isinstance(rehydrated, Failed):
-                return rehydrated
-            runtime_plan = plan_save_runtime_dependencies(
-                document=self.controller.document,
-                data_context=self.data_context,
-                runtime=self.runtime,
-                keys=target_keys,
-            )
-        if runtime_plan.unavailable:
-            return Failed(runtime_plan.failure_message() or "Cannot save alignment.")
-        runtime_by_key = runtime_plan.by_key
 
         save_inputs: dict[AlignmentKey, AlignmentSaveInput] = {}
         total = len(saveable_items)
         for input_index, (key, state) in enumerate(saveable_items, start=1):
-            alignment = state.active_alignment
-            assert alignment is not None
             self._emit_save_progress_updated(
                 key=key,
                 phase="preparing",
@@ -687,34 +648,10 @@ class AlignmentPersistenceCommandHandler:
                 message=f"Preparing channel locations for {self._describe_key(key)}...",
             )
 
-            dependency = runtime_by_key[key]
-            stream_runtime = dependency.stream_runtime
-            if stream_runtime is None:
-                return Failed("Cannot save alignment: stream runtime is not loaded.")
-
-            shank_runtime = stream_runtime.shank_runtime_by_idx.get(key.shank_idx)
-            if shank_runtime is None:
-                return Failed(
-                    "Cannot save alignment output for "
-                    f"{key.recording_id}/{key.ephys_collection} shank "
-                    f"{key.shank_idx + 1}: shank runtime is not initialized."
-                )
-            if shank_runtime.ephysalign is None or shank_runtime.chn_coords is None:
-                return Failed(
-                    "Cannot save alignment output for "
-                    f"{key.recording_id}/{key.ephys_collection} shank "
-                    f"{key.shank_idx + 1}: channel geometry is not initialized."
-                )
-
             output_directory = self._output_directory_for_key(key)
             if isinstance(output_directory, Failed):
                 return output_directory
 
-            channel_locations_ras = self.derived_data_service.compute_channel_locations(
-                ephysalign=shank_runtime.ephysalign,
-                feature=alignment.feature,
-                track=alignment.track,
-            )
             factory = self._save_input_factory()
             if factory is None:
                 return Failed("No alignment save input factory is configured.")
@@ -722,7 +659,6 @@ class AlignmentPersistenceCommandHandler:
                 save_inputs[key] = factory.build(
                     key=key,
                     state=state,
-                    channel_locations_ras=channel_locations_ras,
                     output_directory=output_directory,
                 )
             except AlignmentSaveInputFactoryError as exc:

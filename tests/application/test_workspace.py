@@ -28,6 +28,15 @@ def test_workspace_wires_shared_services() -> None:
         workspace.save_input_factory.save_geometry_catalog
         is workspace.save_geometry_catalog
     )
+    assert (
+        workspace.save_channel_location_builder.probe_track_service
+        is workspace.probe_track_service
+    )
+    assert (
+        workspace.save_input_factory.channel_location_builder
+        is workspace.save_channel_location_builder
+    )
+    assert workspace.save_input_factory.histology_context is workspace.histology_context
     assert workspace.load_data_commands.metadata_commands is workspace.metadata_commands
     assert (
         workspace.shank_selection_commands.autosave_checkpoints

@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ephys_alignment_gui.io.datapackage_loader import ProbeInfo
+from ephys_alignment_gui.io.input_dataset_snapshot import InputProbeSnapshot
 
 
 class ProbeTrackService:
@@ -17,7 +18,7 @@ class ProbeTrackService:
     def load_track_annotations(
         self,
         *,
-        probe: ProbeInfo,
+        probe: ProbeInfo | InputProbeSnapshot,
         shank_idx: int,
         brain_atlas: Any,
     ) -> NDArray[np.floating]:

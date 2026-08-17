@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -72,6 +74,41 @@ def test_alignment_save_input_factory_builds_output_input_from_catalog(
     assert save_input.output_metadata.probe_id == "probe-id"
 
 
+def test_alignment_save_input_factory_computes_channel_locations_when_not_provided(
+    tmp_path,
+) -> None:
+    key = AlignmentKey("rec", "stream", 0)
+    state = AlignmentState()
+    state.active_alignment = ActiveAlignment(
+        np.array([0.0, 1.0]),
+        np.array([2.0, 3.0]),
+    )
+    output_directory = tmp_path / "out"
+    channel_location_builder = _FakeChannelLocationBuilder()
+    factory = AlignmentSaveInputFactory(
+        SaveGeometryCatalog(_input_dataset(tmp_path)),
+        channel_location_builder=channel_location_builder,
+        histology_context=SimpleNamespace(brain_atlas="atlas"),
+    )
+
+    save_input = factory.build(
+        key=key,
+        state=state,
+        output_directory=output_directory,
+    )
+
+    np.testing.assert_array_equal(
+        save_input.output_input.channel_locations_ras,
+        [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]],
+    )
+    assert len(channel_location_builder.calls) == 1
+    call = channel_location_builder.calls[0]
+    assert call["geometry"].key == key
+    np.testing.assert_array_equal(call["feature"], state.active_alignment.feature)
+    np.testing.assert_array_equal(call["track"], state.active_alignment.track)
+    assert call["brain_atlas"] == "atlas"
+
+
 def test_alignment_save_input_factory_requires_active_alignment(tmp_path) -> None:
     factory = AlignmentSaveInputFactory(SaveGeometryCatalog(_input_dataset(tmp_path)))
 
@@ -98,6 +135,19 @@ def test_alignment_save_input_factory_wraps_geometry_errors() -> None:
             state=state,
             channel_locations_ras=np.empty((0, 3)),
             output_directory=Path("/tmp/out"),
+        )
+
+
+class _FakeChannelLocationBuilder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def compute(self, **kwargs):
+        self.calls.append(kwargs)
+        geometry = kwargs["geometry"]
+        return np.tile(
+            np.array([[1.0, 2.0, 3.0]], dtype=float),
+            (len(geometry.channel_coordinates), 1),
         )
 
 
