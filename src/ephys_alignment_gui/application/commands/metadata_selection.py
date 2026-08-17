@@ -64,7 +64,7 @@ class MetadataSelectionCommandHandler:
             return Failed(f"Failed to load mouse root {mouse_root}: {exc}")
         if self.save_geometry_catalog is not None:
             self.save_geometry_catalog.set_input_dataset(
-                self.data_context.input_dataset
+                getattr(self.data_context, "input_dataset", None)
             )
 
         root_changed = old_root is not None and old_root != loaded_root.root

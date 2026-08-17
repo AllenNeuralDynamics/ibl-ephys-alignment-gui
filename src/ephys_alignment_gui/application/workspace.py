@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ephys_alignment_gui.application.alignment_save_input_factory import (
+    AlignmentSaveInputFactory,
+)
 from ephys_alignment_gui.application.app import AlignmentApp
 from ephys_alignment_gui.application.commands import AlignmentCommands
 from ephys_alignment_gui.application.commands.alignment_edit import (
@@ -132,6 +135,7 @@ class AlignmentWorkspace:
     save_geometry_catalog: SaveGeometryCatalog = field(
         default_factory=SaveGeometryCatalog
     )
+    save_input_factory: AlignmentSaveInputFactory = field(init=False)
     save_runtime_rehydrator: SaveRuntimeRehydrator = field(init=False)
     ephys_stream_loader: EphysStreamLoader = field(init=False)
     histology_runtime_loader: HistologyRuntimeLoader = field(init=False)
@@ -175,6 +179,9 @@ class AlignmentWorkspace:
         )
         self.autosave_commands = AutosaveCheckpointCommandHandler(
             controller=self.controller,
+        )
+        self.save_input_factory = AlignmentSaveInputFactory(
+            save_geometry_catalog=self.save_geometry_catalog,
         )
         self.path_commands = PathCommandHandler(
             controller=self.controller,
@@ -235,6 +242,7 @@ class AlignmentWorkspace:
             events=self.events,
             save_runtime_rehydrator=self.save_runtime_rehydrator,
             autosave_checkpoints=self.autosave_commands,
+            save_input_factory=self.save_input_factory,
         )
         self.edit_commands = AlignmentEditCommandHandler(
             controller=self.controller,

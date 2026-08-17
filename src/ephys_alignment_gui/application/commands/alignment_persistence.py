@@ -8,8 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
+from ephys_alignment_gui.application.alignment_save_input_factory import (
+    AlignmentSaveInput,
+    AlignmentSaveInputFactory,
+    AlignmentSaveInputFactoryError,
+)
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveCancelToken,
     AlignmentSaveJobCancelled,
@@ -60,7 +63,6 @@ from ephys_alignment_gui.core.alignment_events import (
 from ephys_alignment_gui.core.alignment_output import (
     AlignmentOutputInput,
     AlignmentOutputMetadata,
-    ChannelOutputIdentity,
 )
 from ephys_alignment_gui.core.alignment_state import (
     LEGACY_AUTO_ALIGNMENT_LABEL,
@@ -90,17 +92,6 @@ from ephys_alignment_gui.services.alignment_repository import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class AlignmentSaveInput:
-    """Prepared runtime/document data needed to persist one alignment key."""
-
-    state: AlignmentState
-    output_input: AlignmentOutputInput
-    output_metadata: AlignmentOutputMetadata
-    output_directory: Path
-    multi_shank: bool
-
-
 @dataclass
 class AlignmentPersistenceCommandHandler:
     """Coordinate alignment history loading and visited-output persistence."""
@@ -114,6 +105,7 @@ class AlignmentPersistenceCommandHandler:
     events: EventBus
     save_runtime_rehydrator: SaveRuntimeRehydrator | None = None
     autosave_checkpoints: AutosaveCheckpointCommandHandler | None = None
+    save_input_factory: AlignmentSaveInputFactory | None = None
 
     def can_load_previous_alignments(self) -> Ok | Failed:
         """Return whether previous alignments can be loaded."""
@@ -394,10 +386,7 @@ class AlignmentPersistenceCommandHandler:
     ) -> AlignmentSaveJobCompleted | AlignmentSaveJobCancelled | Failed:
         """Build CCF outputs and write files without touching document state."""
         cancel_token = cancel_token or AlignmentSaveCancelToken()
-        output_inputs = {
-            target.key: target.output_input
-            for target in prepared.targets
-        }
+        output_inputs = {target.key: target.output_input for target in prepared.targets}
         cancelled = self._cancelled_save(
             cancel_token,
             progress,
@@ -728,23 +717,18 @@ class AlignmentPersistenceCommandHandler:
                 feature=alignment.feature,
                 track=alignment.track,
             )
-            save_inputs[key] = AlignmentSaveInput(
-                state=state,
-                output_input=AlignmentOutputInput(
+            factory = self._save_input_factory()
+            if factory is None:
+                return Failed("No alignment save input factory is configured.")
+            try:
+                save_inputs[key] = factory.build(
+                    key=key,
+                    state=state,
                     channel_locations_ras=channel_locations_ras,
-                    channel_coordinates=shank_runtime.chn_coords,
-                    channel_identity=self._channel_identity_for_collection(
-                        shank_runtime.collection
-                    ),
-                ),
-                output_metadata=self._output_metadata_for_key(
-                    key,
-                    stream_runtime=stream_runtime,
-                    probe=self._probe_for_output_metadata(key, dependency.probe),
-                ),
-                output_directory=output_directory,
-                multi_shank=self._stream_is_multi_shank(stream_runtime),
-            )
+                    output_directory=output_directory,
+                )
+            except AlignmentSaveInputFactoryError as exc:
+                return Failed(f"Failed to prepare alignment save input: {exc}")
             self._emit_save_progress_updated(
                 key=key,
                 phase="preparing",
@@ -946,85 +930,6 @@ class AlignmentPersistenceCommandHandler:
             return self.data_context.mouse_root.mouse_id
         return None
 
-    @staticmethod
-    def _channel_identity_for_collection(collection: Any) -> ChannelOutputIdentity:
-        """Return channel identity aligned with a shank/channel collection view."""
-        raw_ind = collection.raw_ind
-        if raw_ind is None:
-            raw_ind = np.asarray(collection.rows, dtype=int).copy()
-
-        shank_idx = collection.shank_indices
-        if shank_idx is None:
-            shank_idx = np.full(
-                np.asarray(collection.rows).shape,
-                collection.shank_idx,
-                dtype=int,
-            )
-
-        return ChannelOutputIdentity(
-            raw_ind=raw_ind,
-            contact_id=collection.contact_ids,
-            shank_idx=shank_idx,
-        )
-
-    @staticmethod
-    def _output_metadata_for_key(
-        key: AlignmentKey,
-        *,
-        stream_runtime: Any,
-        probe: Any | None,
-    ) -> AlignmentOutputMetadata:
-        """Return stable probe/shank metadata for one output sidecar."""
-        stream = getattr(stream_runtime, "stream", None)
-        logical_probe = (
-            getattr(probe, "logical_probe", None)
-            or getattr(probe, "probe_name", None)
-            or getattr(stream, "logical_probe", None)
-            or key.ephys_collection
-        )
-        probe_id = getattr(probe, "probe_id", None) or getattr(stream, "probe_id", None)
-        n_shanks = getattr(
-            probe,
-            "num_shanks",
-            None,
-        ) or getattr(
-            stream,
-            "n_shanks",
-            1,
-        )
-        return AlignmentOutputMetadata(
-            recording_id=key.recording_id,
-            ephys_collection=key.ephys_collection,
-            logical_probe=str(logical_probe),
-            shank_idx=key.shank_idx,
-            n_shanks=int(n_shanks),
-            probe_id=probe_id,
-        )
-
-    def _probe_for_output_metadata(
-        self,
-        key: AlignmentKey,
-        probe: Any | None,
-    ) -> Any | None:
-        """Return probe metadata for a save key, falling back to active probe info."""
-        if probe is not None:
-            return probe
-        active_probe = self.data_context.probe_info
-        if (
-            active_probe is not None
-            and active_probe.recording_id == key.recording_id
-            and active_probe.ephys_collection == key.ephys_collection
-        ):
-            return active_probe
-        return None
-
-    @staticmethod
-    def _stream_is_multi_shank(stream_runtime: Any) -> bool:
-        stream = getattr(stream_runtime, "stream", None)
-        if stream is not None and hasattr(stream, "n_shanks"):
-            return stream.n_shanks > 1
-        return len(stream_runtime.visited_shank_runtimes()) > 1
-
     def _active_or_given_shank(self, shank_idx: int | None) -> int:
         if shank_idx is not None:
             return shank_idx
@@ -1035,6 +940,9 @@ class AlignmentPersistenceCommandHandler:
 
     def _output_builder(self) -> Any | None:
         return self.output_builder
+
+    def _save_input_factory(self) -> AlignmentSaveInputFactory | None:
+        return self.save_input_factory
 
     def _emit_save_progress_started(
         self,

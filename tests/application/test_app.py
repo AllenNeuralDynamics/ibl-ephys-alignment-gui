@@ -95,7 +95,12 @@ from ephys_alignment_gui.core.alignment_read_models import (
 from ephys_alignment_gui.core.document import AlignmentDocument, AlignmentKey
 from ephys_alignment_gui.core.slice_display_policy import SliceImageKind, SliceSelection
 from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok
-from ephys_alignment_gui.io.datapackage_loader import MouseRoot, ProbeInfo
+from ephys_alignment_gui.io.datapackage_loader import (
+    ChannelTablePaths,
+    MouseRoot,
+    ProbeInfo,
+)
+from ephys_alignment_gui.io.input_dataset_snapshot import InputDatasetSnapshot
 from ephys_alignment_gui.io.load_data_job import (
     LoadDataJobCancelled,
     LoadDataJobCompleted,
@@ -478,6 +483,9 @@ def _probe_info(
     probe_name: str = "probeA",
     ephys_collection: str = "stream",
     probe_id: str = "probe-id",
+    num_shanks: int = 2,
+    ephys_dir: Path | None = None,
+    channel_table: ChannelTablePaths | None = None,
 ) -> ProbeInfo:
     return ProbeInfo(
         probe_id=probe_id,
@@ -485,9 +493,9 @@ def _probe_info(
         recording_id="rec",
         logical_probe=probe_name,
         ephys_collection=ephys_collection,
-        num_shanks=2,
-        ephys_dir=Path("/tmp/ephys"),
-        channel_table=None,
+        num_shanks=num_shanks,
+        ephys_dir=ephys_dir or Path("/tmp/ephys"),
+        channel_table=channel_table,
         xyz_picks=(),
     )
 
@@ -515,6 +523,99 @@ def _mouse_root_with_probes(*probes: ProbeInfo) -> MouseRoot:
             "rec": {probe.probe_name: probe for probe in (probes or (_probe_info(),))}
         },
     )
+
+
+def _attach_input_dataset(
+    workspace: AlignmentWorkspace,
+    mouse_root: MouseRoot,
+) -> None:
+    workspace.data_context.mouse_root = mouse_root
+    workspace.data_context.input_dataset = InputDatasetSnapshot.from_mouse_root(
+        mouse_root
+    )
+    workspace.save_geometry_catalog.set_input_dataset(
+        workspace.data_context.input_dataset
+    )
+
+
+def _channel_table_paths(
+    root: Path,
+    *,
+    local_coordinates: np.ndarray,
+    raw_ind: np.ndarray | None = None,
+    contact_ids: np.ndarray | None = None,
+    shank_indices: np.ndarray | None = None,
+) -> ChannelTablePaths:
+    root.mkdir(parents=True, exist_ok=True)
+    paths = ChannelTablePaths(
+        local_coordinates=root / "channels.localCoordinates.npy",
+        raw_ind=root / "channels.rawInd.npy",
+        contact_id=(
+            root / "channels.contactId.npy" if contact_ids is not None else None
+        ),
+        shank_ind=root / "channels.shankInd.npy",
+    )
+    local_coordinates = np.asarray(local_coordinates, dtype=float)
+    np.save(paths.local_coordinates, local_coordinates)
+    np.save(
+        paths.raw_ind,
+        (
+            np.asarray(raw_ind, dtype=int)
+            if raw_ind is not None
+            else np.arange(local_coordinates.shape[0], dtype=int)
+        ),
+    )
+    if paths.contact_id is not None:
+        np.save(paths.contact_id, np.asarray(contact_ids, dtype=int))
+    np.save(
+        paths.shank_ind,
+        (
+            np.asarray(shank_indices, dtype=int)
+            if shank_indices is not None
+            else np.zeros(local_coordinates.shape[0], dtype=int)
+        ),
+    )
+    return paths
+
+
+def _attach_single_probe_save_geometry(
+    workspace: AlignmentWorkspace,
+    tmp_path: Path,
+    *,
+    probe_name: str = "probeA",
+    ephys_collection: str = "stream",
+    local_coordinates: np.ndarray | None = None,
+    raw_ind: np.ndarray | None = None,
+    contact_ids: np.ndarray | None = None,
+    shank_indices: np.ndarray | None = None,
+) -> ProbeInfo:
+    local_coordinates = (
+        np.asarray(local_coordinates, dtype=float)
+        if local_coordinates is not None
+        else np.array([[10.0, 20.0]])
+    )
+    shank_indices = (
+        np.asarray(shank_indices, dtype=int)
+        if shank_indices is not None
+        else np.zeros(local_coordinates.shape[0], dtype=int)
+    )
+    channel_table = _channel_table_paths(
+        tmp_path / "input" / "rec" / ephys_collection,
+        local_coordinates=local_coordinates,
+        raw_ind=raw_ind,
+        contact_ids=contact_ids,
+        shank_indices=shank_indices,
+    )
+    probe = _probe_info(
+        probe_name=probe_name,
+        ephys_collection=ephys_collection,
+        num_shanks=int(np.max(shank_indices)) + 1 if shank_indices.size else 1,
+        ephys_dir=tmp_path / "input" / "rec" / ephys_collection,
+        channel_table=channel_table,
+    )
+    _attach_input_dataset(workspace, _mouse_root_with_probe(probe))
+    workspace.data_context.probe_info = probe
+    return probe
 
 
 def _ephys_stream(ephys_collection: str = "stream") -> EphysStreamData:
@@ -1898,11 +1999,16 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
-    workspace.data_context.probe_info = SimpleNamespace(
-        recording_id="rec",
-        probe_name="probeA",
-        ephys_collection="stream",
+    channel_table = _channel_table_paths(
+        tmp_path / "input" / "rec" / "stream",
+        local_coordinates=np.array([[0.0, 0.0], [10.0, 20.0]]),
+        raw_ind=np.array([41, 42]),
+        contact_ids=np.array([141, 142]),
+        shank_indices=np.array([0, 1]),
     )
+    probe = _probe_info(channel_table=channel_table)
+    _attach_input_dataset(workspace, _mouse_root_with_probe(probe))
+    workspace.data_context.probe_info = probe
     active_key = AlignmentKey("rec", "stream", 1)
     active_state = workspace.document.select_alignment_key(active_key)
     active_state.active_alignment = ActiveAlignment(
@@ -1991,7 +2097,13 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
 
-    probe_a = _probe_info()
+    probe_a = _probe_info(
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "stream",
+            local_coordinates=np.array([[0.0, 0.0], [10.0, 20.0]]),
+            shank_indices=np.array([0, 1]),
+        )
+    )
     probe_b = ProbeInfo(
         probe_id="probe-id-b",
         probe_name="probeB",
@@ -1999,8 +2111,12 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         logical_probe="probeB",
         ephys_collection="streamB",
         num_shanks=1,
-        ephys_dir=Path("/tmp/ephysB"),
-        channel_table=None,
+        ephys_dir=tmp_path / "input" / "rec" / "streamB",
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "streamB",
+            local_coordinates=np.array([[30.0, 40.0]]),
+            shank_indices=np.array([0]),
+        ),
         xyz_picks=(),
     )
     output_root = tmp_path / "results"
@@ -2010,13 +2126,16 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
     workspace.document.output_root = output_root
     workspace.document.output_package_directory = output_package_dir
     workspace.document.output_directory = active_output_dir
-    workspace.data_context.mouse_root = MouseRoot(
-        root=Path("/tmp/mouse"),
-        schema_version="3.1.0",
-        mouse_id="mouse",
-        transforms=None,
-        histology=None,
-        probes={"rec": {"probeA": probe_a, "probeB": probe_b}},
+    _attach_input_dataset(
+        workspace,
+        MouseRoot(
+            root=Path("/tmp/mouse"),
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=None,
+            histology=None,
+            probes={"rec": {"probeA": probe_a, "probeB": probe_b}},
+        ),
     )
     workspace.data_context.probe_info = probe_a
 
@@ -2116,11 +2235,7 @@ def test_commands_prepared_alignment_save_can_be_cancelled_before_outputs(
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
-    workspace.data_context.probe_info = SimpleNamespace(
-        recording_id="rec",
-        probe_name="probeA",
-        ephys_collection="stream",
-    )
+    _attach_single_probe_save_geometry(workspace, tmp_path)
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2196,11 +2311,7 @@ def test_commands_prepared_alignment_save_cancelled_after_outputs_does_not_write
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
-    workspace.data_context.probe_info = SimpleNamespace(
-        recording_id="rec",
-        probe_name="probeA",
-        ephys_collection="stream",
-    )
+    _attach_single_probe_save_geometry(workspace, tmp_path)
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
@@ -2278,8 +2389,7 @@ def test_commands_save_edited_alignment_outputs_reloads_dirty_missing_runtime(
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
-    probe = _probe_info()
-    workspace.data_context.mouse_root = _mouse_root_with_probe(probe)
+    probe = _attach_single_probe_save_geometry(workspace, tmp_path)
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
 
     key = AlignmentKey("rec", "stream", 0)
@@ -2338,8 +2448,7 @@ def test_commands_prepare_and_run_save_runtime_rehydration_before_save(
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
-    probe = _probe_info()
-    workspace.data_context.mouse_root = _mouse_root_with_probe(probe)
+    _attach_single_probe_save_geometry(workspace, tmp_path)
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
 
     key = AlignmentKey("rec", "stream", 0)
@@ -2395,10 +2504,20 @@ def test_commands_save_rehydration_preserves_other_dirty_cached_runtimes(
     workspace.document.output_root = tmp_path / "results"
     workspace.document.output_directory = tmp_path / "active"
     probes = tuple(
-        _probe_info(probe_name=f"probe-{idx}", ephys_collection=f"stream-{idx}")
+        _probe_info(
+            probe_name=f"probe-{idx}",
+            ephys_collection=f"stream-{idx}",
+            num_shanks=1,
+            ephys_dir=tmp_path / "input" / "rec" / f"stream-{idx}",
+            channel_table=_channel_table_paths(
+                tmp_path / "input" / "rec" / f"stream-{idx}",
+                local_coordinates=np.array([[10.0 + idx, 20.0 + idx]]),
+                shank_indices=np.array([0]),
+            ),
+        )
         for idx in range(3)
     )
-    workspace.data_context.mouse_root = _mouse_root_with_probes(*probes)
+    _attach_input_dataset(workspace, _mouse_root_with_probes(*probes))
     workspace.histology_context.runtime_data = SimpleNamespace(brain_atlas="atlas")
 
     for idx in range(3):
@@ -2545,11 +2664,7 @@ def test_commands_save_edited_alignment_outputs_does_not_commit_history_on_failu
     workspace.persistence_commands.output_builder = output_builder
     workspace.persistence_commands.derived_data_service = derived
     workspace.document.output_directory = tmp_path
-    workspace.data_context.probe_info = SimpleNamespace(
-        recording_id="rec",
-        probe_name="probeA",
-        ephys_collection="stream",
-    )
+    _attach_single_probe_save_geometry(workspace, tmp_path)
     active_key = AlignmentKey("rec", "stream", 0)
     active_state = workspace.document.select_alignment_key(active_key)
     active_state.active_alignment = ActiveAlignment(
