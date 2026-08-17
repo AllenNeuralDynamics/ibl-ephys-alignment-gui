@@ -257,7 +257,7 @@ def test_alignment_output_service_rejects_ccf_shape_mismatch() -> None:
         )
 
 
-def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
+def test_alignment_output_service_warns_but_keeps_out_of_bounds_ccf_ml(
     caplog,
     monkeypatch,
 ) -> None:
@@ -316,18 +316,21 @@ def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
 
     channel_results, ccf_results, multi_shank = results[("rec", "bad", 0)]
     assert channel_results["channel_0"]["raw_ind"] == 0
-    assert ccf_results == {}
+    # Kept, not trimmed: the breach is evidence of a bad transform frame, and
+    # deleting it would leave the rest of the shank looking clean.
+    assert ccf_results["channel_0"]["x"] == 9.5
     assert results[("rec", "good", 0)][1]["channel_0"]["x"] == 0.0
     assert not multi_shank
     assert "in-brain ML coordinates outside Allen CCF bounds" in caplog.text
     bad_status = service.ccf_export_status_by_key[("rec", "bad", 0)]
     good_status = service.ccf_export_status_by_key[("rec", "good", 0)]
-    assert bad_status.status == "omitted"
+    assert bad_status.status == "complete"
+    assert bad_status.omitted_channel_count == 0
     assert bad_status.issues[0].reason == "in_brain_ml_out_of_ccf_bounds"
     assert good_status.status == "complete"
 
 
-def test_alignment_output_service_omits_only_out_of_brain_ccf_rows(
+def test_alignment_output_service_exports_out_of_brain_ccf_rows(
     monkeypatch,
 ) -> None:
     def fake_apply_transforms_to_points(
@@ -379,13 +382,18 @@ def test_alignment_output_service_omits_only_out_of_brain_ccf_rows(
     )
 
     _channel_results, ccf_results, _multi_shank = results[("rec", "stream", 0)]
-    assert list(ccf_results) == ["channel_0"]
+    # channel_1 is void and lands past the ML bound; the track past the pia is
+    # real geometry, so it is exported and only recorded as an issue.
+    assert list(ccf_results) == ["channel_0", "channel_1"]
     assert ccf_results["channel_0"]["x"] == 0.25
+    assert ccf_results["channel_1"]["x"] == 9.5
     status = service.ccf_export_status_by_key[("rec", "stream", 0)]
-    assert status.status == "partial"
+    assert status.status == "complete"
     assert status.total_channel_count == 2
-    assert status.ccf_channel_count == 1
-    assert status.omitted_channel_count == 1
+    assert status.ccf_channel_count == 2
+    assert status.in_brain_channel_count == 1
+    assert [i.reason for i in status.issues] == ["out_of_brain_channel_location"]
+    assert status.omitted_channel_count == 0
     assert status.in_brain_channel_count == 1
     assert status.issues[0].reason == "out_of_brain_channel_location"
     assert status.issues[0].ml_range_mm == (9.5, 9.5)

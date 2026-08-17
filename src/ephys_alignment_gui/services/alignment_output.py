@@ -360,7 +360,11 @@ class AlignmentOutputService:
         ml_bounds_mask = (ml_values >= CCF_ML_SAVE_BOUNDS_MM[0]) & (
             ml_values <= CCF_ML_SAVE_BOUNDS_MM[1]
         )
-        valid_mask = finite_mask & in_brain_mask & ml_bounds_mask
+        # Out-of-brain rows are real track geometry, and the ML bounds are a
+        # frame-error detector: trimming the breaching rows would delete the
+        # evidence and leave equally wrong values looking clean. Diagnose in
+        # `issues` instead. Only non-finite rows have nothing to write.
+        valid_mask = finite_mask
         issues = self._ccf_export_issues(
             in_brain_mask=in_brain_mask,
             finite_mask=finite_mask,
@@ -390,16 +394,17 @@ class AlignmentOutputService:
         if np.any(in_brain_mask & finite_mask & ~ml_bounds_mask):
             logger.warning(
                 "CCF transform returned in-brain ML coordinates outside Allen "
-                "CCF bounds plus %g mm margin for %s; omitting affected CCF "
-                "rows. In-brain ML range: %s mm",
+                "CCF bounds plus %g mm margin for %s; the anatomical and CCF "
+                "positions disagree, so suspect the transform frame. Rows are "
+                "still exported. In-brain ML range: %s mm",
                 CCF_ML_SAVE_MARGIN_MM,
                 key,
                 export_status.in_brain_ml_range_mm,
             )
         elif status == "omitted":
             logger.warning(
-                "No valid in-brain CCF channel coordinates are available for %s; "
-                "saving anatomical channel locations without CCF rows. Issues: %s",
+                "No finite CCF channel coordinates are available for %s; saving "
+                "anatomical channel locations without CCF rows. Issues: %s",
                 key,
                 ", ".join(issue.reason for issue in issues) or "none",
             )
@@ -436,9 +441,9 @@ class AlignmentOutputService:
                 CcfExportIssue(
                     reason="out_of_brain_channel_location",
                     message=(
-                        "Channel location is outside the anatomical brain mask; "
-                        "CCF coordinates are omitted because extrapolated CCF "
-                        "transforms are not meaningful for these rows."
+                        "Channel is outside the anatomical brain mask, so its "
+                        "region is void and its CCF coordinate is extrapolated "
+                        "beyond the registered volume. Still exported."
                     ),
                     channel_count=int(np.count_nonzero(out_of_brain)),
                     ml_range_mm=_range_tuple(ml_values[out_of_brain & finite_mask]),
