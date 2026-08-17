@@ -10,6 +10,9 @@ from typing import Protocol
 from PyQt5 import QtCore
 
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.workers.qthread_lifecycle import (
+    defer_cleanup_until_thread_stopped,
+)
 from ephys_alignment_gui.plotting.payload_warmup import (
     PlotPayloadCacheWarmed,
     PlotPayloadWarmupRequest,
@@ -124,9 +127,13 @@ class QtPlotPayloadWarmupRunner(QtCore.QObject):
         worker.finished.connect(self._handle_finished)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
         thread.finished.connect(
-            lambda this_worker=worker: self._clear_if_active(this_worker)
+            lambda this_thread=thread, this_worker=worker: (
+                defer_cleanup_until_thread_stopped(
+                    this_thread,
+                    lambda: self._clear_if_active(this_worker),
+                )
+            )
         )
 
         self._active = _ActivePlotPayloadWarmupWorker(
