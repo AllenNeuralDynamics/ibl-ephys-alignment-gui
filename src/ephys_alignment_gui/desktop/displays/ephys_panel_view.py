@@ -19,6 +19,15 @@ from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 logger = logging.getLogger(__name__)
 
 
+_EPHYS_COLORBAR_MAX_HEIGHT = 90
+_SCALAR_COLORBAR_AXIS_HEIGHT = 42
+_SCALAR_COLORBAR_WIDTH = 20
+_SCALAR_COLORBAR_HEIGHT = 5
+_PHASE_LEGEND_AXIS_HEIGHT = 52
+_PHASE_LEGEND_WIDTH = 1.0
+_PHASE_LEGEND_HEIGHT = 2.0
+
+
 @dataclass(frozen=True)
 class EphysPanelPlots:
     """Pyqtgraph plots that make up the desktop ephys panel."""
@@ -93,7 +102,7 @@ class DesktopEphysPanelView:
         image_axis = set_axis(image, "left", label="Distance from probe tip (uV)")
 
         image_colorbar = pg.PlotItem()
-        image_colorbar.setMaximumHeight(70)
+        image_colorbar.setMaximumHeight(_EPHYS_COLORBAR_MAX_HEIGHT)
         image_colorbar.setMouseEnabled(x=False, y=False)
         set_axis(image_colorbar, "bottom", show=False)
         set_axis(image_colorbar, "left", pen="w")
@@ -128,7 +137,7 @@ class DesktopEphysPanelView:
 
         probe_colorbar = pg.PlotItem()
         probe_colorbar.setMouseEnabled(x=False, y=False)
-        probe_colorbar.setMaximumHeight(70)
+        probe_colorbar.setMaximumHeight(_EPHYS_COLORBAR_MAX_HEIGHT)
         set_axis(probe_colorbar, "bottom", show=False)
         set_axis(probe_colorbar, "left", show=False)
         set_axis(probe_colorbar, "top", pen="w")
@@ -260,12 +269,13 @@ class DesktopEphysPanelView:
 
         color_bar = ColorBar(data["cmap"])
         cbar = color_bar.makeColourBar(
-            20,
-            5,
+            _SCALAR_COLORBAR_WIDTH,
+            _SCALAR_COLORBAR_HEIGHT,
             self.plots.image_colorbar,
             min=np.min(data["levels"][0]),
             max=np.max(data["levels"][1]),
             label=data["title"],
+            axis_height=_SCALAR_COLORBAR_AXIS_HEIGHT,
         )
         self.plots.image_colorbar.addItem(cbar)
         self.items.image_colorbars.append(cbar)
@@ -342,13 +352,15 @@ class DesktopEphysPanelView:
             self.items.probe_plots.append(image)
 
         cbar = color_bar.makeColourBar(
-            20,
-            5,
+            _SCALAR_COLORBAR_WIDTH,
+            _SCALAR_COLORBAR_HEIGHT,
             self.plots.probe_colorbar,
             min=data["levels"][0],
             max=data["levels"][1],
             label=data["title"],
             lim=True,
+            axis_height=_SCALAR_COLORBAR_AXIS_HEIGHT,
+            edge_tick_padding=1.0,
         )
         self.plots.probe_colorbar.addItem(cbar)
         self.items.probe_colorbars.append(cbar)
@@ -427,12 +439,13 @@ class DesktopEphysPanelView:
         # Colour bar is shared across blocks: levels are common by construction.
         if data.get("cmap"):
             cbar = ColorBar(data["cmap"]).makeColourBar(
-                20,
-                5,
+                _SCALAR_COLORBAR_WIDTH,
+                _SCALAR_COLORBAR_HEIGHT,
                 self.plots.image_colorbar,
                 min=data["levels"][0],
                 max=data["levels"][1],
                 label=data["title"],
+                axis_height=_SCALAR_COLORBAR_AXIS_HEIGHT,
             )
             self.plots.image_colorbar.addItem(cbar)
             self.items.image_colorbars.append(cbar)
@@ -440,12 +453,7 @@ class DesktopEphysPanelView:
             cbar_img = self._phase_legend_item()
             self.plots.image_colorbar.addItem(cbar_img)
             self.items.image_colorbars.append(cbar_img)
-            self.set_axis(
-                self.plots.image_colorbar,
-                "top",
-                pen="w",
-                label="phase ↑  coherence ↓",
-            )
+            self._configure_phase_legend_axis()
 
         self.plots.image.setXRange(
             min=data["xrange"][0],
@@ -581,7 +589,54 @@ class DesktopEphysPanelView:
         combined = np.concatenate([rgb_phase, rgb_sat], axis=0).transpose(1, 0, 2)
         cbar_img = pg.ImageItem()
         cbar_img.setImage(combined, autoLevels=False)
+        cbar_img.setTransform(
+            QtGui.QTransform(
+                _PHASE_LEGEND_WIDTH / n,
+                0.0,
+                0.0,
+                0.0,
+                _PHASE_LEGEND_HEIGHT / (bar_h * 2),
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            )
+        )
         return cbar_img
+
+    def _configure_phase_legend_axis(self) -> None:
+        self.plots.image_colorbar.setXRange(
+            min=0.0,
+            max=_PHASE_LEGEND_WIDTH,
+            padding=0,
+        )
+        self.plots.image_colorbar.setYRange(
+            min=0.0,
+            max=_PHASE_LEGEND_HEIGHT,
+            padding=0,
+        )
+        axis = self.set_axis(
+            self.plots.image_colorbar,
+            "top",
+            pen="k",
+            label="phase (rad) / coherence",
+        )
+        if axis is None:
+            return
+        axis.setHeight(_PHASE_LEGEND_AXIS_HEIGHT)
+        axis.setTicks(
+            [
+                [
+                    (0.0, "0"),
+                    (_PHASE_LEGEND_WIDTH / 2, "pi"),
+                    (_PHASE_LEGEND_WIDTH, "2pi"),
+                ],
+                [
+                    (0.0, "coh 0"),
+                    (_PHASE_LEGEND_WIDTH, "coh 1"),
+                ],
+            ]
+        )
 
 
 def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:

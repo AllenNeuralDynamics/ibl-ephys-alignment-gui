@@ -372,7 +372,7 @@ class SlicePanelView:
         view_state.slice_color_bar = ColorBar("cividis")
         img.setLookupTable(view_state.slice_color_bar.getColourMap())
         view_state.histogram_item = pg.HistogramLUTItem()
-        view_state.histogram_item.axis.hide()
+        self._configure_scalar_histogram_axis(view_state.histogram_item)
         view_state.histogram_item.setImageItem(img)
         view_state.histogram_item.gradient.setColorMap(view_state.slice_color_bar.map)
         view_state.histogram_item.autoHistogramRange()
@@ -408,6 +408,24 @@ class SlicePanelView:
             self.update_perpendicular_levels
         )
         view_state.slice_item = view_state.histogram_item
+
+    @staticmethod
+    def _configure_scalar_histogram_axis(histogram_item: Any) -> None:
+        axis = getattr(histogram_item, "axis", None)
+        if axis is None:
+            return
+        show = getattr(axis, "show", None)
+        if callable(show):
+            show()
+        set_pen = getattr(axis, "setPen", None)
+        if callable(set_pen):
+            set_pen("k")
+        set_text_pen = getattr(axis, "setTextPen", None)
+        if callable(set_text_pen):
+            set_text_pen("k")
+        set_label = getattr(axis, "setLabel", None)
+        if callable(set_label):
+            set_label("intensity (a.u.)")
 
     def _render_perpendicular_channel_overlay(
         self,

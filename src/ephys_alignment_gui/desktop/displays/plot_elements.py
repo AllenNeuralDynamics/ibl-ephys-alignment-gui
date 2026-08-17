@@ -319,7 +319,18 @@ class ColorBar(pg.GraphicsWidget):
     def getColourMap(self):
         return self.lut
 
-    def makeColourBar(self, width, height, fig, min=0, max=1, label="", lim=False):
+    def makeColourBar(
+        self,
+        width,
+        height,
+        fig,
+        min=0,
+        max=1,
+        label="",
+        lim=False,
+        axis_height=30,
+        edge_tick_padding=0.0,
+    ):
         self.cbar = HorizontalBar(width, height, self.grad)
         ax = fig.getAxis("top")
         ax.setPen("k")
@@ -327,13 +338,15 @@ class ColorBar(pg.GraphicsWidget):
         ax.setStyle(stopAxisAtTick=((True, True)))
         # labelStyle = {'font-size': '8pt'}
         ax.setLabel(label)
-        ax.setHeight(30)
+        ax.setHeight(axis_height)
         if lim:
+            low_tick = edge_tick_padding
+            high_tick = width - edge_tick_padding
             ax.setTicks(
                 [
                     [
-                        (0, str(np.around(min, 2))),
-                        (width, str(np.around(max, 2))),
+                        (low_tick, str(np.around(min, 2))),
+                        (high_tick, str(np.around(max, 2))),
                     ]
                 ]
             )

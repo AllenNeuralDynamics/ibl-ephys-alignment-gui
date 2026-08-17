@@ -113,9 +113,25 @@ class FakeGradient:
 class FakeAxis:
     def __init__(self) -> None:
         self.hidden = False
+        self.shown = False
+        self.pen: Any = None
+        self.text_pen: Any = None
+        self.label: Any = None
 
     def hide(self) -> None:
         self.hidden = True
+
+    def show(self) -> None:
+        self.shown = True
+
+    def setPen(self, pen: Any) -> None:
+        self.pen = pen
+
+    def setTextPen(self, pen: Any) -> None:
+        self.text_pen = pen
+
+    def setLabel(self, label: str) -> None:
+        self.label = label
 
 
 class FakeHistogramCurve:
@@ -446,6 +462,11 @@ def test_slice_panel_displays_lut_histogram_counts_on_log_scale(monkeypatch) -> 
     )
 
     histogram = view.view_state.histogram_item
+    assert histogram.axis.shown
+    assert not histogram.axis.hidden
+    assert histogram.axis.pen == "k"
+    assert histogram.axis.text_pen == "k"
+    assert histogram.axis.label == "intensity (a.u.)"
     np.testing.assert_array_equal(histogram.plot.xData, [0.0, 1.0])
     np.testing.assert_allclose(histogram.plot.yData, np.log1p([0, 20]))
     assert histogram.getLevels() == (5.0, 95.0)

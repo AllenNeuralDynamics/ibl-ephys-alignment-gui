@@ -19,8 +19,15 @@ class FakePlot:
         self.added: list[Any] = []
         self.removed: list[Any] = []
         self.x_ranges: list[dict[str, Any]] = []
+        self.y_ranges: list[dict[str, Any]] = []
         self._width = width
         self._height = height
+        self.axes = {
+            "top": FakeConfiguredAxis(),
+            "bottom": FakeConfiguredAxis(),
+            "left": FakeConfiguredAxis(),
+            "right": FakeConfiguredAxis(),
+        }
 
     def addItem(self, item: Any) -> None:
         self.added.append(item)
@@ -31,11 +38,48 @@ class FakePlot:
     def setXRange(self, **kwargs: Any) -> None:
         self.x_ranges.append(kwargs)
 
+    def setYRange(self, **kwargs: Any) -> None:
+        self.y_ranges.append(kwargs)
+
+    def getAxis(self, orientation: str) -> Any:
+        return self.axes[orientation]
+
     def width(self) -> float:
         return self._width
 
     def height(self) -> float:
         return self._height
+
+
+class FakeConfiguredAxis:
+    def __init__(self) -> None:
+        self.height: Any = None
+        self.ticks: Any = None
+        self.label: Any = None
+        self.pen: Any = None
+        self.text_pen: Any = None
+        self.visible = False
+
+    def show(self) -> None:
+        self.visible = True
+
+    def hide(self) -> None:
+        self.visible = False
+
+    def setPen(self, pen: Any) -> None:
+        self.pen = pen
+
+    def setTextPen(self, pen: Any) -> None:
+        self.text_pen = pen
+
+    def setLabel(self, label: str = "", **_kwargs: Any) -> None:
+        self.label = label
+
+    def setHeight(self, height: Any) -> None:
+        self.height = height
+
+    def setTicks(self, ticks: Any) -> None:
+        self.ticks = ticks
 
 
 class FakeAxis:
@@ -165,6 +209,19 @@ def _view(monkeypatch) -> tuple[DesktopEphysPanelView, dict[str, FakePlot], list
         "probe_colorbar": FakePlot(),
     }
     axis_calls: list[Any] = []
+
+    def set_axis(fig: Any, orientation: str, **kwargs: Any) -> Any:
+        axis_calls.append(((fig, orientation), kwargs))
+        axis = fig.getAxis(orientation)
+        if kwargs.get("show", True):
+            axis.show()
+            axis.setPen(kwargs.get("pen", "k"))
+            axis.setTextPen(kwargs.get("pen", "k"))
+            axis.setLabel(kwargs.get("label") or "")
+        else:
+            axis.hide()
+        return axis
+
     return (
         DesktopEphysPanelView(
             plots=EphysPanelPlots(**plots),
@@ -177,7 +234,7 @@ def _view(monkeypatch) -> tuple[DesktopEphysPanelView, dict[str, FakePlot], list
                 line_pen="line-pen",
                 depth_guide_pen="depth-guide-pen",
             ),
-            set_axis=lambda *args, **kwargs: axis_calls.append((args, kwargs)),
+            set_axis=set_axis,
             cluster_clicked=lambda *_args: None,
         ),
         plots,
@@ -221,6 +278,9 @@ def test_render_image_owns_image_items_and_feature_coordinate_mapping(
     assert view.feature_xrange == (0.0, 100.0)
     assert view.feature_y_from_scene("scene") == 27.0
     assert axis_calls[-1][0] == (plots["image"], "bottom")
+    cbar = view.items.image_colorbars[0]
+    assert cbar["kwargs"]["label"] == "feature"
+    assert cbar["kwargs"]["axis_height"] == 42
 
 
 def test_render_image_overlays_no_data_mask(monkeypatch) -> None:
@@ -342,9 +402,64 @@ def test_render_line_and_probe_clear_previous_items(monkeypatch) -> None:
 
     assert len(view.items.probe_plots) == 1
     assert len(view.probe_colorbars) == 1
+    assert view.probe_colorbars[0]["kwargs"]["label"] == "probe"
+    assert view.probe_colorbars[0]["kwargs"]["axis_height"] == 42
+    assert view.probe_colorbars[0]["kwargs"]["edge_tick_padding"] == 1.0
     assert len(view.items.probe_bounds) == 1
     assert view.items.probe_bounds[0].kwargs == {"pos": 12.0, "angle": 0, "pen": "w"}
     assert plots["probe"].x_ranges == [{"min": -1.0, "max": 1.0, "padding": 0}]
+
+
+def test_render_phase_image_configures_full_colorbar(monkeypatch) -> None:
+    view, plots, axis_calls = _view(monkeypatch)
+
+    view.render_image(
+        {
+            "img": np.zeros((4, 4, 4), dtype=np.uint8),
+            "scale": [2.0, 3.0],
+            "offset": [10.0, 20.0],
+            "cmap": None,
+            "levels": None,
+            "title": "LFP coherency phase (theta)",
+            "xrange": (0.0, 100.0),
+            "xaxis": "Distance from probe tip (um)",
+        }
+    )
+
+    legend = view.items.image_colorbars[0]
+    assert legend in plots["image_colorbar"].added
+    assert legend.image.shape == (256, 20, 3)
+    assert legend.transform.values == (
+        1.0 / 256,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+    assert plots["image_colorbar"].x_ranges[-1] == {
+        "min": 0.0,
+        "max": 1.0,
+        "padding": 0,
+    }
+    assert plots["image_colorbar"].y_ranges[-1] == {
+        "min": 0.0,
+        "max": 2.0,
+        "padding": 0,
+    }
+    assert (
+        (plots["image_colorbar"], "top"),
+        {"pen": "k", "label": "phase (rad) / coherence"},
+    ) in axis_calls
+    top_axis = plots["image_colorbar"].axes["top"]
+    assert top_axis.height == 52
+    assert top_axis.ticks == [
+        [(0.0, "0"), (0.5, "pi"), (1.0, "2pi")],
+        [(0.0, "coh 0"), (1.0, "coh 1")],
+    ]
 
 
 def test_clear_detaches_all_owned_items_and_resets_feature_state(monkeypatch) -> None:
