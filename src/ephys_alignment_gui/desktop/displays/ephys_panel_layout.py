@@ -6,6 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
+    set_depth_panel_header_height,
+)
 from ephys_alignment_gui.desktop.displays.ephys_panel_view import DesktopEphysPanelView
 
 
@@ -144,6 +147,7 @@ class DesktopEphysPanelLayout:
         self.graphics_layout.layout.setColumnStretchFactor(2, col2)
         self.graphics_layout.layout.setRowStretchFactor(0, 1)
         self.graphics_layout.layout.setRowStretchFactor(1, 10)
+        set_depth_panel_header_height(self.graphics_layout)
 
     def _refresh_plots(self) -> None:
         plots = self.panel.plots

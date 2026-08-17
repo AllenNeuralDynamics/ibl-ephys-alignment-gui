@@ -16,6 +16,9 @@ from ephys_alignment_gui.core.alignment_read_models import (
     PerpendicularSliceRenderState,
 )
 from ephys_alignment_gui.core.slice_display_policy import SliceImageKind
+from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
+    set_depth_panel_bottom_axis,
+)
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
 from ephys_alignment_gui.geometry.ephys_alignment import TIP_SIZE_UM
 
@@ -134,7 +137,11 @@ class SlicePanelView:
         perpendicular.setMouseEnabled(x=False)
         y_min, y_max = depth_view.plot_y_range_um
         perpendicular.setYRange(min=y_min, max=y_max, padding=padding)
-        set_axis(perpendicular, "bottom", pen="w")
+        set_depth_panel_bottom_axis(
+            perpendicular,
+            set_axis,
+            label="Perpendicular distance (um)",
+        )
         set_axis(perpendicular, "left", show=False)
         return cls(
             plots=SlicePanelPlots(

@@ -18,6 +18,11 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ProbeExtentRenderState,
     ScaleFactorRenderState,
 )
+from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
+    DEPTH_PANEL_HEADER_HEIGHT_PX,
+    set_depth_panel_bottom_axis,
+    set_depth_panel_header_height,
+)
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
 
 logger = logging.getLogger(__name__)
@@ -114,19 +119,24 @@ class HistologyPanelView:
         aligned.setContentsMargins(0, 0, 0, 0)
         aligned.setMouseEnabled(x=False)
         _set_depth_range(aligned, depth_view, padding)
-        set_axis(aligned, "bottom", pen="w")
+        set_depth_panel_bottom_axis(
+            aligned,
+            set_axis,
+            label="Warped annotations",
+            ticks=False,
+        )
         aligned_axis = set_axis(aligned, "left", show=False)
 
         scale = pg.PlotItem()
         scale.setMaximumWidth(50)
         scale.setMouseEnabled(x=False)
-        set_axis(scale, "bottom", pen="w")
+        set_depth_panel_bottom_axis(scale, set_axis, pen="w", ticks=False)
         set_axis(scale, "left", show=False)
         scale.setYLink(aligned)
 
         scale_colorbar = pg.PlotItem()
         scale_colorbar.setMouseEnabled(x=False, y=False)
-        scale_colorbar.setMaximumHeight(70)
+        scale_colorbar.setMaximumHeight(DEPTH_PANEL_HEADER_HEIGHT_PX)
         set_axis(scale_colorbar, "bottom", show=False)
         set_axis(scale_colorbar, "left", show=False)
         scale_axis = set_axis(scale_colorbar, "top", pen="w")
@@ -136,7 +146,12 @@ class HistologyPanelView:
         reference.setMouseEnabled(x=False)
         _set_depth_range(reference, depth_view, padding)
         reference.setYLink(aligned)
-        set_axis(reference, "bottom", pen="w")
+        set_depth_panel_bottom_axis(
+            reference,
+            set_axis,
+            label="Original annotations",
+            ticks=False,
+        )
         set_axis(reference, "left", show=False)
         reference_axis = set_axis(reference, "right", show=False)
 
@@ -151,7 +166,7 @@ class HistologyPanelView:
         depth_ruler.setMouseEnabled(x=False, y=False)
         depth_ruler.setMaximumWidth(48)
         _set_depth_range(depth_ruler, depth_view, padding)
-        set_axis(depth_ruler, "bottom", show=False)
+        set_depth_panel_bottom_axis(depth_ruler, set_axis, pen="w", ticks=False)
         set_axis(depth_ruler, "right", show=False)
         depth_axis = set_axis(depth_ruler, "left", pen="k")
         depth_axis.setWidth(44)
@@ -170,6 +185,7 @@ class HistologyPanelView:
         layout.layout.setColumnStretchFactor(4, 4)
         layout.layout.setRowStretchFactor(0, 1)
         layout.layout.setRowStretchFactor(1, 10)
+        set_depth_panel_header_height(layout)
         area.addItem(layout)
 
         fit_plot = pg.PlotWidget(background="w")
@@ -319,7 +335,12 @@ class HistologyPanelView:
         fig = self.plots.aligned if fig is None else fig
         fig.clear()
         self.hist_label_items = []
-        self.set_axis(self.plots.aligned, "bottom", pen="w", label="blank")
+        set_depth_panel_bottom_axis(
+            self.plots.aligned,
+            self.set_axis,
+            label="Warped annotations",
+            ticks=False,
+        )
 
         self.hist_regions = self._plot_region_bands(
             fig,
@@ -345,7 +366,12 @@ class HistologyPanelView:
         fig = self.plots.reference if fig is None else fig
         fig.clear()
         self.hist_ref_label_items = []
-        self.set_axis(self.plots.reference, "bottom", pen="w", label="blank")
+        set_depth_panel_bottom_axis(
+            self.plots.reference,
+            self.set_axis,
+            label="Original annotations",
+            ticks=False,
+        )
 
         self.hist_ref_regions = self._plot_region_bands(
             fig,
@@ -371,7 +397,11 @@ class HistologyPanelView:
         fig.clear()
         self.hist_ref_regions = np.empty((0, 1), dtype=object)
 
-        self.set_axis(fig, "bottom", label="dist to boundary (um)")
+        set_depth_panel_bottom_axis(
+            fig,
+            self.set_axis,
+            label="dist to boundary (um)",
+        )
         fig.setXRange(min=0, max=100)
 
         self._plot_nearby_region_curves(
@@ -451,7 +481,13 @@ class HistologyPanelView:
             bound = pg.InfiniteLine(pos=regions[-1][1], angle=0, pen=colours[-1])
             self.plots.scale.addItem(bound)
 
-        self.set_axis(self.plots.scale, "bottom", pen="w", label="blank")
+        set_depth_panel_bottom_axis(
+            self.plots.scale,
+            self.set_axis,
+            label="blank",
+            pen="w",
+            ticks=False,
+        )
         self.plots.scale_colorbar.addItem(cbar)
 
     def render_fit(self, state: FitPlotRenderState) -> None:

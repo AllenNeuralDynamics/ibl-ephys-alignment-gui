@@ -11,6 +11,11 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
 
+from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
+    DEPTH_PANEL_HEADER_HEIGHT_PX,
+    set_depth_panel_bottom_axis,
+    set_depth_panel_header_height,
+)
 from ephys_alignment_gui.desktop.displays.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.desktop.displays.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
@@ -19,7 +24,7 @@ from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 logger = logging.getLogger(__name__)
 
 
-_EPHYS_COLORBAR_MAX_HEIGHT = 90
+_EPHYS_COLORBAR_MAX_HEIGHT = DEPTH_PANEL_HEADER_HEIGHT_PX
 _SCALAR_COLORBAR_AXIS_HEIGHT = 42
 _SCALAR_COLORBAR_WIDTH = 20
 _SCALAR_COLORBAR_HEIGHT = 5
@@ -98,7 +103,7 @@ class DesktopEphysPanelView:
             probe_tip_lines=probe_tip_lines,
             probe_top_lines=probe_top_lines,
         )
-        set_axis(image, "bottom")
+        set_depth_panel_bottom_axis(image, set_axis)
         image_axis = set_axis(image, "left", label="Distance from probe tip (uV)")
 
         image_colorbar = pg.PlotItem()
@@ -118,7 +123,7 @@ class DesktopEphysPanelView:
             probe_tip_lines=probe_tip_lines,
             probe_top_lines=probe_top_lines,
         )
-        set_axis(line, "bottom")
+        set_depth_panel_bottom_axis(line, set_axis)
         set_axis(line, "left", show=False)
 
         probe = pg.PlotItem()
@@ -132,7 +137,7 @@ class DesktopEphysPanelView:
             probe_tip_lines=probe_tip_lines,
             probe_top_lines=probe_top_lines,
         )
-        set_axis(probe, "bottom", pen="w")
+        set_depth_panel_bottom_axis(probe, set_axis, pen="w")
         set_axis(probe, "left", show=False)
 
         probe_colorbar = pg.PlotItem()
@@ -156,6 +161,7 @@ class DesktopEphysPanelView:
         graphics_layout.layout.setColumnStretchFactor(2, 1)
         graphics_layout.layout.setRowStretchFactor(0, 1)
         graphics_layout.layout.setRowStretchFactor(1, 10)
+        set_depth_panel_header_height(graphics_layout)
         area.addItem(graphics_layout)
 
         return cls(
@@ -203,9 +209,8 @@ class DesktopEphysPanelView:
 
     def image_raster_request(self) -> ImageRasterRequest:
         """Return the current feature image plot raster target."""
-        width_px = (
-            _dimension(self.plots.image, "width")
-            - _dimension(self.widgets.image_axis, "width")
+        width_px = _dimension(self.plots.image, "width") - _dimension(
+            self.widgets.image_axis, "width"
         )
         return ImageRasterRequest.from_plot_size(
             width_px=max(1.0, width_px),
@@ -300,7 +305,11 @@ class DesktopEphysPanelView:
             max=data["xrange"][1],
             padding=0,
         )
-        self.set_axis(self.plots.image, "bottom", label=data["xaxis"])
+        set_depth_panel_bottom_axis(
+            self.plots.image,
+            self.set_axis,
+            label=data["xaxis"],
+        )
         self.items.image_plots.append(plot)
         self.feature_plot.set_data_plot(
             plot,
@@ -329,7 +338,11 @@ class DesktopEphysPanelView:
             max=data["xrange"][1],
             padding=0,
         )
-        self.set_axis(self.plots.line, "bottom", label=data["xaxis"])
+        set_depth_panel_bottom_axis(
+            self.plots.line,
+            self.set_axis,
+            label=data["xaxis"],
+        )
         self.items.line_plots.append(line)
 
     def render_probe(self, data: Any, bounds: Any = None) -> None:
@@ -370,7 +383,12 @@ class DesktopEphysPanelView:
             max=data["xrange"][1],
             padding=0,
         )
-        self.set_axis(self.plots.probe, "bottom", pen="w", label="blank")
+        set_depth_panel_bottom_axis(
+            self.plots.probe,
+            self.set_axis,
+            label="blank",
+            pen="w",
+        )
         if bounds is not None:
             for bound in bounds:
                 line = pg.InfiniteLine(pos=bound, angle=0, pen="w")
@@ -429,7 +447,9 @@ class DesktopEphysPanelView:
             if overlay is not None:
                 overlay_item = pg.ImageItem()
                 overlay_item.setImage(overlay, autoLevels=False)
-                overlay_item.setTransform(QtGui.QTransform(*self._transform(scale, offset)))
+                overlay_item.setTransform(
+                    QtGui.QTransform(*self._transform(scale, offset))
+                )
                 self.plots.image.addItem(overlay_item)
                 self.items.image_plots.append(overlay_item)
             if first_image is None:
@@ -460,7 +480,11 @@ class DesktopEphysPanelView:
             max=data["xrange"][1],
             padding=0,
         )
-        self.set_axis(self.plots.image, "bottom", label=data["xaxis"])
+        set_depth_panel_bottom_axis(
+            self.plots.image,
+            self.set_axis,
+            label=data["xaxis"],
+        )
         self.feature_plot.set_data_plot(
             first_image,
             x_scale=first_scale[0],
@@ -528,7 +552,9 @@ class DesktopEphysPanelView:
         return converted
 
     @staticmethod
-    def _scatter_brushes(*, color_bar: ColorBar, colours: Any, levels: Any) -> list[Any]:
+    def _scatter_brushes(
+        *, color_bar: ColorBar, colours: Any, levels: Any
+    ) -> list[Any]:
         """Return brushes for literal colors or scalar values mapped through a LUT."""
         colour_values = np.asarray(colours)
         if colour_values.dtype.kind in "fiu" and colour_values.ndim <= 1:
