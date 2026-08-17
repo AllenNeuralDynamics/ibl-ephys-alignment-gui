@@ -181,6 +181,8 @@ class AlignmentWorkspace:
         )
         self.autosave_commands = AutosaveCheckpointCommandHandler(
             controller=self.controller,
+            input_dataset_provider=lambda: self.data_context.input_dataset,
+            events=self.events,
         )
         self.save_channel_location_builder = AlignmentSaveChannelLocationBuilder(
             probe_track_service=self.probe_track_service,

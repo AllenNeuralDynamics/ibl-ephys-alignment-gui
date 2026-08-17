@@ -14,10 +14,19 @@ from ephys_alignment_gui.application.results.autosave import (
     AutosaveCheckpointCleared as AutosaveCheckpointCleared,
 )
 from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointInspected as AutosaveCheckpointInspected,
+)
+from ephys_alignment_gui.application.results.autosave import (
     AutosaveCheckpointRead as AutosaveCheckpointRead,
 )
 from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointRecovered as AutosaveCheckpointRecovered,
+)
+from ephys_alignment_gui.application.results.autosave import (
     AutosaveCheckpointRestored as AutosaveCheckpointRestored,
+)
+from ephys_alignment_gui.application.results.autosave import (
+    AutosaveCheckpointSkippedKey as AutosaveCheckpointSkippedKey,
 )
 from ephys_alignment_gui.application.results.autosave import (
     AutosaveCheckpointWritten as AutosaveCheckpointWritten,

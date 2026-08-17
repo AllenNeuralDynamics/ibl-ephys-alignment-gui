@@ -250,3 +250,15 @@ class PreviousAlignmentLoadFailed:
 
     shank_idx: int | None
     message: str
+
+
+@dataclass(frozen=True)
+class AutosaveRecovered:
+    """Payload emitted after autosave recovery updates the live document."""
+
+    path: Path
+    selected_key: AlignmentKey | None
+    restored_alignment_count: int
+    skipped_alignment_count: int
+    backup_path: Path | None = None
+    warnings: tuple[str, ...] = ()
