@@ -47,6 +47,7 @@ class ReferenceLineLayer:
         self.lines_tracks: np.ndarray = np.empty((0, 3), dtype=object)
         self.points: np.ndarray = np.empty((0, 1), dtype=object)
         self.selected_line: Any = []
+        self._updating_linked_lines = False
 
     def has_lines(self) -> bool:
         """Return whether the session has reference-line handles."""
@@ -128,6 +129,7 @@ class ReferenceLineLayer:
         self.lines_tracks = np.empty((0, 3), dtype=object)
         self.points = np.empty((0, 1), dtype=object)
         self.selected_line = []
+        self._updating_linked_lines = False
 
     def create_lines(
         self,
@@ -161,20 +163,21 @@ class ReferenceLineLayer:
 
     def sync_track_to_feature(self) -> None:
         """Move track-space reference lines to current feature-line positions."""
-        for line_feature, line_track, point in zip(
-            self.lines_features,
-            self.lines_tracks,
-            self.points,
-        ):
-            warped_pos = line_feature[0].getYPos()
-            track_pos = self._warped_positions_to_track([warped_pos])[0]
-            self._set_line_pos(line_track[0], warped_pos)
-            self._set_line_pos(line_track[1], warped_pos)
-            self._set_line_pos(line_track[2], track_pos)
-            point[0].setData(
-                x=[line_feature[0].pos().y()],
-                y=[track_pos],
-            )
+        with self._linked_line_update():
+            for line_feature, line_track, point in zip(
+                self.lines_features,
+                self.lines_tracks,
+                self.points,
+            ):
+                warped_pos = line_feature[0].getYPos()
+                track_pos = self._warped_positions_to_track([warped_pos])[0]
+                self._set_line_pos(line_track[0], warped_pos)
+                self._set_line_pos(line_track[1], warped_pos)
+                self._set_line_pos(line_track[2], track_pos)
+                point[0].setData(
+                    x=[line_feature[0].pos().y()],
+                    y=[track_pos],
+                )
         self._on_lines_changed()
 
     def replace_lines(
@@ -211,28 +214,38 @@ class ReferenceLineLayer:
 
         warped_positions = self._track_to_warped_positions(track_positions)
 
-        for feature_pos, track_pos, warped_pos, line_feature, line_track, point in zip(
-            feature_positions,
-            track_positions,
-            warped_positions,
-            self.lines_features,
-            self.lines_tracks,
-            self.points,
-        ):
-            for line in line_feature:
-                self._set_line_pos(line, feature_pos)
-            self._set_line_pos(line_track[0], warped_pos)
-            self._set_line_pos(line_track[1], warped_pos)
-            self._set_line_pos(line_track[2], track_pos)
-            point[0].setData(
-                x=[feature_pos],
-                y=[track_pos],
-            )
+        with self._linked_line_update():
+            for (
+                feature_pos,
+                track_pos,
+                warped_pos,
+                line_feature,
+                line_track,
+                point,
+            ) in zip(
+                feature_positions,
+                track_positions,
+                warped_positions,
+                self.lines_features,
+                self.lines_tracks,
+                self.points,
+            ):
+                for line in line_feature:
+                    self._set_line_pos(line, feature_pos)
+                self._set_line_pos(line_track[0], warped_pos)
+                self._set_line_pos(line_track[1], warped_pos)
+                self._set_line_pos(line_track[2], track_pos)
+                point[0].setData(
+                    x=[feature_pos],
+                    y=[track_pos],
+                )
         if notify:
             self._on_lines_changed()
 
     def update_feature_line(self, line: Any) -> None:
         """Mirror a moved feature-space line across feature plots."""
+        if self._updating_linked_lines:
+            return
         idx = np.where(self.lines_features == line)
         if idx[0].size == 0:
             return
@@ -242,17 +255,20 @@ class ReferenceLineLayer:
             idx[1][0],
         )
 
-        for j in fig_idx:
-            self.lines_features[line_idx][j].setPos(line.value())
+        with self._linked_line_update():
+            for j in fig_idx:
+                self._set_line_pos(self.lines_features[line_idx][j], line.value())
 
-        self.points[line_idx][0].setData(
-            x=[self.lines_features[line_idx][0].pos().y()],
-            y=[self.lines_tracks[line_idx][2].pos().y()],
-        )
+            self.points[line_idx][0].setData(
+                x=[self.lines_features[line_idx][0].pos().y()],
+                y=[self.lines_tracks[line_idx][2].pos().y()],
+            )
         self._on_lines_changed()
 
     def update_track_line(self, line: Any) -> None:
         """Mirror a moved track-space line across track plots."""
+        if self._updating_linked_lines:
+            return
         idx = np.where(self.lines_tracks == line)
         if idx[0].size == 0:
             return
@@ -265,14 +281,15 @@ class ReferenceLineLayer:
             warped_pos = line.value()
             track_pos = self._warped_positions_to_track([warped_pos])[0]
 
-        self._set_line_pos(self.lines_tracks[line_idx][0], warped_pos)
-        self._set_line_pos(self.lines_tracks[line_idx][1], warped_pos)
-        self._set_line_pos(self.lines_tracks[line_idx][2], track_pos)
+        with self._linked_line_update():
+            self._set_line_pos(self.lines_tracks[line_idx][0], warped_pos)
+            self._set_line_pos(self.lines_tracks[line_idx][1], warped_pos)
+            self._set_line_pos(self.lines_tracks[line_idx][2], track_pos)
 
-        self.points[line_idx][0].setData(
-            x=[self.lines_features[line_idx][0].pos().y()],
-            y=[track_pos],
-        )
+            self.points[line_idx][0].setData(
+                x=[self.lines_features[line_idx][0].pos().y()],
+                y=[track_pos],
+            )
         self._on_lines_changed()
 
     def select_line(self, line: Any) -> bool:
@@ -319,6 +336,9 @@ class ReferenceLineLayer:
         if line_idx.size == 0:
             return None
         return int(line_idx[0])
+
+    def _linked_line_update(self) -> _LinkedLineUpdate:
+        return _LinkedLineUpdate(self)
 
     @staticmethod
     def _set_line_pos(line: Any, position: float) -> None:
@@ -431,3 +451,16 @@ class ReferenceLineLayer:
         )
         self._plots.fit.addItem(point)
         self.points = np.vstack([self.points, point])
+
+
+class _LinkedLineUpdate:
+    def __init__(self, layer: ReferenceLineLayer) -> None:
+        self._layer = layer
+        self._previous = False
+
+    def __enter__(self) -> None:
+        self._previous = self._layer._updating_linked_lines
+        self._layer._updating_linked_lines = True
+
+    def __exit__(self, *_args: object) -> None:
+        self._layer._updating_linked_lines = self._previous
