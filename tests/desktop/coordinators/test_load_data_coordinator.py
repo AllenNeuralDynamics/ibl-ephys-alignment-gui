@@ -619,6 +619,7 @@ class ManualFreshLoadRunner:
 class ImmediatePlotWarmupRunner:
     def __init__(self) -> None:
         self.starts: list[Any] = []
+        self.cancel_calls: list[str] = []
         self.shutdown_calls: list[tuple[str, int]] = []
 
     @property
@@ -635,6 +636,9 @@ class ImmediatePlotWarmupRunner:
         self.starts.append(request)
         on_finished(request, run_job(request))
 
+    def cancel(self, reason: str) -> None:
+        self.cancel_calls.append(reason)
+
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_calls.append((reason, timeout_ms))
         return True
@@ -644,6 +648,7 @@ class ManualPlotWarmupRunner:
     def __init__(self) -> None:
         self.active = False
         self.start_args: dict[str, Any] | None = None
+        self.cancel_calls: list[str] = []
         self.shutdown_calls: list[tuple[str, int]] = []
         self.shutdown_result = True
 
@@ -671,6 +676,10 @@ class ManualPlotWarmupRunner:
         result = self.start_args["run_job"](request)
         self.active = False
         self.start_args["on_finished"](request, result)
+
+    def cancel(self, reason: str) -> None:
+        self.cancel_calls.append(reason)
+        self.active = False
 
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_calls.append((reason, timeout_ms))
@@ -1249,6 +1258,19 @@ def test_shutdown_active_preload_settles_plot_warmup_before_teardown() -> None:
     assert coordinator.shutdown_active_preload("closing", timeout_ms=123)
 
     assert plot_warmup_runner.shutdown_calls == [("closing", 123)]
+
+
+def test_request_async_shutdown_cancels_active_plot_warmup_without_waiting() -> None:
+    plot_warmup_runner = ManualPlotWarmupRunner()
+    plot_warmup_runner.active = True
+    coordinator, _commands, _queries, _calls = _coordinator(
+        plot_warmup_runner=plot_warmup_runner,
+    )
+
+    assert coordinator.request_async_shutdown("closing")
+
+    assert plot_warmup_runner.cancel_calls == ["closing"]
+    assert plot_warmup_runner.shutdown_calls == []
 
 
 def test_load_heavy_data_marks_histology_unavailable_nonfatal() -> None:

@@ -46,6 +46,7 @@ from ephys_alignment_gui.io.load_data_job import (
 )
 from ephys_alignment_gui.plotting.payload_warmup import (
     PlotPayloadCacheWarmed,
+    PlotPayloadWarmupCancelled,
     PlotPayloadWarmupRequest,
 )
 
@@ -287,6 +288,30 @@ class DesktopLoadDataCoordinator:
             self.load_runner.cancel(reason)
         return True
 
+    def has_active_work(self) -> bool:
+        """Return whether load/preload/warmup work is still settling."""
+        return (
+            self.load_runner.is_running
+            or self.preload_runner.is_running
+            or self.plot_warmup_runner.is_running
+            or self._active_load_id is not None
+            or self._active_preload_id is not None
+            or self._active_load_context_manager is not None
+            or self._active_plot_warmup_timer is not None
+        )
+
+    def request_async_shutdown(self, reason: str = "application closing") -> bool:
+        """Request cancellation for active load-related workers without waiting."""
+        requested = False
+        requested = self.cancel_plot_payload_warmup(reason) or requested
+        if self._promoted_preload_is_running() or self.load_runner.is_running:
+            requested = self.cancel_active_load(reason) or requested
+        elif self._active_load_id is not None:
+            requested = self.cancel_active_load(reason) or requested
+        if self.preload_runner.is_running or self._active_preload_id is not None:
+            requested = self.cancel_active_preload(reason) or requested
+        return requested
+
     def shutdown_active_load(
         self,
         reason: str = "application closing",
@@ -420,6 +445,14 @@ class DesktopLoadDataCoordinator:
         self._active_preload_execution = None
         if self._promoted_preload is not None:
             self._promoted_preload = None
+        return True
+
+    def cancel_plot_payload_warmup(self, reason: str) -> bool:
+        """Request cancellation for active plot payload warmup."""
+        if not self.plot_warmup_runner.is_running:
+            return False
+        self.plot_warmup_runner.cancel(reason)
+        self._finish_plot_warmup_timer("cancelled", reason=reason)
         return True
 
     def shutdown_active_preload(
@@ -743,6 +776,10 @@ class DesktopLoadDataCoordinator:
             if isinstance(result, Failed):
                 logger.debug(result.message)
                 self._finish_plot_warmup_timer("failed", message=result.message)
+                return
+            if isinstance(result, PlotPayloadWarmupCancelled):
+                logger.debug("Plot payload warmup cancelled: %s", result.reason)
+                self._finish_plot_warmup_timer("cancelled", reason=result.reason)
                 return
             assert isinstance(result, PlotPayloadCacheWarmed)
             step = (

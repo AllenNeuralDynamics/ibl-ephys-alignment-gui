@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.settings import (
@@ -25,6 +25,7 @@ from ephys_alignment_gui.desktop.shell.region_lookup_setup import (
 )
 from ephys_alignment_gui.desktop.shell.style import DesktopShellStyle
 from ephys_alignment_gui.desktop.views import DesktopViews
+from ephys_alignment_gui.desktop.views.shutdown_dialog import DesktopShutdownDialog
 from ephys_alignment_gui.desktop.workbench import DesktopWorkbench
 from ephys_alignment_gui.desktop.workbench.ports import (
     desktop_workbench_ports_from_handles,
@@ -78,6 +79,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.style = DesktopShellStyle.default()
         self.shell_actions = DesktopShellActions(self)
         self.offline: bool = offline
+        self._async_shutdown_requested = False
+        self._allow_close_after_async_shutdown = False
+        self._shutdown_dialog: DesktopShutdownDialog | None = None
+        self._shutdown_poll_timer = QtCore.QTimer(self)
+        self._shutdown_poll_timer.setInterval(100)
+        self._shutdown_poll_timer.timeout.connect(self._poll_async_shutdown)
         window_setup.initialize_shell(self, offline=offline)
         self.displays = DesktopDisplays.create(
             config=desktop_display_config_from_handles(
@@ -114,12 +121,77 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event) -> None:
         """Shut down desktop work before the Qt window closes."""
+        if self._allow_close_after_async_shutdown:
+            self._stop_shutdown_polling()
+            super().closeEvent(event)
+            return
+
         workbench = getattr(self, "desktop_workbench", None)
-        if workbench is not None and not workbench.shutdown():
-            logger.warning("Window close ignored while a fresh load is still running")
+        if workbench is None:
+            super().closeEvent(event)
+            return
+
+        if workbench.has_active_work():
+            self._begin_async_shutdown("application closing")
             event.ignore()
             return
+
+        if not workbench.finalize_shutdown():
+            self._begin_async_shutdown("application closing")
+            event.ignore()
+            return
+
         super().closeEvent(event)
+
+    def _begin_async_shutdown(self, reason: str) -> None:
+        """Request worker cancellation and keep Qt responsive while closing."""
+        workbench = getattr(self, "desktop_workbench", None)
+        if workbench is None:
+            return
+        if not self._async_shutdown_requested:
+            self._async_shutdown_requested = True
+            logger.info("Requesting asynchronous desktop shutdown: %s", reason)
+            workbench.request_async_shutdown(reason)
+        self._show_shutdown_dialog()
+        if not self._shutdown_poll_timer.isActive():
+            self._shutdown_poll_timer.start()
+
+    def _poll_async_shutdown(self) -> None:
+        """Close the window once asynchronous shutdown has settled."""
+        workbench = getattr(self, "desktop_workbench", None)
+        if workbench is None:
+            self._allow_close_after_async_shutdown = True
+            self.close()
+            return
+        if not workbench.shutdown_ready():
+            self._show_shutdown_dialog()
+            return
+        if not workbench.finalize_shutdown():
+            self._show_shutdown_dialog()
+            return
+        self._stop_shutdown_polling()
+        if self._shutdown_dialog is not None:
+            self._shutdown_dialog.close_dialog()
+            self._shutdown_dialog = None
+        self._allow_close_after_async_shutdown = True
+        self.close()
+
+    def _show_shutdown_dialog(self) -> None:
+        dialog = self._shutdown_dialog
+        if dialog is None:
+            dialog = DesktopShutdownDialog(self)
+            self._shutdown_dialog = dialog
+        dialog.set_detail(
+            "Waiting for background load, preload, plot warmup, or save work to "
+            "reach a cancellation checkpoint."
+        )
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _stop_shutdown_polling(self) -> None:
+        if self._shutdown_poll_timer.isActive():
+            self._shutdown_poll_timer.stop()
 
     @staticmethod
     def _normalize_offline_flag(offline: Any) -> bool:

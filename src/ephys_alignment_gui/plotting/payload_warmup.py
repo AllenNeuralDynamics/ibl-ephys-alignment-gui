@@ -31,6 +31,31 @@ class PlotPayloadWarmupRequest:
     raster_request: Any | None = None
 
 
+@dataclass
+class PlotPayloadWarmupCancelToken:
+    """Cooperative cancellation flag for plot payload warmup jobs."""
+
+    reason: str | None = None
+
+    @property
+    def cancelled(self) -> bool:
+        """Return whether cancellation has been requested."""
+        return self.reason is not None
+
+    def cancel(self, reason: str = "cancelled") -> None:
+        """Request cancellation at the next warmup checkpoint."""
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class PlotPayloadWarmupCancelled:
+    """Plot payload warmup was cancelled at a cooperative checkpoint."""
+
+    stream_key: StreamKey
+    shank_idx: int
+    reason: str
+
+
 @dataclass(frozen=True)
 class PlotPayloadCacheWarmed:
     """Warmed plot payload cache ready to attach to an inactive runtime."""
@@ -55,20 +80,37 @@ class PlotPayloadWarmupJob:
     def run(
         self,
         request: PlotPayloadWarmupRequest,
-    ) -> PlotPayloadCacheWarmed | Failed:
+        *,
+        cancel_token: PlotPayloadWarmupCancelToken | None = None,
+    ) -> PlotPayloadCacheWarmed | PlotPayloadWarmupCancelled | Failed:
         """Warm one stream/shank plot cache for later activation."""
+        cancel_token = cancel_token or PlotPayloadWarmupCancelToken()
+        cancelled = _cancelled(request, cancel_token)
+        if cancelled is not None:
+            return cancelled
+
         try:
             payload_cache = self.plot_payload_cache_factory.build_for_stream(
                 request.stream,
                 request.shank_idx,
             )
+            cancelled = _cancelled(request, cancel_token)
+            if cancelled is not None:
+                return cancelled
             payload_cache.filter_units(request.unit_filter)
+            cancelled = _cancelled(request, cancel_token)
+            if cancelled is not None:
+                return cancelled
             menu_state = build_plot_menu_state(payload_cache)
             warmed_spec_keys = self._warm_spec_payloads(
+                request,
                 payload_cache,
                 request.spec_keys or _selected_menu_spec_keys(menu_state),
+                cancel_token=cancel_token,
                 raster_request=request.raster_request,
             )
+            if isinstance(warmed_spec_keys, PlotPayloadWarmupCancelled):
+                return warmed_spec_keys
         except Exception as exc:
             logger.warning(
                 "Plot payload warmup failed for %s shank %s",
@@ -89,13 +131,18 @@ class PlotPayloadWarmupJob:
 
     @staticmethod
     def _warm_spec_payloads(
+        request: PlotPayloadWarmupRequest,
         payload_cache: EphysPlotPayloadCache,
         spec_keys: tuple[str, ...],
         *,
+        cancel_token: PlotPayloadWarmupCancelToken,
         raster_request: Any | None = None,
-    ) -> tuple[str, ...]:
+    ) -> tuple[str, ...] | PlotPayloadWarmupCancelled:
         warmed: list[str] = []
         for spec_key in spec_keys:
+            cancelled = _cancelled(request, cancel_token)
+            if cancelled is not None:
+                return cancelled
             spec = plot_spec(spec_key)
             if spec.available is not None and not spec.available(payload_cache):
                 continue
@@ -108,6 +155,9 @@ class PlotPayloadWarmupJob:
                 is not None
             ):
                 warmed.append(spec.key)
+            cancelled = _cancelled(request, cancel_token)
+            if cancelled is not None:
+                return cancelled
         return tuple(warmed)
 
 
@@ -117,4 +167,17 @@ def _selected_menu_spec_keys(menu_state: Any) -> tuple[str, ...]:
         group.selected_key
         for group in menu_state.groups.values()
         if group.selected_key is not None
+    )
+
+
+def _cancelled(
+    request: PlotPayloadWarmupRequest,
+    cancel_token: PlotPayloadWarmupCancelToken,
+) -> PlotPayloadWarmupCancelled | None:
+    if not cancel_token.cancelled:
+        return None
+    return PlotPayloadWarmupCancelled(
+        stream_key=request.stream_key,
+        shank_idx=request.shank_idx,
+        reason=cancel_token.reason or "cancelled",
     )

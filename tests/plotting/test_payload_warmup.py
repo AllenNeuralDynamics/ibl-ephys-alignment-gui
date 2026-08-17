@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from ephys_alignment_gui.plotting.payload_warmup import (
+    PlotPayloadWarmupCancelled,
+    PlotPayloadWarmupCancelToken,
     PlotPayloadWarmupJob,
     PlotPayloadWarmupRequest,
 )
@@ -102,3 +104,23 @@ def test_plot_payload_warmup_filters_menu_availability_and_safe_payloads() -> No
     assert ("available_plot_specs_for_menu", "line") in factory.payload_cache.cache
     assert ("available_plot_specs_for_menu", "probe") in factory.payload_cache.cache
     assert ("fr_amp_data_line",) in factory.payload_cache.cache
+
+
+def test_plot_payload_warmup_honors_cancel_token_before_loading_cache() -> None:
+    factory = FakePayloadCacheFactory()
+    token = PlotPayloadWarmupCancelToken()
+    token.cancel("closing")
+    request = PlotPayloadWarmupRequest(
+        stream_key=("rec", "probeA"),
+        stream=SimpleNamespace(name="stream"),
+        shank_idx=0,
+        unit_filter="unitrefine_neural",
+    )
+
+    result = PlotPayloadWarmupJob(factory).run(request, cancel_token=token)
+
+    assert isinstance(result, PlotPayloadWarmupCancelled)
+    assert result.stream_key == ("rec", "probeA")
+    assert result.shank_idx == 0
+    assert result.reason == "closing"
+    assert factory.calls == []

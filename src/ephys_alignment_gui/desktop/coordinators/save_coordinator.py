@@ -281,6 +281,14 @@ class DesktopSaveCoordinator:
             self._close_save_context(RuntimeError(f"Save cancelled: {reason}"))
         return stopped
 
+    def has_active_work(self) -> bool:
+        """Return whether save work or save UI state is still settling."""
+        return self.save_runner.is_running or self._active_save_context_manager is not None
+
+    def request_async_shutdown(self, reason: str = "application closing") -> bool:
+        """Request cancellation for active save work without waiting."""
+        return self.cancel_active_save(reason)
+
     def cancel_active_save(self, reason: str = "cancelled by user") -> bool:
         """Request cooperative cancellation for active save work."""
         if self.save_runner.is_running:

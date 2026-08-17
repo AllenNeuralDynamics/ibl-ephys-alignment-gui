@@ -117,6 +117,38 @@ class DesktopWorkbench:
         self.disconnect_events()
         return True
 
+    def has_active_work(self) -> bool:
+        """Return whether background desktop work is still running or publishing."""
+        return (
+            self.coordinator_cluster.load_data_coordinator.has_active_work()
+            or self.coordinator_cluster.save_coordinator.has_active_work()
+        )
+
+    def request_async_shutdown(self, reason: str = "application closing") -> bool:
+        """Request cancellation for active desktop work without blocking Qt."""
+        load_requested = (
+            self.coordinator_cluster.load_data_coordinator.request_async_shutdown(
+                reason,
+            )
+        )
+        save_requested = (
+            self.coordinator_cluster.save_coordinator.request_async_shutdown(
+                reason,
+            )
+        )
+        return load_requested or save_requested
+
+    def shutdown_ready(self) -> bool:
+        """Return whether asynchronous shutdown can now complete."""
+        return not self.has_active_work()
+
+    def finalize_shutdown(self) -> bool:
+        """Disconnect desktop subscriptions once all worker callbacks have settled."""
+        if not self.shutdown_ready():
+            return False
+        self.disconnect_events()
+        return True
+
     def initialize_startup_stream_state(self) -> None:
         """Initialize stream-dependent app and desktop state at startup."""
         self.coordinator_cluster.lifecycle_coordinator.initialize_startup_stream_state()

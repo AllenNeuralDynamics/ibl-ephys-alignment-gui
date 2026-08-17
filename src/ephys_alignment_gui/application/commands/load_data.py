@@ -72,6 +72,8 @@ from ephys_alignment_gui.plotting.payload_cache_factory import (
 )
 from ephys_alignment_gui.plotting.payload_warmup import (
     PlotPayloadCacheWarmed,
+    PlotPayloadWarmupCancelled,
+    PlotPayloadWarmupCancelToken,
     PlotPayloadWarmupJob,
     PlotPayloadWarmupRequest,
 )
@@ -812,9 +814,14 @@ class LoadDataCommandHandler:
     def run_plot_payload_warmup(
         self,
         request: PlotPayloadWarmupRequest,
-    ) -> PlotPayloadCacheWarmed | Failed:
+        *,
+        cancel_token: PlotPayloadWarmupCancelToken | None = None,
+    ) -> PlotPayloadCacheWarmed | PlotPayloadWarmupCancelled | Failed:
         """Run one Qt-free plot payload warmup job."""
-        return PlotPayloadWarmupJob(self.plot_payload_cache_factory).run(request)
+        return PlotPayloadWarmupJob(self.plot_payload_cache_factory).run(
+            request,
+            cancel_token=cancel_token,
+        )
 
     def start_histology_warmup(self, mouse_root: object | None = None) -> Ok | Failed:
         """Start a mouse-root scoped histology warmup, if one is useful."""

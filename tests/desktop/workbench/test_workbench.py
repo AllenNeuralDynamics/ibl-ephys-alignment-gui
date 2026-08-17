@@ -133,6 +133,8 @@ class FakeLoadDataPresenter:
         self.connect_count = 0
         self.shutdown_result = shutdown_result
         self.shutdown_timeouts: list[int] = []
+        self.active_work = False
+        self.async_shutdown_reasons: list[str] = []
 
     def connect_load_events(self) -> list[FakeSubscription]:
         self.connect_count += 1
@@ -145,6 +147,13 @@ class FakeLoadDataPresenter:
     def shutdown_active_load(self, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_timeouts.append(timeout_ms)
         return self.shutdown_result
+
+    def has_active_work(self) -> bool:
+        return self.active_work
+
+    def request_async_shutdown(self, reason: str = "application closing") -> bool:
+        self.async_shutdown_reasons.append(reason)
+        return self.active_work
 
 
 class FakeLifecyclePresenter:
@@ -459,6 +468,8 @@ class FakeSavePresenter:
         self.connect_count = 0
         self.shutdown_result = shutdown_result
         self.shutdown_timeouts: list[int] = []
+        self.active_work = False
+        self.async_shutdown_reasons: list[str] = []
 
     def connect_save_events(self) -> list[FakeSubscription]:
         self.connect_count += 1
@@ -471,6 +482,13 @@ class FakeSavePresenter:
     def shutdown_active_save(self, *, timeout_ms: int = 5000) -> bool:
         self.shutdown_timeouts.append(timeout_ms)
         return self.shutdown_result
+
+    def has_active_work(self) -> bool:
+        return self.active_work
+
+    def request_async_shutdown(self, reason: str = "application closing") -> bool:
+        self.async_shutdown_reasons.append(reason)
+        return self.active_work
 
     def display_qc_options(self) -> bool:
         self.qc_display_count += 1
@@ -929,6 +947,36 @@ def test_workbench_shutdown_leaves_events_connected_when_save_does_not_stop() ->
 
     assert save.shutdown_timeouts == [123]
     assert alignment_sub.disconnect_count == 0
+
+
+def test_workbench_async_shutdown_requests_cancellation_and_waits_to_finalize() -> None:
+    alignment_sub = FakeSubscription()
+    load_data = FakeLoadDataPresenter()
+    save = FakeSavePresenter()
+    load_data.active_work = True
+    save.active_work = True
+    workbench = _workbench(
+        FakeAlignmentPresenter([alignment_sub]),
+        FakeShankPresenter([]),
+        FakeHistologyDisplay(),
+        load_data=load_data,
+        save=save,
+    )
+    workbench.connect_events()
+
+    assert workbench.has_active_work()
+    assert workbench.request_async_shutdown("closing")
+    assert not workbench.shutdown_ready()
+    assert not workbench.finalize_shutdown()
+
+    load_data.active_work = False
+    save.active_work = False
+
+    assert workbench.shutdown_ready()
+    assert workbench.finalize_shutdown()
+    assert alignment_sub.disconnect_count == 1
+    assert load_data.async_shutdown_reasons == ["closing"]
+    assert save.async_shutdown_reasons == ["closing"]
 
 
 def test_workbench_delegates_focused_presenter_entry_points() -> None:

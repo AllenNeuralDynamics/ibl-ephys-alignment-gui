@@ -11,7 +11,10 @@ from ephys_alignment_gui.core.workflow import Failed
 from ephys_alignment_gui.desktop.workers.plot_payload_warmup_runner import (
     QtPlotPayloadWarmupRunner,
 )
-from ephys_alignment_gui.plotting.payload_warmup import PlotPayloadWarmupRequest
+from ephys_alignment_gui.plotting.payload_warmup import (
+    PlotPayloadWarmupCancelToken,
+    PlotPayloadWarmupRequest,
+)
 
 
 def test_qt_plot_payload_warmup_runner_delivers_callback_on_main_thread() -> None:
@@ -28,8 +31,11 @@ def test_qt_plot_payload_warmup_runner_delivers_callback_on_main_thread() -> Non
     finished_thread_ids: list[int] = []
     results: list[Failed] = []
 
-    def run_job(_request):
+    seen_tokens: list[PlotPayloadWarmupCancelToken | None] = []
+
+    def run_job(_request, *, cancel_token=None):
         worker_thread_ids.append(threading.get_ident())
+        seen_tokens.append(cancel_token)
         return Failed("expected test result")
 
     def on_finished(_request, result):
@@ -50,3 +56,4 @@ def test_qt_plot_payload_warmup_runner_delivers_callback_on_main_thread() -> Non
     assert results
     assert worker_thread_ids and worker_thread_ids[0] != main_thread_id
     assert finished_thread_ids == [main_thread_id]
+    assert isinstance(seen_tokens[0], PlotPayloadWarmupCancelToken)

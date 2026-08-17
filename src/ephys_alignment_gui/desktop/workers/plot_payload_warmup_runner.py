@@ -15,12 +15,14 @@ from ephys_alignment_gui.desktop.workers.qthread_lifecycle import (
 )
 from ephys_alignment_gui.plotting.payload_warmup import (
     PlotPayloadCacheWarmed,
+    PlotPayloadWarmupCancelled,
+    PlotPayloadWarmupCancelToken,
     PlotPayloadWarmupRequest,
 )
 
 logger = logging.getLogger(__name__)
 
-PlotPayloadWarmupResult = PlotPayloadCacheWarmed | Failed
+PlotPayloadWarmupResult = PlotPayloadCacheWarmed | PlotPayloadWarmupCancelled | Failed
 PlotPayloadWarmupFinishedHandler = Callable[
     [PlotPayloadWarmupRequest, PlotPayloadWarmupResult],
     None,
@@ -33,6 +35,8 @@ class RunPlotPayloadWarmupJob(Protocol):
     def __call__(
         self,
         request: PlotPayloadWarmupRequest,
+        *,
+        cancel_token: PlotPayloadWarmupCancelToken | None = None,
     ) -> PlotPayloadWarmupResult:
         """Run one plot payload warmup job."""
         ...
@@ -60,6 +64,10 @@ class PlotPayloadWarmupRunner(Protocol):
         """Wait for the active warmup job to stop."""
         ...
 
+    def cancel(self, reason: str) -> None:
+        """Request cancellation of the active warmup job."""
+        ...
+
 
 class PlotPayloadWarmupWorker(QtCore.QObject):
     """QObject that runs one plot payload warmup job in its owning thread."""
@@ -71,16 +79,18 @@ class PlotPayloadWarmupWorker(QtCore.QObject):
         *,
         request: PlotPayloadWarmupRequest,
         run_job: RunPlotPayloadWarmupJob,
+        cancel_token: PlotPayloadWarmupCancelToken,
     ) -> None:
         super().__init__()
         self._request = request
         self._run_job = run_job
+        self._cancel_token = cancel_token
 
     @QtCore.pyqtSlot()
     def run(self) -> None:
         """Run the warmup job and emit its terminal result."""
         try:
-            result = self._run_job(self._request)
+            result = self._run_job(self._request, cancel_token=self._cancel_token)
         except Exception as exc:
             logger.exception("Plot payload warmup worker failed")
             result = Failed(f"Plot payload warmup worker failed: {exc}")
@@ -90,6 +100,7 @@ class PlotPayloadWarmupWorker(QtCore.QObject):
 @dataclass
 class _ActivePlotPayloadWarmupWorker:
     request: PlotPayloadWarmupRequest
+    cancel_token: PlotPayloadWarmupCancelToken
     thread: QtCore.QThread
     worker: PlotPayloadWarmupWorker
     on_finished: PlotPayloadWarmupFinishedHandler
@@ -120,7 +131,12 @@ class QtPlotPayloadWarmupRunner(QtCore.QObject):
             raise RuntimeError("Plot payload warmup worker is already running")
 
         thread = QtCore.QThread()
-        worker = PlotPayloadWarmupWorker(request=request, run_job=run_job)
+        cancel_token = PlotPayloadWarmupCancelToken()
+        worker = PlotPayloadWarmupWorker(
+            request=request,
+            run_job=run_job,
+            cancel_token=cancel_token,
+        )
         worker.moveToThread(thread)
 
         thread.started.connect(worker.run)
@@ -138,11 +154,20 @@ class QtPlotPayloadWarmupRunner(QtCore.QObject):
 
         self._active = _ActivePlotPayloadWarmupWorker(
             request=request,
+            cancel_token=cancel_token,
             thread=thread,
             worker=worker,
             on_finished=on_finished,
         )
         thread.start()
+
+    def cancel(self, reason: str) -> None:
+        """Request cooperative cancellation of the active warmup worker."""
+        active = self._active
+        if active is None:
+            return
+        active.cancel_token.cancel(reason)
+        active.thread.requestInterruption()
 
     def shutdown(self, reason: str, *, timeout_ms: int = 5000) -> bool:
         """Wait for the active warmup worker to stop."""
@@ -150,7 +175,7 @@ class QtPlotPayloadWarmupRunner(QtCore.QObject):
         if active is None:
             return True
 
-        active.thread.requestInterruption()
+        self.cancel(reason)
         stopped = active.thread.wait(timeout_ms)
         if not stopped:
             logger.warning(
