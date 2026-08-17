@@ -50,6 +50,9 @@ from ephys_alignment_gui.desktop.coordinators.save_coordinator import (
     DesktopSaveCallbacks,
     DesktopSaveCoordinator,
 )
+from ephys_alignment_gui.desktop.coordinators.selection_activation_coordinator import (
+    DesktopSelectionActivationCoordinator,
+)
 from ephys_alignment_gui.desktop.coordinators.session_selection_coordinator import (
     DesktopSessionSelectionCallbacks,
     DesktopSessionSelectionCoordinator,
@@ -89,6 +92,7 @@ class DesktopWorkbenchCoordinatorCluster:
     output_path_coordinator: DesktopOutputPathCoordinator
     path_dialog_coordinator: DesktopPathDialogCoordinator
     load_preflight_coordinator: DesktopLoadPreflightCoordinator
+    selection_activation_coordinator: DesktopSelectionActivationCoordinator
     output_folder_prompt: DesktopOutputFolderPrompt
     folder_dialog: DesktopFolderDialog
     save_coordinator: DesktopSaveCoordinator
@@ -188,6 +192,12 @@ def build_desktop_workbench_coordinator_cluster(
         load_heavy_data=load_data_coordinator.load_heavy_data,
         output_folder_prompt=output_folder_prompt,
     )
+    selection_activation_coordinator = DesktopSelectionActivationCoordinator(
+        session_selection_coordinator=session_selection_coordinator,
+        probe_selection_coordinator=probe_selection_coordinator,
+        shank_selection_actions=render_cluster.shank_selection_actions,
+        load_preflight_coordinator=load_preflight_coordinator,
+    )
     save_coordinator = DesktopSaveCoordinator(
         commands=app.commands.persistence,
         events=app.events,
@@ -231,6 +241,7 @@ def build_desktop_workbench_coordinator_cluster(
         output_path_coordinator=output_path_coordinator,
         path_dialog_coordinator=path_dialog_coordinator,
         load_preflight_coordinator=load_preflight_coordinator,
+        selection_activation_coordinator=selection_activation_coordinator,
         output_folder_prompt=output_folder_prompt,
         folder_dialog=folder_dialog,
         save_coordinator=save_coordinator,

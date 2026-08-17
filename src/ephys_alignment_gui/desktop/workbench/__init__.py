@@ -232,26 +232,32 @@ class DesktopWorkbench:
         return self.coordinator_cluster.mouse_root_coordinator.mouse_root_edited()
 
     def session_selected(self, idx: int | None = None) -> bool:
-        """Select the current recording/session from the desktop widgets."""
-        return self.coordinator_cluster.session_selection_coordinator.session_selected(
-            idx
+        """Select and load or activate the current recording/session."""
+        return (
+            self.coordinator_cluster.selection_activation_coordinator.session_selected(
+                idx
+            )
         )
 
     def probe_selected(self, idx: int | None = None) -> bool:
-        """Select the current probe from the desktop widgets."""
-        return self.coordinator_cluster.probe_selection_coordinator.probe_selected(idx)
+        """Select and load or activate the current probe."""
+        return self.coordinator_cluster.selection_activation_coordinator.probe_selected(
+            idx
+        )
 
     def shank_selected(self, _idx: int | None = None) -> bool:
-        """Select the current shank from the desktop widgets."""
-        return self.render_cluster.shank_selection_actions.shank_selected()
+        """Select and load or activate the current shank."""
+        return self.coordinator_cluster.selection_activation_coordinator.shank_selected(
+            _idx
+        )
 
     def alignment_selected(self, idx: int) -> bool:
         """Select the current previous/original alignment choice."""
         return self.render_cluster.alignment_selection_actions.alignment_selected(idx)
 
     def load_data_button_pressed(self) -> bool:
-        """Run desktop load preflight policy and load data when allowed."""
-        return self.coordinator_cluster.load_preflight_coordinator.load_data_button_pressed()
+        """Load or activate the selected stream/shank through the shared path."""
+        return self.coordinator_cluster.selection_activation_coordinator.load_or_activate_selected_stream()
 
     def fit_button_pressed(self) -> bool:
         """Fit the active alignment from current desktop reference lines."""

@@ -53,11 +53,11 @@ class DesktopShellActions:
         self.window._show_one_unsupported("Session selection")
 
     def on_session_combobox_activated(self, idx: int) -> bool:
-        """Populate the probe dropdown for the selected session."""
+        """Select the session and load or activate its selected stream."""
         return self.workbench.session_selected(idx)
 
     def on_probe_combobox_activated(self, idx: int) -> bool:
-        """Select a probe and derive shank/output state."""
+        """Select the probe and load or activate its selected stream."""
         return self.workbench.probe_selected(idx)
 
     def on_use_docdb_changed(self, state: int) -> None:
@@ -66,7 +66,7 @@ class DesktopShellActions:
         logger.info("Use DocDB: %s", use_docdb)
 
     def on_load_data_button_pressed(self, *_args: Any) -> bool:
-        """Run desktop load preflight policy and load data when allowed."""
+        """Load or activate the selected stream through the shared path."""
         return self.workbench.load_data_button_pressed()
 
     def ensure_output_directory_for_save(
@@ -89,7 +89,7 @@ class DesktopShellActions:
         return self.workbench.output_folder_edited()
 
     def on_shank_selected(self, idx: int) -> bool:
-        """Select the current shank from the desktop widgets."""
+        """Select the shank and load or activate its selected stream."""
         return self.workbench.shank_selected(idx)
 
     def on_alignment_selected(self, idx: int) -> bool:

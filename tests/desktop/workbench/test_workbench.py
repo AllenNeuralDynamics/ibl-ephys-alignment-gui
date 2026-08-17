@@ -403,6 +403,30 @@ class FakeLoadPreflightPresenter:
         self.logged.append(requirement)
 
 
+class FakeSelectionActivationPresenter:
+    def __init__(self) -> None:
+        self.session_indices: list[int | None] = []
+        self.probe_indices: list[int | None] = []
+        self.shank_indices: list[int | None] = []
+        self.load_count = 0
+
+    def session_selected(self, idx: int | None = None) -> bool:
+        self.session_indices.append(idx)
+        return True
+
+    def probe_selected(self, idx: int | None = None) -> bool:
+        self.probe_indices.append(idx)
+        return True
+
+    def shank_selected(self, idx: int | None = None) -> bool:
+        self.shank_indices.append(idx)
+        return True
+
+    def load_or_activate_selected_stream(self) -> bool:
+        self.load_count += 1
+        return True
+
+
 class FakeOutputFolderPrompt:
     def __init__(self) -> None:
         self.requirements: list[Any] = []
@@ -654,6 +678,7 @@ def _workbench(
     output_path: Any | None = None,
     path_dialog: Any | None = None,
     load_preflight: Any | None = None,
+    selection_activation: Any | None = None,
     output_folder_prompt: Any | None = None,
     folder_dialog: Any | None = None,
     save: Any | None = None,
@@ -711,6 +736,9 @@ def _workbench(
         output_path_coordinator=output_path or FakeOutputPathPresenter(),
         path_dialog_coordinator=path_dialog or FakePathDialogPresenter(),
         load_preflight_coordinator=load_preflight or FakeLoadPreflightPresenter(),
+        selection_activation_coordinator=(
+            selection_activation or FakeSelectionActivationPresenter()
+        ),
         output_folder_prompt=output_folder_prompt or FakeOutputFolderPrompt(),
         folder_dialog=folder_dialog or FakeFolderDialog(),
         save_coordinator=save or FakeSavePresenter(),
@@ -935,6 +963,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     output_path = FakeOutputPathPresenter()
     path_dialog = FakePathDialogPresenter()
     load_preflight = FakeLoadPreflightPresenter()
+    selection_activation = FakeSelectionActivationPresenter()
     output_folder_prompt = FakeOutputFolderPrompt()
     folder_dialog = FakeFolderDialog()
     save = FakeSavePresenter()
@@ -957,6 +986,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         output_path=output_path,
         path_dialog=path_dialog,
         load_preflight=load_preflight,
+        selection_activation=selection_activation,
         output_folder_prompt=output_folder_prompt,
         folder_dialog=folder_dialog,
         save=save,
@@ -1024,9 +1054,13 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
     assert load_data.load_count == 1
     assert mouse_root.set_roots == ["root"]
     assert mouse_root.edited_count == 1
-    assert session_selection.selected_count == 1
-    assert probe_selection.selected_count == 1
-    assert load_preflight.load_count == 1
+    assert session_selection.selected_count == 0
+    assert probe_selection.selected_count == 0
+    assert selection_activation.session_indices == [None]
+    assert selection_activation.probe_indices == [None]
+    assert selection_activation.shank_indices == [2]
+    assert selection_activation.load_count == 1
+    assert load_preflight.load_count == 0
     assert load_preflight.logged == ["log-me"]
     assert output_path.save_roots == ["save-root"]
     assert output_path.edited_count == 1
@@ -1061,7 +1095,7 @@ def test_workbench_delegates_selection_and_load_entry_points() -> None:
         "prev",
         "reset",
     ]
-    assert shank_selection_actions.calls == ["shank"]
+    assert shank_selection_actions.calls == []
     assert alignment_selection_actions.calls == [("alignment", 3)]
     assert interaction.calls == [
         "notes",
@@ -1262,6 +1296,22 @@ def test_workbench_factory_configures_focused_presenters() -> None:
     )
     assert coordinator_cluster.load_preflight_coordinator.can_load_data is (
         commands.load.can_load_data
+    )
+    assert (
+        coordinator_cluster.selection_activation_coordinator.session_selection_coordinator
+        is coordinator_cluster.session_selection_coordinator
+    )
+    assert (
+        coordinator_cluster.selection_activation_coordinator.probe_selection_coordinator
+        is coordinator_cluster.probe_selection_coordinator
+    )
+    assert (
+        coordinator_cluster.selection_activation_coordinator.shank_selection_actions
+        is render_cluster.shank_selection_actions
+    )
+    assert (
+        coordinator_cluster.selection_activation_coordinator.load_preflight_coordinator
+        is coordinator_cluster.load_preflight_coordinator
     )
     assert render_cluster.alignment_edit_actions.commands is commands.edit
     assert render_cluster.alignment_edit_actions.callbacks.tip_position_um() == 42.0
