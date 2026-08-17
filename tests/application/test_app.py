@@ -320,6 +320,19 @@ class FakeBatchOutputBuilder:
         }
 
 
+class FakeMissingCcfBatchOutputBuilder(FakeBatchOutputBuilder):
+    def get_alignment_results_batch(self, alignments):
+        self.batched_alignments = alignments
+        return {
+            key: (
+                {"channel": key.shank_idx},
+                {},
+                True,
+            )
+            for key in alignments
+        }
+
+
 class FakeRuntimeInitializer:
     def __init__(self) -> None:
         self.calls = []
@@ -1400,9 +1413,7 @@ def test_commands_publish_promoted_preload_activates_foreground_shank() -> None:
     workspace.app.events.subscribe(FreshLoadCompleted, completed_events.append)
     workspace.app.events.subscribe(StreamActivated, stream_events.append)
 
-    preload_execution = workspace.app.commands.load.start_preload_data(
-        preload_prepared
-    )
+    preload_execution = workspace.app.commands.load.start_preload_data(preload_prepared)
     foreground_execution = workspace.app.commands.load.start_fresh_load_data(
         foreground_prepared
     )
@@ -2234,6 +2245,46 @@ def test_commands_save_edited_alignment_outputs_batches_active_shanks(
             ),
         )
     ]
+
+
+def test_commands_save_edited_alignment_outputs_warns_and_writes_without_ccf(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    output_builder = FakeMissingCcfBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+    workspace.document.output_directory = tmp_path
+    _attach_single_probe_save_geometry(workspace, tmp_path)
+    _install_fake_save_channel_location_builder(workspace)
+    key = AlignmentKey("rec", "stream", 0)
+    state = workspace.document.select_alignment_key(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([1.0, 2.0]),
+        track=np.array([3.0, 4.0]),
+    )
+    state.mark_alignment_changed()
+    progress_events: list[SaveProgressUpdated] = []
+    workspace.app.events.subscribe(SaveProgressUpdated, progress_events.append)
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=False
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 1
+    assert repo.saved_kwargs[0]["channel_results"] == {"channel": 0}
+    assert repo.saved_kwargs[0]["ccf_channel_results"] == {}
+    assert not state.has_unsaved_alignment
+    assert any(
+        event.phase == "building_outputs"
+        and event.status == "warning"
+        and "CCF channel coordinates could not be generated" in event.message
+        for event in progress_events
+    )
 
 
 def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(

@@ -269,7 +269,9 @@ class DesktopSaveCoordinator:
         """Settle active save workers before desktop teardown."""
         stopped = True
         if self.save_runner.is_running:
-            stopped = self.save_runner.shutdown(reason, timeout_ms=timeout_ms) and stopped
+            stopped = (
+                self.save_runner.shutdown(reason, timeout_ms=timeout_ms) and stopped
+            )
         if stopped and (
             self._progress_dialog is not None
             or self._active_save_context_manager is not None
@@ -437,6 +439,7 @@ def _status_label(status: str) -> str:
     return {
         "started": "Running",
         "running": "Running",
+        "warning": "Warning",
         "completed": "Done",
         "cancelled": "Cancelled",
     }.get(status, str(status).title())

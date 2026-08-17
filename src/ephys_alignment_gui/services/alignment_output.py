@@ -18,6 +18,10 @@ from ephys_alignment_gui.core.alignment_output import (
     ChannelOutputIdentity,
 )
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
+from ephys_alignment_gui.services.ccf_transform_frame import (
+    PIPELINE_FRAME,
+    SPIM_NATIVE_FRAME,
+)
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 logger = logging.getLogger(__name__)
@@ -103,14 +107,28 @@ class AlignmentOutputService:
             return {}
 
         all_channel_locations_ras = np.concatenate(packed_points, axis=0)
-        all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
-        self._validate_ccf_xyz(
-            all_ccf_xyz,
-            expected_count=len(all_channel_locations_ras),
-        )
+        all_ccf_xyz: NDArray | None
+        try:
+            all_ccf_xyz = self._transform_locations_to_ccf(all_channel_locations_ras)
+            self._validate_ccf_xyz(
+                all_ccf_xyz,
+                expected_count=len(all_channel_locations_ras),
+            )
+        except Exception as exc:
+            all_ccf_xyz = None
+            logger.warning(
+                "CCF channel coordinate export failed; saving anatomical channel "
+                "locations and alignment histories without CCF channel coordinates: "
+                "%s",
+                exc,
+                exc_info=True,
+            )
 
         results: dict[Hashable, AlignmentOutputResult] = {}
         for key, channel_dict in channel_dicts.items():
+            if all_ccf_xyz is None:
+                results[key] = (channel_dict, {}, multi_shank)
+                continue
             ccf_xyz = all_ccf_xyz[point_slices[key]]
             results[key] = (
                 channel_dict,
@@ -168,20 +186,49 @@ class AlignmentOutputService:
         )
         histology_img = brain_atlas.intensity_sitk_image_spim_native
         pipeline_img = brain_atlas.pipeline_sitk_image_spim_native
+        transform_input_frame = getattr(
+            brain_atlas,
+            "ccf_transform_input_frame",
+            PIPELINE_FRAME,
+        )
+        transform_input_frame_reason = getattr(
+            brain_atlas,
+            "ccf_transform_input_frame_reason",
+            "legacy atlas without frame decision; defaulting to pipeline geometry",
+        )
+        logger.info(
+            "Using %s CCF transform input frame for %d point(s): %s",
+            transform_input_frame,
+            len(channel_locations_ras),
+            transform_input_frame_reason,
+        )
         ras_to_lps = np.array([-1, -1, 1])
         # Convert IBL app world coordinates, RAS m, to ITK world coordinates, LPS mm
         channel_locations_lps_mm = 1e3 * ras_to_lps * channel_locations_ras_spim
-        reg_pipeline_physical_points: list[list[float]] = []
-        for point in channel_locations_lps_mm:
-            index = histology_img.TransformPhysicalPointToContinuousIndex(point)
-            pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(index)
-            reg_pipeline_physical_points.append(list(pipeline_point))
-
-        reg_pipeline_physical_points_array = np.array(reg_pipeline_physical_points)
+        if transform_input_frame == PIPELINE_FRAME:
+            transform_input_points: list[list[float]] = []
+            for point in channel_locations_lps_mm:
+                index = histology_img.TransformPhysicalPointToContinuousIndex(point)
+                pipeline_point = pipeline_img.TransformContinuousIndexToPhysicalPoint(
+                    index
+                )
+                transform_input_points.append(list(pipeline_point))
+            transform_input_points_array = np.array(transform_input_points)
+        elif transform_input_frame == SPIM_NATIVE_FRAME:
+            transform_input_points_array = np.asarray(
+                channel_locations_lps_mm,
+                dtype=np.float64,
+            )
+        else:
+            raise RuntimeError(
+                "Unknown CCF transform input frame "
+                f"{transform_input_frame!r}; expected {PIPELINE_FRAME!r} or "
+                f"{SPIM_NATIVE_FRAME!r}"
+            )
 
         logger.info("Warping to ccf")
         this_probe_df = pandas.DataFrame(
-            reg_pipeline_physical_points_array, columns=list("xyz")
+            transform_input_points_array, columns=list("xyz")
         )
 
         tx = mouse_root.transforms

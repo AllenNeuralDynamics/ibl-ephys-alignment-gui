@@ -23,6 +23,9 @@ from ephys_alignment_gui.geometry.rigid_rotation import (
     rotate_image,
 )
 from ephys_alignment_gui.io.datapackage_loader import HistologyImagePaths, MouseRoot
+from ephys_alignment_gui.services.ccf_transform_frame import (
+    detect_ccf_transform_input_frame,
+)
 
 logger = logging.getLogger(__name__)
 _GEOMETRY_SCHEMA = "anatomical-header/1"
@@ -37,6 +40,14 @@ class HistologyRuntimeData:
     brain_atlas: BrainAtlasAnatomical
     histology_images: dict[str, sitk.Image]
     lazy_channel_paths: dict[str, Path]
+
+
+@dataclass(frozen=True)
+class PipelineGeometryImage:
+    """Geometry-only pipeline image plus the full header it represents."""
+
+    image: sitk.Image
+    header: AnatomicalHeader
 
 
 @dataclass
@@ -109,7 +120,18 @@ class HistologyDataService:
         intensity_image = sitk.ReadImage(str(hist.ccf_template))
         label_image = sitk.ReadImage(str(hist.labels))
         histology_image = sitk.ReadImage(str(hist.registration))
-        pipeline_image = _load_pipeline_geometry_image(hist, intensity_image)
+        pipeline_geometry = _load_pipeline_geometry(hist, intensity_image)
+        frame_decision = detect_ccf_transform_input_frame(
+            mouse_root,
+            spim_native_image=intensity_image,
+            pipeline_header=pipeline_geometry.header,
+        )
+        logger.info(
+            "Using %s CCF transform input frame for mouse %s: %s",
+            frame_decision.frame,
+            mouse_root.mouse_id,
+            frame_decision.reason,
+        )
 
         # Extract the rotational part of the SPIM->template affine and apply
         # it to every image-space asset, so the canonical in-memory frame has
@@ -159,7 +181,9 @@ class HistologyDataService:
             display_rotation=R,
             display_rotation_center=rotation_center,
             intensity_img_spim_native=intensity_image,
-            pipeline_img_spim_native=pipeline_image,
+            pipeline_img_spim_native=pipeline_geometry.image,
+            ccf_transform_input_frame=frame_decision.frame,
+            ccf_transform_input_frame_reason=frame_decision.reason,
         )
 
         # Ensure the rotated histology is in the blessed DICOM orientation
@@ -189,15 +213,27 @@ def _load_pipeline_geometry_image(
     base_image: sitk.Image,
 ) -> sitk.Image:
     """Load the pipeline geometry image, preferring the sidecar when present."""
+    return _load_pipeline_geometry(hist, base_image).image
+
+
+def _load_pipeline_geometry(
+    hist: HistologyImagePaths,
+    base_image: sitk.Image,
+) -> PipelineGeometryImage:
+    """Load the pipeline geometry image, retaining the represented full header."""
     sidecar_path = hist.registration_pipeline_geometry
     if sidecar_path is not None:
         header = _pipeline_geometry_header_from_sidecar(sidecar_path, base_image)
         if hist.registration_pipeline is not None:
             _validate_pipeline_volume_matches_header(hist.registration_pipeline, header)
-        return header.as_sitk_stub()
+        return PipelineGeometryImage(image=header.as_sitk_stub(), header=header)
 
     if hist.registration_pipeline is not None:
-        return sitk.ReadImage(str(hist.registration_pipeline))
+        image = sitk.ReadImage(str(hist.registration_pipeline))
+        return PipelineGeometryImage(
+            image=image,
+            header=AnatomicalHeader.from_sitk(image),
+        )
 
     raise ValueError(
         "Datapackage histology image_space must include either "

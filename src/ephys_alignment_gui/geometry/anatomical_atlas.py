@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 import numpy as np
 import SimpleITK as sitk
@@ -10,6 +11,7 @@ from numpy.typing import NDArray
 _logger = logging.getLogger(__name__)
 
 _BLESSED_DIRECTION: str = "IRP"
+CcfTransformInputFrame = Literal["pipeline", "spim_native"]
 
 
 class BrainAtlasAnatomical(BrainAtlas):
@@ -36,6 +38,12 @@ class BrainAtlasAnatomical(BrainAtlas):
     # no rotation is configured.
     intensity_sitk_image_spim_native: sitk.Image
     pipeline_sitk_image_spim_native: sitk.Image
+    # Physical frame expected by the image-to-template transform's moving image.
+    # "pipeline" means canonical GUI/SPIM points must be regridded through the
+    # producer's pipeline geometry before ANTs. "spim_native" means the
+    # transform was registered directly against the SPIM-native image header.
+    ccf_transform_input_frame: CcfTransformInputFrame
+    ccf_transform_input_frame_reason: str
     # Rotation applied to go from SPIM-native to canonical frame (None == identity).
     # Stored in SimpleITK-native (LPS, mm) units; the rotate/unrotate helpers
     # handle the conversion to the IBL GUI's RAS-metres working frame.
@@ -53,6 +61,8 @@ class BrainAtlasAnatomical(BrainAtlas):
         display_rotation_center: NDArray[np.float64] | None = None,
         intensity_img_spim_native: sitk.Image | None = None,
         pipeline_img_spim_native: sitk.Image | None = None,
+        ccf_transform_input_frame: CcfTransformInputFrame = "pipeline",
+        ccf_transform_input_frame_reason: str = "default pipeline geometry",
     ) -> None:
         """
         Initialize the BrainAtlasAnatomical class.
@@ -204,6 +214,12 @@ class BrainAtlasAnatomical(BrainAtlas):
             if pipeline_img_spim_native is not None
             else self.intensity_sitk_image_spim_native
         )
+        if ccf_transform_input_frame not in {"pipeline", "spim_native"}:
+            raise ValueError(
+                "ccf_transform_input_frame must be 'pipeline' or 'spim_native'"
+            )
+        self.ccf_transform_input_frame = ccf_transform_input_frame
+        self.ccf_transform_input_frame_reason = ccf_transform_input_frame_reason
         # Rotation applied upstream to get here (None means identity).
         if (display_rotation is None) != (display_rotation_center is None):
             raise ValueError(
@@ -307,7 +323,6 @@ def _labels_to_region_indices(label_ids: NDArray, regions: BrainRegions) -> NDAr
         preview = ", ".join(str(int(label_id)) for label_id in missing_ids[:20])
         suffix = "" if missing_ids.size <= 20 else f", ... ({missing_ids.size} total)"
         raise ValueError(
-            "Label image contains IDs absent from BrainRegions.id: "
-            f"{preview}{suffix}"
+            f"Label image contains IDs absent from BrainRegions.id: {preview}{suffix}"
         )
     return np.reshape(region_indices.astype(np.int16), np.asarray(label_ids).shape)

@@ -13,6 +13,7 @@ readme = "README.md"
 
 dependencies = [
   "aind-anatomical-utils>=0.4.3",
+  "aind-ants-transform-sidecar",
   "aind-data-schema<2.0",
   "aind-data-access-api",
   "aind-qcportal-schema",

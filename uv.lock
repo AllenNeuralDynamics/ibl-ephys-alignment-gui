@@ -732,6 +732,7 @@ name = "ibl-ephys-alignment-gui"
 source = { editable = "." }
 dependencies = [
     { name = "aind-anatomical-utils" },
+    { name = "aind-ants-transform-sidecar" },
     { name = "aind-data-access-api" },
     { name = "aind-data-schema" },
     { name = "aind-qcportal-schema" },
@@ -766,6 +767,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aind-anatomical-utils", specifier = ">=0.4.3" },
+    { name = "aind-ants-transform-sidecar" },
     { name = "aind-data-access-api" },
     { name = "aind-data-schema", specifier = "<2.0" },
     { name = "aind-qcportal-schema" },

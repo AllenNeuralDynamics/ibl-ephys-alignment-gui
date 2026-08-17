@@ -13,6 +13,10 @@ import ephys_alignment_gui.services.alignment_output as alignment_output_service
 from ephys_alignment_gui.core.alignment_output import ChannelOutputIdentity
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.services.alignment_output import AlignmentOutputService
+from ephys_alignment_gui.services.ccf_transform_frame import (
+    PIPELINE_FRAME,
+    SPIM_NATIVE_FRAME,
+)
 from ephys_alignment_gui.services.histology_data import HistologyDataContext
 
 
@@ -82,6 +86,11 @@ class FakeImage:
         return tuple(index)
 
 
+class OffsetPipelineImage(FakeImage):
+    def TransformContinuousIndexToPhysicalPoint(self, index):
+        return (index[0] + 10.0, index[1], index[2])
+
+
 class FakeRegions:
     @staticmethod
     def get(labels):
@@ -99,6 +108,8 @@ class FakeBrainAtlas:
     regions = FakeRegions()
     intensity_sitk_image_spim_native = FakeImage()
     pipeline_sitk_image_spim_native = FakeImage()
+    ccf_transform_input_frame = PIPELINE_FRAME
+    ccf_transform_input_frame_reason = "test frame"
 
     @staticmethod
     def get_labels(channel_locations_ras):
@@ -107,6 +118,15 @@ class FakeBrainAtlas:
     @staticmethod
     def unrotate_to_spim_native(channel_locations_ras):
         return np.asarray(channel_locations_ras)
+
+
+class FakePipelineFrameBrainAtlas(FakeBrainAtlas):
+    pipeline_sitk_image_spim_native = OffsetPipelineImage()
+    ccf_transform_input_frame = PIPELINE_FRAME
+
+
+class FakeSpimNativeFrameBrainAtlas(FakePipelineFrameBrainAtlas):
+    ccf_transform_input_frame = SPIM_NATIVE_FRAME
 
 
 def test_alignment_output_service_batches_ants_transforms(monkeypatch) -> None:
@@ -216,7 +236,8 @@ def test_alignment_output_service_rejects_ccf_shape_mismatch() -> None:
         )
 
 
-def test_alignment_output_service_rejects_out_of_bounds_ccf_ml(
+def test_alignment_output_service_warns_and_omits_out_of_bounds_ccf_ml(
+    caplog,
     monkeypatch,
 ) -> None:
     def fake_apply_transforms_to_points(
@@ -256,8 +277,8 @@ def test_alignment_output_service_rejects_out_of_bounds_ccf_ml(
     )
     service = AlignmentOutputService(data_context, histology_context)
 
-    with pytest.raises(RuntimeError, match="outside Allen CCF bounds"):
-        service.get_alignment_results_batch(
+    with caplog.at_level("WARNING", logger=alignment_output_service.__name__):
+        results = service.get_alignment_results_batch(
             {
                 ("rec", "stream", 0): (
                     np.array([[0.0, 0.0, 0.0]]),
@@ -265,3 +286,76 @@ def test_alignment_output_service_rejects_out_of_bounds_ccf_ml(
                 )
             }
         )
+
+    channel_results, ccf_results, multi_shank = results[("rec", "stream", 0)]
+    assert channel_results["channel_0"]["raw_ind"] == 0
+    assert ccf_results == {}
+    assert not multi_shank
+    assert "saving anatomical channel locations" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("brain_atlas", "expected_x"),
+    [
+        (FakePipelineFrameBrainAtlas(), 11.0),
+        (FakeSpimNativeFrameBrainAtlas(), 1.0),
+    ],
+)
+def test_alignment_output_service_conditionally_regrids_for_ccf_frame(
+    monkeypatch,
+    brain_atlas,
+    expected_x,
+) -> None:
+    calls = []
+
+    def fake_apply_transforms_to_points(
+        dimension,
+        points,
+        transforms,
+        whichtoinvert,
+    ):
+        calls.append(points.copy())
+        return pandas.DataFrame(
+            {
+                "x": [0.0],
+                "y": [0.0],
+                "z": [0.0],
+            }
+        )
+
+    monkeypatch.setattr(
+        alignment_output_service.ants,
+        "apply_transforms_to_points",
+        fake_apply_transforms_to_points,
+    )
+    data_context = AlignmentDataContext()
+    data_context.mouse_root = SimpleNamespace(
+        transforms=SimpleNamespace(
+            image_to_template_affine="image_affine.mat",
+            image_to_template_warp="image_warp.nii.gz",
+            template_to_ccf_affine="ccf_affine.mat",
+            template_to_ccf_warp="ccf_warp.nii.gz",
+        )
+    )
+    histology_context = HistologyDataContext(
+        runtime_data=SimpleNamespace(
+            brain_atlas=brain_atlas,
+            histology_images={},
+            lazy_channel_paths={},
+        )
+    )
+    service = AlignmentOutputService(data_context, histology_context)
+
+    service.get_alignment_results_batch(
+        {
+            ("rec", "stream", 0): (
+                np.array([[-0.001, -0.002, 0.003]]),
+                np.array([[0.0, 0.0]]),
+            )
+        }
+    )
+
+    assert len(calls) == 1
+    assert calls[0].loc[0, "x"] == expected_x
+    assert calls[0].loc[0, "y"] == 2.0
+    assert calls[0].loc[0, "z"] == 3.0

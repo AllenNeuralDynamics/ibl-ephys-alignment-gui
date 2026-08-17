@@ -409,11 +409,37 @@ class AlignmentPersistenceCommandHandler:
                 completed=len(output_inputs),
                 total=len(output_inputs),
                 message=(
-                    "Built CCF output dictionaries for "
+                    "Built alignment output dictionaries for "
                     f"{len(output_inputs)} alignment output(s)."
                 ),
             ),
         )
+        missing_ccf_outputs = tuple(
+            key for key, output in outputs.items() if not output.ccf_channel_results
+        )
+        if missing_ccf_outputs:
+            logger.warning(
+                "CCF channel coordinate output is unavailable for %d alignment "
+                "output(s); saving anatomical outputs without CCF coordinates",
+                len(missing_ccf_outputs),
+            )
+            self._emit_or_callback_save_progress(
+                progress,
+                SaveProgressUpdated(
+                    key=None,
+                    phase="building_outputs",
+                    status="warning",
+                    completed=len(output_inputs),
+                    total=len(output_inputs),
+                    message=(
+                        "Warning: CCF channel coordinates could not be generated for "
+                        f"{len(missing_ccf_outputs)} alignment output"
+                        f"{'' if len(missing_ccf_outputs) == 1 else 's'}. "
+                        "Anatomical channel locations and alignments will still be "
+                        "saved."
+                    ),
+                ),
+            )
 
         logger.info("Saving output files to results folder...")
         saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}

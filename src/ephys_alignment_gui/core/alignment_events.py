@@ -181,7 +181,7 @@ SaveProgressPhase = Literal[
     "building_outputs",
     "writing_files",
 ]
-SaveProgressStatus = Literal["started", "completed", "running", "cancelled"]
+SaveProgressStatus = Literal["started", "completed", "running", "warning", "cancelled"]
 
 
 @dataclass(frozen=True)
