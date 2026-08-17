@@ -843,6 +843,11 @@ class AlignmentPersistenceCommandHandler:
         self,
         target_keys: tuple[AlignmentKey, ...],
     ) -> None:
+        saveable_by_key = dict(self._saveable_alignment_items())
+        edited_count = sum(
+            1 for key in target_keys if saveable_by_key[key].save_state.revision > 0
+        )
+        unchanged_count = len(target_keys) - edited_count
         self.events.emit(
             SaveProgressStarted(
                 targets=target_keys,
@@ -850,6 +855,8 @@ class AlignmentPersistenceCommandHandler:
                     f"Saving {len(target_keys)} alignment output"
                     f"{'' if len(target_keys) == 1 else 's'}..."
                 ),
+                edited_count=edited_count,
+                unchanged_count=unchanged_count,
             )
         )
 

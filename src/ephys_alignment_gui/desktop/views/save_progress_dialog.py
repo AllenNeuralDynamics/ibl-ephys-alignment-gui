@@ -33,6 +33,8 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self.setWindowModality(QtCore.Qt.NonModal)
         self.resize(560, 360)
 
+        self._scope_label = QtWidgets.QLabel("")
+        self._scope_label.setWordWrap(True)
         self._summary_label = QtWidgets.QLabel("Preparing save...")
         self._summary_label.setWordWrap(True)
         self._current_label = QtWidgets.QLabel("")
@@ -44,6 +46,7 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         self._action_button.clicked.connect(self._action_clicked)
 
         layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self._scope_label)
         layout.addWidget(self._summary_label)
         layout.addWidget(self._progress_bar)
         layout.addWidget(self._current_label)
@@ -75,11 +78,14 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
         *,
         message: str,
         cancel_enabled: bool = False,
+        scope_message: str | None = None,
     ) -> None:
         """Show a fresh save-progress target list."""
         self._finished = False
         self._items_by_key.clear()
         self._target_list.clear()
+        self._scope_label.setText(scope_message or "")
+        self._scope_label.setVisible(bool(scope_message))
         self._summary_label.setText(message)
         self._current_label.setText("")
         self._progress_bar.setRange(0, max(len(targets), 1))
@@ -179,6 +185,4 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
 
 
 def _describe_key(key: AlignmentKey) -> str:
-    return (
-        f"{key.recording_id} / {key.ephys_collection} / shank {key.shank_idx + 1}"
-    )
+    return f"{key.recording_id} / {key.ephys_collection} / shank {key.shank_idx + 1}"

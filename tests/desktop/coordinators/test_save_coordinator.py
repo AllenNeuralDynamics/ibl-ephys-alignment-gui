@@ -91,8 +91,17 @@ class FakeSaveProgressDialog:
         self.cancel_callback = callback
         self.calls.append(("progress-cancel-callback",))
 
-    def show_started(self, targets, *, message, cancel_enabled=False) -> None:
+    def show_started(
+        self,
+        targets,
+        *,
+        message,
+        cancel_enabled=False,
+        scope_message=None,
+    ) -> None:
         self.calls.append(("progress-started", tuple(targets), message, cancel_enabled))
+        if scope_message is not None:
+            self.calls.append(("progress-scope", scope_message))
 
     def update_progress(
         self,
@@ -448,6 +457,8 @@ def test_save_progress_events_update_dialog_and_button() -> None:
         SaveProgressStarted(
             targets=(key,),
             message="Saving 1 alignment output...",
+            edited_count=1,
+            unchanged_count=0,
         )
     )
     commands.events.emit(
@@ -480,6 +491,10 @@ def test_save_progress_events_update_dialog_and_button() -> None:
         (key,),
         "Saving 1 alignment output...",
         False,
+    ) in calls
+    assert (
+        "progress-scope",
+        "Saving 1 visited shank: 1 edited alignment, 0 unchanged/original alignments.",
     ) in calls
     assert (
         "progress-update",

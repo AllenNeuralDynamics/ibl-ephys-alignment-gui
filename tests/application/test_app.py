@@ -2287,7 +2287,7 @@ def test_commands_save_edited_alignment_outputs_warns_and_writes_without_ccf(
     )
 
 
-def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
+def test_commands_save_edited_alignment_outputs_saves_saveable_cross_stream_states(
     tmp_path,
 ) -> None:
     repo = FakeAlignmentRepository()
@@ -2355,7 +2355,6 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         feature=np.array([5.0, 6.0]),
         track=np.array([7.0, 8.0]),
     )
-    state_b.mark_alignment_changed()
 
     started_events: list[SaveProgressStarted] = []
     progress_events: list[SaveProgressUpdated] = []
@@ -2374,6 +2373,8 @@ def test_commands_save_edited_alignment_outputs_saves_dirty_cross_stream_states(
         SaveProgressStarted(
             targets=(key_a, key_b),
             message="Saving 2 alignment outputs...",
+            edited_count=1,
+            unchanged_count=1,
         )
     ]
     assert any(

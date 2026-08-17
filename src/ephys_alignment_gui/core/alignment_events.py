@@ -190,6 +190,8 @@ class SaveProgressStarted:
 
     targets: tuple[AlignmentKey, ...]
     message: str
+    edited_count: int = 0
+    unchanged_count: int = 0
 
 
 @dataclass(frozen=True)

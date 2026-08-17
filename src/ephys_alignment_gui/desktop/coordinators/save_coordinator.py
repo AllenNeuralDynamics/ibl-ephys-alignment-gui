@@ -109,6 +109,7 @@ class DesktopSaveCoordinator:
             event.targets,
             message=event.message,
             cancel_enabled=False,
+            scope_message=_save_scope_message(event),
         )
 
     def on_save_progress_updated(self, event: SaveProgressUpdated) -> None:
@@ -471,3 +472,24 @@ def _status_label(status: str) -> str:
         "completed": "Done",
         "cancelled": "Cancelled",
     }.get(status, str(status).title())
+
+
+def _save_scope_message(event: SaveProgressStarted) -> str | None:
+    total = len(event.targets)
+    scoped_total = event.edited_count + event.unchanged_count
+    if total == 0 or scoped_total == 0:
+        return None
+    shank_label = "shank" if total == 1 else "shanks"
+    edited_label = (
+        "edited alignment" if event.edited_count == 1 else "edited alignments"
+    )
+    unchanged_label = (
+        "unchanged/original alignment"
+        if event.unchanged_count == 1
+        else "unchanged/original alignments"
+    )
+    return (
+        f"Saving {total} visited {shank_label}: "
+        f"{event.edited_count} {edited_label}, "
+        f"{event.unchanged_count} {unchanged_label}."
+    )
