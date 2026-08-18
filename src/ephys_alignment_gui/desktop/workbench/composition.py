@@ -221,7 +221,6 @@ def build_desktop_workbench_coordinator_cluster(
         callbacks=_previous_alignment_load_callbacks(
             ports.previous_alignment_load,
             folder_dialog,
-            render_cluster.alignment_selection_actions,
             app.queries.workspace.active_output_package_directory,
         ),
     )
@@ -314,7 +313,6 @@ def _save_callbacks(
 def _previous_alignment_load_callbacks(
     ports: DesktopPreviousAlignmentLoadPorts,
     folder_dialog: DesktopFolderDialog,
-    alignment_selection_actions: Any,
     active_output_package_directory: Callable[[], Any],
 ) -> PreviousAlignmentLoadCallbacks:
     """Build callbacks for previous-alignment loading."""
@@ -327,7 +325,6 @@ def _previous_alignment_load_callbacks(
         use_docdb=ports.use_docdb,
         set_reload_folder_text=ports.set_reload_folder_text,
         render_alignment_choices=ports.render_alignment_choices,
-        select_alignment=alignment_selection_actions.alignment_selected,
         busy_context=ports.busy_context,
         reload_button=ports.reload_button,
     )

@@ -44,7 +44,7 @@ def desktop_presentation_options_for_edit(
         )
     if edit_kind == "offset":
         return DesktopAlignmentPresentationOptions(line_update="render_from_alignment")
-    if edit_kind in {"next", "previous"}:
+    if edit_kind in {"load_previous", "next", "previous"}:
         return DesktopAlignmentPresentationOptions(line_update="render_from_alignment")
     return DesktopAlignmentPresentationOptions(
         reset_histology_range=True,
@@ -144,9 +144,8 @@ class DesktopAlignmentPresenter:
         render_state: ActiveAlignmentRenderState,
     ) -> Any:
         """Return reference-line positions derived from the active alignment."""
-        return (
-            self._require_queries()
-            .workspace.active_alignment_reference_line_state(render_state.key.shank_idx)
+        return self._require_queries().workspace.active_alignment_reference_line_state(
+            render_state.key.shank_idx
         )
 
     def _require_queries(self) -> Any:

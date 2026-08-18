@@ -12,6 +12,7 @@ from ephys_alignment_gui.core.document import AlignmentKey
 
 AlignmentEditKind = Literal[
     "fit",
+    "load_previous",
     "offset",
     "next",
     "previous",

@@ -198,7 +198,9 @@ class AlignmentController:
         if isinstance(state_or_failed, Failed):
             return state_or_failed
         state_or_failed.set_alignments(alignments)
-        state_or_failed.activate_default_alignment_from_history()
+        state_or_failed.activate_default_alignment_from_history(
+            replace_clean_active=True
+        )
         return self._alignment_choices(state_or_failed)
 
     def import_previous_alignments_for_key(

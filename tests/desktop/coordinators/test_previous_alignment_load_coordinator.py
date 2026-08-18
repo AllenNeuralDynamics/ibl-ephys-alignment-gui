@@ -81,7 +81,6 @@ def _coordinator(
     default_folder: Path | None = None,
     use_docdb: bool = False,
     reload_button: Any = "reload-button",
-    select_alignment_result: bool = True,
 ) -> tuple[DesktopPreviousAlignmentLoadCoordinator, dict[str, Any]]:
     calls: dict[str, Any] = {
         "reload_text": [],
@@ -103,9 +102,6 @@ def _coordinator(
             use_docdb=lambda: use_docdb,
             set_reload_folder_text=calls["reload_text"].append,
             render_alignment_choices=calls["rendered_choices"].append,
-            select_alignment=lambda idx: (
-                calls["selected_alignments"].append(idx) or select_alignment_result
-            ),
             busy_context=busy_factory,
             reload_button=lambda: reload_button,
         ),
@@ -131,7 +127,6 @@ def test_readiness_failure_does_not_prompt_or_load() -> None:
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
-            select_alignment=lambda _idx: True,
             busy_context=FakeBusyFactory(),
             reload_button=lambda: None,
         ),
@@ -165,20 +160,19 @@ def test_cancel_with_docdb_returns_false_without_loading() -> None:
     assert calls["busy_factory"].calls == []
 
 
-def test_loaded_alignment_choices_fail_when_selection_fails() -> None:
+def test_loaded_alignment_choices_render_without_selecting_dropdown() -> None:
     commands = FakeCommands(load_result=AlignmentChoicesUpdated(["original"]))
     coordinator, calls = _coordinator(
         commands,
         selected_folder=Path("/tmp/alignments"),
-        select_alignment_result=False,
     )
 
-    assert not coordinator.load_existing_alignments()
+    assert coordinator.load_existing_alignments()
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
     assert calls["rendered_choices"] == [["original"]]
-    assert calls["selected_alignments"] == [0]
+    assert calls["selected_alignments"] == []
 
 
 def test_selected_folder_renders_loaded_alignment_choices() -> None:
@@ -198,7 +192,7 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
     assert calls["reload_text"] == ["/tmp/alignments"]
     assert calls["select_folder_defaults"] == [None]
     assert calls["rendered_choices"] == [["original", "2026-07-09T12:00:00"]]
-    assert calls["selected_alignments"] == [0]
+    assert calls["selected_alignments"] == []
     busy_calls = calls["busy_factory"].calls
     assert len(busy_calls) == 1
     assert busy_calls[0][0] == ("Loading alignments...", "Alignments loaded")
@@ -263,7 +257,6 @@ def test_load_alignments_prompt_reuses_last_selected_folder() -> None:
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
-            select_alignment=lambda _idx: True,
             busy_context=busy_factory,
             reload_button=lambda: "reload-button",
         ),
@@ -302,7 +295,6 @@ def test_cancel_does_not_clobber_last_selected_alignment_folder() -> None:
             use_docdb=lambda: False,
             set_reload_folder_text=lambda _text: None,
             render_alignment_choices=lambda _choices: None,
-            select_alignment=lambda _idx: True,
             busy_context=busy_factory,
             reload_button=lambda: "reload-button",
         ),

@@ -33,7 +33,6 @@ class PreviousAlignmentLoadCallbacks:
     use_docdb: Callable[[], bool]
     set_reload_folder_text: Callable[[str], None]
     render_alignment_choices: Callable[[list[str]], None]
-    select_alignment: Callable[[int], bool]
     busy_context: Callable[..., AbstractContextManager[Any]]
     reload_button: Callable[[], Any]
 
@@ -69,12 +68,15 @@ class DesktopPreviousAlignmentLoadCoordinator:
         self,
         event: PreviousAlignmentsLoaded,
     ) -> None:
-        """Render loaded previous-alignment choices."""
+        """Render loaded previous-alignment choices.
+
+        Application commands activate clean loaded alignments directly. The
+        desktop must not route load events back through dropdown selection,
+        because dropdown selection represents an intentional user edit.
+        """
         choices = list(event.choices)
         self.callbacks.render_alignment_choices(choices)
         self._last_selection_result = True
-        if event.auto_select:
-            self._last_selection_result = self.callbacks.select_alignment(0)
         if self._last_selection_result:
             logger.info("Loaded %d previous alignments", len(choices))
 

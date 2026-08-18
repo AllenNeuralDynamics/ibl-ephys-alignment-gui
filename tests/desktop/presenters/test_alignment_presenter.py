@@ -134,6 +134,10 @@ def test_desktop_presentation_options_are_derived_from_edit_kind() -> None:
     assert fit.line_update == "render_from_alignment"
     assert fit.preserve_depth_range
     assert not fit.clear_reference_lines
+    assert (
+        desktop_presentation_options_for_edit("load_previous").line_update
+        == "render_from_alignment"
+    )
     assert previous.line_update == "render_from_alignment"
     assert reset.line_update == "none"
     assert reset.reset_histology_range
@@ -183,7 +187,7 @@ def test_desktop_presenter_coordinates_offset_rendering() -> None:
 
 
 def test_desktop_presenter_coordinates_previous_and_next_rendering() -> None:
-    for edit_kind in ("previous", "next"):
+    for edit_kind in ("load_previous", "previous", "next"):
         render_state = _render_state()
         calls: list[Any] = []
         events, queries, presenter = _configured_presenter(render_state, calls)

@@ -119,12 +119,7 @@ class HistologyPanelView:
         aligned.setContentsMargins(0, 0, 0, 0)
         aligned.setMouseEnabled(x=False)
         _set_depth_range(aligned, depth_view, padding)
-        set_depth_panel_bottom_axis(
-            aligned,
-            set_axis,
-            label="Warped",
-            ticks=False,
-        )
+        _set_histology_strip_title(aligned, set_axis, "Warped")
         aligned_axis = set_axis(aligned, "left", show=False)
 
         scale = pg.PlotItem()
@@ -146,12 +141,7 @@ class HistologyPanelView:
         reference.setMouseEnabled(x=False)
         _set_depth_range(reference, depth_view, padding)
         reference.setYLink(aligned)
-        set_depth_panel_bottom_axis(
-            reference,
-            set_axis,
-            label="Original",
-            ticks=False,
-        )
+        _set_histology_strip_title(reference, set_axis, "Original")
         set_axis(reference, "left", show=False)
         reference_axis = set_axis(reference, "right", show=False)
 
@@ -335,12 +325,7 @@ class HistologyPanelView:
         fig = self.plots.aligned if fig is None else fig
         fig.clear()
         self.hist_label_items = []
-        set_depth_panel_bottom_axis(
-            self.plots.aligned,
-            self.set_axis,
-            label="Warped",
-            ticks=False,
-        )
+        _set_histology_strip_title(self.plots.aligned, self.set_axis, "Warped")
 
         self.hist_regions = self._plot_region_bands(
             fig,
@@ -366,12 +351,7 @@ class HistologyPanelView:
         fig = self.plots.reference if fig is None else fig
         fig.clear()
         self.hist_ref_label_items = []
-        set_depth_panel_bottom_axis(
-            self.plots.reference,
-            self.set_axis,
-            label="Original",
-            ticks=False,
-        )
+        _set_histology_strip_title(self.plots.reference, self.set_axis, "Original")
 
         self.hist_ref_regions = self._plot_region_bands(
             fig,
@@ -701,6 +681,19 @@ class HistologyPanelView:
 def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:
     y_min, y_max = depth_view.plot_y_range_um
     plot.setYRange(min=y_min, max=y_max, padding=padding)
+
+
+def _set_histology_strip_title(
+    plot: Any, set_axis: Callable[..., Any], label: str
+) -> None:
+    """Label a narrow annotation strip without bottom-axis clutter."""
+    axis = set_depth_panel_bottom_axis(plot, set_axis, label="", ticks=False)
+    set_style = getattr(axis, "setStyle", None)
+    if callable(set_style):
+        set_style(showValues=False)
+    set_title = getattr(plot, "setTitle", None)
+    if callable(set_title):
+        set_title(label)
 
 
 def position_linear_fit_checkbox(fit_items: FitPanelItems) -> None:

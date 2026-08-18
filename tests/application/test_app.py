@@ -283,6 +283,7 @@ class FakeAlignmentRepository:
         self.loaded_kwargs = None
         self.saved_kwargs: list[dict[str, Any]] = []
         self.save_error: Exception | None = None
+        self.docdb_errors: list[str | None] = []
 
     def load_previous_alignments(self, **kwargs):
         self.loaded_kwargs = kwargs
@@ -297,12 +298,14 @@ class FakeAlignmentRepository:
         if self.save_error is not None:
             raise self.save_error
         self.saved_kwargs.append(kwargs)
+        docdb_error = self.docdb_errors.pop(0) if self.docdb_errors else None
         return SavedAlignmentOutputs(
             channel_results_path=kwargs["output_directory"] / "channels.json",
             previous_alignments_path=kwargs["output_directory"] / "alignments.json",
             ccf_channel_results_path=kwargs["output_directory"] / "ccf.json",
             metadata_path=kwargs["output_directory"] / "metadata.json",
             docdb_probe_name="probeA_0" if kwargs["use_docdb"] else None,
+            docdb_error=docdb_error,
         )
 
 
@@ -2478,6 +2481,93 @@ def test_commands_save_edited_alignment_outputs_saves_saveable_cross_stream_stat
     assert not workspace.document.dirty
 
 
+def test_commands_save_edited_alignment_outputs_skips_docdb_after_server_error(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    repo.docdb_errors = ["500 Internal Server Error"]
+    output_builder = FakeBatchOutputBuilder()
+    derived = FakeDerivedDataService()
+    workspace = AlignmentWorkspace()
+    workspace.persistence_commands.alignment_repository = repo
+    workspace.persistence_commands.output_builder = output_builder
+    workspace.persistence_commands.derived_data_service = derived
+
+    probe_a = _probe_info(
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "stream",
+            local_coordinates=np.array([[10.0, 20.0]]),
+        )
+    )
+    probe_b = _probe_info(
+        probe_name="probeB",
+        ephys_collection="streamB",
+        ephys_dir=tmp_path / "input" / "rec" / "streamB",
+        channel_table=_channel_table_paths(
+            tmp_path / "input" / "rec" / "streamB",
+            local_coordinates=np.array([[30.0, 40.0]]),
+        ),
+    )
+    output_root = tmp_path / "results"
+    output_package_dir = output_root / "ibl_annotations_mouse_2026-08-17_12-30-00"
+    workspace.document.output_root = output_root
+    workspace.document.output_package_directory = output_package_dir
+    workspace.document.output_directory = output_package_dir / "rec" / "probeA"
+    workspace.document.output_directory.mkdir(parents=True)
+    _attach_input_dataset(
+        workspace,
+        MouseRoot(
+            root=Path("/tmp/mouse"),
+            schema_version="3.1.0",
+            mouse_id="mouse",
+            transforms=None,
+            histology=None,
+            probes={"rec": {"probeA": probe_a, "probeB": probe_b}},
+        ),
+    )
+    workspace.data_context.probe_info = probe_a
+    _install_fake_save_channel_location_builder(workspace)
+
+    for key in (
+        AlignmentKey("rec", "stream", 0),
+        AlignmentKey("rec", "streamB", 0),
+    ):
+        state = workspace.document.alignment_state_for(key)
+        state.active_alignment = ActiveAlignment(
+            feature=np.array([1.0, 2.0]),
+            track=np.array([3.0, 4.0]),
+        )
+        state.mark_alignment_changed()
+
+    progress_events: list[SaveProgressUpdated] = []
+    completed_events: list[SaveCompleted] = []
+    workspace.app.events.subscribe(SaveProgressUpdated, progress_events.append)
+    workspace.app.events.subscribe(SaveCompleted, completed_events.append)
+
+    result = workspace.app.commands.persistence.save_edited_alignment_outputs(
+        use_docdb=True
+    )
+
+    assert isinstance(result, EditedAlignmentOutputsSaved)
+    assert result.saved_count == 2
+    assert [kwargs["use_docdb"] for kwargs in repo.saved_kwargs] == [True, False]
+    assert any(
+        event.phase == "writing_files"
+        and event.status == "warning"
+        and "skipping DocDB writes" in event.message
+        for event in progress_events
+    )
+    assert len(completed_events) == 1
+    assert completed_events[0].saved_count == 2
+    assert completed_events[0].docdb_statuses == (
+        SaveDocDbStatus(
+            probe_name="probeA_0",
+            error="500 Internal Server Error",
+        ),
+    )
+    assert not workspace.document.dirty
+
+
 def test_commands_save_edited_alignment_outputs_includes_clean_saveable_states(
     tmp_path,
 ) -> None:
@@ -3156,6 +3246,39 @@ def test_commands_load_previous_alignments_defaults_to_active_shank(tmp_path) ->
     ]
 
 
+def test_commands_load_previous_alignments_activates_loaded_clean_baseline(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    repo.loaded_alignments = {"saved": [[1.0], [2.0]]}
+    workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
+    key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([9.0]),
+        track=np.array([10.0]),
+    )
+    workspace.document.data_loaded = True
+    events: list[AlignmentEdited] = []
+    workspace.app.events.subscribe(AlignmentEdited, events.append)
+
+    result = workspace.app.commands.persistence.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=False,
+    )
+
+    assert isinstance(result, AlignmentChoicesUpdated)
+    assert not state.has_unsaved_alignment
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.feature, [1.0])
+    np.testing.assert_allclose(state.active_alignment.track, [2.0])
+    assert len(events) == 1
+    assert events[0].edit_kind == "load_previous"
+    assert events[0].active_key == key
+    np.testing.assert_allclose(events[0].active_alignment.feature, [1.0])
+    np.testing.assert_allclose(events[0].active_alignment.track, [2.0])
+
+
 def test_commands_load_previous_alignment_package_does_not_clobber_dirty_active_state(
     tmp_path,
 ) -> None:
@@ -3207,6 +3330,51 @@ def test_commands_load_previous_alignment_package_does_not_clobber_dirty_active_
     np.testing.assert_allclose(other_state.active_alignment.feature, [3.0])
     np.testing.assert_allclose(other_state.active_alignment.track, [4.0])
     assert events == [
+        PreviousAlignmentsLoaded(
+            shank_idx=1,
+            choices=("active-loaded", "original"),
+            auto_select=False,
+        )
+    ]
+
+
+def test_commands_load_previous_alignment_package_activates_active_clean_state(
+    tmp_path,
+) -> None:
+    repo = FakeAlignmentRepository()
+    repo.loaded_package = {
+        ("rec", "probeA", 1): LoadedAlignmentHistory({"active-loaded": [[1.0], [2.0]]}),
+    }
+    workspace = _workspace_with_probe_state(shank_idx=1, repo=repo)
+    workspace.data_context.mouse_root = _mouse_root_with_probe(_probe_info())
+    key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(key)
+    state.active_alignment = ActiveAlignment(
+        feature=np.array([9.0]),
+        track=np.array([10.0]),
+    )
+    workspace.document.data_loaded = True
+    edit_events: list[AlignmentEdited] = []
+    load_events: list[PreviousAlignmentsLoaded] = []
+    workspace.app.events.subscribe(AlignmentEdited, edit_events.append)
+    workspace.app.events.subscribe(PreviousAlignmentsLoaded, load_events.append)
+
+    result = workspace.app.commands.persistence.load_previous_alignments(
+        folder=tmp_path,
+        use_docdb=False,
+    )
+
+    assert isinstance(result, PreviousAlignmentPackageLoaded)
+    assert result.loaded_count == 1
+    assert result.active_choices == ["active-loaded", "original"]
+    assert not state.has_unsaved_alignment
+    assert state.active_alignment is not None
+    np.testing.assert_allclose(state.active_alignment.feature, [1.0])
+    np.testing.assert_allclose(state.active_alignment.track, [2.0])
+    assert len(edit_events) == 1
+    assert edit_events[0].edit_kind == "load_previous"
+    assert edit_events[0].active_key == key
+    assert load_events == [
         PreviousAlignmentsLoaded(
             shank_idx=1,
             choices=("active-loaded", "original"),

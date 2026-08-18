@@ -40,6 +40,7 @@ from ephys_alignment_gui.application.results.alignment_persistence import (
     PreviousAlignmentPackageLoaded,
 )
 from ephys_alignment_gui.core.alignment_events import (
+    AlignmentEdited,
     PreviousAlignmentLoadFailed,
     PreviousAlignmentsLoaded,
     PreviousAlignmentsUnavailable,
@@ -147,11 +148,16 @@ class AlignmentPersistenceCommandHandler:
         if loaded is None:
             self.events.emit(PreviousAlignmentsUnavailable(shank_idx=target_shank))
             return NoPreviousAlignments()
+        before_signature = self._active_alignment_signature_for_shank(target_shank)
         result = self.controller.set_previous_alignments(
             loaded.alignments,
             shank_idx=target_shank,
         )
         if isinstance(result, AlignmentChoicesUpdated):
+            self._emit_previous_alignment_activation_if_changed(
+                target_shank,
+                before_signature,
+            )
             self.events.emit(
                 PreviousAlignmentsLoaded(
                     shank_idx=target_shank,
@@ -197,6 +203,12 @@ class AlignmentPersistenceCommandHandler:
                 "No mouse root loaded. Please select a mouse root first.",
             )
 
+        active_key = self.controller.document.selected_alignment_key
+        before_signature = (
+            self._active_alignment_signature_for_key(active_key)
+            if active_key is not None
+            else None
+        )
         loaded: dict[AlignmentKey, AlignmentChoicesUpdated] = {}
         for (recording_id, probe_name, shank_idx), history in package.histories.items():
             try:
@@ -227,6 +239,11 @@ class AlignmentPersistenceCommandHandler:
             )
 
         active_choices = self._emit_active_package_choices(loaded)
+        if active_key is not None:
+            self._emit_previous_alignment_activation_if_changed(
+                active_key.shank_idx,
+                before_signature,
+            )
         self._write_autosave_checkpoint("previous alignment package import")
         return PreviousAlignmentPackageLoaded(
             loaded_count=len(loaded),
@@ -260,6 +277,54 @@ class AlignmentPersistenceCommandHandler:
             )
         )
         return choices
+
+    def _emit_previous_alignment_activation_if_changed(
+        self,
+        shank_idx: int,
+        before_signature: tuple[tuple[float, ...], tuple[float, ...], bool] | None,
+    ) -> None:
+        document = self.controller.document
+        if not document.data_loaded:
+            return
+        active_key = document.selected_alignment_key
+        if active_key is None or active_key.shank_idx != shank_idx:
+            return
+        if self._active_alignment_signature_for_key(active_key) == before_signature:
+            return
+        state = document.alignment_state_for(active_key)
+        alignment = state.active_alignment
+        if alignment is None:
+            return
+        self.events.emit(
+            AlignmentEdited(
+                edit_kind="load_previous",
+                active_key=active_key,
+                active_alignment=alignment,
+                lin_fit=alignment.lin_fit,
+            )
+        )
+
+    def _active_alignment_signature_for_shank(
+        self,
+        shank_idx: int,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], bool] | None:
+        active_key = self.controller.document.selected_alignment_key
+        if active_key is None or active_key.shank_idx != shank_idx:
+            return None
+        return self._active_alignment_signature_for_key(active_key)
+
+    def _active_alignment_signature_for_key(
+        self,
+        key: AlignmentKey,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], bool] | None:
+        alignment = self.controller.document.alignment_state_for(key).active_alignment
+        if alignment is None:
+            return None
+        return (
+            tuple(float(value) for value in alignment.feature),
+            tuple(float(value) for value in alignment.track),
+            alignment.lin_fit,
+        )
 
     def _previous_alignment_load_failed(
         self,
@@ -454,6 +519,7 @@ class AlignmentPersistenceCommandHandler:
         saved_outputs: dict[AlignmentKey, AlignmentOutputsSaved] = {}
         total_outputs = len(outputs)
         target_by_key = {target.key: target for target in prepared.targets}
+        use_docdb_for_remaining = prepared.use_docdb
         for output_index, (key, output) in enumerate(outputs.items(), start=1):
             cancelled = self._cancelled_save(
                 cancel_token,
@@ -480,12 +546,34 @@ class AlignmentPersistenceCommandHandler:
                 output,
                 target.alignments_to_save,
                 key.shank_idx,
-                prepared.use_docdb,
+                use_docdb_for_remaining,
                 output_directory=target.output_directory,
                 output_metadata=target.output_metadata,
             )
             if isinstance(saved, Failed):
                 return saved
+            if use_docdb_for_remaining and self._docdb_error_disables_remaining_saves(
+                saved.saved.docdb_error
+            ):
+                use_docdb_for_remaining = False
+                if output_index < total_outputs:
+                    message = (
+                        "DocDB write failed with a server-side error; skipping "
+                        "DocDB writes for the remaining alignment outputs in "
+                        "this save. Local files will still be written."
+                    )
+                    logger.warning("%s Error: %s", message, saved.saved.docdb_error)
+                    self._emit_or_callback_save_progress(
+                        progress,
+                        SaveProgressUpdated(
+                            key=None,
+                            phase="writing_files",
+                            status="warning",
+                            completed=output_index,
+                            total=total_outputs,
+                            message=message,
+                        ),
+                    )
             cancelled = self._cancelled_save(
                 cancel_token,
                 progress,
@@ -508,6 +596,28 @@ class AlignmentPersistenceCommandHandler:
                 ),
             )
         return AlignmentSaveJobCompleted(saved_outputs=saved_outputs)
+
+    @staticmethod
+    def _docdb_error_disables_remaining_saves(error: str | None) -> bool:
+        """Return whether a DocDB error should disable later batch writes."""
+        if not error:
+            return False
+        normalized = error.lower()
+        if any(code in normalized for code in ("500", "502", "503", "504")):
+            return True
+        return any(
+            token in normalized
+            for token in (
+                "bad gateway",
+                "connection",
+                "gateway timeout",
+                "internal server error",
+                "server error",
+                "service unavailable",
+                "temporarily unavailable",
+                "timeout",
+            )
+        )
 
     def publish_prepared_alignment_save_result(
         self,

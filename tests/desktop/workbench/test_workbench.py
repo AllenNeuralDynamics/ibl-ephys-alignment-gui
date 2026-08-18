@@ -1408,10 +1408,6 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         queries.workspace.active_output_package_directory
     )
     assert (
-        coordinator_cluster.previous_alignment_load_coordinator.callbacks.select_alignment.__self__
-        is render_cluster.alignment_selection_actions
-    )
-    assert (
         coordinator_cluster.session_selection_coordinator.callbacks.capture_pending_reference_lines.__self__
         is render_cluster.reference_line_presenter
     )
