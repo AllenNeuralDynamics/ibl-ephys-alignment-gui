@@ -195,6 +195,8 @@ recent loaded alignment.
 
 ## Developer Documentation
 
+- `CONTRIBUTING.md`: development workflow, required checks, change placement,
+  testing expectations, and commit guidance.
 - `docs/architecture.md`: current ownership, lifecycle, threading, plotting,
   save, and extension contracts.
 - `docs/reference_line_alignment_contract.md`: coordinate spaces and fitting

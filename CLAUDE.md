@@ -4,6 +4,7 @@ This repository is the AIND fork of the IBL ephys alignment GUI: a PyQt5 and
 pyqtgraph workstation for mapping electrophysiology feature depth onto a
 histology probe track.
 
+Human contributor workflow and review expectations are in `CONTRIBUTING.md`.
 Read `docs/architecture.md` before structural changes and
 `docs/reference_line_alignment_contract.md` before changing reference lines,
 fit/undo/reset behavior, or linked depth displays. Check `TODO.md` for open
