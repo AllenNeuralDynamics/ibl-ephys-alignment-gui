@@ -2,6 +2,10 @@
 
 Status: developer contract for alignment reference lines and fit behavior.
 
+This document is intentionally narrower than `docs/architecture.md`. It defines
+the coordinate and interaction invariants that must survive changes to the
+desktop renderer, command handlers, or alignment math.
+
 ## Spaces
 
 The alignment editor has three depth coordinate concepts:
@@ -39,6 +43,19 @@ The bottom-right fit plot shows the paired fit coordinates:
 This means a reference-line pair keeps two display-space line positions, while
 its fit-plot dot derives a raw track coordinate from the warped-side display
 position through the current inverse warp.
+
+## Shared Depth Viewport
+
+The feature plots, warped annotation, original annotation, perpendicular slice,
+scale plot, and depth ruler share one visible depth viewport. They do not all
+represent the same semantic coordinate, but their displayed y ranges pan and
+zoom together so corresponding horizontal positions remain visually coaxial.
+
+The desktop renderer must keep the actual pyqtgraph ViewBox rectangles
+vertically aligned. Plot-local titles add an extra layout row to only one panel
+and are therefore forbidden on these depth plots. Panel identity belongs on the
+fixed bottom-axis strip configured by
+`desktop/displays/depth_panel_layout.py`.
 
 ## Creation
 
@@ -81,3 +98,7 @@ warped-side line for each correspondence should have the same displayed depth.
   the active feature/track control points and the resulting warp do not change.
 - Rendering from document state must distinguish warped display coordinates
   from raw track coordinates. They are not interchangeable.
+- Panning or zooming any linked depth panel updates the complete shared depth
+  viewport.
+- Labels, titles, legends, or axes must not change one depth panel's ViewBox
+  height independently of the others.
