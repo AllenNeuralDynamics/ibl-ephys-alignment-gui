@@ -20,8 +20,10 @@ from ephys_alignment_gui.core.alignment_read_models import (
 )
 from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
     DEPTH_PANEL_HEADER_HEIGHT_PX,
+    clear_depth_panel_title,
     set_depth_panel_bottom_axis,
     set_depth_panel_header_height,
+    set_depth_panel_strip_label,
 )
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
 
@@ -119,7 +121,7 @@ class HistologyPanelView:
         aligned.setContentsMargins(0, 0, 0, 0)
         aligned.setMouseEnabled(x=False)
         _set_depth_range(aligned, depth_view, padding)
-        _set_histology_strip_title(aligned, set_axis, "Warped")
+        _set_histology_strip_label(aligned, set_axis, "Warped")
         aligned_axis = set_axis(aligned, "left", show=False)
 
         scale = pg.PlotItem()
@@ -141,7 +143,7 @@ class HistologyPanelView:
         reference.setMouseEnabled(x=False)
         _set_depth_range(reference, depth_view, padding)
         reference.setYLink(aligned)
-        _set_histology_strip_title(reference, set_axis, "Original")
+        _set_histology_strip_label(reference, set_axis, "Original")
         set_axis(reference, "left", show=False)
         reference_axis = set_axis(reference, "right", show=False)
 
@@ -325,7 +327,7 @@ class HistologyPanelView:
         fig = self.plots.aligned if fig is None else fig
         fig.clear()
         self.hist_label_items = []
-        _set_histology_strip_title(self.plots.aligned, self.set_axis, "Warped")
+        _set_histology_strip_label(self.plots.aligned, self.set_axis, "Warped")
 
         self.hist_regions = self._plot_region_bands(
             fig,
@@ -351,7 +353,7 @@ class HistologyPanelView:
         fig = self.plots.reference if fig is None else fig
         fig.clear()
         self.hist_ref_label_items = []
-        _set_histology_strip_title(self.plots.reference, self.set_axis, "Original")
+        _set_histology_strip_label(self.plots.reference, self.set_axis, "Original")
 
         self.hist_ref_regions = self._plot_region_bands(
             fig,
@@ -377,6 +379,7 @@ class HistologyPanelView:
         fig.clear()
         self.hist_ref_regions = np.empty((0, 1), dtype=object)
 
+        clear_depth_panel_title(fig)
         set_depth_panel_bottom_axis(
             fig,
             self.set_axis,
@@ -683,17 +686,16 @@ def _set_depth_range(plot: Any, depth_view: Any, padding: float) -> None:
     plot.setYRange(min=y_min, max=y_max, padding=padding)
 
 
-def _set_histology_strip_title(
+def _set_histology_strip_label(
     plot: Any, set_axis: Callable[..., Any], label: str
 ) -> None:
-    """Label a narrow annotation strip without bottom-axis clutter."""
-    axis = set_depth_panel_bottom_axis(plot, set_axis, label="", ticks=False)
-    set_style = getattr(axis, "setStyle", None)
-    if callable(set_style):
-        set_style(showValues=False)
-    set_title = getattr(plot, "setTitle", None)
-    if callable(set_title):
-        set_title(label)
+    """Label a narrow annotation strip without shifting its ViewBox.
+
+    Do not use PlotItem.setTitle() here: titles add a top row inside only this
+    plot item, which breaks vertical coaxial alignment with the perpendicular
+    slice and feature-space depth plots.
+    """
+    set_depth_panel_strip_label(plot, set_axis, label)
 
 
 def position_linear_fit_checkbox(fit_items: FitPanelItems) -> None:
