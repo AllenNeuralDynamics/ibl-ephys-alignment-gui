@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -167,6 +167,7 @@ def test_recover_autosave_loads_mouse_root_recovers_and_activates_selection(
         (tmp_path, tmp_path / "package" / "rec" / "probe-name")
     ]
     assert calls["activations"] == [{"preserve_plot_selection": False}]
+    assert calls["activation_busy_states"] == [False]
     assert calls["busy"] == [
         (
             ("Recovering autosave...", "Autosave recovered"),
@@ -284,6 +285,8 @@ def _coordinator(
         "activations": [],
         "warnings": [],
         "busy": [],
+        "busy_active": False,
+        "activation_busy_states": [],
     }
 
     def set_mouse_root(path: Path) -> bool:
@@ -291,9 +294,19 @@ def _coordinator(
         app.queries.workspace.loaded = True
         return True
 
+    @contextmanager
     def busy_context(*args: Any, **kwargs: Any) -> Any:
         calls["busy"].append((args, kwargs))
-        return nullcontext()
+        calls["busy_active"] = True
+        try:
+            yield
+        finally:
+            calls["busy_active"] = False
+
+    def activate_selected_stream(**kwargs: Any) -> bool:
+        calls["activations"].append(kwargs)
+        calls["activation_busy_states"].append(calls["busy_active"])
+        return True
 
     coordinator = DesktopAutosaveRecoveryCoordinator(
         app=app,
@@ -307,9 +320,7 @@ def _coordinator(
                 calls["confirmed"].append(inspected) or confirm
             ),
             set_mouse_root=set_mouse_root,
-            activate_selected_stream=lambda **kwargs: (
-                calls["activations"].append(kwargs) or True
-            ),
+            activate_selected_stream=activate_selected_stream,
             render_output_paths=lambda output_root, output_directory: calls[
                 "rendered_paths"
             ].append((output_root, output_directory)),

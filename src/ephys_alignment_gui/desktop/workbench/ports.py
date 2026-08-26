@@ -11,7 +11,7 @@ from PyQt5 import QtWidgets
 
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.displays.axis_style import set_axis
-from ephys_alignment_gui.desktop.shell.busy_context import BusyContext
+from ephys_alignment_gui.desktop.shell.busy_state import BusyStateManager
 from ephys_alignment_gui.desktop.views.save_progress_dialog import (
     DesktopSaveProgressDialog,
 )
@@ -64,9 +64,7 @@ def desktop_workbench_ports_from_handles(
     displays = handles.displays
     views = handles.views
     parent = handles.parent
-
-    def busy_context(*args: Any, **kwargs: Any) -> BusyContext:
-        return BusyContext(parent, *args, **kwargs)
+    busy_state = BusyStateManager(parent)
 
     def open_qc_dialog() -> None:
         if qc_dialog := handles.qc_dialog():
@@ -112,7 +110,7 @@ def desktop_workbench_ports_from_handles(
             histology_available=histology_available,
             tip_position_um=displays.histology.tip_position_um,
         ),
-        busy=DesktopBusyPorts(busy_context=busy_context),
+        busy=DesktopBusyPorts(busy_context=busy_state.context),
         load_data=DesktopLoadDataPorts(
             clear_empty_state=displays.ephys.clear_empty_state,
         ),
@@ -157,7 +155,7 @@ def desktop_workbench_ports_from_handles(
         save=DesktopSavePorts(
             use_docdb=use_docdb,
             render_alignment_choices=(views.alignment_screen.render_alignment_choices),
-            busy_context=busy_context,
+            busy_context=busy_state.context,
             complete_button=lambda: handles.complete_button,
             save_progress_dialog=lambda: DesktopSaveProgressDialog(parent),
             histology_available=histology_available,
@@ -181,7 +179,7 @@ def desktop_workbench_ports_from_handles(
             use_docdb=use_docdb,
             set_reload_folder_text=handles.reload_folder_line.setText,
             render_alignment_choices=(views.alignment_screen.render_alignment_choices),
-            busy_context=busy_context,
+            busy_context=busy_state.context,
             reload_button=lambda: handles.reload_folder_button,
         ),
         export=handles.export_view,

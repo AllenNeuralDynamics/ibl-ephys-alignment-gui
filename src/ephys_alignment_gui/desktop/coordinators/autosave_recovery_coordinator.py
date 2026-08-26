@@ -95,7 +95,14 @@ class DesktopAutosaveRecoveryCoordinator:
                 return False
             assert isinstance(recovered, AutosaveCheckpointRecovered)
             self._warn_recovery_details(recovered)
-            return self._activate_recovered_selection(recovered)
+            if not self._restore_recovered_selection(recovered):
+                return False
+
+        if recovered.selected_alignment_key is None:
+            return True
+        return self.callbacks.activate_selected_stream(
+            preserve_plot_selection=False,
+        )
 
     def _ensure_mouse_root_loaded(
         self,
@@ -117,7 +124,7 @@ class DesktopAutosaveRecoveryCoordinator:
         )
         return False
 
-    def _activate_recovered_selection(
+    def _restore_recovered_selection(
         self,
         recovered: AutosaveCheckpointRecovered,
     ) -> bool:
@@ -181,9 +188,7 @@ class DesktopAutosaveRecoveryCoordinator:
             self.app.queries.workspace.active_output_root(),
             self.app.queries.workspace.active_output_directory(),
         )
-        return self.callbacks.activate_selected_stream(
-            preserve_plot_selection=False,
-        )
+        return True
 
     def _warn_recovery_details(self, recovered: AutosaveCheckpointRecovered) -> None:
         if recovered.skipped_keys:

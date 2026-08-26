@@ -66,6 +66,30 @@ values; concrete plot items belong to desktop displays.
 `launch_gui.py` is a process composition boundary. Its Qt import does not make
 it part of the reusable engine.
 
+## Construction And Lifetime Ownership
+
+Construction is hierarchical rather than belonging to one undifferentiated
+"composition root":
+
+- `launch_gui.py` creates `QApplication`, constructs the top-level window, and
+  keeps it alive while the Qt event loop runs;
+- `MainWindow` is the outer desktop bootstrap and Qt widget-tree owner. It
+  constructs shell widgets, delegates feature composition, and owns close-event
+  handling, but contains no feature policy or domain state;
+- `AlignmentWorkspace` composes and owns the toolkit-free application graph
+  exposed through `AlignmentApp`;
+- `DesktopWorkbench` composes and owns desktop coordinators, presenters, worker
+  runners, and event subscriptions;
+- the Workbench port factory creates adapters over explicit shell handles and
+  shared Qt infrastructure used by multiple coordinators.
+
+Qt parent/child ownership governs `QObject` and widget lifetimes. Explicit
+Python owners govern non-`QObject` lifetimes: `MainWindow` retains the workspace
+and Workbench, the Workbench retains its feature clusters and subscriptions,
+and port callables retain shared shell infrastructure. A broad construction
+object is acceptable when it only wires dependencies; feature behavior must
+still remain at its owning boundary.
+
 ## State Ownership
 
 Four state owners must remain distinct.
@@ -116,8 +140,8 @@ histology-channel caches are similarly disposable.
 
 Desktop views and displays own widgets, menus, pyqtgraph items, axes, popup
 lifetimes, reference-line handles, and signal connections. `MainWindow` owns
-composition and top-level shutdown only. It must not become a source of domain
-state or runtime data.
+outer desktop bootstrap and top-level shutdown only. It must not become a
+source of feature policy, domain state, or runtime data.
 
 Frontend-independent display choices, such as the unit filter and annotation
 source, live in core display state and are changed through app commands.
@@ -233,6 +257,22 @@ Rules:
 - cleanup callbacks must not destroy their own still-running QThread;
 - application shutdown requests cancellation and keeps the event loop alive
   behind a shutdown dialog until all runners can be finalized.
+
+Worker scheduling and desktop busy presentation are separate concerns.
+Foreground load, speculative preload/warmup, save, and shutdown each retain
+domain-specific exclusion, cancellation, promotion, and stale-result policy. A
+global FIFO work queue must not replace those policies: for example, a newer
+probe selection supersedes stale selection work rather than waiting behind it.
+
+Shared widget, cursor, and status-bar busy state is owned by one
+`BusyStateManager` per Workbench port set. Coordinators acquire leases through
+`DesktopBusyPorts`; they must not independently snapshot and restore widget
+enabled state. Leases may overlap and finish out of order. A widget is enabled
+only after its last disabling lease is released, and manager-imposed parent
+disabling must not be mistaken for the child's desired disabled state. Worker
+completion is delivered to the GUI thread before a lease is released or any Qt
+state is changed. Mutexes do not substitute for this ownership model because
+Qt presentation changes belong on the GUI thread.
 
 The save worker launches ANTs point transforms in a subprocess by default. The
 parent polls the cancellation token and terminates, then kills if necessary,

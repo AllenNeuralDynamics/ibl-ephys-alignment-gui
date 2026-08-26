@@ -108,3 +108,13 @@ is distinguishable from a sorted recording with low firing rate.
 - Decide whether `ruff format --check` and static typing should become gates in
   dedicated cleanup slices. They currently have known debt and are not part of
   CI.
+
+## Load error popups
+
+- Non-exceptional problems loading and saving often have informative messages
+  logged to the terminal, e.g. when a required data folder is not present
+- These routine issues should be presented to the user with a dialog in the GUI,
+  instead of only being discoverable 'outside' the GUI in the terminal that
+  launched it.
+- The log should be developer-facing, and guidance to the user should be
+  surfaced in the GUI itself
