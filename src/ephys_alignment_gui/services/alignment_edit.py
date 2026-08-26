@@ -111,7 +111,9 @@ class AlignmentEditService:
         feature = feature[sort_idx]
         track = track[sort_idx]
 
-        if feature.size >= 5 and lin_fit:
+        # Two user correspondence points determine a linear extrapolation.
+        # ``feature`` also contains the two synthetic endpoint controls.
+        if feature.size >= 4 and lin_fit:
             feature, track = ephysalign.adjust_extremes_linear(
                 feature,
                 track,

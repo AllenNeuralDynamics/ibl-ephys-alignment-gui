@@ -208,18 +208,42 @@ def test_fit_to_reference_lines_uses_linear_extremes_when_enabled() -> None:
     result = AlignmentEditService().fit_to_reference_lines(
         history,
         ephysalign=FakeEphysAlignment(),
-        line_features_um=np.array([1_000_000.0, 2_000_000.0, 3_000_000.0]),
-        line_tracks_um=np.array([11_000_000.0, 12_000_000.0, 13_000_000.0]),
+        line_features_um=np.array([1_000_000.0, 3_000_000.0]),
+        line_tracks_um=np.array([11_000_000.0, 13_000_000.0]),
         lin_fit=True,
         extend_feature=2,
     )
 
     assert result.alignment is not None
-    np.testing.assert_array_equal(result.alignment.feature, [2.0, 3.0, 4.0, 5.0, 6.0])
+    np.testing.assert_array_equal(result.alignment.feature, [2.0, 3.0, 5.0, 6.0])
     np.testing.assert_array_equal(
         result.alignment.track,
-        [12.0, 23.0, 24.0, 25.0, 16.0],
+        [12.0, 23.0, 25.0, 16.0],
     )
+    assert result.lin_fit is True
+
+
+def test_fit_to_reference_lines_requires_two_points_for_linear_extremes() -> None:
+    history = AlignmentEditHistory(max_idx=10)
+    history.set_current_alignment(
+        ActiveAlignment(
+            np.array([0.0, 4.0]),
+            np.array([10.0, 14.0]),
+        )
+    )
+
+    result = AlignmentEditService().fit_to_reference_lines(
+        history,
+        ephysalign=FakeEphysAlignment(),
+        line_features_um=np.array([2_000_000.0]),
+        line_tracks_um=np.array([12_000_000.0]),
+        lin_fit=True,
+        extend_feature=2,
+    )
+
+    assert result.alignment is not None
+    np.testing.assert_array_equal(result.alignment.feature, [0.0, 2.0, 4.0])
+    np.testing.assert_array_equal(result.alignment.track, [11.0, 23.0, 15.0])
     assert result.lin_fit is True
 
 

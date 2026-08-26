@@ -340,7 +340,9 @@ class AlignmentRenderQueries:
         linear_feature_um = None
         linear_track_um = None
         depth_um = np.asarray(depth_um, dtype=float)
-        if lin_fit and feature.size >= 5 and depth_um.size > 0:
+        # Two user correspondence points plus the synthetic endpoints are
+        # sufficient to display the fitted linear extrapolation.
+        if lin_fit and feature.size >= 4 and depth_um.size > 0:
             depth_lin = context.shank_runtime.ephysalign.feature2track_lin(
                 depth_um / 1e6,
                 feature,

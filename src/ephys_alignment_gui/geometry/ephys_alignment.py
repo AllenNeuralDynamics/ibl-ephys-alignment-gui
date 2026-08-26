@@ -286,7 +286,7 @@ class EphysAlignment:
     def feature2track_lin(trk, feature, track):
         """
         Estimate new values of trk according to linear fit between feature and track space, only
-        implemented if no. of reference points >= 3
+        implemented if no. of user reference points >= 2
         :param trk: points in track space to convert feature space
         :type trk: np.array
         :param feature: reference coordinates in feature space (ephys plots)
@@ -296,7 +296,7 @@ class EphysAlignment:
         :return fcn(trk): linear fit values of trk
         :type fcn(trk): np.array
         """
-        if feature.size >= 5:
+        if feature.size >= 4:
             fcn_lin = np.poly1d(np.polyfit(feature[1:-1], track[1:-1], 1))
             lin_fit = fcn_lin(trk)
         else:

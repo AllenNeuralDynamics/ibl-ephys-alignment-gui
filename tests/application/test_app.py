@@ -4545,8 +4545,8 @@ def test_queries_build_fit_plot_state() -> None:
     key = AlignmentKey("rec", "stream", 1)
     state = document.select_alignment_key(key)
     state.active_alignment = ActiveAlignment(
-        np.array([0.0, 0.001, 0.002, 0.003, 0.004]),
-        np.array([0.0, 0.0015, 0.002, 0.0035, 0.004]),
+        np.array([0.0, 0.001, 0.003, 0.004]),
+        np.array([0.0, 0.0015, 0.0035, 0.004]),
     )
     ephysalign = FakeFitAligner()
     queries = AlignmentQueries(
@@ -4567,11 +4567,11 @@ def test_queries_build_fit_plot_state() -> None:
     assert fit_state.key == key
     np.testing.assert_allclose(
         fit_state.feature_um,
-        [0.0, 1000.0, 2000.0, 3000.0, 4000.0],
+        [0.0, 1000.0, 3000.0, 4000.0],
     )
     np.testing.assert_allclose(
         fit_state.track_um,
-        [0.0, 1500.0, 2000.0, 3500.0, 4000.0],
+        [0.0, 1500.0, 3500.0, 4000.0],
     )
     np.testing.assert_allclose(fit_state.linear_feature_um, [0.0, 20.0])
     np.testing.assert_allclose(fit_state.linear_track_um, [1000.0, 1020.0])
