@@ -29,6 +29,7 @@ _SCALAR_COLORBAR_AXIS_HEIGHT = 42
 _SCALAR_COLORBAR_WIDTH = 20
 _SCALAR_COLORBAR_HEIGHT = 5
 _PHASE_LEGEND_AXIS_HEIGHT = 52
+_BLOCK_FRAME_COLOR = "#737373"
 _PHASE_LEGEND_WIDTH = 1.0
 _PHASE_LEGEND_HEIGHT = 2.0
 
@@ -467,6 +468,12 @@ class DesktopEphysPanelView:
 
             self.plots.image.addItem(image)
             self.items.image_plots.append(image)
+            if img_data.ndim == 3:
+                # Phase images floor to a measured-but-incoherent grey, so the
+                # block edge against the page needs drawing to stay readable.
+                frame = self._block_frame(img_data.shape[0], scale, offset)
+                self.plots.image.addItem(frame)
+                self.items.image_plots.append(frame)
             overlay = self._no_data_overlay(
                 no_data_mask,
                 data.get("no_data_color", (145, 158, 170, 210)),
@@ -541,6 +548,19 @@ class DesktopEphysPanelView:
             offset[1],
             1.0,
         ]
+
+    @staticmethod
+    def _block_frame(n: int, scale: Any, offset: Any) -> Any:
+        """Outline marking the extent of one measured coherency block."""
+        x0, y0 = float(offset[0]), float(offset[1])
+        x1, y1 = x0 + float(scale[0]) * n, y0 + float(scale[1]) * n
+        frame = pg.PlotCurveItem()
+        frame.setData(
+            x=np.array([x0, x1, x1, x0, x0]),
+            y=np.array([y0, y0, y1, y1, y0]),
+        )
+        frame.setPen(pg.mkPen(_BLOCK_FRAME_COLOR, width=1))
+        return frame
 
     @staticmethod
     def _no_data_overlay(mask: Any, color: Any) -> np.ndarray | None:
@@ -622,22 +642,20 @@ class DesktopEphysPanelView:
 
     @staticmethod
     def _phase_legend_item() -> Any:
-        from matplotlib.colors import hsv_to_rgb
+        from ephys_alignment_gui.plotting.phase_color import (
+            phase_lut,
+            phase_magnitude_rgb,
+        )
 
         n = 256
         bar_h = 10
 
-        hsv_phase = np.zeros((bar_h, n, 3))
-        hsv_phase[:, :, 0] = np.linspace(0, 1, n)[None, :]
-        hsv_phase[:, :, 1] = 1.0
-        hsv_phase[:, :, 2] = 1.0
-        rgb_phase = (hsv_to_rgb(hsv_phase) * 255).astype(np.uint8)
+        ring = phase_lut()
+        rgb_phase = np.tile((ring * 255).astype(np.uint8)[None, :, :], (bar_h, 1, 1))
 
-        hsv_sat = np.zeros((bar_h, n, 3))
-        hsv_sat[:, :, 0] = 0.0
-        hsv_sat[:, :, 1] = np.linspace(0, 1, n)[None, :]
-        hsv_sat[:, :, 2] = 1.0
-        rgb_sat = (hsv_to_rgb(hsv_sat) * 255).astype(np.uint8)
+        # coherence ramp shown at phase 0, the colour the diagonal would take
+        coh = np.tile(np.linspace(0, 1, n)[None, :], (bar_h, 1))
+        rgb_sat = (phase_magnitude_rgb(np.zeros_like(coh), coh) * 255).astype(np.uint8)
 
         combined = np.concatenate([rgb_phase, rgb_sat], axis=0).transpose(1, 0, 2)
         cbar_img = pg.ImageItem()

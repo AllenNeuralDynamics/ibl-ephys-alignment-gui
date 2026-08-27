@@ -20,6 +20,7 @@ dependencies = [
   "aind-registration-utils",
   "antspyx",
   "aws-requests-auth",
+  "cmocean",
   "iblatlas",
   "iblutil",
   "jsonschema>=4.26.0",

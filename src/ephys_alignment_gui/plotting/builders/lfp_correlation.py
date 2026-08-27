@@ -13,8 +13,26 @@ import numpy as np
 
 from ephys_alignment_gui.plotting.channel_geometry import PlotChannelGeometry
 from ephys_alignment_gui.plotting.level_policy import in_brain_depth_mask
+from ephys_alignment_gui.plotting.phase_color import (
+    MEASURED_FLOOR,
+    phase_magnitude_rgb,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _phase_rgba(phase: np.ndarray, magnitude: np.ndarray) -> np.ndarray:
+    """uint8 RGBA for a coherency block.
+
+    The diagonal is coherent with itself by construction, so it carries no
+    information and is painted with the floor rather than a saturated colour.
+    """
+    rgb = phase_magnitude_rgb(phase, magnitude)
+    rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
+    rgba[:, :, :3] = rgb.astype(np.float32)
+    for channel in range(3):
+        np.fill_diagonal(rgba[:, :, channel], MEASURED_FLOOR[channel])
+    return (rgba * 255).astype(np.uint8)
 
 
 @dataclass(frozen=True)
@@ -423,9 +441,7 @@ class LfpCorrelationPlotDataBuilder:
         matrix_rows: np.ndarray | None,
         block_groups: list[tuple[str, np.ndarray]] | None = None,
     ) -> dict[str, Any]:
-        """Load complex coherency matrices and render HSV phase images."""
-        from matplotlib.colors import hsv_to_rgb
-
+        """Load complex coherency matrices and render cyclic phase images."""
         all_data = {}
         for file in self._coherency_files(lfp_corr_folder, matrix_rows):
             try:
@@ -434,7 +450,7 @@ class LfpCorrelationPlotDataBuilder:
 
                 if block_groups is not None:
                     payload = self._coherency_block_payload(
-                        full_matrix, block_groups, band_name, hsv_to_rgb
+                        full_matrix, block_groups, band_name
                     )
                     if payload is not None:
                         all_data[f"{band_name}_phase"] = payload
@@ -460,16 +476,6 @@ class LfpCorrelationPlotDataBuilder:
                 if max_mag > 0:
                     magnitude = magnitude / max_mag
 
-                hue = (phase / (2 * np.pi)) % 1.0
-                sat = np.clip(magnitude, 0, 1)
-                val = np.ones_like(hue)
-
-                hsv = np.stack([hue, sat, val], axis=-1)
-                rgb = hsv_to_rgb(hsv)
-                rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
-                rgba[:, :, :3] = rgb.astype(np.float32)
-                np.fill_diagonal(rgba[:, :, 3], 0.0)
-
                 n_coh = coh.shape[0]
                 coh_scale, coh_offset, coh_x_range = self._matrix_depth_geometry(
                     depth_rows,
@@ -477,7 +483,7 @@ class LfpCorrelationPlotDataBuilder:
                 )
 
                 all_data[f"{band_name}_phase"] = {
-                    "img": (rgba * 255).astype(np.uint8),
+                    "img": _phase_rgba(phase, magnitude),
                     "scale": np.array([coh_scale, coh_scale]),
                     "levels": None,
                     "offset": np.array([coh_offset, coh_offset]),
@@ -498,9 +504,8 @@ class LfpCorrelationPlotDataBuilder:
         self,
         coh: np.ndarray,
         rows: np.ndarray | None,
-        hsv_to_rgb: Any,
     ) -> np.ndarray:
-        """HSV phase image (uint8 RGBA) for one coherency sub-matrix."""
+        """Cyclic phase image (uint8 RGBA) for one coherency sub-matrix."""
         magnitude = np.abs(coh)
         phase = np.angle(coh)
         n = coh.shape[0]
@@ -516,26 +521,13 @@ class LfpCorrelationPlotDataBuilder:
         if max_mag > 0:
             magnitude = magnitude / max_mag
 
-        hsv = np.stack(
-            [
-                (phase / (2 * np.pi)) % 1.0,
-                np.clip(magnitude, 0, 1),
-                np.ones_like(phase),
-            ],
-            axis=-1,
-        )
-        rgb = hsv_to_rgb(hsv)
-        rgba = np.ones((*rgb.shape[:2], 4), dtype=np.float32)
-        rgba[:, :, :3] = rgb.astype(np.float32)
-        np.fill_diagonal(rgba[:, :, 3], 0.0)
-        return (rgba * 255).astype(np.uint8)
+        return _phase_rgba(phase, magnitude)
 
     def _coherency_block_payload(
         self,
         full_matrix: np.ndarray,
         block_groups: list[tuple[str, np.ndarray]],
         band_name: str,
-        hsv_to_rgb: Any,
     ) -> dict[str, Any] | None:
         """Per-block coherency phase images, one ImageItem per depth range."""
         imgs, scales, offsets, xranges = [], [], [], []
@@ -545,7 +537,7 @@ class LfpCorrelationPlotDataBuilder:
                 continue
             n_block = coh.shape[0]
             scale, offset_y, x_range = self._matrix_depth_geometry(block_rows, n_block)
-            imgs.append(self._coherency_phase_rgba(coh, block_rows, hsv_to_rgb))
+            imgs.append(self._coherency_phase_rgba(coh, block_rows))
             scales.append(np.array([scale, scale]))
             offsets.append(np.array([offset_y, offset_y]))
             xranges.append(x_range)
