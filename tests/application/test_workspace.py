@@ -71,6 +71,7 @@ def test_workspace_wires_shared_services() -> None:
     assert workspace.app.commands.autosave is workspace.autosave_commands
     assert workspace.app.commands.edit is workspace.edit_commands
     assert workspace.app.commands.display is workspace.display_commands
+    assert workspace.app.foreground_operations is workspace.foreground_operations
     assert workspace.ephys_stream_loader.data_context is workspace.data_context
     assert (
         workspace.ephys_stream_loader.ephys_data_service is workspace.ephys_data_service

@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ephys_alignment_gui.application.commands import AlignmentCommands
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperationGate,
+)
 from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.core.event_bus import EventBus
 
@@ -16,3 +19,4 @@ class AlignmentApp:
     commands: AlignmentCommands
     queries: AlignmentQueries
     events: EventBus
+    foreground_operations: ForegroundOperationGate

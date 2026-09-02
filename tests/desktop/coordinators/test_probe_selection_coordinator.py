@@ -6,6 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationGate,
+)
 from ephys_alignment_gui.application.results import ShankSelected
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.core.workflow import Failed
@@ -119,6 +123,7 @@ def _coordinator(
     active_shank_idx: int = 1,
     active_probe: tuple[str, str] | None = None,
     cached: bool = False,
+    foreground_operations: ForegroundOperationGate | None = None,
 ) -> tuple[DesktopProbeSelectionCoordinator, FakeCommands, list[tuple]]:
     calls = calls if calls is not None else []
     commands = commands or FakeCommands()
@@ -131,6 +136,7 @@ def _coordinator(
     )
     app = SimpleNamespace(
         commands=commands,
+        foreground_operations=foreground_operations,
         queries=SimpleNamespace(
             workspace=SimpleNamespace(
                 mouse_root_loaded=lambda: mouse_root_loaded,
@@ -194,6 +200,18 @@ def test_probe_selected_noops_for_current_probe() -> None:
     assert commands.calls == []
     assert commands.shank_calls == []
     assert calls == []
+
+
+def test_probe_selection_conflict_does_not_capture_or_mutate_document() -> None:
+    gate = ForegroundOperationGate()
+    save_lease = gate.try_acquire(ForegroundOperation.FULL_SAVE)
+    coordinator, commands, calls = _coordinator(foreground_operations=gate)
+
+    assert not coordinator.probe_selected()
+
+    assert commands.calls == []
+    assert calls == []
+    save_lease.release()
 
 
 def test_probe_selected_presents_cached_probe_without_channel_info_load() -> None:

@@ -121,10 +121,12 @@ def build_desktop_workbench_coordinator_cluster(
     render_cluster: DesktopRenderCluster,
 ) -> DesktopWorkbenchCoordinatorCluster:
     """Build desktop Workbench coordinators outside the Workbench class."""
+    foreground_operations = getattr(app, "foreground_operations", None)
     output_path_coordinator = DesktopOutputPathCoordinator(
         commands=app.commands.paths,
         events=app.events,
         path_view=views.path,
+        foreground_operations=foreground_operations,
     )
     lifecycle_coordinator = DesktopLifecycleCoordinator(
         app=app,
@@ -134,6 +136,7 @@ def build_desktop_workbench_coordinator_cluster(
     load_data_coordinator = DesktopLoadDataCoordinator(
         app=app,
         selection_view=views.selection,
+        foreground_operations=foreground_operations,
         callbacks=_load_data_callbacks(
             ports.load_data,
             ports.busy,
@@ -170,6 +173,7 @@ def build_desktop_workbench_coordinator_cluster(
             load_data_coordinator.cancel_active_preload,
             app.commands.load.evict_stream_cache,
             app.commands.load.start_histology_warmup,
+            foreground_operations,
         ),
     )
     folder_dialog = DesktopFolderDialog(parent=None)
@@ -209,6 +213,7 @@ def build_desktop_workbench_coordinator_cluster(
     save_coordinator = DesktopSaveCoordinator(
         commands=app.commands.persistence,
         events=app.events,
+        foreground_operations=foreground_operations,
         callbacks=_save_callbacks(
             ports.save,
             output_folder_prompt,
@@ -218,6 +223,7 @@ def build_desktop_workbench_coordinator_cluster(
     previous_alignment_load_coordinator = DesktopPreviousAlignmentLoadCoordinator(
         commands=app.commands.persistence,
         events=app.events,
+        foreground_operations=foreground_operations,
         callbacks=_previous_alignment_load_callbacks(
             ports.previous_alignment_load,
             folder_dialog,
@@ -478,6 +484,7 @@ def _mouse_root_callbacks(
     cancel_active_preload: Callable[[str], bool],
     evict_stream_cache: Callable[[], Any],
     start_histology_warmup: Callable[[Any], Any],
+    foreground_operations: Any,
 ) -> DesktopMouseRootCallbacks:
     """Build callbacks for mouse-root loading."""
     return DesktopMouseRootCallbacks(
@@ -485,4 +492,5 @@ def _mouse_root_callbacks(
         cancel_active_preload=cancel_active_preload,
         evict_stream_cache=evict_stream_cache,
         start_histology_warmup=start_histology_warmup,
+        foreground_operations=foreground_operations,
     )

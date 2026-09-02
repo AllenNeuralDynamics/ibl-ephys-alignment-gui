@@ -8,9 +8,16 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results import ShankSelected
 from ephys_alignment_gui.application.results.metadata import ProbeSelected
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,24 +59,34 @@ class DesktopProbeSelectionCoordinator:
             logger.info("Probe %s/%s already selected", session_name, probe_name)
             return True
 
-        callbacks.capture_pending_reference_lines()
+        lease = acquire_foreground_operation(
+            getattr(self.app, "foreground_operations", None),
+            ForegroundOperation.SELECTION_ACTIVATION,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
+            return False
+        with lease:
+            callbacks.capture_pending_reference_lines()
 
-        target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
-        if callbacks.present_cached_probe_selection(
-            session_name,
-            probe_name,
-            target_shank,
-        ):
-            return True
+            target_shank = (
+                self.app.queries.workspace.active_shank_selection().shank_idx
+            )
+            if callbacks.present_cached_probe_selection(
+                session_name,
+                probe_name,
+                target_shank,
+            ):
+                return True
 
-        return self._prepare_probe_for_fresh_load(session_name, probe_name)
+            return self._prepare_probe_for_fresh_load(session_name, probe_name)
 
     def _prepare_probe_for_fresh_load(
         self,
         session_name: str,
         probe_name: str,
     ) -> bool:
-        """Load channel metadata and prepare the desktop for explicit Load."""
+        """Load channel metadata and prepare the desktop for activation."""
         with self.callbacks.busy_context(
             "Loading channel info...",
             "Ready",
@@ -88,7 +105,10 @@ class DesktopProbeSelectionCoordinator:
                 self.selection_view.populate_probe_shanks(result.shanks)
                 logger.info("Found %s shanks in data.", result.n_shanks)
 
-            selected = self.app.commands.shanks.select_shank(0, source="probe-selected")
+            selected = self.app.commands.shanks.select_shank(
+                0,
+                source="probe-selected",
+            )
             if isinstance(selected, Failed):
                 logger.error(selected.message)
                 return False

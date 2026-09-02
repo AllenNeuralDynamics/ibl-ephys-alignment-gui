@@ -9,8 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results.metadata import MouseRootLoaded
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +30,7 @@ class DesktopMouseRootCallbacks:
     cancel_active_preload: Callable[[str], bool]
     evict_stream_cache: Callable[[], Any]
     start_histology_warmup: Callable[[Any], Any]
+    foreground_operations: Any | None = None
 
 
 @dataclass
@@ -36,44 +44,52 @@ class DesktopMouseRootCoordinator:
 
     def set_mouse_root(self, mouse_root: Path) -> bool:
         """Load a mouse root and prepare session/probe selection widgets."""
-        with self.callbacks.busy_context(
-            "Loading datapackage...",
-            "Mouse root loaded",
-            disable_widgets=self.path_view.mouse_root_widgets(),
-        ):
-            result = self.commands.set_mouse_root(mouse_root)
-            if isinstance(result, Failed):
-                logger.error(result.message)
-                return False
-            assert isinstance(result, MouseRootLoaded)
-            if result.root_changed:
-                self.callbacks.cancel_active_preload("mouse root changed")
-                self.commands.clear_histology_context()
-                evicted = self.callbacks.evict_stream_cache()
-                if isinstance(evicted, Failed):
-                    logger.error(evicted.message)
+        lease = acquire_foreground_operation(
+            self.callbacks.foreground_operations,
+            ForegroundOperation.MOUSE_ROOT_CHANGE,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
+            return False
+        with lease:
+            with self.callbacks.busy_context(
+                "Loading datapackage...",
+                "Mouse root loaded",
+                disable_widgets=self.path_view.mouse_root_widgets(),
+            ):
+                result = self.commands.set_mouse_root(mouse_root)
+                if isinstance(result, Failed):
+                    logger.error(result.message)
                     return False
-            loaded_root = result.mouse_root
+                assert isinstance(result, MouseRootLoaded)
+                if result.root_changed:
+                    self.callbacks.cancel_active_preload("mouse root changed")
+                    self.commands.clear_histology_context()
+                    evicted = self.callbacks.evict_stream_cache()
+                    if isinstance(evicted, Failed):
+                        logger.error(evicted.message)
+                        return False
+                loaded_root = result.mouse_root
 
-            self.path_view.set_mouse_root(loaded_root.root)
+                self.path_view.set_mouse_root(loaded_root.root)
 
-            sessions = loaded_root.sessions
-            self.selection_view.populate_sessions(sessions)
-            self.selection_view.select_session_index(-1)
-            self.selection_view.clear_probes()
-            self.selection_view.clear_shanks()
-            warmup_result = self.callbacks.start_histology_warmup(loaded_root)
-            if isinstance(warmup_result, Failed):
-                logger.warning(warmup_result.message)
-            n_probes = sum(
-                len(rec_probes) for rec_probes in loaded_root.probes.values()
-            )
-            logger.info(
-                "Loaded mouse %r with %d session(s), %d probe(s)",
-                loaded_root.mouse_id,
-                len(sessions),
-                n_probes,
-            )
+                sessions = loaded_root.sessions
+                self.selection_view.populate_sessions(sessions)
+                self.selection_view.select_session_index(-1)
+                self.selection_view.clear_probes()
+                self.selection_view.clear_shanks()
+                warmup_result = self.callbacks.start_histology_warmup(loaded_root)
+                if isinstance(warmup_result, Failed):
+                    logger.warning(warmup_result.message)
+                n_probes = sum(
+                    len(rec_probes) for rec_probes in loaded_root.probes.values()
+                )
+                logger.info(
+                    "Loaded mouse %r with %d session(s), %d probe(s)",
+                    loaded_root.mouse_id,
+                    len(sessions),
+                    n_probes,
+                )
         return True
 
     def mouse_root_edited(self) -> bool:

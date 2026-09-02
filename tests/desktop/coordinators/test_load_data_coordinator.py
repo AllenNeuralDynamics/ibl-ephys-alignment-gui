@@ -6,6 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+    ForegroundOperationGate,
+)
 from ephys_alignment_gui.application.results import (
     CachedEphysDataActivated,
     FreshEphysDataLoaded,
@@ -788,6 +793,7 @@ def _coordinator(
     plot_warmup_runner: Any | None = None,
     next_probe_name: str | None = None,
     shank_idx: int = 0,
+    foreground_operations: ForegroundOperationGate | None = None,
 ) -> tuple[DesktopLoadDataCoordinator, FakeCommands, FakeQueries, list[tuple]]:
     calls = calls if calls is not None else []
     events = EventBus()
@@ -800,6 +806,7 @@ def _coordinator(
         app,
         selection_view,
         _callbacks(calls),
+        foreground_operations=foreground_operations,
         load_runner=load_runner or ImmediateFreshLoadRunner(),
         preload_runner=preload_runner or ImmediateFreshLoadRunner(),
         plot_warmup_runner=plot_warmup_runner or ImmediatePlotWarmupRunner(),
@@ -947,6 +954,25 @@ def test_load_heavy_data_starts_background_runner_before_completion() -> None:
     assert commands.activate_calls == [(prepared, commands.job_result)]
     assert ("render-shank", 0, True) in calls
     assert ("busy-exit", None) in calls
+
+
+def test_fresh_load_holds_foreground_lease_until_worker_completion() -> None:
+    gate = ForegroundOperationGate()
+    runner = ManualFreshLoadRunner()
+    coordinator, _commands, _queries, _calls = _coordinator(
+        begin_result=_fresh_prepared(shank_idx=0),
+        load_runner=runner,
+        foreground_operations=gate,
+    )
+
+    assert coordinator.load_heavy_data()
+    assert gate.active_operation is ForegroundOperation.SELECTION_ACTIVATION
+    conflict = gate.try_acquire(ForegroundOperation.FULL_SAVE)
+    assert isinstance(conflict, ForegroundOperationConflict)
+
+    runner.finish()
+
+    assert gate.active_operation is None
 
 
 def test_load_heavy_data_preloads_next_probe_after_foreground_completion() -> None:

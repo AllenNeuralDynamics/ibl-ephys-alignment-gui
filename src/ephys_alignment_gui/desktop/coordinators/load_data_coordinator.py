@@ -8,6 +8,10 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results import (
     FreshEphysDataLoaded,
     FreshLoadExecution,
@@ -29,6 +33,9 @@ from ephys_alignment_gui.core.alignment_events import (
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.timing import TimingSession, start_timing
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 from ephys_alignment_gui.desktop.workers.load_data_runner import (
     FreshLoadJobResult,
     FreshLoadRunner,
@@ -85,6 +92,7 @@ class DesktopLoadDataCoordinator:
     plot_warmup_runner: PlotPayloadWarmupRunner = field(
         default_factory=QtPlotPayloadWarmupRunner
     )
+    foreground_operations: Any | None = None
     _active_load_context: Any | None = field(default=None, init=False, repr=False)
     _active_load_context_manager: Any | None = field(
         default=None,
@@ -92,6 +100,7 @@ class DesktopLoadDataCoordinator:
         repr=False,
     )
     _active_load_id: int | None = field(default=None, init=False, repr=False)
+    _foreground_lease: Any | None = field(default=None, init=False, repr=False)
     _active_preload_id: int | None = field(default=None, init=False, repr=False)
     _active_preload_execution: FreshLoadExecution | None = field(
         default=None,
@@ -190,6 +199,14 @@ class DesktopLoadDataCoordinator:
             logger.info("Load request ignored because a foreground load is active")
             self.cancel_active_load("superseded by a newer load request")
             return False
+        lease = acquire_foreground_operation(
+            self.foreground_operations,
+            ForegroundOperation.SELECTION_ACTIVATION,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
+            return False
+        self._foreground_lease = lease
 
         target_shank = self.app.queries.workspace.active_shank_selection().shank_idx
         session_name = self.selection_view.current_session()
@@ -217,15 +234,18 @@ class DesktopLoadDataCoordinator:
             if isinstance(begin_result, Failed):
                 logger.error(begin_result.message)
                 self._finish_switch_timer("failed", message=begin_result.message)
+                self._release_foreground_operation()
                 return False
             if isinstance(begin_result, LoadDataAlreadyActiveResult):
                 self._finish_switch_timer("already_active")
+                self._release_foreground_operation()
                 self.schedule_next_probe_preload(session_name, probe_name)
                 return True
             if isinstance(begin_result, LoadDataCachedActivated):
                 self.cancel_active_preload("foreground load requested")
                 logger.info("Activated cached stream %s", begin_result.stream_key)
                 self._finish_switch_timer("cached")
+                self._release_foreground_operation()
                 self.schedule_next_probe_preload(session_name, probe_name)
                 return True
             assert isinstance(begin_result, LoadDataFreshPrepared)
@@ -245,6 +265,7 @@ class DesktopLoadDataCoordinator:
             if isinstance(invocation, LoadDataJobCancelled):
                 logger.info("Load cancelled: %s", invocation.reason)
                 self._finish_switch_timer("cancelled", reason=invocation.reason)
+                self._release_foreground_operation()
                 return False
 
             with timer.step("open_load_context"):
@@ -306,6 +327,7 @@ class DesktopLoadDataCoordinator:
             or self._active_load_id is not None
             or self._active_preload_id is not None
             or self._active_load_context_manager is not None
+            or self._foreground_lease is not None
             or self._active_plot_warmup_timer is not None
         )
 
@@ -886,6 +908,13 @@ class DesktopLoadDataCoordinator:
             self._active_load_context = None
             self._active_load_context_manager = None
             self._active_load_id = None
+            self._release_foreground_operation()
+
+    def _release_foreground_operation(self) -> None:
+        lease = self._foreground_lease
+        self._foreground_lease = None
+        if lease is not None:
+            lease.release()
 
     def present_cached_probe_selection(
         self,

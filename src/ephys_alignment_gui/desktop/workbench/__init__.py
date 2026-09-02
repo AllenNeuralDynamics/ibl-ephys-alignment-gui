@@ -126,6 +126,9 @@ class DesktopWorkbench:
 
     def request_async_shutdown(self, reason: str = "application closing") -> bool:
         """Request cancellation for active desktop work without blocking Qt."""
+        foreground = getattr(self.app, "foreground_operations", None)
+        if foreground is not None:
+            foreground.request_shutdown()
         load_requested = (
             self.coordinator_cluster.load_data_coordinator.request_async_shutdown(
                 reason,

@@ -10,6 +10,11 @@ from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveJobCompleted,
     PreparedAlignmentSave,
 )
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+    ForegroundOperationGate,
+)
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.application.results.alignment_persistence import (
     AlignmentOutputsSaved,
@@ -343,6 +348,7 @@ def _coordinator(
     complete_button: Any | None = None,
     unvisited_targets: tuple[AlignmentKey, ...] = (),
     confirm_incomplete_save: bool = True,
+    foreground_operations: ForegroundOperationGate | None = None,
 ) -> tuple[DesktopSaveCoordinator, FakeCommands, list[tuple]]:
     calls: list[tuple] = []
     events = EventBus()
@@ -353,6 +359,7 @@ def _coordinator(
     coordinator = DesktopSaveCoordinator(
         commands=commands,
         events=events,
+        foreground_operations=foreground_operations,
         callbacks=DesktopSaveCallbacks(
             ensure_output_directory=lambda requirement: (
                 calls.append(("ensure-output", requirement)) or ensure_output
@@ -427,6 +434,24 @@ def test_save_returns_false_when_output_prompt_is_cancelled() -> None:
 
     assert commands.save_calls == []
     assert calls == [("ensure-output", blocked.first)]
+
+
+def test_save_holds_foreground_lease_until_worker_completion() -> None:
+    gate = ForegroundOperationGate()
+    runner = ManualAlignmentSaveRunner(auto_finish=False)
+    coordinator, _commands, _calls = _coordinator(
+        save_runner=runner,
+        foreground_operations=gate,
+    )
+
+    assert coordinator.save_alignment_outputs()
+    assert gate.active_operation is ForegroundOperation.FULL_SAVE
+    conflict = gate.try_acquire(ForegroundOperation.SELECTION_ACTIVATION)
+    assert isinstance(conflict, ForegroundOperationConflict)
+
+    runner.finish()
+
+    assert gate.active_operation is None
 
 
 def test_save_cancelled_when_unvisited_targets_are_not_confirmed() -> None:

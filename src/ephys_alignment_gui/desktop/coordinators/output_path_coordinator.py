@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results.path import (
     OutputDirectoryDerived,
     OutputRootSet,
@@ -17,6 +21,9 @@ from ephys_alignment_gui.core.alignment_events import (
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,7 @@ class DesktopOutputPathCoordinator:
     commands: Any
     events: Any
     path_view: Any
+    foreground_operations: Any | None = None
 
     def connect_path_events(self) -> list[EventSubscription]:
         """Subscribe desktop path coordination to semantic path events."""
@@ -59,11 +67,19 @@ class DesktopOutputPathCoordinator:
 
     def set_save_root(self, save_root: Path) -> bool:
         """Set the save root and let path events render the active output path."""
-        result = self.commands.set_output_root(save_root)
-        if isinstance(result, Failed):
-            logger.error(result.message)
+        lease = acquire_foreground_operation(
+            self.foreground_operations,
+            ForegroundOperation.OUTPUT_PACKAGE_CHANGE,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
             return False
-        assert isinstance(result, OutputRootSet)
+        with lease:
+            result = self.commands.set_output_root(save_root)
+            if isinstance(result, Failed):
+                logger.error(result.message)
+                return False
+            assert isinstance(result, OutputRootSet)
         return True
 
     def output_folder_edited(self) -> bool:

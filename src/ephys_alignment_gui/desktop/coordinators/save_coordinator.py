@@ -12,6 +12,10 @@ from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveJobCancelled,
     AlignmentSaveJobCompleted,
 )
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results import EditedAlignmentOutputsSaved
 from ephys_alignment_gui.core.alignment_events import (
     SaveCancelled,
@@ -23,6 +27,9 @@ from ephys_alignment_gui.core.alignment_events import (
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.workflow import Blocked, Failed, Ok, Requirement
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 from ephys_alignment_gui.desktop.workers.alignment_save_runner import (
     AlignmentSaveJobResult,
     AlignmentSaveRunner,
@@ -64,6 +71,7 @@ class DesktopSaveCoordinator:
     events: Any
     callbacks: DesktopSaveCallbacks
     save_runner: AlignmentSaveRunner = field(default_factory=QtAlignmentSaveRunner)
+    foreground_operations: Any | None = None
     _active_save_context: Any | None = field(default=None, init=False, repr=False)
     _active_save_context_manager: Any | None = field(
         default=None,
@@ -91,6 +99,7 @@ class DesktopSaveCoordinator:
         init=False,
         repr=False,
     )
+    _foreground_lease: Any | None = field(default=None, init=False, repr=False)
 
     def connect_save_events(self) -> list[EventSubscription]:
         """Subscribe desktop save coordination to semantic save events."""
@@ -227,19 +236,28 @@ class DesktopSaveCoordinator:
         open_context: bool = True,
     ) -> bool:
         """Prepare a save job and run output generation in the background."""
-        self._save_cancel_requested_reason = None
-        self._show_save_preparing()
-        self._set_save_button_progress("Saving...", "Saving alignment outputs")
-        if open_context and self._active_save_context_manager is None:
-            self._open_save_context(
-                "Saving...",
-                "Saved successfully",
-                disable_widgets=self._save_disable_widgets(),
-            )
-        elif self._active_save_context is not None:
-            self._active_save_context.update_message("Preparing save...")
-
+        lease = acquire_foreground_operation(
+            self.foreground_operations,
+            ForegroundOperation.FULL_SAVE,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
+            self.callbacks.warning("Operation in Progress", lease.message)
+            return False
+        self._foreground_lease = lease
         try:
+            self._save_cancel_requested_reason = None
+            self._show_save_preparing()
+            self._set_save_button_progress("Saving...", "Saving alignment outputs")
+            if open_context and self._active_save_context_manager is None:
+                self._open_save_context(
+                    "Saving...",
+                    "Saved successfully",
+                    disable_widgets=self._save_disable_widgets(),
+                )
+            elif self._active_save_context is not None:
+                self._active_save_context.update_message("Preparing save...")
+
             prepared = self.commands.prepare_edited_alignment_save(
                 use_docdb=use_docdb,
             )
@@ -313,7 +331,9 @@ class DesktopSaveCoordinator:
     def has_active_work(self) -> bool:
         """Return whether save work or save UI state is still settling."""
         return (
-            self.save_runner.is_running or self._active_save_context_manager is not None
+            self.save_runner.is_running
+            or self._active_save_context_manager is not None
+            or self._foreground_lease is not None
         )
 
     def request_async_shutdown(self, reason: str = "application closing") -> bool:
@@ -398,6 +418,13 @@ class DesktopSaveCoordinator:
             self._active_save_context_manager = None
             self._save_targets = ()
             self._restore_save_button_state()
+            self._release_foreground_operation()
+
+    def _release_foreground_operation(self) -> None:
+        lease = self._foreground_lease
+        self._foreground_lease = None
+        if lease is not None:
+            lease.release()
 
     def _save_progress_dialog(self) -> Any:
         """Return the active save progress dialog, creating it if needed."""

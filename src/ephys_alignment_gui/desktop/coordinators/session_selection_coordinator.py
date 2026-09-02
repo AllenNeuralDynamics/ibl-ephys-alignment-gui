@@ -7,8 +7,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results.metadata import RecordingSelected
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +50,24 @@ class DesktopSessionSelectionCoordinator:
             logger.info("Session %s already selected", session_name)
             return True
 
-        callbacks.capture_pending_reference_lines()
-        result = self.app.commands.metadata.select_recording_metadata(session_name)
-        if isinstance(result, Failed):
-            logger.error(result.message)
+        lease = acquire_foreground_operation(
+            getattr(self.app, "foreground_operations", None),
+            ForegroundOperation.SELECTION_ACTIVATION,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
             return False
-        assert isinstance(result, RecordingSelected)
+        with lease:
+            callbacks.capture_pending_reference_lines()
+            result = self.app.commands.metadata.select_recording_metadata(session_name)
+            if isinstance(result, Failed):
+                logger.error(result.message)
+                return False
+            assert isinstance(result, RecordingSelected)
 
-        self.selection_view.populate_probes(result.probes)
-        self.selection_view.select_probe_index(-1)
-        self.selection_view.clear_shanks()
+            self.selection_view.populate_probes(result.probes)
+            self.selection_view.select_probe_index(-1)
+            self.selection_view.clear_shanks()
         return True
 
     def _selected_session_name(self, idx: int | None) -> str:

@@ -264,6 +264,24 @@ domain-specific exclusion, cancellation, promotion, and stale-result policy. A
 global FIFO work queue must not replace those policies: for example, a newer
 probe selection supersedes stale selection work rather than waiting behind it.
 
+Cross-workflow mutation is serialized by the application-owned
+`ForegroundOperationGate`, exposed directly by `AlignmentApp`.
+Desktop coordinators acquire an explicit lease before changing mouse root,
+activating a session/probe/shank, recovering autosave, importing alignments,
+publishing a full save, or replacing the output package root. Async load and
+save retain their leases until terminal result publication and GUI cleanup;
+synchronous workflows release on scope exit. A conflict is rejected with the
+active operation named rather than queued implicitly. Shutdown puts the gate
+in a terminal state so no new foreground workflow can begin while current work
+is settling.
+
+The gate is intentionally not a scheduler for speculative stream preload,
+histology warmup, or plot-payload warmup. Those jobs may overlap foreground
+work when their domain lifecycle allows it and retain their own cancellation,
+promotion/join, and stale-result rules. Frontends are responsible for acquiring
+the application gate around these foreground workflows; application commands
+remain Qt-free and do not manipulate desktop busy presentation.
+
 Shared widget, cursor, and status-bar busy state is owned by one
 `BusyStateManager` per Workbench port set. Coordinators acquire leases through
 `DesktopBusyPorts`; they must not independently snapshot and restore widget

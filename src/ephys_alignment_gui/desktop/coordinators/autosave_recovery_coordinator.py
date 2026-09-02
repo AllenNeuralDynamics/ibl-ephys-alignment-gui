@@ -13,6 +13,10 @@ from ephys_alignment_gui.application.commands.autosave import (
     AUTOSAVE_DIRECTORY_NAME,
     AUTOSAVE_DOCUMENT_FILENAME,
 )
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results.autosave import (
     AutosaveCheckpointInspected,
     AutosaveCheckpointRecovered,
@@ -22,6 +26,9 @@ from ephys_alignment_gui.application.results.metadata import (
     RecordingSelected,
 )
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +91,29 @@ class DesktopAutosaveRecoveryCoordinator:
         if not self.callbacks.confirm_recovery(inspected):
             return False
 
-        with self.callbacks.busy_context(
-            "Recovering autosave...",
-            "Autosave recovered",
-            disable_widgets=self.selection_view.selection_widgets(),
-        ):
-            recovered = self.app.commands.autosave.recover_checkpoint(checkpoint_path)
-            if isinstance(recovered, Failed):
-                self.callbacks.warning("Recover Autosave", recovered.message)
-                return False
-            assert isinstance(recovered, AutosaveCheckpointRecovered)
-            self._warn_recovery_details(recovered)
-            if not self._restore_recovered_selection(recovered):
-                return False
+        lease = acquire_foreground_operation(
+            getattr(self.app.commands, "foreground", None),
+            ForegroundOperation.AUTOSAVE_RECOVERY,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            self.callbacks.warning("Recover Autosave", lease.message)
+            return False
+        with lease:
+            with self.callbacks.busy_context(
+                "Recovering autosave...",
+                "Autosave recovered",
+                disable_widgets=self.selection_view.selection_widgets(),
+            ):
+                recovered = self.app.commands.autosave.recover_checkpoint(
+                    checkpoint_path
+                )
+                if isinstance(recovered, Failed):
+                    self.callbacks.warning("Recover Autosave", recovered.message)
+                    return False
+                assert isinstance(recovered, AutosaveCheckpointRecovered)
+                self._warn_recovery_details(recovered)
+                if not self._restore_recovered_selection(recovered):
+                    return False
 
         if recovered.selected_alignment_key is None:
             return True

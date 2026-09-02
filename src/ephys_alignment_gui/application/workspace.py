@@ -33,6 +33,9 @@ from ephys_alignment_gui.application.commands.path import PathCommandHandler
 from ephys_alignment_gui.application.commands.shank_selection import (
     ShankSelectionCommandHandler,
 )
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperationGate,
+)
 from ephys_alignment_gui.application.queries import AlignmentQueries
 from ephys_alignment_gui.application.save_channel_locations import (
     AlignmentSaveChannelLocationBuilder,
@@ -126,6 +129,9 @@ class AlignmentWorkspace:
         )
     )
     events: EventBus = field(default_factory=EventBus)
+    foreground_operations: ForegroundOperationGate = field(
+        default_factory=ForegroundOperationGate
+    )
     load_data_lifecycle: LoadDataExecutionLifecycle = field(
         default_factory=LoadDataExecutionLifecycle
     )
@@ -278,4 +284,5 @@ class AlignmentWorkspace:
                 slice_display_policy=self.slice_display_policy,
             ),
             events=self.events,
+            foreground_operations=self.foreground_operations,
         )

@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ephys_alignment_gui.application.foreground_operations import (
+    ForegroundOperation,
+    ForegroundOperationConflict,
+)
 from ephys_alignment_gui.application.results.alignment_persistence import (
     NoPreviousAlignments,
     PreviousAlignmentPackageLoaded,
@@ -20,6 +24,9 @@ from ephys_alignment_gui.core.alignment_events import (
 )
 from ephys_alignment_gui.core.event_bus import EventSubscription
 from ephys_alignment_gui.core.workflow import Failed
+from ephys_alignment_gui.desktop.coordinators.foreground_operation import (
+    acquire_foreground_operation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,7 @@ class DesktopPreviousAlignmentLoadCoordinator:
     commands: Any
     events: Any
     callbacks: PreviousAlignmentLoadCallbacks
+    foreground_operations: Any | None = None
     _last_selection_result: bool = field(default=True, init=False, repr=False)
     _last_selected_folder: Path | None = field(default=None, init=False, repr=False)
 
@@ -110,32 +118,40 @@ class DesktopPreviousAlignmentLoadCoordinator:
         self._last_selected_folder = folder_path
         self.callbacks.set_reload_folder_text(str(folder_path))
 
-        with self.callbacks.busy_context(
-            "Loading alignments...",
-            "Alignments loaded",
-            disable_widgets=self.callbacks.reload_button(),
-        ):
-            self._last_selection_result = True
-            logger.info(
-                "Loading alignments from %s, use_docdb=%s",
-                folder_path,
-                use_docdb,
-            )
-            result = self.commands.load_previous_alignments(
-                folder=folder_path,
-                use_docdb=use_docdb,
-            )
-            if isinstance(result, Failed):
-                return False
-            if not self._last_selection_result:
-                return False
-            if isinstance(result, NoPreviousAlignments):
-                return True
-            if isinstance(result, PreviousAlignmentPackageLoaded):
+        lease = acquire_foreground_operation(
+            self.foreground_operations,
+            ForegroundOperation.ALIGNMENT_IMPORT,
+        )
+        if isinstance(lease, ForegroundOperationConflict):
+            logger.error(lease.message)
+            return False
+        with lease:
+            with self.callbacks.busy_context(
+                "Loading alignments...",
+                "Alignments loaded",
+                disable_widgets=self.callbacks.reload_button(),
+            ):
+                self._last_selection_result = True
                 logger.info(
-                    "Loaded previous alignments for %d stream/shank(s)",
-                    result.loaded_count,
+                    "Loading alignments from %s, use_docdb=%s",
+                    folder_path,
+                    use_docdb,
                 )
+                result = self.commands.load_previous_alignments(
+                    folder=folder_path,
+                    use_docdb=use_docdb,
+                )
+                if isinstance(result, Failed):
+                    return False
+                if not self._last_selection_result:
+                    return False
+                if isinstance(result, NoPreviousAlignments):
+                    return True
+                if isinstance(result, PreviousAlignmentPackageLoaded):
+                    logger.info(
+                        "Loaded previous alignments for %d stream/shank(s)",
+                        result.loaded_count,
+                    )
 
         return True
 
