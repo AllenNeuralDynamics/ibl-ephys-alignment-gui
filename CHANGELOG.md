@@ -1,0 +1,300 @@
+## v0.4.0 (2026-09-29)
+
+### Feat
+
+- **application**: coordinate foreground operations
+- **plotting**: perceptually uniform cyclic map for coherency phase
+- **desktop**: summarize save scope in progress dialog
+- **desktop**: add autosave recovery workflow
+- **load**: warm histology on mouse root selection
+- **load**: promote matching in-flight preloads
+- save without stream runtime rehydration
+- save all saveable alignment states
+- add alignment save input factory
+- add save geometry catalog
+- cache input dataset snapshot
+- trigger autosave checkpoints from commands
+- add autosave checkpoint commands
+- add alignment document snapshots
+- highlight linked reference line groups
+- add alignment output datapackage manifest
+- persist channel identity in alignment outputs
+- mark unsupported firing-rate depths
+- **gui**: load alignment output packages
+- **gui**: make alignment save cancellable
+- **io**: accept datapackage schema 4.1.0
+- **gui**: add switch timing diagnostics
+- **gui**: preserve ephys unit filter preference
+- **gui**: show save progress dialog
+- rehydrate save runtimes in background
+- skip cached streams when preloading probes
+- preload next probe after data load
+- **gui**: disable linear fit by default
+- **datapackage**: support schema 3.0.0
+- **datapackage**: support pipeline geometry sidecars
+- support environment defaults for GUI paths
+- **datapackage**: validate vendored schema
+- **gui**: save visited alignments with batched transforms
+- **gui**: default output root from environment
+- **gui**: refine default depth view and plot layout
+- **runtime**: extract alignment output service
+- **runtime**: extract histology data service
+- **runtime**: extract probe data load workflow
+- **runtime**: introduce alignment data context
+- **ui**: emit typed alignment change events
+- **runtime**: extract alignment derived data service
+- **runtime**: move fit and offset edits into service
+- **runtime**: extract alignment edit service
+- **runtime**: introduce active alignment model
+- **runtime**: split alignment edit history
+- **runtime**: manage active probe sessions
+- **ui**: extract slice display policy
+- **runtime**: extract slice service
+- **runtime**: introduce alignment workspace
+- **runtime**: build plot data from channel views
+- **runtime**: add ephys stream data models
+- **workflow**: extract alignment persistence
+- **workflow**: add alignment controller
+- **workflow**: add alignment document
+- **workflow**: extract load data policy
+- **gui**: per-stream ProbeSession cache + empty-state placeholder
+- **gui**: add ShankAlignment per-shank state container
+- **gui**: improve perp/slice/probe views; fix input-guard bugs
+- **gui**: load optional channel contact IDs
+- **datapackage**: resolve external asset references
+- **gui**: consume explicit ephys geometry
+- parse nested probes (datapackage schema 2.0.0)
+- cheap-save in-progress alignment on probe switch (RAM-only)
+- drive the loader from a preprocessed mouse-root datapackage
+- rewrite perpendicular slice around smoothed tangent + feature grid
+- rotate image-space assets into atlas-aligned canonical frame
+- rescue probe-slice-plot onto refactored architecture
+- add ref lines to overview
+- add unit filtering (#14)
+- add scale factor labels to regions in plot
+- update overview plot dimensions and improve text visibility
+- add keyboard shortcut for saving plots
+- enhance plot color options and increase pen width
+- improve overview.png
+- add reference lines to overview plot
+- add keyboard shortcuts to toggle previous plots
+- handle probe name
+- update max correlation calculation to use 95th percentile, excluding extreme values
+- use max(abs) as level range
+- add LFP correlation options to image menu
+- add sorting function for LFP correlation data keys by epoch and frequency band
+- add loading LFP correlation data
+- use dynamic data_root instead of hardcoded DATA_PATH (compatible outside of CO)
+
+### Fix
+
+- **desktop**: coordinate overlapping busy states
+- **alignment**: enable linear fit with two points
+- **display**: align depth axes by removing titles
+- harden alignment load and save flows
+- guard incomplete alignment saves
+- **save**: export ccf rows outside the brain and past the ml bound
+- make ANTs save cancellation responsive
+- group probe plot banks by depth
+- preserve probe bank depth scaling
+- preserve valid CCF outputs during save
+- **desktop**: suppress late worker results during shutdown
+- **autosave**: validate checkpoint recovery
+- **desktop**: coordinate async shutdown cancellation
+- **desktop**: defer qthread cleanup until stopped
+- **save**: detect ccf frame without blocking saves
+- leave probe selection blank after session change
+- reject invalid ccf save outputs
+- preserve dirty runtimes during save rehydration
+- project reference fit dots to track space
+- create reference lines across image viewport
+- align linked depth panel geometry
+- draw reference strip lines in display space
+- link histology depth ruler to shared viewport
+- **alignment**: stabilize reference line fit
+- **gui**: remember alignment load directory
+- prevent recursive reference line sync
+- improve plot colorbar labeling
+- align reference lines across warped track views
+- render alignment reference lines from state
+- **gui**: restore preload and warm plot caches
+- **alignment**: reset empty fit to initial alignment
+- **gui**: keep save progress dialog responsive
+- **gui**: draw one LFP correlation image per recording block
+- **gui**: improve save progress feedback
+- **gui**: improve slice LUT and overlay rendering
+- **gui**: preserve slice lookup levels per selection
+- **gui**: no-op unchanged session and probe selections
+- **gui**: prevent preload worker replacement crash
+- retain preloads across same-root navigation
+- **gui**: ignore cancelled alignment loads
+- **histology**: use source spacing for rotated display grids
+- **plotting**: redraw preserved ephys selections
+- **datapackage**: normalize producer shank labels
+- **gui**: resolve combo selections by activated index
+- **datapackage**: key probe choices by ephys collection
+- **datapackage**: tolerate null xyz picks ccf
+- **gui**: skip redundant data reloads
+- **gui**: link perpendicular reference line to track handles
+- **ui**: disable unsupported ONE online paths
+- **gui**: initialize slice contrast from annotation mask
+- **gui**: populate active shank chn_coords so saving works
+- **gui**: add perpendicular reference line to the double-click path
+- **gui**: own alignment history per shank; loader IO-only
+- **gui**: constrain image-plot cmap levels to in-brain channels
+- **gui**: sync load-time slice/perp/probe defaults and extend perp depth
+- **gui**: prompt for output folder before loading data
+- invert histology canonical rotation (ANTs affine maps template→SPIM)
+- tolerate datapackages with a spurious ephys 'spikes' subdir
+- rename fit-plot axes to "Ephys/Atlas reference depth"
+- clarify the fit plot's axis labels
+- persist unit-filter and img/line/probe selections across probe switches
+- persist slice channel selection across probe/shank switches
+- preserve current zoom when switching image/scatter/line/probe plots
+- y-link the track-space hist view to the feature-space view
+- add session teardown to break reference cycles on probe switch
+- eliminate deepcopy in PlotData to reduce memory usage
+- Make more verbose xyz_coords errors
+- adjust grid specifications and slice view parameters for overview plots
+- update slice keywords to fix the duplication bug
+- use more specific glob
+- pin aind-data-schema<2.0
+- reverse colormap
+- bug caused by lambda function using reference, not value
+
+### Refactor
+
+- remove save runtime rehydration surface
+- activate streams from selection changes
+- centralize desktop selection activation
+- **io**: gate datapackage schema on major version
+- tighten workflow boundaries
+- isolate shell construction handles
+- route display toggles through events
+- **app**: compose histology screen read model
+- **desktop**: move app-aware wiring out of displays
+- **desktop**: split slice panel presenter and view
+- **desktop**: rename action presenters as coordinators
+- **desktop**: move shell style out of main window
+- **desktop**: move plot shell operations into owning views
+- **load**: harden fresh load worker lifecycle
+- **load**: run fresh loads in background worker
+- **save**: rehydrate missing runtimes before saving
+- **save**: guard runtime cache for dirty alignments
+- **save**: persist dirty alignments across streams
+- **load**: track fresh load execution lifecycle
+- **alignment**: publish previous alignment load events
+- **save**: publish persistence outcome events
+- **load**: publish stream lifecycle events
+- **load**: publish semantic load events
+- **load**: define async-ready fresh load jobs
+- **plotting**: make dynamic menu discovery lazy
+- **plotting**: use typed plot payload cache keys
+- **gui**: move shell callbacks out of main window
+- **gui**: organize desktop package by layer
+- **gui**: clarify desktop display ownership
+- **gui**: decompose desktop setup
+- **gui**: move main window into desktop layer
+- **gui**: split desktop setup helpers
+- **gui**: remove legacy scripts
+- **gui**: group modules by architecture layer
+- **gui**: move desktop view support into package
+- **gui**: move services into package
+- **gui**: move runtime layer into package
+- **gui**: move application layer into package
+- **gui**: move desktop layer into package
+- **gui**: organize plotting payload cache
+- **gui**: split desktop boundaries and plot data builders
+- **gui**: group app command ports
+- **gui**: group app query ports
+- **gui**: split app facade queries
+- **gui**: split desktop workbench composition
+- **gui**: route main window through app port
+- **gui**: prepare active shank screen state
+- **gui**: compose app handlers in workspace
+- **gui**: split app command boundaries
+- **gui**: split app query and loader boundaries
+- **gui**: split desktop views and render composition
+- **gui**: extract desktop export view
+- **gui**: extract desktop screen render views
+- **gui**: split desktop load and busy ports
+- **gui**: move selection composition into workbench
+- **gui**: remove main window selection bridges
+- **gui**: extract desktop selection actions
+- **gui**: introduce load data job transaction
+- **gui**: move alignment edit actions out of main window
+- **gui**: move loaded histology refresh to presenter
+- **gui**: route reference-line capture through app
+- **gui**: centralize stream lifecycle ownership
+- **gui**: prepare loaded shanks in app layer
+- **gui**: compose desktop displays
+- **gui**: compose reference-line display
+- **gui**: compose histology display cluster
+- **gui**: compose slice display cluster
+- **gui**: compose ephys display cluster
+- **gui**: compose interactions in workbench
+- **gui**: compose plot exporters in workbench
+- **gui**: move workflow ports into workbench
+- **gui**: compose load workflow in workbench
+- **gui**: compose selection presenters in workbench
+- **gui**: introduce desktop workbench
+- **gui**: extract desktop histology presenter
+- **gui**: remove shank alignment wrapper
+- **gui**: extract slice runtime materialization
+- **gui**: extract desktop interactions
+- **gui**: extract save workflow
+- **gui**: extract folder dialogs
+- **gui**: extract path presenters
+- **gui**: extract session selection view
+- **gui**: extract probe selection presenter
+- **gui**: extract desktop load data presenter
+- **gui**: extract cached stream activation
+- **gui**: extract load runtime workflows
+- **gui**: extract previous alignment loading
+- **gui**: extract load workflow prompt
+- **gui**: extract ephys panel layout
+- **gui**: extract desktop plot export
+- **gui**: extract ephys plot presenters
+- **gui**: move shank screen state behind app queries
+- remove desktop view session
+- **gui**: isolate desktop view session ownership
+- **gui**: move nearby boundaries into runtime query
+- **gui**: extract shank alignment runtime initialization
+- **gui**: route unit filtering through app runtime
+- **gui**: source plot data from runtime
+- **gui**: route shank changes through presenter
+- **gui**: move slice view state into presenter
+- **gui**: remove legacy alignment refresh event
+- **gui**: add histology render read models
+- **gui**: extract desktop histology panel presenter
+- **gui**: extract desktop slice panel presenter
+- **gui**: add slice render query read models
+- **gui**: add slice runtime query read models
+- **gui**: move alignment render subscriptions to presenter
+- **gui**: introduce alignment presentation read models
+- **gui**: route previous alignments through app commands
+- **gui**: route shank selection through app port
+- **gui**: route events through app port
+- **gui**: introduce alignment app port
+- **gui**: make plot menus availability-aware
+- **gui**: cache slice data in runtime
+- **gui**: move plot handles into view layers
+- **gui**: emit shank selection events
+- **gui**: route alignment events through workspace bus
+- **gui**: separate pending lines from alignment history
+- **gui**: route alignment edits through controller
+- **runtime**: own shank compute state in stream runtime
+- **gui**: move alignment state into document
+- **runtime**: replace loader adapter with stream runtime
+- **runtime**: make loader use shared data context
+- **runtime**: remove legacy ephys load path
+- **gui**: split ProbeSession.detach() out of teardown()
+- **gui**: own per-shank state on ShankAlignment via _ShankAttr
+- overhaul GUI data loading, atlas handling, and plotting (#21)
+
+### Perf
+
+- bound runtime caches
+- make firing-rate plots viewer aware
+- **gui**: lazy per-shank plot datasets + cheap cached shank switch
+- **gui**: memoize PlotData get_* via cached() + idempotent filter_units
