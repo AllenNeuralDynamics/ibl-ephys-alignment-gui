@@ -164,3 +164,8 @@ version_provider = "pep621"
 update_changelog_on_bump = true
 tag_format = "v$version"
 major_version_zero = true
+
+[tool.uv]
+# pyqt5-qt5 publishes Windows wheels only for 5.15.2; later releases are
+# Linux/macOS only, and 5.15.2 has no macOS arm64 wheel.
+constraint-dependencies = ["pyqt5-qt5==5.15.2; sys_platform == 'win32'"]
