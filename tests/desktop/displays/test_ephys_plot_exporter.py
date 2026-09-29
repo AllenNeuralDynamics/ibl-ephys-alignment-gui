@@ -198,10 +198,10 @@ def test_ephys_plot_exporter_exports_all_ephys_plot_actions_once() -> None:
     exporter.export(Path("/tmp/out"), sess_info="session_")
 
     assert calls["exports"] == [
-        ("export-scene", "/tmp/out/session_img_raw.png"),
-        ("export-scene", "/tmp/out/session_img_rms.png"),
-        ("export-scene", "/tmp/out/session_probe_depth.png"),
-        ("export-scene", "/tmp/out/session_line_spikes.png"),
+        ("export-scene", str(Path("/tmp/out/session_img_raw.png"))),
+        ("export-scene", str(Path("/tmp/out/session_img_rms.png"))),
+        ("export-scene", str(Path("/tmp/out/session_probe_depth.png"))),
+        ("export-scene", str(Path("/tmp/out/session_line_spikes.png"))),
     ]
     assert presenter.toggles == ["image", "image", "probe", "line"]
     assert calls["add_lines_points"] == 4

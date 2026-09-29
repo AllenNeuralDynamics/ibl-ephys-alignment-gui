@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ibl-ephys-alignment-gui"
+version = "0.3.0"
 description = "Tool for aligning electrophysiological features to anatomical landmarks."
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -30,8 +31,6 @@ dependencies = [
   "SimpleITK",
 ]
 
-dynamic = ["version"]
-
 [project.optional-dependencies]
 dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort']
 
@@ -51,9 +50,6 @@ ephys_alignment_gui = [
   "io/schemas/aind-ibl-ephys-alignment-output/1.0.0/datapackage.schema.json",
   "resources/ephys_atlas_image.png",
 ]
-
-[tool.setuptools.dynamic]
-version = { attr = "ephys_alignment_gui.__version__" }
 
 [tool.black]
 line-length = 88
@@ -81,7 +77,7 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-extend-select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "PYI"]
+select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "PYI"]
 extend-ignore = ["E501"]
 per-file-ignores = { "tests/*.py" = [
   "ANN",
@@ -161,4 +157,21 @@ dev = [
     "pydantic>=2.11.0",
     "pytest>=8.4.2",
     "ruff>=0.15.20",
+]
+
+[tool.commitizen]
+version_provider = "pep621"
+update_changelog_on_bump = true
+tag_format = "v$version"
+major_version_zero = true
+
+[tool.uv]
+# pyqt5-qt5 publishes Windows wheels only for 5.15.2; later releases are
+# Linux/macOS only, and 5.15.2 has no macOS arm64 wheel. The required
+# environments make the lock fail rather than drop a platform CI runs on.
+constraint-dependencies = ["pyqt5-qt5==5.15.2; sys_platform == 'win32'"]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]

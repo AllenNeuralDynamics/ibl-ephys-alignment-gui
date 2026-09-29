@@ -189,7 +189,7 @@ def test_selected_folder_renders_loaded_alignment_choices() -> None:
     assert commands.load_calls == [
         {"folder": Path("/tmp/alignments"), "use_docdb": False}
     ]
-    assert calls["reload_text"] == ["/tmp/alignments"]
+    assert calls["reload_text"] == [str(Path("/tmp/alignments"))]
     assert calls["select_folder_defaults"] == [None]
     assert calls["rendered_choices"] == [["original", "2026-07-09T12:00:00"]]
     assert calls["selected_alignments"] == []
