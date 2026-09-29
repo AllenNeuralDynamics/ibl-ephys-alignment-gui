@@ -36,7 +36,7 @@ def test_path_view_wraps_text_fields_and_mouse_root_widgets() -> None:
     view.set_output_directory(Path("/results/probe"))
 
     assert view.mouse_root_text() == str(Path("/data/new-mouse"))
-    assert view.output_root_text() == str(Path("/results"))
+    assert view.output_root_text() == "/results"
     assert output.tooltip == (
         f"Active probe output directory: {Path('/results/probe')}"
     )
