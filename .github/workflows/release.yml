@@ -1,0 +1,25 @@
+# Pushing a semver tag builds the wheel and sdist and attaches them to a
+# GitHub release. Not published to PyPI.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: AllenNeuralDynamics/galen-uv-workflows/.github/workflows/publish.yml@v2
+    with:
+      tag-name: ${{ github.ref_name }}
+      python-version: "3.10"
+    secrets:
+      repo-token: ${{ secrets.GITHUB_TOKEN }}
