@@ -1,3 +1,9 @@
+## v0.5.0 (2026-09-29)
+
+### Feat
+
+- port the GUI from PyQt5 to PyQt6 (#36)
+
 ## v0.4.0 (2026-09-29)
 
 ### Feat
