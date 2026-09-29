@@ -167,5 +167,11 @@ major_version_zero = true
 
 [tool.uv]
 # pyqt5-qt5 publishes Windows wheels only for 5.15.2; later releases are
-# Linux/macOS only, and 5.15.2 has no macOS arm64 wheel.
+# Linux/macOS only, and 5.15.2 has no macOS arm64 wheel. The required
+# environments make the lock fail rather than drop a platform CI runs on.
 constraint-dependencies = ["pyqt5-qt5==5.15.2; sys_platform == 'win32'"]
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
