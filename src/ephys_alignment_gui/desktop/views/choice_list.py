@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt6 import QtGui, QtWidgets
 
 
 def populate_choice_list(
@@ -32,6 +32,8 @@ def populate_choice_list(
         width = metrics.width
     min_width = width(max(labels, key=len))
     min_width += combobox.view().autoScrollMargin()
-    min_width += combobox.style().pixelMetric(QtWidgets.QStyle.PM_ScrollBarExtent)
+    min_width += combobox.style().pixelMetric(
+        QtWidgets.QStyle.PixelMetric.PM_ScrollBarExtent
+    )
     combobox.view().setMinimumWidth(min_width)
     combobox.setCurrentIndex(0)

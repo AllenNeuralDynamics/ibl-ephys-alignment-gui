@@ -2,7 +2,7 @@
 
 ![GUI screenshot](src/ephys_alignment_gui/resources/ephys_atlas_image.png)
 
-A PyQt5/pyqtgraph workstation for aligning electrophysiology features to a
+A PyQt6/pyqtgraph workstation for aligning electrophysiology features to a
 histology probe track. This AIND fork consumes preprocessed mouse-level
 datapackages, supports multi-session and multi-shank annotation, preserves work
 across navigation, and writes mouse-level alignment output packages.

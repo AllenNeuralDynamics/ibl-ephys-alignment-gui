@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from ephys_alignment_gui.core.workflow import Requirement
 
@@ -62,7 +62,7 @@ class DesktopShellActions:
 
     def on_use_docdb_changed(self, state: int) -> None:
         """Log DocDB checkbox state changes."""
-        use_docdb = state == QtCore.Qt.Checked
+        use_docdb = state == QtCore.Qt.CheckState.Checked
         logger.info("Use DocDB: %s", use_docdb)
 
     def ensure_output_directory_for_save(

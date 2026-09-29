@@ -24,6 +24,11 @@ jobs:
 
     - uses: astral-sh/setup-uv@v5
 
+    # PyQt6's QtGui links libEGL, which the Ubuntu runner image lacks.
+    - name: Install Qt system libraries
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1
+
     - name: Install dependencies
       run: uv sync --group dev
 

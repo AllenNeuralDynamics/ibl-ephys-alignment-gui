@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from ephys_alignment_gui.application.workspace import AlignmentWorkspace
 from ephys_alignment_gui.core.settings import (

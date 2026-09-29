@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveSliceRenderState,

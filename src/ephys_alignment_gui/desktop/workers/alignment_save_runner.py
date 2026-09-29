@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from ephys_alignment_gui.application.alignment_save_job import (
     AlignmentSaveCancelToken,

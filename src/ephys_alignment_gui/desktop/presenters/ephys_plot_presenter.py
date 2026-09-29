@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtGui
 
 from ephys_alignment_gui.core.alignment_display_state import DEFAULT_UNIT_FILTER
 from ephys_alignment_gui.core.alignment_read_models import ActiveShankScreenState
@@ -49,8 +49,8 @@ class DesktopEphysPlotPresenter:
 
     app: Any
     callbacks: EphysPlotRenderCallbacks
-    action_factory: Callable[..., Any] = QtWidgets.QAction
-    action_group_factory: Callable[..., Any] = QtWidgets.QActionGroup
+    action_factory: Callable[..., Any] = QtGui.QAction
+    action_group_factory: Callable[..., Any] = QtGui.QActionGroup
     _groups: dict[PlotMenu, _PlotMenuHandles] = field(default_factory=dict)
     _plot_specs_by_key: dict[str, PlotSpec] = field(default_factory=dict)
     _unit_filter_actions_by_subset: dict[str, Any] = field(default_factory=dict)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 
 def defer_cleanup_until_thread_stopped(

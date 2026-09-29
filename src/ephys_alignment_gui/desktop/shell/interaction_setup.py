@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 try:
     from ibllib.qc.base import CriticalInsertionNote
@@ -60,7 +60,7 @@ def _initialize_input_controls(window) -> None:
         window.subj_combobox = QtWidgets.QComboBox()
         window.subj_combobox.setLineEdit(QtWidgets.QLineEdit())
         subj_completer = QtWidgets.QCompleter()
-        subj_completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        subj_completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
         window.subj_combobox.setCompleter(subj_completer)
         window.subj_combobox.setModel(window.subj_list)
         window.subj_combobox.completer().setModel(window.subj_list)
@@ -208,7 +208,7 @@ def _initialize_qc_dialog(window) -> None:
     window.desc_buttons.setExclusive(False)
     for i, val in enumerate(CriticalInsertionNote.descriptions_gui):
         button = QtWidgets.QCheckBox(val)
-        button.setCheckState(QtCore.Qt.Unchecked)
+        button.setCheckState(QtCore.Qt.CheckState.Unchecked)
         window.desc_buttons.addButton(button, id=i)
         window.desc_layout.addWidget(button)
 
@@ -219,7 +219,8 @@ def _initialize_qc_dialog(window) -> None:
     window.qc_dialog.resize(300, 150)
     window.qc_dialog.accepted.connect(window.shell_actions.qc_button_clicked)
     button_box = QtWidgets.QDialogButtonBox(
-        QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        QtWidgets.QDialogButtonBox.StandardButton.Ok
+        | QtWidgets.QDialogButtonBox.StandardButton.Cancel
     )
     button_box.accepted.connect(window.qc_dialog.accept)
     button_box.rejected.connect(window.qc_dialog.reject)

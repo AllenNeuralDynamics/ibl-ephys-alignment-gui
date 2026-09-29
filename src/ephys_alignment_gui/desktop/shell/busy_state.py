@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from PyQt5.QtCore import Qt, QThread
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtCore import Qt, QThread
+from PyQt6.QtWidgets import QApplication
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -34,7 +34,7 @@ class BusyStateManager:
     ) -> None:
         self._window = window
         self._set_wait_cursor = set_wait_cursor or (
-            lambda: QApplication.setOverrideCursor(Qt.WaitCursor)
+            lambda: QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         )
         self._restore_wait_cursor = restore_wait_cursor or (
             QApplication.restoreOverrideCursor
@@ -222,5 +222,5 @@ def _locally_enabled(widget: Any) -> bool:
     """Return desired local state without manager-disabled ancestors."""
     test_attribute = getattr(widget, "testAttribute", None)
     if callable(test_attribute):
-        return not bool(test_attribute(Qt.WA_ForceDisabled))
+        return not bool(test_attribute(Qt.WidgetAttribute.WA_ForceDisabled))
     return bool(widget.isEnabled())

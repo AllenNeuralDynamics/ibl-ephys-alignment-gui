@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
     DEPTH_PANEL_HEADER_HEIGHT_PX,

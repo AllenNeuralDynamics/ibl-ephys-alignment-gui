@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtGui
+from PyQt6 import QtCore, QtGui
 
 
 @dataclass(frozen=True)
@@ -25,14 +25,16 @@ class DesktopShellStyle:
     def default(cls) -> DesktopShellStyle:
         """Return the default desktop alignment GUI style."""
         return cls(
-            dotted_pen=pg.mkPen(color="k", style=QtCore.Qt.DotLine, width=2),
+            dotted_pen=pg.mkPen(color="k", style=QtCore.Qt.PenStyle.DotLine, width=2),
             reference_line_pen=pg.mkPen(
                 color="k",
-                style=QtCore.Qt.DotLine,
+                style=QtCore.Qt.PenStyle.DotLine,
                 width=2,
             ),
-            linear_fit_pen=pg.mkPen(color="r", style=QtCore.Qt.DotLine, width=2),
-            solid_pen=pg.mkPen(color="k", style=QtCore.Qt.SolidLine, width=2),
-            fit_pen=pg.mkPen(color="b", style=QtCore.Qt.SolidLine, width=3),
+            linear_fit_pen=pg.mkPen(
+                color="r", style=QtCore.Qt.PenStyle.DotLine, width=2
+            ),
+            solid_pen=pg.mkPen(color="k", style=QtCore.Qt.PenStyle.SolidLine, width=2),
+            fit_pen=pg.mkPen(color="b", style=QtCore.Qt.PenStyle.SolidLine, width=3),
             bar_colour=QtGui.QColor(160, 160, 160),
         )

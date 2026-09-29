@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from ephys_alignment_gui.desktop.shell.widgets import PopupWindow
 
@@ -93,7 +93,7 @@ class DesktopInteractionCoordinator:
         )
         notes = self.text_edit_factory()
         notes.setReadOnly(True)
-        notes.setLineWrapMode(QtWidgets.QTextEdit.WidgetWidth)
+        notes.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.WidgetWidth)
         notes.setText(self.app.queries.ephys.active_session_notes())
         notes_window.layout.addWidget(notes)
         self.popup_manager.notes_window = notes_window
@@ -291,7 +291,7 @@ class DesktopInteractionCoordinator:
         struct_list = self._struct_list()
         items = struct_list.findItems(
             lookup,
-            flags=QtCore.Qt.MatchRecursive,
+            flags=QtCore.Qt.MatchFlag.MatchRecursive,
         )
         if not items:
             logger.error("Could not find structure %s in region tree", lookup)

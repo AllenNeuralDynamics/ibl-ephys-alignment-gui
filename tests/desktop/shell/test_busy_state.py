@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 from ephys_alignment_gui.desktop.shell.busy_state import BusyStateManager
 
@@ -49,7 +49,7 @@ class FakeWidget:
         self.enabled_calls.append(enabled)
 
     def testAttribute(self, attribute: Any) -> bool:
-        assert attribute == Qt.WA_ForceDisabled
+        assert attribute == Qt.WidgetAttribute.WA_ForceDisabled
         return not self.locally_enabled
 
 

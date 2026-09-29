@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 
 @dataclass

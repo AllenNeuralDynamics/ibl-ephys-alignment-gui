@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 from ephys_alignment_gui.desktop.views.choice_list import populate_choice_list
 

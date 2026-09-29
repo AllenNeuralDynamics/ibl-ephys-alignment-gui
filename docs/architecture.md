@@ -154,8 +154,8 @@ event bus. Frontends receive its narrow `AlignmentApp` port:
 
 ```python
 app.commands  # mutate or sequence a use case
-app.queries   # return plain rendering/read-model data
-app.events    # typed semantic event bus
+app.queries  # return plain rendering/read-model data
+app.events  # typed semantic event bus
 ```
 
 Desktop code should not reach through the workspace to its document, runtime,
