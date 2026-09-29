@@ -1,0 +1,33 @@
+name: Bump Version
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [ main ]
+    types: [ completed ]
+  workflow_dispatch:
+
+permissions:
+  contents: write    # needed to push commits/tags
+  id-token: write    # needed if your reusable workflow exchanges OIDC tokens
+
+concurrency:
+  group: bump-${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    # Only run when:
+    #  • a CI run just succeeded (and the head commit message doesn't start with 'bump:')
+    #  • OR this is a manual dispatch
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       !startsWith(github.event.workflow_run.head_commit.message, 'bump:')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main')
+    uses: AllenNeuralDynamics/galen-uv-workflows/.github/workflows/bump-version.yml@v2
+    with:
+      default-branch: main
+    secrets:
+      repo-token: ${{ secrets.SERVICE_TOKEN }}
