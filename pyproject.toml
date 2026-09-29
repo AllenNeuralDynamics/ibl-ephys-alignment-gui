@@ -77,7 +77,7 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-extend-select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "PYI"]
+select = ["Q", "RUF100", "C90", "I", "F", "E", "W", "UP", "PYI"]
 extend-ignore = ["E501"]
 per-file-ignores = { "tests/*.py" = [
   "ANN",
