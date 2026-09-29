@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtGui, QtWidgets
 
 
 def build_menu_bar(window: Any) -> None:
@@ -210,7 +210,7 @@ def _add_session_information_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> 
         )
 
 
-def _save_action(window: Any) -> QtWidgets.QAction:
+def _save_action(window: Any) -> QtGui.QAction:
     actions = window.shell_actions
     callback = (
         actions.display_qc_options
@@ -225,14 +225,14 @@ def _action(
     text: str,
     shortcut: str | None,
     callback: Callable[..., Any],
-) -> QtWidgets.QAction:
-    action = QtWidgets.QAction(text, window)
+) -> QtGui.QAction:
+    action = QtGui.QAction(text, window)
     if shortcut is not None:
         action.setShortcut(shortcut)
     action.triggered.connect(callback)
     return action
 
 
-def _add_actions(menu: QtWidgets.QMenu, actions: list[QtWidgets.QAction]) -> None:
+def _add_actions(menu: QtWidgets.QMenu, actions: list[QtGui.QAction]) -> None:
     for action in actions:
         menu.addAction(action)

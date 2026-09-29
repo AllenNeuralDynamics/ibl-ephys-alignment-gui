@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from ephys_alignment_gui.desktop.shell.interaction_setup import (
     initialize_interaction_features,
@@ -18,7 +18,7 @@ def initialize_shell(window, offline=False) -> None:
     window.resize(1600, 800)
     window.setWindowTitle("IBL Ephys Alignment GUI")
     window.setSizePolicy(
-        QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
     )
     window.offline = offline
     main_widget = QtWidgets.QWidget()

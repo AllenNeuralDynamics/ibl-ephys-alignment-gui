@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 if TYPE_CHECKING:
-    from PyQt5.QtGui import QCloseEvent
+    from PyQt6.QtGui import QCloseEvent
 
 
 class DesktopShutdownDialog(QtWidgets.QDialog):
@@ -18,7 +18,7 @@ class DesktopShutdownDialog(QtWidgets.QDialog):
         self._close_allowed = False
         self.setWindowTitle("Closing")
         self.setModal(True)
-        self.setWindowModality(QtCore.Qt.ApplicationModal)
+        self.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
         self.resize(420, 140)
 
         self._summary_label = QtWidgets.QLabel("Cancelling background work...")

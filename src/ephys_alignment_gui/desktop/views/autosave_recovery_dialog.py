@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 
 class DesktopAutosaveRecoveryDialog:
@@ -17,15 +17,15 @@ class DesktopAutosaveRecoveryDialog:
     def confirm_recovery(self, inspected: Any) -> bool:
         """Ask whether a checkpoint should replace the live document state."""
         box = QtWidgets.QMessageBox(self.parent)
-        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         box.setWindowTitle("Recover Autosave")
         box.setText("Recover autosaved alignment work?")
         box.setInformativeText(_summary_text(inspected))
         box.setStandardButtons(
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel
         )
-        box.setDefaultButton(QtWidgets.QMessageBox.Yes)
-        return box.exec_() == QtWidgets.QMessageBox.Yes
+        box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Yes)
+        return box.exec() == QtWidgets.QMessageBox.StandardButton.Yes
 
     def warning(self, title: str, message: str) -> Any:
         """Show a recovery warning message."""

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 _QT_APP: QtCore.QCoreApplication | None = None
 
@@ -29,10 +29,10 @@ def wait_for_qt(
     app = qt_app()
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        app.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 50)
         if condition():
-            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+            app.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 50)
             return True
         time.sleep(0.01)
-    app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+    app.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 50)
     return condition()

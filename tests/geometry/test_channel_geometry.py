@@ -54,7 +54,7 @@ def test_explicit_shank_ids_are_normalized_to_local_indices():
 
 
 def test_plot_data_uses_channel_table_rows_not_raw_ind():
-    pytest.importorskip("PyQt5")
+    pytest.importorskip("PyQt6")
     from ephys_alignment_gui.plotting.payload_cache import EphysPlotPayloadCache
 
     data = {

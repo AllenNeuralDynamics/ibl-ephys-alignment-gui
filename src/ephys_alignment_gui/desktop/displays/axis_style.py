@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pyqtgraph as pg
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 
 def axis_item(fig: Any, orientation: str) -> Any:

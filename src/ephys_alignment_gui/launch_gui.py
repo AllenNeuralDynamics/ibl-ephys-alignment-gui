@@ -8,7 +8,7 @@ if platform.system() == "Darwin":
         os.environ["QT_MAC_WANTS_LAYER"] = "1"
 
 import matplotlib.pyplot as mpl  # noqa: F401  # Needed to make Qt show properly.
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from ephys_alignment_gui.desktop.shell.main_window import MainWindow
 
@@ -124,7 +124,7 @@ def main() -> None:
     mainapp.show()
 
     logger.info("Starting Qt event loop")
-    app.exec_()
+    app.exec()
 
 
 if __name__ == "__main__":

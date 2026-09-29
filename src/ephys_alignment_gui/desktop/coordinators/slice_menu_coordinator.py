@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtGui
 
 from ephys_alignment_gui.core.alignment_read_models import ActiveSliceMenuState
 from ephys_alignment_gui.core.slice_display_policy import SliceSelection
@@ -40,8 +40,8 @@ class DesktopSliceMenuCoordinator:
     app: Any
     panel: SlicePanelPresenter
     handles: _SliceMenuHandles
-    action_factory: Any = QtWidgets.QAction
-    action_group_factory: Any = QtWidgets.QActionGroup
+    action_factory: Any = QtGui.QAction
+    action_group_factory: Any = QtGui.QActionGroup
 
     @classmethod
     def create(
@@ -49,8 +49,8 @@ class DesktopSliceMenuCoordinator:
         *,
         app: Any,
         panel: SlicePanelPresenter,
-        action_factory: Any = QtWidgets.QAction,
-        action_group_factory: Any = QtWidgets.QActionGroup,
+        action_factory: Any = QtGui.QAction,
+        action_group_factory: Any = QtGui.QActionGroup,
     ) -> DesktopSliceMenuCoordinator:
         """Build a slice-menu coordinator with fresh Qt handle storage."""
         return cls(

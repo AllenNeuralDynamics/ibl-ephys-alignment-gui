@@ -52,7 +52,7 @@ class FakeMessageBox:
     def setDefaultButton(self, button: Any) -> None:
         self.default_button = button
 
-    def exec_(self) -> None:
+    def exec(self) -> None:
         self.exec_count += 1
 
     def clickedButton(self) -> object:

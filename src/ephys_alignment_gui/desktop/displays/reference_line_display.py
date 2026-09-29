@@ -8,7 +8,7 @@ from random import randrange
 from typing import Any
 
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtGui
+from PyQt6 import QtCore, QtGui
 
 from ephys_alignment_gui.desktop.displays.reference_line_layer import (
     ReferenceLineLayer,
@@ -145,9 +145,9 @@ def default_reference_line_style() -> tuple[Any, Any]:
         "#000000",
     ]
     styles = [
-        QtCore.Qt.SolidLine,
-        QtCore.Qt.DashLine,
-        QtCore.Qt.DashDotLine,
+        QtCore.Qt.PenStyle.SolidLine,
+        QtCore.Qt.PenStyle.DashLine,
+        QtCore.Qt.PenStyle.DashDotLine,
     ]
     colour = QtGui.QColor(colours[randrange(len(colours))])
     style = styles[randrange(len(styles))]

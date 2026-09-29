@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from ephys_alignment_gui.core.workflow import (
     CHOOSE_OUTPUT_FOLDER,
@@ -82,16 +82,16 @@ class DesktopOutputFolderPrompt:
             return True
 
         msg = self.message_box_factory(self.parent)
-        msg.setIcon(QtWidgets.QMessageBox.Warning)
+        msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         msg.setWindowTitle("Output Folder Required")
         msg.setText(requirement.message)
         msg.setInformativeText(informative_text)
         set_button = msg.addButton(
-            "Set Output Folder...", QtWidgets.QMessageBox.AcceptRole
+            "Set Output Folder...", QtWidgets.QMessageBox.ButtonRole.AcceptRole
         )
-        msg.addButton(QtWidgets.QMessageBox.Cancel)
+        msg.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
         msg.setDefaultButton(set_button)
-        msg.exec_()
+        msg.exec()
 
         if msg.clickedButton() != set_button:
             logger.info("%s: output directory is not set.", cancel_log)

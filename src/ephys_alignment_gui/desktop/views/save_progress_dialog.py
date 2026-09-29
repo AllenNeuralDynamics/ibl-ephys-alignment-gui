@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from ephys_alignment_gui.core.document import AlignmentKey
 
 if TYPE_CHECKING:
-    from PyQt5.QtGui import QCloseEvent
+    from PyQt6.QtGui import QCloseEvent
 
 
 class DesktopSaveProgressDialog(QtWidgets.QDialog):
@@ -30,7 +30,7 @@ class DesktopSaveProgressDialog(QtWidgets.QDialog):
 
         self.setWindowTitle("Saving Alignments")
         self.setModal(False)
-        self.setWindowModality(QtCore.Qt.NonModal)
+        self.setWindowModality(QtCore.Qt.WindowModality.NonModal)
         self.resize(560, 360)
 
         self._scope_label = QtWidgets.QLabel("")

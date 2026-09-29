@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.desktop.displays.axis_style import set_axis
@@ -92,7 +92,7 @@ def desktop_workbench_ports_from_handles(
         unvisited_targets: tuple[AlignmentKey, ...],
     ) -> bool:
         box = QtWidgets.QMessageBox(parent)
-        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         box.setWindowTitle("Incomplete Alignment Set")
         box.setText("Some probe/shank targets have not been visited.")
         box.setInformativeText(
@@ -101,9 +101,12 @@ def desktop_workbench_ports_from_handles(
             f"{_format_unvisited_alignment_targets(unvisited_targets, limit=12)}"
         )
         box.setDetailedText(_format_unvisited_alignment_targets(unvisited_targets))
-        box.setStandardButtons(QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
-        box.setDefaultButton(QtWidgets.QMessageBox.Cancel)
-        return box.exec_() == QtWidgets.QMessageBox.Ok
+        box.setStandardButtons(
+            QtWidgets.QMessageBox.StandardButton.Ok
+            | QtWidgets.QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        return box.exec() == QtWidgets.QMessageBox.StandardButton.Ok
 
     return DesktopWorkbenchPorts(
         alignment_edit_actions=DesktopAlignmentEditActionPorts(

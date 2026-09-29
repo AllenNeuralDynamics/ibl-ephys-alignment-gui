@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PyQt5 import QtGui, QtWidgets
+from PyQt6 import QtGui, QtWidgets
 
 
 def initialize_region_lookup(window, allen) -> None:

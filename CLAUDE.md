@@ -1,6 +1,6 @@
 # Agent Guide
 
-This repository is the AIND fork of the IBL ephys alignment GUI: a PyQt5 and
+This repository is the AIND fork of the IBL ephys alignment GUI: a PyQt6 and
 pyqtgraph workstation for mapping electrophysiology feature depth onto a
 histology probe track.
 

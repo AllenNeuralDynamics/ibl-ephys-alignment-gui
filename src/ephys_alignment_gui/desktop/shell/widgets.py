@@ -5,7 +5,7 @@ from __future__ import annotations
 from random import randrange
 
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class PopupWindow(QtWidgets.QMainWindow):
@@ -14,7 +14,7 @@ class PopupWindow(QtWidgets.QMainWindow):
 
     def __init__(self, title, parent=None, size=(300, 300), graphics=True) -> None:
         super().__init__()
-        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(QtCore.Qt.WindowType.WindowStaysOnTopHint)
         self.resize(size[0], size[1])
         self.move(randrange(30) + 1000, randrange(30) + 200)
         if graphics:
@@ -43,7 +43,7 @@ class CheckableComboBox(QtWidgets.QComboBox):
 
     def handleItemPressed(self, index) -> None:
         item = self.model().itemFromIndex(index)
-        if item.checkState() == QtCore.Qt.Checked:
-            item.setCheckState(QtCore.Qt.Unchecked)
+        if item.checkState() == QtCore.Qt.CheckState.Checked:
+            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
         else:
-            item.setCheckState(QtCore.Qt.Checked)
+            item.setCheckState(QtCore.Qt.CheckState.Checked)

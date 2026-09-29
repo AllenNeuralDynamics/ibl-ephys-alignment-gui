@@ -1,7 +1,7 @@
 import matplotlib
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 from pyqtgraph import debug as debug
 from pyqtgraph.functions import makeARGB
 
@@ -32,10 +32,10 @@ class QRangeSlider(QtWidgets.QSlider):
         self._high = self.maximum()
         self._allow_move = True
 
-        self.pressed_control = QtWidgets.QStyle.SC_None
+        self.pressed_control = QtWidgets.QStyle.SubControl.SC_None
         self.tick_interval = 0
-        self.tick_position = QtWidgets.QSlider.NoTicks
-        self.hover_control = QtWidgets.QStyle.SC_None
+        self.tick_position = QtWidgets.QSlider.TickPosition.NoTicks
+        self.hover_control = QtWidgets.QStyle.SubControl.SC_None
         self.click_offset = 0
 
         # 0 for the low, 1 for the high, -1 for both
@@ -69,37 +69,39 @@ class QRangeSlider(QtWidgets.QSlider):
         self.initStyleOption(opt)
         opt.siderValue = 0
         opt.sliderPosition = 0
-        opt.subControls = QtWidgets.QStyle.SC_SliderGroove
-        if self.tickPosition() != self.NoTicks:
-            opt.subControls |= QtWidgets.QStyle.SC_SliderTickmarks
-        style.drawComplexControl(QtWidgets.QStyle.CC_Slider, opt, painter, self)
+        opt.subControls = QtWidgets.QStyle.SubControl.SC_SliderGroove
+        if self.tickPosition() != QtWidgets.QSlider.TickPosition.NoTicks:
+            opt.subControls |= QtWidgets.QStyle.SubControl.SC_SliderTickmarks
+        style.drawComplexControl(
+            QtWidgets.QStyle.ComplexControl.CC_Slider, opt, painter, self
+        )
         groove = style.subControlRect(
-            QtWidgets.QStyle.CC_Slider,
+            QtWidgets.QStyle.ComplexControl.CC_Slider,
             opt,
-            QtWidgets.QStyle.SC_SliderGroove,
+            QtWidgets.QStyle.SubControl.SC_SliderGroove,
             self,
         )
 
         # drawSpan
         # opt = QtWidgets.QStyleOptionSlider()
         self.initStyleOption(opt)
-        opt.subControls = QtWidgets.QStyle.SC_SliderGroove
-        # if self.tickPosition() != self.NoTicks:
-        #    opt.subControls |= QtWidgets.QStyle.SC_SliderTickmarks
+        opt.subControls = QtWidgets.QStyle.SubControl.SC_SliderGroove
+        # if self.tickPosition() != QtWidgets.QSlider.TickPosition.NoTicks:
+        #    opt.subControls |= QtWidgets.QStyle.SubControl.SC_SliderTickmarks
         opt.siderValue = 0
         # print(self._low)
         opt.sliderPosition = self._low
         low_rect = style.subControlRect(
-            QtWidgets.QStyle.CC_Slider,
+            QtWidgets.QStyle.ComplexControl.CC_Slider,
             opt,
-            QtWidgets.QStyle.SC_SliderHandle,
+            QtWidgets.QStyle.SubControl.SC_SliderHandle,
             self,
         )
         opt.sliderPosition = self._high
         high_rect = style.subControlRect(
-            QtWidgets.QStyle.CC_Slider,
+            QtWidgets.QStyle.ComplexControl.CC_Slider,
             opt,
-            QtWidgets.QStyle.SC_SliderHandle,
+            QtWidgets.QStyle.SubControl.SC_SliderHandle,
             self,
         )
 
@@ -112,7 +114,7 @@ class QRangeSlider(QtWidgets.QSlider):
 
         c = QtCore.QRect(low_rect.center(), high_rect.center()).center()
         # print(min_pos, max_pos, c)
-        if opt.orientation == QtCore.Qt.Horizontal:
+        if opt.orientation == QtCore.Qt.Orientation.Horizontal:
             span_rect = QtCore.QRect(
                 QtCore.QPoint(min_pos, c.y() - 2),
                 QtCore.QPoint(max_pos, c.y() + 1),
@@ -125,18 +127,18 @@ class QRangeSlider(QtWidgets.QSlider):
 
         # self.initStyleOption(opt)
         # print(groove.x(), groove.y(), groove.width(), groove.height())
-        if opt.orientation == QtCore.Qt.Horizontal:
+        if opt.orientation == QtCore.Qt.Orientation.Horizontal:
             groove.adjust(0, 0, -1, 0)
         else:
             groove.adjust(0, 0, 0, -1)
 
         if True:  # self.isEnabled():
-            highlight = self.palette().color(QtGui.QPalette.Highlight)
+            highlight = self.palette().color(QtGui.QPalette.ColorRole.Highlight)
             painter.setBrush(QtGui.QBrush(highlight))
             painter.setPen(QtGui.QPen(highlight, 0))
-            # painter.setPen(QtGui.QPen(self.palette().color(QtGui.QPalette.Dark), 0))
+            # painter.setPen(QtGui.QPen(self.palette().color(QtGui.QPalette.ColorRole.Dark), 0))
             """
-            if opt.orientation == QtCore.Qt.Horizontal:
+            if opt.orientation == QtCore.Qt.Orientation.Horizontal:
                 self.setupPainter(painter, opt.orientation, groove.center().x(), groove.top(), groove.center().x(), groove.bottom())
             else:
                 self.setupPainter(painter, opt.orientation, groove.left(), groove.center().y(), groove.right(), groove.center().y())
@@ -153,13 +155,13 @@ class QRangeSlider(QtWidgets.QSlider):
             # on top of the existing ones every time
             if i == 0:
                 opt.subControls = (
-                    QtWidgets.QStyle.SC_SliderHandle
-                )  # | QtWidgets.QStyle.SC_SliderGroove
+                    QtWidgets.QStyle.SubControl.SC_SliderHandle
+                )  # | QtWidgets.QStyle.SubControl.SC_SliderGroove
             else:
-                opt.subControls = QtWidgets.QStyle.SC_SliderHandle
+                opt.subControls = QtWidgets.QStyle.SubControl.SC_SliderHandle
 
-            if self.tickPosition() != self.NoTicks:
-                opt.subControls |= QtWidgets.QStyle.SC_SliderTickmarks
+            if self.tickPosition() != QtWidgets.QSlider.TickPosition.NoTicks:
+                opt.subControls |= QtWidgets.QStyle.SubControl.SC_SliderTickmarks
 
             if self.pressed_control:
                 opt.activeSubControls = self.pressed_control
@@ -168,7 +170,9 @@ class QRangeSlider(QtWidgets.QSlider):
 
             opt.sliderPosition = value
             opt.sliderValue = value
-            style.drawComplexControl(QtWidgets.QStyle.CC_Slider, opt, painter, self)
+            style.drawComplexControl(
+                QtWidgets.QStyle.ComplexControl.CC_Slider, opt, painter, self
+            )
 
     def mousePressEvent(self, event) -> None:
         if not self._allow_move:
@@ -194,29 +198,38 @@ class QRangeSlider(QtWidgets.QSlider):
             for i, value in enumerate([self._low, self._high]):
                 opt.sliderPosition = value
                 hit = style.hitTestComplexControl(
-                    style.CC_Slider, opt, event.pos(), self
+                    QtWidgets.QStyle.ComplexControl.CC_Slider,
+                    opt,
+                    event.position().toPoint(),
+                    self,
                 )
-                if hit == style.SC_SliderHandle:
+                if hit == QtWidgets.QStyle.SubControl.SC_SliderHandle:
                     self.active_slider = i
                     self.pressed_control = hit
 
-                    self.triggerAction(self.SliderMove)
-                    self.setRepeatAction(self.SliderNoAction)
+                    self.triggerAction(
+                        QtWidgets.QAbstractSlider.SliderAction.SliderMove
+                    )
+                    self.setRepeatAction(
+                        QtWidgets.QAbstractSlider.SliderAction.SliderNoAction
+                    )
                     self.setSliderDown(True)
                     break
 
             if self.active_slider < 0:
-                self.pressed_control = QtWidgets.QStyle.SC_SliderHandle
+                self.pressed_control = QtWidgets.QStyle.SubControl.SC_SliderHandle
                 self.click_offset = self.__pixelPosToRangeValue(
-                    self.__pick(event.pos())
+                    self.__pick(event.position().toPoint())
                 )
-                self.triggerAction(self.SliderMove)
-                self.setRepeatAction(self.SliderNoAction)
+                self.triggerAction(QtWidgets.QAbstractSlider.SliderAction.SliderMove)
+                self.setRepeatAction(
+                    QtWidgets.QAbstractSlider.SliderAction.SliderNoAction
+                )
         else:
             event.ignore()
 
     def mouseMoveEvent(self, event) -> None:
-        if self.pressed_control != QtWidgets.QStyle.SC_SliderHandle:
+        if self.pressed_control != QtWidgets.QStyle.SubControl.SC_SliderHandle:
             event.ignore()
             return
 
@@ -224,7 +237,7 @@ class QRangeSlider(QtWidgets.QSlider):
             return
 
         event.accept()
-        new_pos = self.__pixelPosToRangeValue(self.__pick(event.pos()))
+        new_pos = self.__pixelPosToRangeValue(self.__pick(event.position().toPoint()))
         opt = QtWidgets.QStyleOptionSlider()
         self.initStyleOption(opt)
 
@@ -258,7 +271,7 @@ class QRangeSlider(QtWidgets.QSlider):
         self.sliderReleased.emit(self._low, self._high)
 
     def __pick(self, pt):
-        if self.orientation() == QtCore.Qt.Horizontal:
+        if self.orientation() == QtCore.Qt.Orientation.Horizontal:
             return pt.x()
         else:
             return pt.y()
@@ -268,10 +281,20 @@ class QRangeSlider(QtWidgets.QSlider):
         self.initStyleOption(opt)
         style = QtWidgets.QApplication.style()
 
-        gr = style.subControlRect(style.CC_Slider, opt, style.SC_SliderGroove, self)
-        sr = style.subControlRect(style.CC_Slider, opt, style.SC_SliderHandle, self)
+        gr = style.subControlRect(
+            QtWidgets.QStyle.ComplexControl.CC_Slider,
+            opt,
+            QtWidgets.QStyle.SubControl.SC_SliderGroove,
+            self,
+        )
+        sr = style.subControlRect(
+            QtWidgets.QStyle.ComplexControl.CC_Slider,
+            opt,
+            QtWidgets.QStyle.SubControl.SC_SliderHandle,
+            self,
+        )
 
-        if self.orientation() == QtCore.Qt.Horizontal:
+        if self.orientation() == QtCore.Qt.Orientation.Horizontal:
             slider_length = sr.width()
             slider_min = gr.x()
             slider_max = gr.right() - slider_length + 1
@@ -382,7 +405,7 @@ class HorizontalBar(pg.GraphicsWidget):
         QtGui.QPainter()
 
     def paint(self, p, *args) -> None:
-        p.setPen(QtCore.Qt.NoPen)
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
         self.grad.setStart(0, self.height / 2)
         self.grad.setFinalStop(self.width, self.height / 2)
         p.setBrush(pg.QtGui.QBrush(self.grad))
@@ -398,7 +421,7 @@ class VerticalBar(pg.GraphicsWidget):
         QtGui.QPainter()
 
     def paint(self, p, *args) -> None:
-        p.setPen(QtCore.Qt.NoPen)
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
         self.grad.setStart(self.width / 2, self.height)
         self.grad.setFinalStop(self.width / 2, 0)
         p.setBrush(pg.QtGui.QBrush(self.grad))
@@ -417,8 +440,8 @@ class AdaptedAxisItem(pg.AxisItem):
     def drawPicture(self, p, axisSpec, tickSpecs, textSpecs) -> None:
         profiler = debug.Profiler()
 
-        p.setRenderHint(p.Antialiasing, False)
-        p.setRenderHint(p.TextAntialiasing, True)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+        p.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing, True)
 
         # draw long line along axis
         pen, p1, p2 = axisSpec
@@ -770,4 +793,6 @@ def replace_axis(plot_item, orientation="left", pos=(2, 0)) -> None:
     plot_item.axes[orientation] = {"item": new_axis, "pos": pos}
     plot_item.layout.addItem(new_axis, *pos)
     new_axis.setZValue(-1000)
-    new_axis.setFlag(new_axis.ItemNegativeZStacksBehindParent)
+    new_axis.setFlag(
+        QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemNegativeZStacksBehindParent
+    )
