@@ -32,7 +32,7 @@ def test_folder_dialog_returns_selected_path() -> None:
     )
 
     assert selected == Path("/data/mouse")
-    assert dialog_fn.calls == [(parent, "Select Mouse Root", "/data")]
+    assert dialog_fn.calls == [(parent, "Select Mouse Root", str(Path("/data")))]
 
 
 def test_folder_dialog_returns_none_when_cancelled() -> None:
@@ -48,7 +48,9 @@ def test_folder_dialog_can_return_qt_style_text() -> None:
         get_existing_directory=FakeDirectoryDialog("/results"),
     )
 
-    assert dialog.select_existing_directory_text("Select Save Root") == "/results"
+    assert dialog.select_existing_directory_text("Select Save Root") == str(
+        Path("/results")
+    )
 
 
 def test_folder_dialog_text_returns_blank_when_cancelled() -> None:

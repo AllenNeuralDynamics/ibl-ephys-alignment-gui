@@ -190,19 +190,19 @@ def test_desktop_plot_exporter_exports_all_plot_groups() -> None:
     exporter.export(Path("/tmp/out"), sess_info="session_")
 
     assert calls[0] == ("ephys", Path("/tmp/out"), "session_")
-    assert ("export", _slice_plot, "/tmp/out/session_slice_ccf.png") in calls
+    assert ("export", _slice_plot, str(Path("/tmp/out/session_slice_ccf.png"))) in calls
     assert (
         "export",
         _slice_plot,
-        "/tmp/out/session_slice_registration.png",
+        str(Path("/tmp/out/session_slice_registration.png")),
     ) in calls
-    assert ("export", _slice_plot, "/tmp/out/session_slice_zoom_ccf.png") in calls
+    assert ("export", _slice_plot, str(Path("/tmp/out/session_slice_zoom_ccf.png"))) in calls
     assert (
         "export",
         _slice_plot,
-        "/tmp/out/session_slice_zoom_registration.png",
+        str(Path("/tmp/out/session_slice_zoom_registration.png")),
     ) in calls
-    assert ("export", "histology-scene", "/tmp/out/session_hist.png") in calls
+    assert ("export", "histology-scene", str(Path("/tmp/out/session_hist.png"))) in calls
     assert calls[-2] == (
         "overview",
         (Path("/tmp/out"), "session_"),
