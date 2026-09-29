@@ -745,6 +745,7 @@ wheels = [
 
 [[package]]
 name = "ibl-ephys-alignment-gui"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "aind-anatomical-utils" },

@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ibl-ephys-alignment-gui"
+version = "0.3.0"
 description = "Tool for aligning electrophysiological features to anatomical landmarks."
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -30,8 +31,6 @@ dependencies = [
   "SimpleITK",
 ]
 
-dynamic = ["version"]
-
 [project.optional-dependencies]
 dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort']
 
@@ -51,9 +50,6 @@ ephys_alignment_gui = [
   "io/schemas/aind-ibl-ephys-alignment-output/1.0.0/datapackage.schema.json",
   "resources/ephys_atlas_image.png",
 ]
-
-[tool.setuptools.dynamic]
-version = { attr = "ephys_alignment_gui.__version__" }
 
 [tool.black]
 line-length = 88
@@ -162,3 +158,9 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.15.20",
 ]
+
+[tool.commitizen]
+version_provider = "pep621"
+update_changelog_on_bump = true
+tag_format = "v$version"
+major_version_zero = true
