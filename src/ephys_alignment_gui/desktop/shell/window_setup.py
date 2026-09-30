@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from ephys_alignment_gui.desktop.shell.interaction_setup import (
     initialize_interaction_features,
@@ -47,3 +47,36 @@ def install_main_layout(window, *, displays) -> None:
     main_layout.setColumnStretch(2, 3)
 
     main_widget.setLayout(main_layout)
+
+
+def install_docks(window) -> None:
+    """Create the dockable side panels, hidden until opened from View."""
+    window.surface_candidate_table = _read_only_table()
+    window.surface_line_table = _read_only_table()
+    tables = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+    tables.addWidget(window.surface_candidate_table)
+    tables.addWidget(window.surface_line_table)
+    surface_dock = _dock(window, "Surface Candidates", tables)
+    window.docks = (surface_dock,)
+
+
+def _dock(window, title: str, widget) -> QtWidgets.QDockWidget:
+    dock = QtWidgets.QDockWidget(title, window)
+    dock.setObjectName(title.lower().replace(" ", "_"))
+    dock.setWidget(widget)
+    window.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+    dock.hide()
+    return dock
+
+
+def _read_only_table() -> QtWidgets.QTableWidget:
+    table = QtWidgets.QTableWidget()
+    table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(
+        QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+    )
+    table.setSelectionMode(
+        QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+    )
+    table.verticalHeader().setVisible(False)
+    return table

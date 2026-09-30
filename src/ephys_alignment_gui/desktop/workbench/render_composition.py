@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +47,9 @@ from ephys_alignment_gui.desktop.presenters.shank_presenter import (
 from ephys_alignment_gui.desktop.presenters.slice_panel_presenter import (
     SlicePanelPresenter,
 )
+from ephys_alignment_gui.desktop.presenters.surface_candidates_presenter import (
+    SurfaceCandidatesPresenter,
+)
 from ephys_alignment_gui.desktop.views import DesktopViews
 
 
@@ -59,6 +63,7 @@ class DesktopRenderCluster:
     slice_panel_presenter: SlicePanelPresenter
     slice_menu_coordinator: DesktopSliceMenuCoordinator
     shank_presenter: DesktopShankPresenter
+    surface_candidates_presenter: SurfaceCandidatesPresenter
     reference_line_presenter: DesktopReferenceLinePresenter
     histology_refresh_presenter: DesktopHistologyRefreshPresenter
     alignment_edit_actions: DesktopAlignmentEditActions
@@ -124,6 +129,12 @@ def build_desktop_render_cluster(
         slice_menu_coordinator=slice_menu_coordinator,
         reference_line_display=displays.reference_lines,
     )
+    surface_candidates_presenter = SurfaceCandidatesPresenter(
+        app=app,
+        view=views.surface_candidates,
+        select_line_plot=lambda key: ephys_plot_presenter.select_plot("line", key),
+    )
+    surface_candidates_presenter.connect()
     shank_presenter = DesktopShankPresenter(app)
     shank_presenter.configure(
         callbacks=_shank_render_callbacks(
@@ -133,6 +144,7 @@ def build_desktop_render_cluster(
             ephys_plot_presenter,
             slice_menu_coordinator,
             histology_refresh_presenter,
+            render_docks=surface_candidates_presenter.refresh,
         )
     )
     reference_line_presenter = DesktopReferenceLinePresenter(
@@ -189,6 +201,7 @@ def build_desktop_render_cluster(
         slice_panel_presenter=slice_panel_presenter,
         slice_menu_coordinator=slice_menu_coordinator,
         shank_presenter=shank_presenter,
+        surface_candidates_presenter=surface_candidates_presenter,
         reference_line_presenter=reference_line_presenter,
         histology_refresh_presenter=histology_refresh_presenter,
         alignment_edit_actions=alignment_edit_actions,
@@ -303,6 +316,8 @@ def _shank_render_callbacks(
     ephys_plot_presenter: DesktopEphysPlotPresenter,
     slice_menu_coordinator: DesktopSliceMenuCoordinator,
     histology_refresh_presenter: DesktopHistologyRefreshPresenter,
+    *,
+    render_docks: Callable[[], None],
 ) -> DesktopShankRenderCallbacks:
     """Build callbacks for shank selection rendering."""
     return DesktopShankRenderCallbacks(
@@ -320,6 +335,7 @@ def _shank_render_callbacks(
             ephys_plot_presenter=ephys_plot_presenter,
         ),
         render_ephys_plots=ephys_plot_presenter.render_shank_ephys_plots,
+        render_docks=render_docks,
         render_histology_plots=(
             histology_refresh_presenter.render_loaded_shank_histology
         ),

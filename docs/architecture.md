@@ -210,6 +210,11 @@ The desktop package is organized by role:
 - `workers/` adapt Qt-free jobs to QThread lifecycles;
 - `actions/` contain focused desktop interaction helpers.
 
+Dockable side panels follow the same split: the shell creates each
+`QDockWidget` and its widgets (hidden, and listed in the View menu), a view
+wraps those widgets, and a presenter fills it from a query DTO when the shank
+render funnel calls `render_docks`.
+
 A coordinator may orchestrate a dialog and command call, but it must not
 compute alignment math. A presenter may choose how to render a read model, but
 it must not perform persistence or mutate the document. A view/display may own

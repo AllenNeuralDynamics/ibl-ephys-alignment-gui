@@ -399,6 +399,9 @@ def _interaction_coordinator(
             capture_pending_reference_lines=(
                 render_cluster.reference_line_presenter.capture_pending_reference_lines
             ),
+            select_line_for_image_x=(
+                render_cluster.ephys_plot_presenter.select_line_for_image_x
+            ),
         ),
     )
 

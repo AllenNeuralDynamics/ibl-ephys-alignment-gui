@@ -39,6 +39,7 @@ class DesktopInteractionCallbacks:
     activate_window: Callable[[], None]
     set_axis: Callable[..., Any]
     capture_pending_reference_lines: Callable[[], None]
+    select_line_for_image_x: Callable[[float], bool] = lambda _x: False
 
 
 @dataclass
@@ -226,10 +227,14 @@ class DesktopInteractionCoordinator:
         self._select_structure(lookup, description)
 
     def on_mouse_double_clicked(self, event: Any) -> bool:
-        """Add a reference line from a double-clicked feature plot position."""
-        if not self.callbacks.histology_available():
-            return False
+        """Add a reference line from a double-clicked feature plot position;
+        a single click on an image column selects that column's line plot."""
         if not event.double():
+            image_x = self.ephys_panel.image_x_from_scene(event.scenePos())
+            return image_x is not None and self.callbacks.select_line_for_image_x(
+                image_x
+            )
+        if not self.callbacks.histology_available():
             return False
 
         feature_y_um = self._reference_line_y_from_scene(event.scenePos())

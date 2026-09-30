@@ -50,6 +50,8 @@ def view_handles_from_main_window(window: Any) -> DesktopViewHandles:
         total_index_label=window.tot_idx_string,
         alignment_model=window.align_list,
         alignment_combobox=window.align_combobox,
+        surface_candidate_table=window.surface_candidate_table,
+        surface_line_table=window.surface_line_table,
         init_menubar=lambda: build_menu_bar(window),
         reset_axis=window.shell_actions.reset_axis_button_pressed,
         padding=lambda: style.padding,

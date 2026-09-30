@@ -111,6 +111,10 @@ class FakeEphysPanel:
         self.feature_y_um = 125.0
         self.cluster_x_calls: list[float] = []
         self.scene_pos_calls: list[Any] = []
+        self.image_x: float | None = None
+
+    def image_x_from_scene(self, _scene_pos: Any) -> float | None:
+        return self.image_x
 
     def cluster_index_for_plot_x(self, x_position: float) -> int | None:
         self.cluster_x_calls.append(x_position)
@@ -244,7 +248,12 @@ def _coordinator(
     active_cluster_detail: Any | None = None,
     active_region_id: int | None = 42,
 ) -> tuple[DesktopInteractionCoordinator, dict[str, Any]]:
-    calls: dict[str, Any] = {"axis": [], "activate": 0, "capture": 0}
+    calls: dict[str, Any] = {
+        "axis": [],
+        "activate": 0,
+        "capture": 0,
+        "image_x": [],
+    }
     popup_manager = DesktopPopupManager()
     ephys_panel = FakeEphysPanel()
     histology_display = FakeHistologyPanel()
@@ -305,6 +314,7 @@ def _coordinator(
                 "capture",
                 calls["capture"] + 1,
             ),
+            select_line_for_image_x=lambda x: calls["image_x"].append(x) or True,
         ),
         popup_window_factory=FakePopupWindow,
         text_edit_factory=FakeTextEdit,
@@ -455,3 +465,23 @@ def test_label_pressed_updates_region_selection() -> None:
     assert state["region_lookup"].calls == [101]
     assert state["struct_view"].current == "model-index"
     assert state["struct_description"].text == "description 101"
+
+
+def test_single_click_on_image_selects_the_column_line_plot() -> None:
+    coordinator, state = _coordinator(histology_available=False)
+    state["ephys_panel"].image_x = 2.4
+    event = SimpleNamespace(double=lambda: False, scenePos=lambda: "scene-pos")
+
+    assert coordinator.on_mouse_double_clicked(event)
+
+    assert state["calls"]["image_x"] == [2.4]
+    assert state["reference_line_display"].created == []
+
+
+def test_single_click_outside_image_does_nothing() -> None:
+    coordinator, state = _coordinator()
+    event = SimpleNamespace(double=lambda: False, scenePos=lambda: "scene-pos")
+
+    assert not coordinator.on_mouse_double_clicked(event)
+
+    assert state["calls"]["image_x"] == []

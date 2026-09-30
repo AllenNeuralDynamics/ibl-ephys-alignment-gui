@@ -92,6 +92,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ),
         )
         window_setup.install_main_layout(self, displays=self.displays)
+        window_setup.install_docks(self)
         self.views = DesktopViews.from_handles(
             view_handles_from_main_window(self),
             displays=self.displays,

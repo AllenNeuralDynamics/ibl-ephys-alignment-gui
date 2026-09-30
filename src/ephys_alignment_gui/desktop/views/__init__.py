@@ -15,6 +15,9 @@ from ephys_alignment_gui.desktop.views.export_view import DesktopExportView
 from ephys_alignment_gui.desktop.views.path_view import DesktopPathView
 from ephys_alignment_gui.desktop.views.selection_view import DesktopSelectionView
 from ephys_alignment_gui.desktop.views.shank_screen_view import DesktopShankScreenView
+from ephys_alignment_gui.desktop.views.surface_candidates_view import (
+    DesktopSurfaceCandidatesView,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,8 @@ class DesktopViewHandles:
     total_index_label: Any
     alignment_model: Any
     alignment_combobox: Any
+    surface_candidate_table: Any
+    surface_line_table: Any
     init_menubar: Callable[[], Any]
     reset_axis: Callable[..., Any]
     padding: Callable[[], Any]
@@ -50,6 +55,7 @@ class DesktopViews:
     shank_screen: DesktopShankScreenView
     alignment_screen: DesktopAlignmentScreenView
     export: DesktopExportView
+    surface_candidates: DesktopSurfaceCandidatesView
 
     @classmethod
     def from_handles(
@@ -125,4 +131,8 @@ class DesktopViews:
             shank_screen=shank_screen,
             alignment_screen=alignment_screen,
             export=export,
+            surface_candidates=DesktopSurfaceCandidatesView(
+                candidate_table=handles.surface_candidate_table,
+                line_table=handles.surface_line_table,
+            ),
         )

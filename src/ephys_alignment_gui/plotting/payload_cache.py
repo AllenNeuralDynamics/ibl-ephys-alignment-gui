@@ -15,6 +15,9 @@ from ephys_alignment_gui.plotting.builders.lfp_correlation import (
 from ephys_alignment_gui.plotting.builders.lfp_spectrum import (
     LfpSpectrumPlotDataBuilder,
 )
+from ephys_alignment_gui.plotting.builders.line_amplitude import (
+    LineAmplitudePlotDataBuilder,
+)
 from ephys_alignment_gui.plotting.builders.raw import RawTracePlotDataBuilder
 from ephys_alignment_gui.plotting.builders.rms import RmsPlotDataBuilder
 from ephys_alignment_gui.plotting.builders.spikes import SpikePlotDataBuilder
@@ -69,6 +72,11 @@ class EphysPlotPayloadCache:
         self.lfp_spectrum_builder = LfpSpectrumPlotDataBuilder(
             data,
             self.channel_geometry,
+        )
+        self.line_amplitude_builder = LineAmplitudePlotDataBuilder(
+            data,
+            self.channel_geometry,
+            shank_idx,
         )
         self.stimulus_builder = StimulusPlotDataBuilder(
             data,
@@ -183,6 +191,26 @@ class EphysPlotPayloadCache:
     def get_lfp_spectrum_probe_keys(self, format: str) -> tuple[str, ...]:
         """Return available probe-band keys without building LFP spectrum payloads."""
         return self.lfp_spectrum_builder.probe_keys(format)
+
+    def get_line_amplitude_image(self):
+        """Return the all-lines amplitude image payload."""
+        return self.line_amplitude_builder.build_image(self.in_brain_depths_um)
+
+    def get_line_amplitude_lines(self):
+        """Return one amplitude depth-profile payload per line label."""
+        return self.line_amplitude_builder.build_lines()
+
+    def get_line_amplitude_keys(self) -> tuple[str, ...]:
+        """Return line labels on this shank without building line payloads."""
+        return self.line_amplitude_builder.line_keys()
+
+    def get_line_amplitude_labels_by_index(self) -> dict[int, str]:
+        """Return the label of each line on this shank by producer index."""
+        return {line.index: line.label for line in self.line_amplitude_builder.lines()}
+
+    def get_surface_candidates(self):
+        """Return this shank's brain-surface candidates, strongest first."""
+        return self.line_amplitude_builder.candidates()
 
     def get_lfp_correlation_data_img(self):
         """Return LFP correlation image payloads."""

@@ -176,6 +176,7 @@ def _callbacks(calls: list[Any]) -> DesktopShankRenderCallbacks:
         raw_image_payloads=lambda: calls.append("raw_payloads") or {"raw": "payload"},
         render_plot_menus=lambda state: calls.append(("menus", state)),
         render_ephys_plots=lambda state: calls.append(("ephys", state)),
+        render_docks=lambda: calls.append("docks"),
         render_histology_plots=lambda idx: calls.append(("render_histology", idx)),
         restore_slice_selection=lambda menu, selection, label: calls.append(
             ("slice_selection", menu, selection, label)
@@ -224,6 +225,7 @@ def test_shank_presenter_coordinates_loaded_shank_rendering() -> None:
         ("apply_plot_data", app.queries.plot_data_state),
         ("menus", "plot-menu"),
         ("ephys", app.queries.screen_state),
+        "docks",
         (
             "slice_selection",
             "slice-menu",

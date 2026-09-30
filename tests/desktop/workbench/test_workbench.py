@@ -650,6 +650,14 @@ def _displays(
     )
 
 
+class FakeSurfaceCandidatesView:
+    def connect_candidate_selected(self, _callback: Any) -> None:
+        pass
+
+    def connect_line_selected(self, _callback: Any) -> None:
+        pass
+
+
 class FakeInteractionPresenter:
     def __init__(self) -> None:
         self.calls: list[Any] = []
@@ -743,6 +751,7 @@ def _workbench(
         slice_panel_presenter=slice_panel_presenter or FakeSlicePanelPresenter(),
         slice_menu_coordinator=slice_menu_coordinator or FakeSliceMenuCoordinator(),
         shank_presenter=shank,
+        surface_candidates_presenter=object(),
         reference_line_presenter=reference_line_presenter or object(),
         histology_refresh_presenter=histology_refresh_presenter or object(),
         alignment_edit_actions=alignment_edit_actions or FakeAlignmentEditActions(),
@@ -1332,6 +1341,7 @@ def test_workbench_factory_configures_focused_presenters() -> None:
         shank_screen=SimpleNamespace(raw_image_payload_mapping=lambda: {}),
         alignment_screen=object(),
         export=ports.export,
+        surface_candidates=FakeSurfaceCandidatesView(),
     )
 
     workbench = DesktopWorkbench.create(

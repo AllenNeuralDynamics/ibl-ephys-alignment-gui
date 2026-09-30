@@ -19,6 +19,10 @@ from ephys_alignment_gui.desktop.displays.depth_panel_layout import (
 from ephys_alignment_gui.desktop.displays.ephys_plot_items import EphysPlotItems
 from ephys_alignment_gui.desktop.displays.feature_plot_view import FeaturePlotView
 from ephys_alignment_gui.desktop.displays.plot_elements import ColorBar
+from ephys_alignment_gui.desktop.displays.surface_candidate_markers import (
+    image_marker_items,
+    line_marker_items,
+)
 from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
 
 logger = logging.getLogger(__name__)
@@ -288,6 +292,16 @@ class DesktopEphysPanelView:
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return False, None
 
+    def image_x_from_scene(self, scene_pos: Any) -> float | None:
+        """Map a scene position inside the image plot to its plot x."""
+        try:
+            view_box = self.plots.image.getViewBox()
+            if not view_box.sceneBoundingRect().contains(scene_pos):
+                return None
+            return float(view_box.mapSceneToView(scene_pos).x())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+
     def cluster_index_for_plot_x(self, x_value: float) -> int | None:
         """Return the cluster index represented by a plotted x coordinate."""
         return self.feature_plot.cluster_index_for_plot_x(x_value)
@@ -372,6 +386,7 @@ class DesktopEphysPanelView:
             label=data["xaxis"],
         )
         self.items.line_plots.append(line)
+        self._add_owned(self.plots.line, self.items.line_plots, line_marker_items(data))
 
     def render_probe(self, data: Any, bounds: Any = None) -> None:
         """Render a 2D image using the probe geometry layout."""
@@ -490,6 +505,12 @@ class DesktopEphysPanelView:
                 first_image = image
                 first_scale = scale
 
+        self._add_owned(
+            self.plots.image,
+            self.items.image_plots,
+            image_marker_items(data.get("surface_candidates"), data["xrange"]),
+        )
+
         # Colour bar is shared across blocks: levels are common by construction.
         if data.get("cmap"):
             cbar = ColorBar(data["cmap"]).makeColourBar(
@@ -525,6 +546,13 @@ class DesktopEphysPanelView:
             y_scale=first_scale[1],
             xrange=data["xrange"],
         )
+
+    @staticmethod
+    def _add_owned(fig: Any, owned: list[Any], items: list[Any]) -> None:
+        """Add items to a figure, owned so the next render clears them."""
+        for item in items:
+            fig.addItem(item)
+            owned.append(item)
 
     def _figures(self) -> dict[str, Any]:
         return {

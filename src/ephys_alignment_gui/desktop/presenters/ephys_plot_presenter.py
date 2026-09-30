@@ -18,7 +18,12 @@ from ephys_alignment_gui.plotting.menu_state import (
     PlotMenuGroupState,
     PlotMenuState,
 )
-from ephys_alignment_gui.plotting.registry import PlotMenu, PlotSpec, plot_spec
+from ephys_alignment_gui.plotting.registry import (
+    PlotMenu,
+    PlotSpec,
+    line_plot_key_for_image_x,
+    plot_spec,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +167,28 @@ class DesktopEphysPlotPresenter:
             return
         next_idx = (current_idx + (-1 if reverse else 1)) % len(actions)
         self._trigger_action(actions[next_idx])
+
+    def select_plot(self, menu: PlotMenu, spec_key: str) -> bool:
+        """Select and render one plot of a menu, as choosing it there would."""
+        handles = self._groups.get(menu)
+        if handles is None:
+            return False
+        for action in handles.action_group.actions():
+            if self._plot_spec_key_from_action(action) == spec_key:
+                self._trigger_action(action)
+                return True
+        return False
+
+    def select_line_for_image_x(self, x: float) -> bool:
+        """Show the line plot of the image column at plot *x*, when the
+        current image has one line plot per column."""
+        image_key = self._plot_spec_key_from_action(self.checked_action("image"))
+        if image_key is None:
+            return False
+        line_key = line_plot_key_for_image_x(
+            image_key, self.plot_payload_for_spec(image_key), x
+        )
+        return line_key is not None and self.select_plot("line", line_key)
 
     def render_shank_ephys_plots(self, state: ActiveShankScreenState) -> None:
         """Render the ephys plot selections after a shank-screen refresh."""

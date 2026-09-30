@@ -253,3 +253,28 @@ class PreparedActiveShankScreenState:
     def missing_required_slice_data(self) -> bool:
         """Whether histology was available but slice runtime data could not build."""
         return self.histology_available and not self.slice_data_available
+
+
+@dataclass(frozen=True)
+class SurfaceCandidateLineState:
+    """One line's part in a brain-surface candidate."""
+
+    freq_hz: float
+    step_db: float
+    extent_um: tuple[float, float]  # 10-90 % of the step, probe-local depth
+    support: float
+    agrees: bool
+    line_plot_key: str | None  # the line's amplitude plot, if on this shank
+
+
+@dataclass(frozen=True)
+class SurfaceCandidateState:
+    """One brain-surface candidate of the active shank."""
+
+    method: str
+    midpoint_um: float
+    width_um: float | None
+    delta_bic: float
+    n_agreeing_lines: int
+    n_lines: int
+    lines: tuple[SurfaceCandidateLineState, ...]

@@ -18,6 +18,7 @@ def build_menu_bar(window: Any) -> None:
     _attach_plot_menus(window, menu_bar)
     _add_fit_options_menu(window, menu_bar)
     _add_display_options_menu(window, menu_bar)
+    _add_view_menu(window, menu_bar)
     _add_session_information_menu(window, menu_bar)
 
 
@@ -38,6 +39,12 @@ def _add_file_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
             _action(window, "Recover Autosave...", None, actions.recover_autosave),
         ],
     )
+
+
+def _add_view_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:
+    view_menu = menu_bar.addMenu("View")
+    for dock in getattr(window, "docks", ()):
+        view_menu.addAction(dock.toggleViewAction())
 
 
 def _add_fit_options_menu(window: Any, menu_bar: QtWidgets.QMenuBar) -> None:

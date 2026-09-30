@@ -15,12 +15,15 @@ from ephys_alignment_gui.core.alignment_display_state import AlignmentDisplaySta
 from ephys_alignment_gui.core.alignment_read_models import (
     ActiveShankPlotDataState,
     ClusterDetailRenderState,
+    SurfaceCandidateLineState,
+    SurfaceCandidateState,
 )
 from ephys_alignment_gui.core.timing import TimingSession, current_timing_session
 from ephys_alignment_gui.plotting.menu_state import PlotMenuState, build_plot_menu_state
 from ephys_alignment_gui.plotting.registry import (
     PlotMenu,
     PlotSpec,
+    line_amplitude_line_key,
     resolve_plot_bounds,
     resolve_plot_payload,
 )
@@ -213,6 +216,39 @@ class EphysPlotQueries:
             t_autocorr=np.asarray(payload_cache.t_autocorr),
             template_waveform=np.asarray(template_waveform),
             t_template=np.asarray(payload_cache.t_template),
+        )
+
+    def active_surface_candidates(self) -> tuple[SurfaceCandidateState, ...]:
+        """Return the active shank's brain-surface candidates, strongest first."""
+        payload_cache = self._active_payload_cache()
+        if payload_cache is None:
+            return ()
+        labels = payload_cache.get_line_amplitude_labels_by_index()
+        return tuple(
+            SurfaceCandidateState(
+                method=candidate.method,
+                midpoint_um=candidate.midpoint_um,
+                width_um=candidate.width_um,
+                delta_bic=candidate.delta_bic,
+                n_agreeing_lines=candidate.n_agreeing_lines,
+                n_lines=candidate.n_lines,
+                lines=tuple(
+                    SurfaceCandidateLineState(
+                        freq_hz=line.freq_hz,
+                        step_db=line.step_db,
+                        extent_um=line.extent_um(candidate.midpoint_um),
+                        support=line.support,
+                        agrees=line.agrees,
+                        line_plot_key=(
+                            line_amplitude_line_key(labels[line.line_index])
+                            if line.line_index in labels
+                            else None
+                        ),
+                    )
+                    for line in candidate.lines
+                ),
+            )
+            for candidate in payload_cache.get_surface_candidates()
         )
 
     def active_session_notes(self) -> str:

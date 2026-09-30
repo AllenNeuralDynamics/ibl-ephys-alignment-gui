@@ -6,8 +6,11 @@ import logging
 from typing import Any
 
 from ephys_alignment_gui.plotting.registry import (
+    LINE_AMPLITUDE_IMAGE_KEY,
     available_plot_specs_for_menu,
     default_plot_spec,
+    line_amplitude_line_key,
+    line_plot_key_for_image_x,
     mapping_plot_specs,
     plot_spec,
     plot_specs_for_menu,
@@ -17,9 +20,14 @@ from ephys_alignment_gui.plotting.registry import (
 
 
 class FakePayloadCache:
-    def __init__(self, passive_events: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        passive_events: dict[str, Any] | None = None,
+        line_amplitudes: dict[str, Any] | None = None,
+    ) -> None:
         self.calls = []
         self.passive_events = passive_events if passive_events is not None else {}
+        self.line_amplitudes = line_amplitudes if line_amplitudes is not None else {}
         self.fr_raster_requests = []
 
     def get_or_build_payload(self, key: tuple[Any, ...], build):
@@ -68,6 +76,15 @@ class FakePayloadCache:
 
     def get_rfmap_keys(self) -> tuple[str, ...]:
         return ("left",)
+
+    def get_line_amplitude_image(self) -> Any:
+        return "line-amp-img"
+
+    def get_line_amplitude_lines(self) -> Any:
+        return self.line_amplitudes
+
+    def get_line_amplitude_keys(self) -> tuple[str, ...]:
+        return tuple(self.line_amplitudes)
 
 
 class FakeOptionalDependencyMissingPayloadCache(FakePayloadCache):
@@ -263,3 +280,43 @@ def test_mapping_plot_specs_resolve_existing_mapping_payloads() -> None:
 
     assert [spec.key for spec in specs] == ["image.raw.raw_ap"]
     assert resolve_plot_payload(None, specs[0]) == "raw-img"
+
+
+def test_line_amplitude_plots_appear_only_with_measured_lines() -> None:
+    absent = FakePayloadCache()
+    present = FakePayloadCache(line_amplitudes={"3870.2 Hz": "line-amp-profile"})
+
+    def keys(cache, menu):
+        return [spec.key for spec in available_plot_specs_for_menu(cache, menu)]
+
+    assert LINE_AMPLITUDE_IMAGE_KEY not in keys(absent, "image")
+    assert not any(key.startswith("line.line_amplitude") for key in keys(absent, "line"))
+    assert LINE_AMPLITUDE_IMAGE_KEY in keys(present, "image")
+    assert line_amplitude_line_key("3870.2 Hz") in keys(present, "line")
+
+
+def test_line_amplitude_child_resolves_its_line_payload() -> None:
+    payload_cache = FakePayloadCache(
+        line_amplitudes={"3870.2 Hz": "line-amp-profile", "7503.1 Hz": "other"}
+    )
+    specs = available_plot_specs_for_menu(payload_cache, "line")
+    spec_by_key = {spec.key: spec for spec in specs}
+    spec = spec_by_key[line_amplitude_line_key("3870.2 Hz")]
+
+    assert spec.label == "Line Amplitude - 3870.2 Hz"
+    assert resolve_plot_payload(payload_cache, spec) == "line-amp-profile"
+    assert resolve_plot_payload(payload_cache, LINE_AMPLITUDE_IMAGE_KEY) == (
+        "line-amp-img"
+    )
+
+
+def test_image_column_maps_to_its_line_plot_only_for_line_amplitude() -> None:
+    payload = {"line_keys": ("659.0 Hz", "3870.2 Hz")}
+
+    assert line_plot_key_for_image_x(
+        LINE_AMPLITUDE_IMAGE_KEY, payload, 1.99
+    ) == line_amplitude_line_key("3870.2 Hz")
+    assert line_plot_key_for_image_x(LINE_AMPLITUDE_IMAGE_KEY, payload, 2.0) is None
+    assert line_plot_key_for_image_x(LINE_AMPLITUDE_IMAGE_KEY, payload, -0.1) is None
+    assert line_plot_key_for_image_x("image.rms_ap", payload, 0.5) is None
+    assert line_plot_key_for_image_x(LINE_AMPLITUDE_IMAGE_KEY, None, 0.5) is None

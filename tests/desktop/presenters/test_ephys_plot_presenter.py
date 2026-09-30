@@ -13,7 +13,11 @@ from ephys_alignment_gui.desktop.presenters.ephys_plot_presenter import (
 )
 from ephys_alignment_gui.plotting.menu_state import PlotMenuGroupState, PlotMenuState
 from ephys_alignment_gui.plotting.raster_request import ImageRasterRequest
-from ephys_alignment_gui.plotting.registry import PlotSpec
+from ephys_alignment_gui.plotting.registry import (
+    LINE_AMPLITUDE_IMAGE_KEY,
+    PlotSpec,
+    line_amplitude_line_key,
+)
 
 
 class FakeSignal:
@@ -333,3 +337,49 @@ def test_ephys_plot_presenter_redraws_preserved_selections() -> None:
         ("line", {"payload": "line.depth"}),
         ("probe", {"payload": "probe.depth"}, [1, 2]),
     ]
+
+
+def test_ephys_plot_presenter_selects_a_plot_by_key() -> None:
+    calls: list[Any] = []
+    presenter, _queries, _commands, _raster_request = _presenter(calls)
+
+    assert presenter.select_plot("image", "image.first")
+    assert not presenter.select_plot("image", "image.missing")
+
+    assert presenter.current_plot_keys()["image"] == "image.first"
+    assert calls == [("image", {"payload": "image.first"})]
+
+
+def test_ephys_plot_presenter_selects_line_of_clicked_image_column() -> None:
+    calls: list[Any] = []
+    presenter, queries, _commands, _raster_request = _presenter(calls)
+    labels = ("659.0 Hz", "3870.2 Hz")
+    line_keys = tuple(line_amplitude_line_key(label) for label in labels)
+    queries.ephys.active_plot_payload = lambda key, **_kw: (
+        {"line_keys": labels} if key == LINE_AMPLITUDE_IMAGE_KEY else {"x": key}
+    )
+    presenter.render_menus(
+        PlotMenuState(
+            groups={
+                **_plot_menu_state().groups,
+                "image": PlotMenuGroupState(
+                    menu="image",
+                    specs=(_spec(LINE_AMPLITUDE_IMAGE_KEY),),
+                    selected_key=LINE_AMPLITUDE_IMAGE_KEY,
+                ),
+                "line": PlotMenuGroupState(
+                    menu="line",
+                    specs=tuple(
+                        _spec(key, menu="line", renderer="line") for key in line_keys
+                    ),
+                    selected_key=line_keys[0],
+                ),
+            }
+        )
+    )
+
+    assert presenter.select_line_for_image_x(1.7)
+    assert not presenter.select_line_for_image_x(2.0)
+
+    assert presenter.current_plot_keys()["line"] == line_keys[1]
+    assert calls == [("line", {"x": line_keys[1]})]

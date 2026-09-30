@@ -48,6 +48,7 @@ class DesktopShankRenderCallbacks:
     raw_image_payloads: Callable[[], Mapping[Any, Any]]
     render_plot_menus: Callable[[PlotMenuState], None]
     render_ephys_plots: Callable[[ActiveShankScreenState], None]
+    render_docks: Callable[[], None]
     render_histology_plots: Callable[[int], None]
     restore_slice_selection: Callable[
         [ActiveSliceMenuState | None, SliceSelection | None, str | None],
@@ -176,6 +177,8 @@ class DesktopShankPresenter:
             callbacks.render_plot_menus(screen_state.plot_menu)
         with timer.step("render_ephys_plots"):
             callbacks.render_ephys_plots(screen_state)
+        with timer.step("render_docks"):
+            callbacks.render_docks()
         with timer.step("restore_slice_selection"):
             callbacks.restore_slice_selection(
                 screen_state.slice_menu,

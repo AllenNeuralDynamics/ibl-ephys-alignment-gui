@@ -17,6 +17,7 @@ from ephys_alignment_gui.geometry.channel_geometry import (
     rows_for_shank,
     valid_shank_indices,
 )
+from ephys_alignment_gui.io.brain_surface import load_brain_surface
 from ephys_alignment_gui.io.datapackage_loader import (
     ChannelTablePaths,
     DataPackageError,
@@ -203,6 +204,7 @@ class EphysDataService:
         ("rms_LF_main", "ephysTimeRmsLFMain"),
         ("psd_lf", "ephysSpectralDensityLF"),
         ("psd_lf_main", "ephysSpectralDensityLFMain"),
+        ("line_amp", "ephysLineAmplitude"),
     )
 
     def load_channel_table(self, probe: ProbeInfo) -> ChannelTable:
@@ -331,6 +333,8 @@ class EphysDataService:
         unit_shank_indices_file = ephys_dir / "unit_shank_indices.npy"
         if unit_shank_indices_file.exists():
             data["unit_shank_indices"] = np.load(unit_shank_indices_file)
+
+        data["brain_surface"] = load_brain_surface(ephys_dir / "brain_surface.json")
 
     @staticmethod
     def _load_session_notes(ephys_dir: Path) -> str:

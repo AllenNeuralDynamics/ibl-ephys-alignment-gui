@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable, Hashable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 _OPTIONAL_PLOT_DEPENDENCIES = frozenset({"brainbox"})
 _LOGGED_MISSING_DYNAMIC_DEPENDENCIES: set[tuple[str, str]] = set()
+
+# Only these plots carry brain-surface candidate markers.
+LINE_AMPLITUDE_IMAGE_KEY = "image.line_amplitude"
+LINE_AMPLITUDE_LINE_KEY = "line.line_amplitude"
 
 
 @dataclass(frozen=True)
@@ -261,6 +266,52 @@ def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
     )
 
 
+def _line_amplitude_available(payload_cache: Any) -> bool:
+    get_keys = getattr(payload_cache, "get_line_amplitude_keys", None)
+    return callable(get_keys) and bool(get_keys())
+
+
+def _line_amplitude_lines_payload(payload_cache: Any) -> Mapping[Any, Any]:
+    return _memoized_payload(
+        payload_cache,
+        ("line_amplitude_lines",),
+        payload_cache.get_line_amplitude_lines,
+    )
+
+
+def _line_amplitude_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
+    child_keys = payload_cache.get_line_amplitude_keys()
+    if not child_keys:
+        return ()
+    return _mapping_child_specs_from_keys(
+        parent_key=LINE_AMPLITUDE_LINE_KEY,
+        menu="line",
+        renderer="line",
+        child_keys=child_keys,
+        label=lambda key: f"Line Amplitude - {key}",
+        source=_line_amplitude_lines_payload,
+    )
+
+
+def line_amplitude_line_key(label: str) -> str:
+    """Plot key of one line's amplitude profile, from its payload label."""
+    return f"{LINE_AMPLITUDE_LINE_KEY}.{_safe_child_key(label)}"
+
+
+def line_plot_key_for_image_x(
+    image_key: str | None, image_payload: Any, x: float
+) -> str | None:
+    """The line plot of the image column at plot *x*, for images whose
+    columns are each one line plot."""
+    if image_key != LINE_AMPLITUDE_IMAGE_KEY or not image_payload:
+        return None
+    labels = image_payload.get("line_keys") or ()
+    column = math.floor(x)
+    if not 0 <= column < len(labels):
+        return None
+    return line_amplitude_line_key(labels[column])
+
+
 def _rfmap_payload(payload_cache: Any) -> Any:
     return _memoized_payload(
         payload_cache,
@@ -399,6 +450,17 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         children=_lfp_correlation_children,
     ),
     PlotSpec(
+        key=LINE_AMPLITUDE_IMAGE_KEY,
+        label="Line Amplitude",
+        menu="image",
+        renderer="image",
+        source=_source(
+            ("line_amplitude_image",),
+            lambda payload_cache: payload_cache.get_line_amplitude_image(),
+        ),
+        available=_line_amplitude_available,
+    ),
+    PlotSpec(
         key="scatter.cluster_fr",
         label="Cluster Amp vs Depth vs FR",
         menu="image",
@@ -463,6 +525,11 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
             1,
         ),
         available=_data_exists("spikes"),
+    ),
+    DynamicPlotSpec(
+        key=LINE_AMPLITUDE_LINE_KEY,
+        menu="line",
+        children=_line_amplitude_children,
     ),
     PlotSpec(
         key="probe.rms_ap",

@@ -564,3 +564,41 @@ def test_clear_detaches_all_owned_items_and_resets_feature_state(monkeypatch) ->
     assert view.items.image_plots == []
     assert view.items.image_colorbars == []
     assert view.feature_xrange is None
+
+
+def test_surface_candidate_markers_render_and_clear_with_their_plot(
+    monkeypatch,
+) -> None:
+    view, plots, _axis_calls = _view(monkeypatch)
+    marker_items: list[Any] = []
+
+    def fake_items(*_args: Any) -> list[Any]:
+        item = object()
+        marker_items.append(item)
+        return [item]
+
+    for name in ("line_marker_items", "image_marker_items"):
+        monkeypatch.setattr(
+            f"ephys_alignment_gui.desktop.displays.ephys_panel_view.{name}",
+            fake_items,
+        )
+
+    view.render_line({"x": [1], "y": [2], "xrange": (0, 3), "xaxis": "line"})
+    view.render_image(
+        {
+            "img": np.zeros((2, 4)),
+            "scale": [1.0, 10.0],
+            "offset": [0.0, 0.0],
+            "cmap": "RdBu_r",
+            "levels": [-1.0, 1.0],
+            "title": "Line amplitude",
+            "xrange": (0.0, 2.0),
+            "xaxis": "Line",
+        }
+    )
+    line_marker, image_marker = marker_items
+
+    assert line_marker in plots["line"].added
+    assert image_marker in plots["image"].added
+    view.render_line({"x": [1], "y": [2], "xrange": (0, 3), "xaxis": "line"})
+    assert line_marker in plots["line"].removed
