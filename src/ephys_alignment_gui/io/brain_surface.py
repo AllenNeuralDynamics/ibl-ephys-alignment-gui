@@ -99,8 +99,8 @@ def load_brain_surface(path: Path) -> BrainSurface | None:
         return None
     try:
         return parse_brain_surface(json.loads(path.read_text()))
-    except (OSError, ValueError):
-        logger.warning("Ignoring unreadable %s", path, exc_info=True)
+    except (OSError, ValueError) as exc:
+        logger.warning("Ignoring unreadable %s: %s", path, exc)
         return None
 
 
