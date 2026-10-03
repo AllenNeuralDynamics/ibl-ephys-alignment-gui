@@ -232,6 +232,7 @@ class EphysPlotQueries:
                 delta_bic=candidate.delta_bic,
                 n_agreeing_lines=candidate.n_agreeing_lines,
                 n_lines=candidate.n_lines,
+                boundary=candidate.boundary,
                 lines=tuple(
                     SurfaceCandidateLineState(
                         freq_hz=line.freq_hz,

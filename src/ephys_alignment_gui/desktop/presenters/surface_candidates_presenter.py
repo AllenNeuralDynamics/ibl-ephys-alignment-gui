@@ -71,7 +71,9 @@ def _candidate_row(position: int, candidate: SurfaceCandidateState) -> list[str]
         str(position),
         f"{candidate.midpoint_um:.0f}",
         "–" if candidate.width_um is None else f"{candidate.width_um:.0f}",
-        candidate.method,
+        candidate.method
+        if candidate.boundary is None
+        else f"{candidate.method} ({candidate.boundary})",
         f"{candidate.n_agreeing_lines}/{candidate.n_lines}",
         f"{candidate.delta_bic:.0f}",
     ]

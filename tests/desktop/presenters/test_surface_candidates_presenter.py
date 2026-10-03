@@ -64,6 +64,7 @@ CANDIDATES = (
         n_agreeing_lines=0,
         n_lines=0,
         lines=(),
+        boundary="air",
     ),
 )
 
@@ -92,7 +93,7 @@ def test_refresh_lists_candidates_by_position_and_selects_the_strongest() -> Non
     assert view.headers == {"candidates": CANDIDATE_HEADERS, "lines": LINE_HEADERS}
     assert view.candidates == [
         ["1", "2122", "–", "lines", "1/2", "3269"],
-        ["2", "1500", "40", "driven", "0/0", "800"],
+        ["2", "1500", "40", "driven (air)", "0/0", "800"],
     ]
     assert view.selected == 0
     assert view.lines == [

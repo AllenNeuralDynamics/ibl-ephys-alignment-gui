@@ -278,3 +278,4 @@ class SurfaceCandidateState:
     n_agreeing_lines: int
     n_lines: int
     lines: tuple[SurfaceCandidateLineState, ...]
+    boundary: str | None = None

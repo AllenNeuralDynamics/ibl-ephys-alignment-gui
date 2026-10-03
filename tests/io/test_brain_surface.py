@@ -85,6 +85,16 @@ def test_parse_normalizes_candidates_per_integer_shank():
     assert [row.block_index for row in surface.lines] == [0, 1]
     assert surface.lines[1].excess_db is None
     assert surface.shank_candidates(7) == ()
+    assert candidate.boundary is None
+
+
+def test_parse_keeps_a_candidate_boundary_label():
+    raw = surface_json()
+    raw["shanks"]["1"]["candidates"][0]["boundary"] = "air"
+
+    (candidate,) = parse_brain_surface(raw).shank_candidates(1)
+
+    assert candidate.boundary == "air"
 
 
 def test_parse_rejects_unsupported_major_version():

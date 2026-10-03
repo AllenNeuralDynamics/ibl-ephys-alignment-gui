@@ -77,6 +77,8 @@ class SurfaceCandidate:
     n_lines: int
     block_indices: tuple[int, ...]
     lines: tuple[CandidateLine, ...]
+    # "air" where the lines collapse above the bath, so not the brain surface
+    boundary: str | None = None
 
 
 @dataclass(frozen=True)
@@ -178,4 +180,5 @@ def _candidate(entry: dict[str, Any]) -> SurfaceCandidate:
         n_lines=int(entry["n_lines"]),
         block_indices=tuple(int(b) for b in entry.get("block_indices") or ()),
         lines=tuple(_candidate_line(line) for line in entry.get("lines") or ()),
+        boundary=None if entry.get("boundary") is None else str(entry["boundary"]),
     )
