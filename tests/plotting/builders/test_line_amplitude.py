@@ -39,7 +39,7 @@ def _tiled_amps() -> np.ndarray:
     return amps
 
 
-def _surface(midpoint_um: float = MIDPOINT_UM):
+def _surface(midpoint_um: float = MIDPOINT_UM, extra_candidates=()):
     line = {
         "line_index": 0,
         "freq_hz": 3870.25,
@@ -69,7 +69,8 @@ def _surface(midpoint_um: float = MIDPOINT_UM):
                             "n_agreeing_lines": 1,
                             "n_lines": 2,
                             "lines": [line],
-                        }
+                        },
+                        *extra_candidates,
                     ]
                 }
             },
@@ -121,8 +122,9 @@ def test_profile_is_referenced_to_each_block_median():
 def test_fitted_curve_overlays_the_data_it_was_fitted_to():
     (payload,) = _builder().build_lines().values()
 
-    np.testing.assert_allclose(payload["fit"]["x"], payload["x"], atol=1e-9)
-    np.testing.assert_array_equal(payload["fit"]["y"], payload["y"])
+    fit = payload["fits"]["lines"]
+    np.testing.assert_allclose(fit["x"], payload["x"], atol=1e-9)
+    np.testing.assert_array_equal(fit["y"], payload["y"])
 
 
 def test_line_markers_carry_curve_level_and_step_extent():
@@ -134,7 +136,7 @@ def test_line_markers_carry_curve_level_and_step_extent():
         MIDPOINT_UM,
         MIDPOINT_UM + np.log(9.0) * WIDTH_ABOVE_UM,
     )
-    expected = np.interp(MIDPOINT_UM, payload["y"], payload["fit"]["x"])
+    expected = np.interp(MIDPOINT_UM, payload["y"], payload["fits"]["lines"]["x"])
     assert marker["curve_db"] == expected
 
 
@@ -157,3 +159,43 @@ def test_image_has_one_column_per_line_with_candidate_markers():
     (marker,) = image["surface_candidates"]
     assert marker["midpoint_um"] == MIDPOINT_UM
     assert "curve_db" not in marker
+
+
+def test_plateau_candidate_draws_its_own_curve():
+    # Bath level above the onset, 3 dB lower below it, in the upper block.
+    onset_um = 600.0
+    plateau = {
+        "method": "plateau",
+        "block_indices": [1],
+        "midpoint_um": onset_um,
+        "width_um": None,
+        "delta_bic": 200.0,
+        "n_agreeing_lines": 1,
+        "n_lines": 1,
+        "lines": [
+            {
+                "line_index": 0,
+                "freq_hz": 3870.25,
+                "amplitude_rows": {"1": 1},
+                "step_db": 3.0,
+                "width_below_um": 0.0,
+                "width_above_um": 0.0,
+                "support": 50.0,
+                "agrees": True,
+                "baseline_db": {"1": -110.0},
+                "trend_db_per_mm": 0.0,
+            }
+        ],
+    }
+    builder = _builder(surface=_surface(extra_candidates=(plateau,)))
+    (payload,) = builder.build_lines().values()
+
+    curve = payload["fits"]["plateau"]["x"]
+    upper = DEPTHS >= N_ROWS / 2 * PITCH_UM
+    assert np.isnan(curve[~upper]).all()
+    above = curve[upper & (DEPTHS > onset_um)]
+    below = curve[upper & (DEPTHS < onset_um)]
+    np.testing.assert_allclose(above - below[0], 3.0)
+    (_, marker) = payload["surface_candidates"]
+    assert marker["method"] == "plateau"
+    assert marker["curve_db"] == np.interp(onset_um, payload["y"], curve)

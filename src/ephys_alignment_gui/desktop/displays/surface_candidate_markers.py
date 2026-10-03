@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
+from PyQt6 import QtCore
 
 SURFACE_MARKER_COLOR = "#51606f"
 # Below reference lines (z=100), so those stay on top and grabbable.
@@ -19,11 +20,16 @@ _WEDGE_SIZE_PX = 14
 _DIAMOND_SIZE_PX = 12
 _EDGE_INSET = 0.03  # of the x span, so the wedge is not clipped
 _DISAGREEING_ALPHA = 90
+# Methods other than the step fit are drawn dashed, so two curves on one
+# line plot stay distinguishable in the one marker colour.
+_SOLID_METHOD = "lines"
 
 
-def _pen(width: float, alpha: int = 255):
+def _pen(width: float, alpha: int = 255, dashed: bool = False):
     color = pg.mkColor(SURFACE_MARKER_COLOR)
     color.setAlpha(alpha)
+    if dashed:
+        return pg.mkPen(color, width=width, style=QtCore.Qt.PenStyle.DashLine)
     return pg.mkPen(color, width=width)
 
 
@@ -65,18 +71,31 @@ def image_marker_items(markers: Any, xrange: Any) -> list[Any]:
 
 
 def line_marker_items(payload: Any) -> list[Any]:
-    """The fitted curve, and for each candidate the curve's 10-90 % extent
-    highlighted with a hollow diamond at the midpoint; faint where the line
-    does not agree with the candidate."""
-    fit = payload.get("fit")
-    if not fit:
-        return []
-    fit_x = np.asarray(fit["x"], dtype=float)
-    fit_y = np.asarray(fit["y"], dtype=float)
+    """Each method's fitted curve, and for each candidate its method's curve
+    over the 10-90 % extent highlighted with a hollow diamond at the
+    midpoint; faint where the line does not agree with the candidate."""
+    curves = {
+        method: (
+            np.asarray(fit["x"], dtype=float),
+            np.asarray(fit["y"], dtype=float),
+        )
+        for method, fit in (payload.get("fits") or {}).items()
+    }
     items = [
-        _inert(pg.PlotCurveItem(x=fit_x, y=fit_y, pen=_pen(1.5), connect="finite"))
+        _inert(
+            pg.PlotCurveItem(
+                x=x,
+                y=y,
+                pen=_pen(1.5, dashed=method != _SOLID_METHOD),
+                connect="finite",
+            )
+        )
+        for method, (x, y) in curves.items()
     ]
     for marker in payload.get("surface_candidates") or ():
+        if marker["method"] not in curves:
+            continue
+        fit_x, fit_y = curves[marker["method"]]
         alpha = 255 if marker.get("agrees") else _DISAGREEING_ALPHA
         lo, hi = marker["extent_um"]
         on_extent = (fit_y >= lo) & (fit_y <= hi) & np.isfinite(fit_x)

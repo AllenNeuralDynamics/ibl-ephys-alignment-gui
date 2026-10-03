@@ -57,7 +57,7 @@ def fake_pg(monkeypatch):
         "pg",
         SimpleNamespace(
             mkColor=FakeColor,
-            mkPen=lambda color, width: {"color": color, "width": width},
+            mkPen=lambda color, width, **kw: {"color": color, "width": width, **kw},
             mkBrush=lambda color: {"brush": color},
             PlotCurveItem=lambda **kw: FakeItem("curve", **kw),
             ScatterPlotItem=lambda **kw: FakeItem("scatter", **kw),
@@ -70,7 +70,7 @@ def _line_payload(agrees: bool = True) -> dict[str, Any]:
     return {
         "x": np.zeros(depths.size),
         "y": depths,
-        "fit": {"x": np.where(depths > 100, 5.0, 0.0), "y": depths},
+        "fits": {"lines": {"x": np.where(depths > 100, 5.0, 0.0), "y": depths}},
         "surface_candidates": (
             {
                 "midpoint_um": 100.0,
@@ -91,7 +91,7 @@ def test_marker_colour_is_outside_the_reference_line_palette():
 def test_no_markers_without_candidates_or_fit():
     assert image_marker_items((), (0.0, 4.0)) == []
     assert line_marker_items({"x": [1.0], "y": [2.0]}) == []
-    assert line_marker_items({"fit": None, "surface_candidates": ()}) == []
+    assert line_marker_items({"fits": {}, "surface_candidates": ()}) == []
 
 
 def test_image_markers_are_a_right_edge_wedge_and_width_bar():
@@ -110,7 +110,10 @@ def test_image_markers_are_a_right_edge_wedge_and_width_bar():
 def test_line_markers_highlight_extent_and_mark_midpoint():
     fit, extent, diamond = line_marker_items(_line_payload())
 
-    np.testing.assert_array_equal(fit.kwargs["y"], _line_payload()["fit"]["y"])
+    np.testing.assert_array_equal(
+        fit.kwargs["y"], _line_payload()["fits"]["lines"]["y"]
+    )
+    assert "style" not in fit.kwargs["pen"]
     assert extent.kwargs["y"].min() >= 90.0
     assert extent.kwargs["y"].max() <= 130.0
     assert extent.kwargs["pen"]["width"] > fit.kwargs["pen"]["width"]
@@ -133,3 +136,31 @@ def test_markers_do_not_take_hover_and_sit_below_reference_lines():
 
     assert all(item.hover is False for item in items)
     assert all(item.z < 100 for item in items)
+
+
+def test_each_method_has_its_own_curve_and_markers_follow_their_method():
+    payload = _line_payload()
+    depths = payload["y"]
+    payload["fits"]["plateau"] = {"x": np.where(depths > 50, 1.0, -1.0), "y": depths}
+    payload["surface_candidates"] += (
+        {
+            "midpoint_um": 50.0,
+            "width_um": None,
+            "method": "plateau",
+            "agrees": True,
+            "extent_um": (50.0, 50.0),
+            "curve_db": 0.0,
+        },
+    )
+
+    lines_fit, plateau_fit, extent, lines_diamond, plateau_diamond = line_marker_items(
+        payload
+    )
+
+    assert "style" in plateau_fit.kwargs["pen"]
+    assert "style" not in lines_fit.kwargs["pen"]
+    assert extent.kwargs["y"].min() >= 90.0
+    assert (plateau_diamond.kwargs["x"], plateau_diamond.kwargs["y"]) == (
+        [0.0],
+        [50.0],
+    )

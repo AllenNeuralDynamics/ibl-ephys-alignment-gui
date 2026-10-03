@@ -178,15 +178,19 @@ class LineAmplitudePlotDataBuilder:
         }
 
     def build_lines(self) -> dict[str, dict[str, Any]]:
-        """One depth profile per line, keyed by label, with its fitted curve
-        when the line was fitted."""
+        """One depth profile per line, keyed by label, with the curve of each
+        method it was fitted in."""
         return {line.label: self._build_line(line) for line in self.lines()}
 
     def _build_line(self, line: InterferenceLine) -> dict[str, Any]:
         profile, medians = self._profile(line)
         depths = self._depths
-        fit = self._fitted_curve(line, medians)
-        values = profile if fit is None else np.r_[profile, fit]
+        fits = {
+            method: curve
+            for method in dict.fromkeys(c.method for c in self.candidates())
+            if (curve := self._fitted_curve(line, medians, method)) is not None
+        }
+        values = np.concatenate([profile, *fits.values()])
         finite = values[np.isfinite(values)]
         lo, hi = (
             (float(finite.min()), float(finite.max())) if finite.size else (-1.0, 1.0)
@@ -197,8 +201,10 @@ class LineAmplitudePlotDataBuilder:
             "y": depths,
             "xrange": np.array([lo - pad, hi + pad]),
             "xaxis": f"{line.label} amplitude (dB re block median)",
-            "fit": None if fit is None else {"x": fit, "y": depths},
-            "surface_candidates": self._markers(line, fit),
+            "fits": {
+                method: {"x": curve, "y": depths} for method, curve in fits.items()
+            },
+            "surface_candidates": self._markers(line, fits),
         }
 
     def _line_fits(
@@ -213,10 +219,10 @@ class LineAmplitudePlotDataBuilder:
                     yield candidate, entry
 
     def _fitted_curve(
-        self, line: InterferenceLine, medians: dict[int, float]
+        self, line: InterferenceLine, medians: dict[int, float], method: str
     ) -> np.ndarray | None:
-        """The ``lines`` model for this line, referenced like the data."""
-        fits = list(self._line_fits(line, "lines"))
+        """One method's model for this line, referenced like the data."""
+        fits = list(self._line_fits(line, method))
         if not fits:
             return None
         _, first = fits[0]
@@ -256,11 +262,11 @@ class LineAmplitudePlotDataBuilder:
     def _markers(
         self,
         line: InterferenceLine | None = None,
-        fit: np.ndarray | None = None,
+        fits: dict[str, np.ndarray] | None = None,
     ) -> tuple[dict[str, Any], ...]:
         """Candidates as the marker overlay draws them; for one line, only
-        those it was fitted in, with its fitted level at the midpoint and the
-        10-90 % extent of its step."""
+        those it was fitted in, with its method's fitted level at the
+        midpoint and the 10-90 % extent of its step."""
         markers = []
         for candidate in self.candidates():
             marker: dict[str, Any] = {
@@ -282,7 +288,9 @@ class LineAmplitudePlotDataBuilder:
                 marker["agrees"] = entry.agrees
                 marker["extent_um"] = entry.extent_um(candidate.midpoint_um)
                 marker["curve_db"] = _level_at(
-                    self._depths, fit, candidate.midpoint_um
+                    self._depths,
+                    (fits or {}).get(candidate.method),
+                    candidate.midpoint_um,
                 )
             markers.append(marker)
         return tuple(markers)
