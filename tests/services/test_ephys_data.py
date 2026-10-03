@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -166,3 +167,42 @@ def test_ephys_data_service_loads_stream_data(monkeypatch, tmp_path):
     assert stream.alf_data["rms_AP"]["xaxis"] == "Time (s)"
     assert stream.alf_data["spike_shanks"].tolist() == [0, 1, 1]
     assert stream.channel_collection(1).depths.tolist() == [0.0, 20.0]
+
+
+def test_brain_surface_candidates_follow_local_shank_indices(monkeypatch, tmp_path):
+    # One stream of a quad base: it records physical shank 1 alone, which the
+    # channel table renumbers to local shank 0.
+    channel_paths = _write_channel_table_files(
+        tmp_path / "ephys",
+        local_coordinates=np.array([[250.0, 0.0], [250.0, 20.0]]),
+        shank_indices=np.array([1, 1]),
+    )
+    candidate = {
+        "method": "lines",
+        "midpoint_um": 10.0,
+        "delta_bic": 600.0,
+        "n_agreeing_lines": 0,
+        "n_lines": 0,
+        "lines": [],
+    }
+    (tmp_path / "ephys" / "brain_surface.json").write_text(
+        json.dumps(
+            {
+                "version": "1.0",
+                "shanks": {"1": {"candidates": [candidate]}},
+                "lines": [],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "ephys_alignment_gui.services.ephys_data.alfio.load_object",
+        lambda _folder, _object_name: {},
+    )
+
+    stream = EphysDataService().load_stream_data(
+        _probe_info(tmp_path / "ephys", channel_paths)
+    )
+
+    (found,) = stream.alf_data["brain_surface"].shank_candidates(0)
+    assert found.midpoint_um == 10.0
+    assert stream.alf_data["brain_surface"].shank_candidates(1) == ()

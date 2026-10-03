@@ -35,6 +35,9 @@ class ChannelTable:
     raw_ind: NDArray | None = None
     contact_ids: NDArray | None = None
     shank_indices: NDArray | None = None
+    # Producer shank id of each local shank: shank_indices renumbers them
+    # from 0 within the stream, which other producer files do not.
+    shank_ids: NDArray | None = None
 
     def __post_init__(self) -> None:
         local_coordinates = np.asarray(self.local_coordinates)
@@ -232,6 +235,9 @@ class EphysDataService:
             raw_ind=raw_ind,
             contact_ids=contact_ids,
             shank_indices=shank_indices,
+            shank_ids=None
+            if shank_indices is None
+            else np.unique(np.asarray(raw_shank_indices, dtype=int)),
         )
 
     def load_stream_data(
@@ -254,6 +260,10 @@ class EphysDataService:
         data = self._load_alf_objects(ephys_dir)
         self._attach_channel_table(data, channel_table)
         self._attach_optional_shank_arrays(data, ephys_dir)
+        if data["brain_surface"] is not None and channel_table.shank_ids is not None:
+            data["brain_surface"] = data["brain_surface"].on_local_shanks(
+                channel_table.shank_ids
+            )
 
         return EphysStreamData(
             recording_id=probe.recording_id,

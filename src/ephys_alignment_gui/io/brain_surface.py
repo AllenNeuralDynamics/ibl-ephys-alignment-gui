@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,17 @@ class BrainSurface:
     version: str
     lines: tuple[LineRow, ...]  # aligned with the amplitude rows
     candidates: dict[int, tuple[SurfaceCandidate, ...]]  # per shank
+
+    def on_local_shanks(self, shank_ids: Sequence[int]) -> BrainSurface:
+        """Candidates rekeyed from the producer's shank ids to the stream's
+        local shank indices, *shank_ids* holding the id of each."""
+        return replace(
+            self,
+            candidates={
+                local: self.candidates.get(int(shank_id), ())
+                for local, shank_id in enumerate(shank_ids)
+            },
+        )
 
     def shank_candidates(self, shank_idx: int) -> tuple[SurfaceCandidate, ...]:
         """Candidates on one zero-based shank, strongest first."""
