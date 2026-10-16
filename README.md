@@ -87,9 +87,14 @@ export is unsafe or fails, the GUI preserves alignment history and anatomical
 channel locations, records the CCF status in per-shank metadata, and displays a
 warning.
 
-## Code Ocean Configuration
+## Runtime And Asset Configuration
 
-Recommended environment variables:
+The same datapackage can run on Code Ocean or a desktop. Asset descriptions
+travel with the package; search roots and overrides describe the current
+machine. See [the input contract](docs/input_datapackage_contract.md) for
+resolution precedence, desktop/Windows examples, and collection assumptions.
+
+Recommended Code Ocean environment variables:
 
 ```bash
 EPHYS_ALIGNMENT_INPUT_ROOT=/data
@@ -128,9 +133,11 @@ with:
 }
 ```
 
-Alternatively, set `IBL_ASSET_OVERRIDES` to a JSON object containing the same
-`asset_overrides` mapping. Override keys may be logical datapackage asset keys
-or recorded asset names.
+Alternatively, set `IBL_ASSET_OVERRIDES` to the mapping itself, for example
+`{"smartspim": "/data/SmartSPIM_..."}`, without an outer `asset_overrides`
+key. Override keys may be logical datapackage asset keys or recorded names.
+The resolver locates already-present assets; it does not download their URIs
+or verify recorded checksums.
 
 For load/switch performance traces, set:
 
@@ -152,6 +159,12 @@ The selected mouse root must contain an AIND IBL ephys alignment
 schemas for versions 3.0.0, 3.1.0, 3.2.0, 4.0.0, and 4.1.0. It uses the
 datapackage hierarchy as the source of recording/probe identity; it does not
 infer sessions by scanning directories.
+
+The datapackage references each ephys collection directory and channel-table
+files. Individual spike and QC files are discovered by ALF names within that
+directory, with correlation/coherency data under `band_corr/`; they are not
+listed individually in the JSON. Keep the complete collection together when
+copying data. Schema validation alone does not verify every plot's input.
 
 ## Keyboard Shortcuts
 
@@ -201,6 +214,8 @@ recent loaded alignment.
   save, and extension contracts.
 - `docs/reference_line_alignment_contract.md`: coordinate spaces and fitting
   invariants.
+- [docs/input_datapackage_contract.md](docs/input_datapackage_contract.md):
+  portable asset resolution, ephys QC layout, and channel/shank joins.
 - `TODO.md`: open correctness and product work only.
-- `CLAUDE.md`: concise agent/contributor operating guide.
+- `CLAUDE.md`: Claude entry point directing to `AGENTS.md`.
 - `AGENTS.md`: tool-neutral entry point for coding agents.

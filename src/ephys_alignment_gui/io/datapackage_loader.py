@@ -1,11 +1,13 @@
 """Resolve paths from a preprocessed mouse-root directory.
 
 The GUI takes a mouse-root directory containing ``datapackage.json`` (produced
-by ``aind-ibl-ephys-alignment-preprocessing`` v1.1.0+) and reads every path it
-needs from there. No directory-structure assumptions, no platform-specific
-literals, no globbing of sibling assets.
+by ``aind-ibl-ephys-alignment-preprocessing``) and resolves its explicit file
+and collection-directory references here. Ephys readers separately load ALF
+objects and QC products by convention inside each resolved collection,
+including its ``band_corr`` subdirectory. See
+``docs/input_datapackage_contract.md`` for both layers of the input contract.
 
-Datapackage schema 3.x stores each path as ``{asset, path}``. ``asset=None``
+Datapackage schemas 3.x and 4.x store references as ``{asset, path}``. ``asset=None``
 means the path is relative to the datapackage directory; non-null assets are
 looked up in the datapackage's ``external_assets`` registry and resolved via
 runtime configuration supplied by the deployment/user.
