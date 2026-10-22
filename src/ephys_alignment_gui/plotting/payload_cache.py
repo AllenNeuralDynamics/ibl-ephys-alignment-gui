@@ -19,6 +19,9 @@ from ephys_alignment_gui.plotting.builders.line_amplitude import (
     LineAmplitudePlotDataBuilder,
 )
 from ephys_alignment_gui.plotting.builders.raw import RawTracePlotDataBuilder
+from ephys_alignment_gui.plotting.builders.raw_activity import (
+    RawActivityPlotDataBuilder,
+)
 from ephys_alignment_gui.plotting.builders.rms import RmsPlotDataBuilder
 from ephys_alignment_gui.plotting.builders.spikes import SpikePlotDataBuilder
 from ephys_alignment_gui.plotting.builders.stimulus import StimulusPlotDataBuilder
@@ -69,6 +72,9 @@ class EphysPlotPayloadCache:
         if self.data["clusters"]["exists"]:
             self._current_filter = "all"
         self.rms_builder = RmsPlotDataBuilder(data, self.channel_geometry)
+        self.raw_activity_builder = RawActivityPlotDataBuilder(
+            data, self.channel_geometry
+        )
         self.lfp_spectrum_builder = LfpSpectrumPlotDataBuilder(
             data,
             self.channel_geometry,
@@ -176,6 +182,14 @@ class EphysPlotPayloadCache:
     def get_rms_data_img_probe(self, format: str):
         """Return RMS image and probe payloads."""
         return self.rms_builder.build(format, self.in_brain_depths_um)
+
+    def has_raw_activity(self) -> bool:
+        """Whether this shank has any measured raw-activity rate."""
+        return self.raw_activity_builder.rates_hz() is not None
+
+    def get_raw_activity_line_probe(self):
+        """Return raw-activity line and probe payloads."""
+        return self.raw_activity_builder.build(self.in_brain_depths_um)
 
     def get_raw_data_image(self, pid, t0=(1000, 2000, 3000), one=None):
         """Return raw trace snippets for legacy IBL workflows."""

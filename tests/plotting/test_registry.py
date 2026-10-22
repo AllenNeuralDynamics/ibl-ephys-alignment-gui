@@ -320,3 +320,30 @@ def test_image_column_maps_to_its_line_plot_only_for_line_amplitude() -> None:
     assert line_plot_key_for_image_x(LINE_AMPLITUDE_IMAGE_KEY, payload, -0.1) is None
     assert line_plot_key_for_image_x("image.rms_ap", payload, 0.5) is None
     assert line_plot_key_for_image_x(LINE_AMPLITUDE_IMAGE_KEY, None, 0.5) is None
+
+
+class FakeRawActivityPayloadCache(FakePayloadCache):
+    def __init__(self, has_raw_activity: bool) -> None:
+        super().__init__()
+        self._has_raw_activity = has_raw_activity
+
+    def has_raw_activity(self) -> bool:
+        return self._has_raw_activity
+
+    def get_raw_activity_line_probe(self) -> Any:
+        return "line-activity", "probe-activity"
+
+
+def test_raw_activity_plots_follow_measured_rates_on_the_shank() -> None:
+    measured = FakeRawActivityPayloadCache(has_raw_activity=True)
+    unmeasured = FakeRawActivityPayloadCache(has_raw_activity=False)
+
+    for menu in ("line", "probe"):
+        assert f"{menu}.raw_activity" in [
+            spec.key for spec in available_plot_specs_for_menu(measured, menu)
+        ]
+        assert f"{menu}.raw_activity" not in [
+            spec.key for spec in available_plot_specs_for_menu(unmeasured, menu)
+        ]
+    assert resolve_plot_payload(measured, "line.raw_activity") == "line-activity"
+    assert resolve_plot_payload(measured, "probe.raw_activity") == "probe-activity"

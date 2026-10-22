@@ -398,6 +398,12 @@ the same save batch without preventing local output files from being written.
 
 ## Data Contracts
 
+[Input datapackage, assets, and ephys collections](input_datapackage_contract.md)
+defines the four layers: structure, asset description, runtime location
+resolution, and convention-loaded collection contents. Preserve the distinction
+when changing IO. In particular, the JSON references the ephys directory;
+it does not enumerate individual QC files or the contents of `band_corr/`.
+
 The GUI reads a mouse-root `datapackage.json`; it does not discover sessions by
 directory globbing. Input schema majors 3 and 4 are supported. Exact bundled
 schemas are under `io/schemas/aind-ibl-ephys-alignment-datapackage/`; newer minor

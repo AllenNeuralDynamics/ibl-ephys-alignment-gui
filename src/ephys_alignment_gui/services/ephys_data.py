@@ -264,6 +264,9 @@ class EphysDataService:
             data["brain_surface"] = data["brain_surface"].on_local_shanks(
                 channel_table.shank_ids
             )
+        data["raw_activity"] = self._load_raw_activity(
+            ephys_dir, channel_table.n_channels
+        )
 
         return EphysStreamData(
             recording_id=probe.recording_id,
@@ -345,6 +348,23 @@ class EphysDataService:
             data["unit_shank_indices"] = np.load(unit_shank_indices_file)
 
         data["brain_surface"] = load_brain_surface(ephys_dir / "brain_surface.json")
+
+    @staticmethod
+    def _load_raw_activity(ephys_dir: Path, n_channels: int) -> dict[str, Any]:
+        """Per-row event rates, which only count as present with one per row."""
+        rate_file = ephys_dir / "_iblqc_channels.rawActivity.npy"
+        if not rate_file.is_file():
+            return {"exists": False}
+        rate_hz = np.load(rate_file, allow_pickle=False)
+        if rate_hz.shape != (n_channels,):
+            logger.warning(
+                "Ignoring %s: expected shape (%d,), got %s",
+                rate_file.name,
+                n_channels,
+                rate_hz.shape,
+            )
+            return {"exists": False}
+        return {"exists": True, "rate_hz": rate_hz}
 
     @staticmethod
     def _load_session_notes(ephys_dir: Path) -> str:
