@@ -95,7 +95,8 @@ session; container `ENV` alone may not reach it.
 
 The `ephys` reference resolves one collection directory. `EphysDataService`
 loads spikes, clusters, channels, RMS, and PSD ALF objects there. It also
-reads optional shank vectors and `session_notes.txt` there. LFP correlation builders read full/legacy matrices
+reads optional shank vectors, `session_notes.txt`, and per-row raw AP
+event rates (`_iblqc_channels.rawActivity.npy`) there. LFP correlation builders read full/legacy matrices
 and `row_channels.json` under `band_corr/`.
 
 Channel-table paths are explicit, but moving only those files does not

@@ -166,3 +166,44 @@ def test_ephys_data_service_loads_stream_data(monkeypatch, tmp_path):
     assert stream.alf_data["rms_AP"]["xaxis"] == "Time (s)"
     assert stream.alf_data["spike_shanks"].tolist() == [0, 1, 1]
     assert stream.channel_collection(1).depths.tolist() == [0.0, 20.0]
+
+
+def _load_stream_with_raw_activity(monkeypatch, tmp_path, rate_hz):
+    channel_paths = _write_channel_table_files(
+        tmp_path / "ephys",
+        local_coordinates=np.array([[0.0, 0.0], [0.0, 20.0], [0.0, 40.0]]),
+    )
+    if rate_hz is not None:
+        np.save(tmp_path / "ephys" / "_iblqc_channels.rawActivity.npy", rate_hz)
+    monkeypatch.setattr(
+        "ephys_alignment_gui.services.ephys_data.alfio.load_object",
+        lambda _folder, _object_name: {},
+    )
+    return EphysDataService().load_stream_data(
+        _probe_info(tmp_path / "ephys", channel_paths)
+    )
+
+
+def test_ephys_data_service_loads_raw_activity_by_channel_row(monkeypatch, tmp_path):
+    stream = _load_stream_with_raw_activity(
+        monkeypatch, tmp_path, np.array([1.0, np.nan, 3.0])
+    )
+
+    raw_activity = stream.alf_data["raw_activity"]
+    assert raw_activity["exists"]
+    np.testing.assert_array_equal(raw_activity["rate_hz"], [1.0, np.nan, 3.0])
+
+
+def test_ephys_data_service_ignores_raw_activity_of_another_table(
+    monkeypatch, tmp_path, caplog
+):
+    stream = _load_stream_with_raw_activity(monkeypatch, tmp_path, np.ones(4))
+
+    assert stream.alf_data["raw_activity"] == {"exists": False}
+    assert "expected shape (3,)" in caplog.text
+
+
+def test_ephys_data_service_without_raw_activity(monkeypatch, tmp_path):
+    stream = _load_stream_with_raw_activity(monkeypatch, tmp_path, None)
+
+    assert stream.alf_data["raw_activity"] == {"exists": False}

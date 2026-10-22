@@ -261,6 +261,19 @@ def _probe_lfp_children(payload_cache: Any) -> tuple[PlotSpec, ...]:
     )
 
 
+def _raw_activity_available(payload_cache: Any) -> bool:
+    has_raw_activity = getattr(payload_cache, "has_raw_activity", None)
+    return callable(has_raw_activity) and has_raw_activity()
+
+
+def _raw_activity_source(index: int) -> Callable[[Any], Any]:
+    return _source(
+        ("raw_activity_line_probe",),
+        lambda payload_cache: payload_cache.get_raw_activity_line_probe(),
+        index,
+    )
+
+
 def _rfmap_payload(payload_cache: Any) -> Any:
     return _memoized_payload(
         payload_cache,
@@ -465,6 +478,14 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
         available=_data_exists("spikes"),
     ),
     PlotSpec(
+        key="line.raw_activity",
+        label="Raw Activity",
+        menu="line",
+        renderer="line",
+        source=_raw_activity_source(0),
+        available=_raw_activity_available,
+    ),
+    PlotSpec(
         key="probe.rms_ap",
         label="RMS AP",
         menu="probe",
@@ -488,6 +509,14 @@ PLOT_MENU_ENTRIES: tuple[PlotSpec | DynamicPlotSpec, ...] = (
             1,
         ),
         available=_data_exists("rms_LF"),
+    ),
+    PlotSpec(
+        key="probe.raw_activity",
+        label="Raw Activity",
+        menu="probe",
+        renderer="probe",
+        source=_raw_activity_source(1),
+        available=_raw_activity_available,
     ),
     DynamicPlotSpec(
         key="probe.lfp_spectrum",

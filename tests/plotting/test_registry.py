@@ -263,3 +263,30 @@ def test_mapping_plot_specs_resolve_existing_mapping_payloads() -> None:
 
     assert [spec.key for spec in specs] == ["image.raw.raw_ap"]
     assert resolve_plot_payload(None, specs[0]) == "raw-img"
+
+
+class FakeRawActivityPayloadCache(FakePayloadCache):
+    def __init__(self, has_raw_activity: bool) -> None:
+        super().__init__()
+        self._has_raw_activity = has_raw_activity
+
+    def has_raw_activity(self) -> bool:
+        return self._has_raw_activity
+
+    def get_raw_activity_line_probe(self) -> Any:
+        return "line-activity", "probe-activity"
+
+
+def test_raw_activity_plots_follow_measured_rates_on_the_shank() -> None:
+    measured = FakeRawActivityPayloadCache(has_raw_activity=True)
+    unmeasured = FakeRawActivityPayloadCache(has_raw_activity=False)
+
+    for menu in ("line", "probe"):
+        assert f"{menu}.raw_activity" in [
+            spec.key for spec in available_plot_specs_for_menu(measured, menu)
+        ]
+        assert f"{menu}.raw_activity" not in [
+            spec.key for spec in available_plot_specs_for_menu(unmeasured, menu)
+        ]
+    assert resolve_plot_payload(measured, "line.raw_activity") == "line-activity"
+    assert resolve_plot_payload(measured, "probe.raw_activity") == "probe-activity"
