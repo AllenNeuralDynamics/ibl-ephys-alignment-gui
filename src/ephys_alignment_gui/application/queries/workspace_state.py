@@ -20,10 +20,10 @@ from ephys_alignment_gui.core.alignment_read_models import (
     ActiveReferenceLineRenderState,
 )
 from ephys_alignment_gui.core.document import AlignmentKey
+from ephys_alignment_gui.geometry.ephys_alignment import TIP_FEATURE_M
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.session import LoadDataPlan, LoadDataTarget
-from ephys_alignment_gui.services.alignment_edit import TIP_FEATURE_M
 
 logger = logging.getLogger(__name__)
 

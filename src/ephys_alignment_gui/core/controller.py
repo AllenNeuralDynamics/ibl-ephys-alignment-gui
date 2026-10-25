@@ -30,11 +30,9 @@ from ephys_alignment_gui.core.workflow import (
     PolicyResult,
     WorkflowPolicy,
 )
+from ephys_alignment_gui.geometry.ephys_alignment import TIP_FEATURE_M
 from ephys_alignment_gui.runtime.shank import ShankRuntime
-from ephys_alignment_gui.services.alignment_edit import (
-    TIP_FEATURE_M,
-    AlignmentEditService,
-)
+from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
 from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
 from ephys_alignment_gui.services.alignment_runtime import AlignmentRuntimeService
 
