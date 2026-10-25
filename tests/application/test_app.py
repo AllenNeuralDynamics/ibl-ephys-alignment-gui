@@ -3513,6 +3513,37 @@ def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
     assert ephysalign.linear_calls == []
 
 
+def test_commands_fit_active_alignment_anchors_probe_tip() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    active_key = AlignmentKey("rec", "stream", 1)
+    state = workspace.document.alignment_state_for(active_key)
+    state.active_alignment = ActiveAlignment(
+        np.array([-0.006, 0.006]),
+        np.array([-0.006, 0.006]),
+    )
+    workspace.document.active_set_pending_reference_lines([4000.0], [4000.0])
+    workspace.display_state.edit_settings.set_lin_fit(False)
+    ephysalign = FakeEditEphysAlignment()
+    workspace.runtime.active_stream_runtime = SimpleNamespace(
+        shank_runtime_by_idx={
+            1: SimpleNamespace(
+                shank_idx=1,
+                ephysalign=ephysalign,
+                chn_depths=np.array([0.0, 4000.0]),
+            )
+        }
+    )
+
+    result = (
+        workspace.app.commands.edit.fit_active_alignment_from_pending_reference_lines()
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_allclose(
+        result.alignment.feature, [-0.006, -0.0002, 0.004, 0.006]
+    )
+
+
 def test_commands_fit_active_alignment_reports_missing_runtime() -> None:
     workspace = _workspace_with_probe_state(shank_idx=1)
 

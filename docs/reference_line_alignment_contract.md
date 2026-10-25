@@ -85,6 +85,19 @@ the active alignment back into warped display space. Therefore each existing
 reference pair should again appear coaxial: the feature-side line and
 warped-side line for each correspondence should have the same displayed depth.
 
+## Tip Anchor
+
+The traced track ends at the probe tip, so the tip is the one correspondence
+known without an ephys feature. Fit adds it as a control point: feature depth
+`-TIP_SIZE_UM`, paired with the raw track position the previous warp gave the
+tip. Segments below the deepest reference line therefore stretch to the tip
+instead of taking that line's offset. A reference line at or below the tip, or
+one whose track position falls below the tip's, drops the anchor for that fit.
+
+Only explicit edits move the tip: Offset moves the anchor with the synthetic
+endpoints, and the bounded nudges shift the whole track. Reset returns it to
+the traced tip.
+
 ## Invariants
 
 - New reference line pairs are coaxial in display space.
@@ -102,3 +115,4 @@ warped-side line for each correspondence should have the same displayed depth.
   viewport.
 - Labels, titles, legends, or axes must not change one depth panel's ViewBox
   height independently of the others.
+- Fit does not move the probe tip; only Offset, nudges, and Reset do.
