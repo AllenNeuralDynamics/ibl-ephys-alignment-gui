@@ -424,7 +424,6 @@ class AlignmentController:
                 line_tracks_um=line_tracks_um,
                 lin_fit=lin_fit,
                 extend_feature=extend_feature,
-                tip_feature_m=TIP_FEATURE_M,
             )
         except Exception as exc:
             return Failed(f"Failed to fit alignment: {exc}")

@@ -23,6 +23,7 @@ from ephys_alignment_gui.core.document import AlignmentKey
 from ephys_alignment_gui.io.alignment_data_context import AlignmentDataContext
 from ephys_alignment_gui.runtime.ephys_stream import StreamKey
 from ephys_alignment_gui.runtime.session import LoadDataPlan, LoadDataTarget
+from ephys_alignment_gui.services.alignment_edit import TIP_FEATURE_M
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,12 @@ class WorkspaceStateQueries:
         self,
         shank_idx: int | None = None,
     ) -> ActiveReferenceLineRenderState | None:
-        """Return pending or previous-alignment reference lines for rendering."""
+        """Return pending or previous-alignment reference lines for rendering.
+
+        An alignment without control points shows the tip reference line, so
+        the traced tip is anchored from the first fit until the user drags or
+        deletes it.
+        """
         state = self.context.document.active_alignment_state
         key = self.context.document.selected_alignment_key
         if state is None or key is None:
@@ -88,10 +94,11 @@ class WorkspaceStateQueries:
 
         feature_prev = state.feature_prev
         if feature_prev is None or not np.any(feature_prev):
-            return None
-        return ActiveReferenceLineRenderState(
-            feature_positions_um=np.asarray(feature_prev)[1:-1] * 1e6,
-        )
+            feature_prev = np.empty(0)
+        interior_um = np.asarray(feature_prev, dtype=float)[1:-1] * 1e6
+        if interior_um.size == 0:
+            interior_um = np.array([TIP_FEATURE_M * 1e6])
+        return ActiveReferenceLineRenderState(feature_positions_um=interior_um)
 
     def active_alignment_reference_line_state(
         self,
@@ -108,9 +115,17 @@ class WorkspaceStateQueries:
         alignment = state.active_alignment
         if alignment is None:
             return None
+        feature = np.asarray(alignment.feature, dtype=float)
+        track = np.asarray(alignment.track, dtype=float)
+        if feature.size > 2:
+            return ActiveReferenceLineRenderState(
+                feature_positions_um=feature[1:-1] * 1e6,
+                raw_track_positions_um=track[1:-1] * 1e6,
+            )
+        tip_track_m = np.interp(TIP_FEATURE_M, feature, track)
         return ActiveReferenceLineRenderState(
-            feature_positions_um=np.asarray(alignment.feature)[1:-1] * 1e6,
-            raw_track_positions_um=np.asarray(alignment.track)[1:-1] * 1e6,
+            feature_positions_um=np.array([TIP_FEATURE_M * 1e6]),
+            raw_track_positions_um=np.array([tip_track_m * 1e6]),
         )
 
     def is_loaded_stream_shank(

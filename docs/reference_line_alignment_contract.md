@@ -88,15 +88,17 @@ warped-side line for each correspondence should have the same displayed depth.
 ## Tip Anchor
 
 The traced track ends at the probe tip, so the tip is the one correspondence
-known without an ephys feature. Fit adds it as a control point: feature depth
-`-TIP_SIZE_UM`, paired with the raw track position the previous warp gave the
-tip. Segments below the deepest reference line therefore stretch to the tip
-instead of taking that line's offset. A reference line at or below the tip, or
-one whose track position falls below the tip's, drops the anchor for that fit.
+known without an ephys feature. When the active alignment has no interior
+control points (initial, Reset, or every line deleted), the reference-line read
+models supply one line at feature depth `-TIP_SIZE_UM`, paired with the raw
+track position the alignment gives that depth. It is drawn, captured, and
+fitted like any other pair, so dragging its warped side moves the tip and
+deleting it frees the tip. Until a line edit captures it, it exists only in the
+read models; it is never seeded into document pending state, which would mark
+an untouched alignment as edited.
 
-Only explicit edits move the tip: Offset moves the anchor with the synthetic
-endpoints, and the bounded nudges shift the whole track. Reset returns it to
-the traced tip.
+Offset moves a control point at exactly the tip feature with the synthetic
+endpoints; otherwise that point would hold the tip in place.
 
 ## Invariants
 
@@ -115,4 +117,4 @@ the traced tip.
   viewport.
 - Labels, titles, legends, or axes must not change one depth panel's ViewBox
   height independently of the others.
-- Fit does not move the probe tip; only Offset, nudges, and Reset do.
+- An alignment without interior control points shows the tip reference line.
