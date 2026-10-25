@@ -11,6 +11,8 @@ import ephys_alignment_gui.geometry.histology as histology
 logger = logging.getLogger(__name__)
 
 TIP_SIZE_UM = 200
+# Feature depth of the probe tip; depth 0 is the first electrode.
+TIP_FEATURE_M = -TIP_SIZE_UM / 1e6
 
 
 def _cumulative_distance(xyz):

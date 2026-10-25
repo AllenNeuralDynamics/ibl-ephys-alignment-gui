@@ -93,9 +93,9 @@ control points (initial, Reset, or every line deleted), the reference-line read
 models supply one line at feature depth `-TIP_SIZE_UM`, paired with the raw
 track position the alignment gives that depth. It is drawn, captured, and
 fitted like any other pair, so dragging its warped side moves the tip and
-deleting it frees the tip. Until a line edit captures it, it exists only in the
-read models; it is never seeded into document pending state, which would mark
-an untouched alignment as edited.
+deleting it frees the tip. The read models never seed it into document pending
+state, which would mark an untouched alignment as edited; it reaches the
+document when a line edit or Fit captures the displayed lines.
 
 Offset moves a control point at exactly the tip feature with the synthetic
 endpoints; otherwise that point would hold the tip in place.
