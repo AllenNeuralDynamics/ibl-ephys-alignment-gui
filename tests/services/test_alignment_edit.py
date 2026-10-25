@@ -339,84 +339,14 @@ def test_offset_from_tip_appends_offset_edit_without_mutating_previous_slot() ->
     assert result.lin_fit is False
 
 
-def _tip_track(alignment, tip_feature_m: float) -> float:
-    return float(np.interp(tip_feature_m, alignment.feature, alignment.track))
-
-
-def _fit_one_line(history, *, feature_m, warped_m, tip_feature_m):
-    return AlignmentEditService().fit_to_reference_lines(
-        history,
-        ephysalign=PiecewiseFakeEphysAlignment(),
-        line_features_um=np.array([feature_m * 1e6]),
-        line_tracks_um=np.array([warped_m * 1e6]),
-        lin_fit=False,
-        extend_feature=2,
-        tip_feature_m=tip_feature_m,
-    )
-
-
-def test_fit_keeps_tip_where_the_previous_warp_put_it() -> None:
+def test_offset_moves_tip_reference_line_control_point() -> None:
     history = AlignmentEditHistory(max_idx=10)
     history.set_current_alignment(
-        ActiveAlignment(np.array([0.0, 2.0, 4.0]), np.array([1.0, 2.0, 4.0]))
+        ActiveAlignment(
+            np.array([0.0, 0.5, 3.0, 4.0]),
+            np.array([0.0, 0.5, 3.5, 4.5]),
+        )
     )
-
-    result = _fit_one_line(history, feature_m=3.0, warped_m=3.5, tip_feature_m=0.5)
-
-    assert result.alignment is not None
-    assert _tip_track(result.alignment, 0.5) == 1.25
-    assert _tip_track(result.alignment, 3.0) == 3.5
-
-
-def test_fit_without_tip_anchor_translates_below_deepest_line() -> None:
-    history = AlignmentEditHistory(max_idx=10)
-    history.set_current_alignment(
-        ActiveAlignment(np.array([0.0, 4.0]), np.array([0.0, 4.0]))
-    )
-
-    result = _fit_one_line(history, feature_m=3.0, warped_m=3.5, tip_feature_m=None)
-
-    assert result.alignment is not None
-    assert _tip_track(result.alignment, 0.5) == 1.0
-
-
-def test_fit_with_tip_anchor_is_idempotent() -> None:
-    history = AlignmentEditHistory(max_idx=10)
-    history.set_current_alignment(
-        ActiveAlignment(np.array([0.0, 4.0]), np.array([0.0, 4.0]))
-    )
-
-    first = _fit_one_line(history, feature_m=3.0, warped_m=3.5, tip_feature_m=0.5)
-    assert first.alignment is not None
-    first_feature = np.array(first.alignment.feature, copy=True)
-    first_track = np.array(first.alignment.track, copy=True)
-    # After a fit the warped line redraws coaxially, at the feature depth.
-    second = _fit_one_line(history, feature_m=3.0, warped_m=3.0, tip_feature_m=0.5)
-
-    assert second.alignment is not None
-    np.testing.assert_allclose(second.alignment.feature, first_feature)
-    np.testing.assert_allclose(second.alignment.track, first_track)
-    assert _tip_track(second.alignment, 0.5) == 0.5
-
-
-def test_line_below_tip_overrides_tip_anchor() -> None:
-    history = AlignmentEditHistory(max_idx=10)
-    history.set_current_alignment(
-        ActiveAlignment(np.array([0.0, 4.0]), np.array([0.0, 4.0]))
-    )
-
-    result = _fit_one_line(history, feature_m=0.25, warped_m=0.75, tip_feature_m=0.5)
-
-    assert result.alignment is not None
-    np.testing.assert_array_equal(result.alignment.feature, [0.0, 0.25, 4.0])
-
-
-def test_offset_moves_anchored_tip() -> None:
-    history = AlignmentEditHistory(max_idx=10)
-    history.set_current_alignment(
-        ActiveAlignment(np.array([0.0, 4.0]), np.array([0.0, 4.0]))
-    )
-    _fit_one_line(history, feature_m=3.0, warped_m=3.5, tip_feature_m=0.5)
 
     result = AlignmentEditService().offset_from_tip(
         history,
@@ -427,5 +357,4 @@ def test_offset_moves_anchored_tip() -> None:
     )
 
     assert result.alignment is not None
-    np.testing.assert_allclose(_tip_track(result.alignment, 0.5), 0.6)
-    np.testing.assert_allclose(_tip_track(result.alignment, 3.0), 3.5)
+    np.testing.assert_allclose(result.alignment.track, [0.1, 0.6, 3.5, 4.6])

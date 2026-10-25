@@ -1000,7 +1000,7 @@ def test_queries_active_alignment_reference_line_state_uses_active_alignment() -
     np.testing.assert_allclose(result.track_positions_um, [1500.0, 2500.0])
 
 
-def test_queries_active_alignment_reference_line_state_allows_empty_interior() -> None:
+def test_queries_active_alignment_reference_line_state_shows_tip_line() -> None:
     workspace = AlignmentWorkspace()
     key = AlignmentKey("rec", "stream", 0)
     state = workspace.document.select_alignment_key(key)
@@ -1012,9 +1012,19 @@ def test_queries_active_alignment_reference_line_state_allows_empty_interior() -
     result = workspace.app.queries.workspace.active_alignment_reference_line_state(0)
 
     assert isinstance(result, ActiveReferenceLineRenderState)
-    assert result.feature_positions_um.size == 0
-    assert result.raw_track_positions_um.size == 0
-    assert result.track_positions_um.size == 0
+    np.testing.assert_allclose(result.feature_positions_um, [-200.0])
+    np.testing.assert_allclose(result.raw_track_positions_um, [-800.0])
+
+
+def test_queries_active_reference_line_state_shows_tip_line_initially() -> None:
+    workspace = AlignmentWorkspace()
+    workspace.document.select_alignment_key(AlignmentKey("rec", "stream", 0))
+
+    result = workspace.app.queries.workspace.active_reference_line_state(0)
+
+    assert isinstance(result, ActiveReferenceLineRenderState)
+    np.testing.assert_allclose(result.feature_positions_um, [-200.0])
+    assert result.track_positions_um is None
 
 
 def test_queries_project_reference_lines_between_track_and_warped_feature_space() -> (
@@ -3513,37 +3523,6 @@ def test_commands_fit_active_alignment_uses_document_pending_lines() -> None:
     assert ephysalign.linear_calls == []
 
 
-def test_commands_fit_active_alignment_anchors_probe_tip() -> None:
-    workspace = _workspace_with_probe_state(shank_idx=1)
-    active_key = AlignmentKey("rec", "stream", 1)
-    state = workspace.document.alignment_state_for(active_key)
-    state.active_alignment = ActiveAlignment(
-        np.array([-0.006, 0.006]),
-        np.array([-0.006, 0.006]),
-    )
-    workspace.document.active_set_pending_reference_lines([4000.0], [4000.0])
-    workspace.display_state.edit_settings.set_lin_fit(False)
-    ephysalign = FakeEditEphysAlignment()
-    workspace.runtime.active_stream_runtime = SimpleNamespace(
-        shank_runtime_by_idx={
-            1: SimpleNamespace(
-                shank_idx=1,
-                ephysalign=ephysalign,
-                chn_depths=np.array([0.0, 4000.0]),
-            )
-        }
-    )
-
-    result = (
-        workspace.app.commands.edit.fit_active_alignment_from_pending_reference_lines()
-    )
-
-    assert isinstance(result, AlignmentEditApplied)
-    np.testing.assert_allclose(
-        result.alignment.feature, [-0.006, -0.0002, 0.004, 0.006]
-    )
-
-
 def test_commands_fit_active_alignment_reports_missing_runtime() -> None:
     workspace = _workspace_with_probe_state(shank_idx=1)
 
@@ -3574,6 +3553,25 @@ def test_commands_offset_active_alignment_uses_display_settings() -> None:
     assert isinstance(result, AlignmentEditApplied)
     assert result.lin_fit is False
     np.testing.assert_allclose(result.alignment.track, [10.0001, 14.0001])
+
+
+def test_commands_offset_moves_tip_reference_line() -> None:
+    workspace = _workspace_with_probe_state(shank_idx=1)
+    state = workspace.document.alignment_state_for(AlignmentKey("rec", "stream", 1))
+    state.active_alignment = ActiveAlignment(
+        np.array([-0.006, -0.0002, 0.004, 0.006]),
+        np.array([-0.006, -0.0002, 0.0045, 0.0065]),
+    )
+    workspace.display_state.depth_view.probe_tip_um = 0.0
+
+    result = workspace.app.commands.edit.offset_active_alignment_from_tip(
+        tip_position_um=100.0,
+    )
+
+    assert isinstance(result, AlignmentEditApplied)
+    np.testing.assert_allclose(
+        result.alignment.track, [-0.0059, -0.0001, 0.0045, 0.0066]
+    )
 
 
 def test_commands_nudge_active_alignment_respects_channel_depth_bounds() -> None:
