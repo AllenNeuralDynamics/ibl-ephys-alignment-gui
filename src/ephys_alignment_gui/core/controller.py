@@ -31,7 +31,10 @@ from ephys_alignment_gui.core.workflow import (
     WorkflowPolicy,
 )
 from ephys_alignment_gui.runtime.shank import ShankRuntime
-from ephys_alignment_gui.services.alignment_edit import AlignmentEditService
+from ephys_alignment_gui.services.alignment_edit import (
+    TIP_FEATURE_M,
+    AlignmentEditService,
+)
 from ephys_alignment_gui.services.alignment_repository import AlignmentHistory
 from ephys_alignment_gui.services.alignment_runtime import AlignmentRuntimeService
 
@@ -387,6 +390,7 @@ class AlignmentController:
                 probe_tip_um=probe_tip_um,
                 lin_fit=lin_fit,
                 track_shift_m=track_shift_m,
+                tip_feature_m=TIP_FEATURE_M,
             )
         except Exception as exc:
             return Failed(f"Failed to offset alignment: {exc}")
@@ -420,6 +424,7 @@ class AlignmentController:
                 line_tracks_um=line_tracks_um,
                 lin_fit=lin_fit,
                 extend_feature=extend_feature,
+                tip_feature_m=TIP_FEATURE_M,
             )
         except Exception as exc:
             return Failed(f"Failed to fit alignment: {exc}")

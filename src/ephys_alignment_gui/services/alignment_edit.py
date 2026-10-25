@@ -10,6 +10,10 @@ from numpy.typing import NDArray
 
 from ephys_alignment_gui.core.active_alignment import ActiveAlignment
 from ephys_alignment_gui.core.alignment_edit_history import AlignmentEditHistory
+from ephys_alignment_gui.geometry.ephys_alignment import TIP_SIZE_UM
+
+# Feature depth 0 is the first electrode.
+TIP_FEATURE_M = -TIP_SIZE_UM / 1e6
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ class AlignmentEditService:
         line_tracks_um: NDArray[Any],
         lin_fit: bool,
         extend_feature: int,
+        tip_feature_m: float | None = None,
     ) -> AlignmentEditResult:
         """Append a fit edit from user-positioned reference-line pairs.
 
@@ -80,6 +85,10 @@ class AlignmentEditService:
         track-side line. It is in feature-display units; this method converts
         it through the previous warp to select the corresponding raw track
         coordinate.
+
+        With ``tip_feature_m``, the probe tip keeps the track position the
+        previous warp gave it, so the segment below the deepest line is
+        stretched rather than translated; only an offset moves the tip.
         """
         line_feature = np.asarray(line_features_um, dtype=float) / 1e6
         line_warped = np.asarray(line_tracks_um, dtype=float) / 1e6
@@ -107,12 +116,28 @@ class AlignmentEditService:
         )
         feature = np.r_[previous_feature[[0]], line_feature, previous_feature[[-1]]]
         track = np.r_[previous_track[[0]], line_track, previous_track[[-1]]]
+        # A line at or below the tip, or one that would cross it, overrides
+        # the anchor.
+        if (
+            tip_feature_m is not None
+            and previous_feature[0] < tip_feature_m < previous_feature[-1]
+            and np.all(line_feature > tip_feature_m)
+        ):
+            tip_track = float(
+                ephysalign.feature2track(
+                    np.array([tip_feature_m]), previous_feature, previous_track
+                )[0]
+            )
+            if np.all(line_track > tip_track):
+                feature = np.r_[feature, tip_feature_m]
+                track = np.r_[track, tip_track]
         sort_idx = np.argsort(feature)
         feature = feature[sort_idx]
         track = track[sort_idx]
 
-        # Two user correspondence points determine a linear extrapolation.
-        # ``feature`` also contains the two synthetic endpoint controls.
+        # Two correspondence points, user lines or the tip anchor, determine a
+        # linear extrapolation. ``feature`` also contains the two synthetic
+        # endpoint controls.
         if feature.size >= 4 and lin_fit:
             feature, track = ephysalign.adjust_extremes_linear(
                 feature,
@@ -133,8 +158,13 @@ class AlignmentEditService:
         probe_tip_um: float,
         lin_fit: bool,
         track_shift_m: float = 0.0,
+        tip_feature_m: float | None = None,
     ) -> AlignmentEditResult:
-        """Append an offset edit from the current tip line position."""
+        """Append an offset edit from the current tip line position.
+
+        A tip anchor at ``tip_feature_m`` moves with the endpoints; otherwise
+        it would hold the tip in place.
+        """
         self._append_edit_slot(history, lin_fit=lin_fit, remember_previous=True)
 
         feature = np.array(history.features[history.idx_prev], copy=True)
@@ -145,6 +175,8 @@ class AlignmentEditService:
         offset_delta = (tip_position_um - probe_tip_um) / 1e6
         track[0] += offset_delta
         track[-1] += offset_delta
+        if tip_feature_m is not None:
+            track[1:-1][feature[1:-1] == tip_feature_m] += offset_delta
 
         history.set_current_alignment(ActiveAlignment(feature, track, lin_fit=lin_fit))
         return self._result_from_history(history)
